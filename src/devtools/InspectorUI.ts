@@ -1,0 +1,329 @@
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import type { Player } from '../entities/Player';
+import { Dummy } from '../entities/Dummy';
+import { isInsideHex } from '../math/HexMath';
+import { Vector2D } from '../math/Vector2D';
+import type { Interpreter } from '../primitives/Interpreter';
+import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
+import { PRESETS, PRESET_NAMES } from './Presets';
+import { validateAbilitySchema } from '../types/schema';
+
+export interface InspectorContext {
+  player: Player;
+  world: PhysicsWorld;
+  interpreter: Interpreter;
+  renderer: CanvasRenderer;
+  getDebugOptions: () => DebugOptions;
+  setDebugOptions: (opts: DebugOptions) => void;
+  onReset: () => void;
+}
+
+export class InspectorUI {
+  private fps = 0;
+  private frameCount = 0;
+  private lastFpsTime = performance.now();
+  private telemetryEl!: HTMLElement;
+  private jsonTextarea!: HTMLTextAreaElement;
+  private errorBanner!: HTMLElement;
+
+  constructor(
+    private root: HTMLElement,
+    private ctx: InspectorContext,
+  ) {
+    this.build();
+  }
+
+  private build(): void {
+    this.root.innerHTML = '';
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      pointer-events: auto;
+      width: 320px;
+      max-height: 100vh;
+      overflow-y: auto;
+      margin: 12px;
+      padding: 16px;
+      background: rgba(10, 10, 20, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      color: #e0e0e8;
+    `;
+
+    const tabs = ['Stats', 'Presets', 'JSON', 'Harness'];
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;';
+    const content = document.createElement('div');
+
+    for (const tab of tabs) {
+      const btn = document.createElement('button');
+      btn.textContent = tab;
+      btn.style.cssText = this.buttonStyle(false);
+      btn.onclick = () => {
+        content.innerHTML = '';
+        switch (tab) {
+          case 'Stats':
+            this.buildStatsTab(content);
+            break;
+          case 'Presets':
+            this.buildPresetsTab(content);
+            break;
+          case 'JSON':
+            this.buildJsonTab(content);
+            break;
+          case 'Harness':
+            this.buildHarnessTab(content);
+            break;
+        }
+        for (const b of tabBar.querySelectorAll('button')) {
+          (b as HTMLButtonElement).style.cssText = this.buttonStyle(
+            b.textContent === tab,
+          );
+        }
+      };
+      tabBar.appendChild(btn);
+    }
+
+    this.telemetryEl = document.createElement('div');
+    this.telemetryEl.style.cssText =
+      'margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:11px;color:#888;';
+
+    panel.appendChild(tabBar);
+    panel.appendChild(content);
+    panel.appendChild(this.telemetryEl);
+    this.root.appendChild(panel);
+
+    this.buildStatsTab(content);
+    tabBar.querySelector('button')!.style.cssText = this.buttonStyle(true);
+  }
+
+  private buttonStyle(active: boolean): string {
+    return `
+      padding: 6px 10px;
+      border: 1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.15)'};
+      background: ${active ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)'};
+      color: #e0e0e8;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+  }
+
+  private sliderRow(
+    parent: HTMLElement,
+    label: string,
+    min: number,
+    max: number,
+    step: number,
+    get: () => number,
+    set: (v: number) => void,
+  ): void {
+    const row = document.createElement('div');
+    row.style.marginBottom = '10px';
+    const lbl = document.createElement('label');
+    lbl.style.display = 'block';
+    lbl.style.marginBottom = '4px';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(get());
+    input.style.width = '100%';
+    const update = () => {
+      const v = parseFloat(input.value);
+      set(v);
+      lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}`;
+    };
+    input.oninput = update;
+    update();
+    row.appendChild(lbl);
+    row.appendChild(input);
+    parent.appendChild(row);
+  }
+
+  private buildStatsTab(parent: HTMLElement): void {
+    const p = this.ctx.player;
+    this.sliderRow(parent, 'Move Speed', 50, 600, 10, () => p.moveSpeed, (v) => {
+      p.moveSpeed = v;
+    });
+    this.sliderRow(parent, 'Acceleration', 200, 3000, 50, () => p.baseAcceleration, (v) => {
+      p.baseAcceleration = v;
+    });
+    this.sliderRow(parent, 'Linear Drag', 0, 10, 0.1, () => p.baseLinearDrag, (v) => {
+      p.baseLinearDrag = v;
+      p.linearDrag = v;
+    });
+    this.sliderRow(parent, 'Mass', 0.1, 5, 0.1, () => p.mass, (v) => {
+      p.mass = v;
+    });
+    this.sliderRow(parent, 'Instability %', 0, 400, 1, () => p.instabilityPct, (v) => {
+      p.instabilityPct = v;
+    });
+  }
+
+  private buildPresetsTab(parent: HTMLElement): void {
+    const select = document.createElement('select');
+    select.style.cssText =
+      'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
+    for (const name of PRESET_NAMES) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = 'Load Preset';
+    loadBtn.style.cssText = this.buttonStyle(false);
+    loadBtn.onclick = () => {
+      const preset = PRESETS[select.value];
+      if (preset) {
+        this.ctx.player.primaryAbility = structuredClone(preset);
+        if (this.jsonTextarea) {
+          this.jsonTextarea.value = JSON.stringify(preset, null, 2);
+        }
+      }
+    };
+
+    parent.appendChild(select);
+    parent.appendChild(loadBtn);
+  }
+
+  private buildJsonTab(parent: HTMLElement): void {
+    this.errorBanner = document.createElement('div');
+    this.errorBanner.style.cssText =
+      'display:none;padding:8px;margin-bottom:8px;background:rgba(255,50,50,0.2);border-radius:6px;color:#ff6666;font-size:12px;';
+
+    this.jsonTextarea = document.createElement('textarea');
+    this.jsonTextarea.style.cssText = `
+      width: 100%;
+      height: 200px;
+      font-family: monospace;
+      font-size: 11px;
+      background: #0a0a14;
+      color: #ccc;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      padding: 8px;
+      resize: vertical;
+      box-sizing: border-box;
+    `;
+    if (this.ctx.player.primaryAbility) {
+      this.jsonTextarea.value = JSON.stringify(this.ctx.player.primaryAbility, null, 2);
+    }
+
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = 'Apply Schema';
+    applyBtn.style.cssText = this.buttonStyle(false) + 'margin-top:8px;width:100%;';
+    applyBtn.onclick = () => {
+      try {
+        const parsed = JSON.parse(this.jsonTextarea.value);
+        const validated = validateAbilitySchema(parsed);
+        if (!validated) {
+          this.showError('Invalid ability schema structure.');
+          return;
+        }
+        this.ctx.player.primaryAbility = validated;
+        this.showError('');
+      } catch {
+        this.showError('Invalid JSON syntax.');
+      }
+    };
+
+    parent.appendChild(this.errorBanner);
+    parent.appendChild(this.jsonTextarea);
+    parent.appendChild(applyBtn);
+  }
+
+  private showError(msg: string): void {
+    if (!msg) {
+      this.errorBanner.style.display = 'none';
+      return;
+    }
+    this.errorBanner.textContent = msg;
+    this.errorBanner.style.display = 'block';
+  }
+
+  private buildHarnessTab(parent: HTMLElement): void {
+    const buttons: Array<{ label: string; action: () => void }> = [
+      {
+        label: 'Spawn Dummy',
+        action: () => {
+          const pos = this.randomHexPosition();
+          this.ctx.world.addDummy(new Dummy(pos));
+        },
+      },
+      {
+        label: 'Spawn AI Chaser',
+        action: () => {
+          const pos = this.randomHexPosition();
+          const dummy = new Dummy(pos);
+          dummy.isAiActive = true;
+          this.ctx.world.addDummy(dummy);
+        },
+      },
+      {
+        label: 'Reset Arena',
+        action: () => this.ctx.onReset(),
+      },
+      {
+        label: 'Toggle Debug',
+        action: () => {
+          const opts = this.ctx.getDebugOptions();
+          this.ctx.setDebugOptions({
+            ...opts,
+            showVectors: !opts.showVectors,
+            showRadii: !opts.showRadii,
+          });
+        },
+      },
+      {
+        label: 'Clear Entities',
+        action: () => this.ctx.world.clearProjectilesAndZones(),
+      },
+    ];
+
+    for (const { label, action } of buttons) {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
+      btn.onclick = action;
+      parent.appendChild(btn);
+    }
+  }
+
+  private randomHexPosition(): Vector2D {
+    const { world } = this.ctx;
+    for (let i = 0; i < 50; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * world.hexRadius * 0.7;
+      const pos = world.hexCenter.add(Vector2D.fromAngle(angle, dist));
+      if (isInsideHex(pos, world.hexCenter, world.hexRadius)) {
+        return pos;
+      }
+    }
+    return world.hexCenter.clone();
+  }
+
+  updateTelemetry(): void {
+    this.frameCount++;
+    const now = performance.now();
+    if (now - this.lastFpsTime >= 1000) {
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.lastFpsTime = now;
+    }
+
+    const p = this.ctx.player;
+    const w = this.ctx.world;
+    this.telemetryEl.innerHTML = `
+      <div>FPS: ${this.fps}</div>
+      <div>Entities: ${w.getEntityCount()}</div>
+      <div>Zones: ${w.zones.filter((z) => !z.isDead).length}</div>
+      <div>Velocity: ${p.vel.mag().toFixed(1)} px/s</div>
+    `;
+  }
+}
