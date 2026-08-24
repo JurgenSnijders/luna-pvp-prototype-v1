@@ -1,5 +1,6 @@
 import { synthesizeCards } from '../ai/Synthesizer';
 import type { CardRarity, DraftCard, DraftSelection, PlayerLoadout } from '../types/cards';
+import { ACTION_SLOT_KEYS } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
 
 export interface DraftModalCallbacks {
@@ -244,7 +245,7 @@ export class DraftModal {
       el.appendChild(cost);
 
       if (card.type === 'ACTIVE_ABILITY') {
-        const diff = this.statDiff(loadout.primaryAbility, card.abilityPayload);
+        const diff = this.statDiff(loadout.abilities[0], card.abilityPayload);
         if (diff) {
           const diffEl = document.createElement('div');
           diffEl.textContent = diff;
@@ -252,18 +253,18 @@ export class DraftModal {
           el.appendChild(diffEl);
         }
 
-        const primaryBtn = document.createElement('button');
-        primaryBtn.textContent = 'Equip to Primary';
-        primaryBtn.style.cssText = this.btnStyle(true) + 'width:100%;margin-bottom:6px;';
-        primaryBtn.onclick = () => this.equip(card, 'PRIMARY');
+        const btnContainer = document.createElement('div');
+        btnContainer.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
 
-        const secondaryBtn = document.createElement('button');
-        secondaryBtn.textContent = 'Equip to Secondary';
-        secondaryBtn.style.cssText = this.btnStyle() + 'width:100%;';
-        secondaryBtn.onclick = () => this.equip(card, 'SECONDARY');
+        for (const key of ACTION_SLOT_KEYS) {
+          const slotBtn = document.createElement('button');
+          slotBtn.textContent = `[${key}]`;
+          slotBtn.style.cssText = this.btnStyle(key === 'Q') + 'flex:1;min-width:48px;';
+          slotBtn.onclick = () => this.equip(card, key);
+          btnContainer.appendChild(slotBtn);
+        }
 
-        el.appendChild(primaryBtn);
-        el.appendChild(secondaryBtn);
+        el.appendChild(btnContainer);
       } else {
         const passiveBtn = document.createElement('button');
         passiveBtn.textContent = 'Equip Passive';

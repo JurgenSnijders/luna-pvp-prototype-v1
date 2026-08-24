@@ -3,23 +3,23 @@ import type { AbilitySchema } from '../types/schema';
 import type { PassiveModifierPayload } from '../types/cards';
 import { Entity, generateEntityId } from './Entity';
 
+const SLOT_COUNT = 4;
+
 export class Player extends Entity {
   moveSpeed: number;
   baseMoveSpeed: number;
   baseAcceleration: number;
   friction: number;
   facingAngle: number;
-  primaryAbility: AbilitySchema | null;
-  secondaryAbility: AbilitySchema | null;
-  primaryCooldownTimerMs: number;
-  secondaryCooldownTimerMs: number;
+  abilities: [AbilitySchema | null, AbilitySchema | null, AbilitySchema | null, AbilitySchema | null];
+  cooldownTimersMs: [number, number, number, number];
+  slotCooldownTotalsMs: [number, number, number, number];
   passives: PassiveModifierPayload[];
   cooldownReductionPct: number;
 
   inputMove: Vector2D;
   aimTarget: Vector2D;
-  primaryCast: boolean;
-  secondaryCast: boolean;
+  slotCastFlags: [boolean, boolean, boolean, boolean];
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -34,16 +34,52 @@ export class Player extends Entity {
     this.baseAcceleration = 1200;
     this.friction = 8;
     this.facingAngle = 0;
-    this.primaryAbility = null;
-    this.secondaryAbility = null;
-    this.primaryCooldownTimerMs = 0;
-    this.secondaryCooldownTimerMs = 0;
+    this.abilities = [null, null, null, null];
+    this.cooldownTimersMs = [0, 0, 0, 0];
+    this.slotCooldownTotalsMs = [0, 0, 0, 0];
     this.passives = [];
     this.cooldownReductionPct = 0;
     this.inputMove = Vector2D.zero();
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
-    this.primaryCast = false;
-    this.secondaryCast = false;
+    this.slotCastFlags = [false, false, false, false];
+  }
+
+  setAbility(slotIndex: number, ability: AbilitySchema | null): void {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
+    this.abilities[slotIndex] = ability;
+    this.cooldownTimersMs[slotIndex] = 0;
+    this.slotCooldownTotalsMs[slotIndex] = 0;
+  }
+
+  getAbility(slotIndex: number): AbilitySchema | null {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return null;
+    return this.abilities[slotIndex];
+  }
+
+  isSlotReady(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    return this.abilities[slotIndex] !== null && this.cooldownTimersMs[slotIndex] <= 0;
+  }
+
+  triggerSlotCooldown(slotIndex: number): void {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
+    const ability = this.abilities[slotIndex];
+    if (!ability) return;
+    const effective = this.getEffectiveCooldown(ability.cooldownMs);
+    this.cooldownTimersMs[slotIndex] = effective;
+    this.slotCooldownTotalsMs[slotIndex] = effective;
+  }
+
+  getSlotCooldownRatio(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    const total = this.slotCooldownTotalsMs[slotIndex];
+    if (total <= 0) return 0;
+    return Math.max(0, Math.min(1, this.cooldownTimersMs[slotIndex] / total));
+  }
+
+  getSlotCooldownRemainingMs(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    return Math.max(0, this.cooldownTimersMs[slotIndex]);
   }
 
   applyPassiveModifier(mod: PassiveModifierPayload): void {
@@ -94,11 +130,10 @@ export class Player extends Entity {
   }
 
   override update(dt: number): void {
-    if (this.primaryCooldownTimerMs > 0) {
-      this.primaryCooldownTimerMs = Math.max(0, this.primaryCooldownTimerMs - dt * 1000);
-    }
-    if (this.secondaryCooldownTimerMs > 0) {
-      this.secondaryCooldownTimerMs = Math.max(0, this.secondaryCooldownTimerMs - dt * 1000);
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      if (this.cooldownTimersMs[i] > 0) {
+        this.cooldownTimersMs[i] = Math.max(0, this.cooldownTimersMs[i] - dt * 1000);
+      }
     }
 
     const moveDir = this.inputMove.magSq() > 0 ? this.inputMove.normalize() : Vector2D.zero();
@@ -123,8 +158,7 @@ export class Player extends Entity {
   }
 
   clearCastInputs(): void {
-    this.primaryCast = false;
-    this.secondaryCast = false;
+    this.slotCastFlags = [false, false, false, false];
   }
 
   resetCombatState(): void {
@@ -132,8 +166,8 @@ export class Player extends Entity {
     this.instabilityPct = 0;
     this.vel = Vector2D.zero();
     this.accel = Vector2D.zero();
-    this.primaryCooldownTimerMs = 0;
-    this.secondaryCooldownTimerMs = 0;
+    this.cooldownTimersMs = [0, 0, 0, 0];
+    this.slotCooldownTotalsMs = [0, 0, 0, 0];
     this.clearCastInputs();
   }
 

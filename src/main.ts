@@ -1,6 +1,7 @@
 import { generateOfflineDraft } from './ai/Synthesizer';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
+import { SpellLibrary } from './devtools/SpellLibrary';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
 import { PhysicsWorld } from './engine/PhysicsWorld';
@@ -11,10 +12,11 @@ import { MatchManager, type GameMode, type MatchState } from './game/MatchManage
 import { applyField } from './primitives/Fields';
 import { Interpreter } from './primitives/Interpreter';
 import { Vector2D } from './math/Vector2D';
+import { ActionBarHUD } from './render/ActionBarHUD';
 import { CanvasRenderer, type DebugOptions } from './render/CanvasRenderer';
 import { MatchHUD } from './render/MatchHUD';
 import { ParticleSystem } from './render/ParticleSystem';
-import type { DraftSelection } from './types/cards';
+import { ACTION_SLOT_INDEX, type DraftSelection } from './types/cards';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -27,6 +29,8 @@ let particles: ParticleSystem;
 let renderer: CanvasRenderer;
 let inspector: InspectorUI;
 let draftModal: DraftModal;
+let actionBarHUD: ActionBarHUD;
+let spellLibrary: SpellLibrary;
 let loop: Loop;
 let matchManager: MatchManager;
 let arenaShrink: ArenaShrink;
@@ -61,6 +65,13 @@ function resize(): void {
   arenaShrink?.resize(getHexRadius());
 }
 
+function assignDefaultLoadout(target: Player): void {
+  target.setAbility(0, structuredClone(PRESETS['Kinetic Railgun']));
+  target.setAbility(1, structuredClone(PRESETS['Graviton Boomerang']));
+  target.setAbility(2, structuredClone(PRESETS['Cryo Ice Trail']));
+  target.setAbility(3, structuredClone(PRESETS['Phase Nova']));
+}
+
 function applyDraftSelection(target: Player, selection: DraftSelection): void {
   const { card, slot } = selection;
 
@@ -73,12 +84,12 @@ function applyDraftSelection(target: Player, selection: DraftSelection): void {
 
   if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
     const ability = structuredClone(card.abilityPayload);
-    if (slot === 'PRIMARY') {
-      target.primaryAbility = ability;
-      target.primaryCooldownTimerMs = 0;
-    } else if (slot === 'SECONDARY') {
-      target.secondaryAbility = ability;
-      target.secondaryCooldownTimerMs = 0;
+    const slotIndex = ACTION_SLOT_INDEX[slot as keyof typeof ACTION_SLOT_INDEX];
+    if (slotIndex !== undefined) {
+      target.setAbility(slotIndex, ability);
+      if (target === player) {
+        spellLibrary.addSpell(ability);
+      }
     }
   }
 }
@@ -109,26 +120,15 @@ function respawnCombatants(): void {
   }
 }
 
-function tryCastPrimary(caster: Player): void {
-  const ability = caster.primaryAbility;
-  if (!ability || caster.primaryCooldownTimerMs > 0) return;
+function tryCastSlot(caster: Player, slotIndex: number): void {
+  const ability = caster.getAbility(slotIndex);
+  if (!ability || !caster.isSlotReady(slotIndex)) return;
 
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
 
   interpreter.executeAbility(ability, caster, aimDir, world);
-  caster.primaryCooldownTimerMs = caster.getEffectiveCooldown(ability.cooldownMs);
-}
-
-function tryCastSecondary(caster: Player): void {
-  const ability = caster.secondaryAbility;
-  if (!ability || caster.secondaryCooldownTimerMs > 0) return;
-
-  const aimDir = caster.aimTarget.sub(caster.pos);
-  if (aimDir.magSq() < 0.01) return;
-
-  interpreter.executeAbility(ability, caster, aimDir, world);
-  caster.secondaryCooldownTimerMs = caster.getEffectiveCooldown(ability.cooldownMs);
+  caster.triggerSlotCooldown(slotIndex);
 }
 
 function applySpatialFields(dt: number): void {
@@ -221,8 +221,11 @@ function applyPlayerInput(): void {
   const move = new Vector2D(mx, my);
   player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
 
-  if (player.primaryCast) tryCastPrimary(player);
-  if (player.secondaryCast) tryCastSecondary(player);
+  for (let i = 0; i < 4; i++) {
+    if (player.slotCastFlags[i]) {
+      tryCastSlot(player, i);
+    }
+  }
 }
 
 function syncArenaRadius(dt: number): void {
@@ -293,10 +296,8 @@ function init(): void {
   renderer = new CanvasRenderer(ctx);
   interpreter.setParticleSystem(particles);
 
-  player.primaryAbility = structuredClone(PRESETS['Kinetic Railgun']);
-  player.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
-  bot.primaryAbility = structuredClone(PRESETS['Kinetic Railgun']);
-  bot.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
+  assignDefaultLoadout(player);
+  assignDefaultLoadout(bot);
 
   arenaShrink = new ArenaShrink(hexRadius);
   arenaShrink.enabled = false;
@@ -319,10 +320,24 @@ function init(): void {
   matchManager.onStateChange = (_state: MatchState) => handleMatchStateChange();
   matchManager.onModeChange = (mode: GameMode) => handleModeChange(mode);
 
+  spellLibrary = new SpellLibrary({
+    onAssign: (slotIndex, schema) => {
+      player.setAbility(slotIndex, structuredClone(schema));
+    },
+  });
+
+  actionBarHUD = new ActionBarHUD({
+    onSlotAssign: (slotIndex, schema) => {
+      player.setAbility(slotIndex, structuredClone(schema));
+    },
+    onEmptySlotClick: (slotIndex) => {
+      spellLibrary.openForSlot(slotIndex);
+    },
+  });
+
   draftModal = new DraftModal({
     getLoadout: () => ({
-      primaryAbility: player.primaryAbility,
-      secondaryAbility: player.secondaryAbility,
+      abilities: [...player.abilities],
       passives: player.passives,
     }),
     onEquip: handleEquip,
@@ -365,7 +380,6 @@ function init(): void {
     },
   );
 
-  // Position combatants for sandbox start
   matchManager.respawnAllCombatants(
     player,
     bot,
@@ -388,11 +402,17 @@ function init(): void {
     }
 
     keys.add(e.key.toLowerCase());
+
+    if (!canCombatInput()) return;
+
+    if (e.code === 'KeyQ') tryCastSlot(player, 0);
+    if (e.code === 'KeyW') tryCastSlot(player, 1);
+    if (e.code === 'KeyE') tryCastSlot(player, 2);
+    if (e.code === 'KeyR') tryCastSlot(player, 3);
+
     if (e.key === ' ') {
       e.preventDefault();
-      if (canCombatInput()) {
-        player.primaryCast = true;
-      }
+      player.slotCastFlags[0] = true;
     }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -405,8 +425,8 @@ function init(): void {
 
   canvas.addEventListener('mousedown', (e) => {
     if (!canCombatInput()) return;
-    if (e.button === 0) player.primaryCast = true;
-    if (e.button === 2) player.secondaryCast = true;
+    if (e.button === 0) player.slotCastFlags[0] = true;
+    if (e.button === 2) player.slotCastFlags[3] = true;
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -431,7 +451,6 @@ function init(): void {
         return;
       }
 
-      // MATCH mode state gating
       const state = matchManager.state;
       if (state === 'LOBBY' || state === 'MATCH_OVER' || state === 'INTERMISSION_DRAFT') {
         world.hexRadius = arenaShrink.initialRadius;
@@ -459,6 +478,7 @@ function init(): void {
         arenaShrink.isShrinking,
       );
       inspector.updateTelemetry();
+      actionBarHUD.update(player);
     },
   });
 

@@ -17,6 +17,7 @@ import {
   type AiSettings,
 } from '../ai/Synthesizer';
 import { PRESETS, PRESET_NAMES } from './Presets';
+import { ACTION_SLOT_KEYS } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 
 export interface InspectorContext {
@@ -192,21 +193,28 @@ export class InspectorUI {
       select.appendChild(opt);
     }
 
-    const loadBtn = document.createElement('button');
-    loadBtn.textContent = 'Load Preset';
-    loadBtn.style.cssText = this.buttonStyle(false);
-    loadBtn.onclick = () => {
-      const preset = PRESETS[select.value];
-      if (preset) {
-        this.ctx.player.primaryAbility = structuredClone(preset);
-        if (this.jsonTextarea) {
-          this.jsonTextarea.value = JSON.stringify(preset, null, 2);
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+
+    for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
+      const key = ACTION_SLOT_KEYS[i];
+      const loadBtn = document.createElement('button');
+      loadBtn.textContent = `Load to ${key}`;
+      loadBtn.style.cssText = this.buttonStyle(false) + 'flex:1;min-width:70px;';
+      loadBtn.onclick = () => {
+        const preset = PRESETS[select.value];
+        if (preset) {
+          this.ctx.player.setAbility(i, structuredClone(preset));
+          if (this.jsonTextarea) {
+            this.jsonTextarea.value = JSON.stringify(preset, null, 2);
+          }
         }
-      }
-    };
+      };
+      btnRow.appendChild(loadBtn);
+    }
 
     parent.appendChild(select);
-    parent.appendChild(loadBtn);
+    parent.appendChild(btnRow);
   }
 
   private buildJsonTab(parent: HTMLElement): void {
@@ -228,8 +236,18 @@ export class InspectorUI {
       resize: vertical;
       box-sizing: border-box;
     `;
-    if (this.ctx.player.primaryAbility) {
-      this.jsonTextarea.value = JSON.stringify(this.ctx.player.primaryAbility, null, 2);
+    if (this.ctx.player.getAbility(0)) {
+      this.jsonTextarea.value = JSON.stringify(this.ctx.player.getAbility(0), null, 2);
+    }
+
+    const slotSelect = document.createElement('select');
+    slotSelect.style.cssText =
+      'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
+    for (const key of ACTION_SLOT_KEYS) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `Target Slot: ${key}`;
+      slotSelect.appendChild(opt);
     }
 
     const applyBtn = document.createElement('button');
@@ -243,7 +261,10 @@ export class InspectorUI {
           this.showError('Invalid ability schema structure.');
           return;
         }
-        this.ctx.player.primaryAbility = validated;
+        const slotIndex = ACTION_SLOT_KEYS.indexOf(slotSelect.value as (typeof ACTION_SLOT_KEYS)[number]);
+        if (slotIndex >= 0) {
+          this.ctx.player.setAbility(slotIndex, validated);
+        }
         this.showError('');
       } catch {
         this.showError('Invalid JSON syntax.');
@@ -251,6 +272,7 @@ export class InspectorUI {
     };
 
     parent.appendChild(this.errorBanner);
+    parent.appendChild(slotSelect);
     parent.appendChild(this.jsonTextarea);
     parent.appendChild(applyBtn);
   }
@@ -322,8 +344,7 @@ export class InspectorUI {
       saveSettings();
       const p = this.ctx.player;
       const cards = await synthesizeCards('test kinetic vortex', {
-        primaryAbility: p.primaryAbility,
-        secondaryAbility: p.secondaryAbility,
+        abilities: [...p.abilities],
         passives: p.passives,
       });
       alert(`Synthesized ${cards.length} cards: ${cards.map((c) => c.title).join(', ')}`);
@@ -537,14 +558,22 @@ export class InspectorUI {
          <div>Score: ${mm.playerWins} — ${mm.botWins}</div>
          <div>Round: ${mm.roundNumber}</div>`
       : '';
+    const slotLines = ACTION_SLOT_KEYS.map((key, i) => {
+      const ability = p.getAbility(i);
+      const name = ability?.name ?? 'Empty';
+      const remaining = p.getSlotCooldownRemainingMs(i);
+      const status = remaining > 0
+        ? `${(remaining / 1000).toFixed(1)}s`
+        : ability ? 'Ready' : '—';
+      return `<div>${key}: ${name} (${status})</div>`;
+    }).join('');
     this.telemetryEl.innerHTML = `
       ${matchInfo}
       <div>FPS: ${this.fps}</div>
       <div>Entities: ${w.getEntityCount()}</div>
       <div>Zones: ${w.zones.filter((z) => !z.isDead).length}</div>
       <div>Velocity: ${p.vel.mag().toFixed(1)} px/s</div>
-      <div>Primary: ${p.primaryAbility?.name ?? 'none'}</div>
-      <div>Secondary: ${p.secondaryAbility?.name ?? 'none'}</div>
+      ${slotLines}
       <div>Passives: ${p.passives.length}</div>
     `;
   }

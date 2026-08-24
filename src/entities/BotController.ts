@@ -7,7 +7,7 @@ import {
 } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import type { Interpreter } from '../primitives/Interpreter';
-import type { DraftCard, DraftSelection } from '../types/cards';
+import { ACTION_SLOT_KEYS, type DraftCard, type DraftSelection } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
 import type { Player } from './Player';
 
@@ -19,6 +19,8 @@ const KITE_DIST = 180;
 const EDGE_REPEL_DIST = 120;
 const DODGE_RADIUS = 200;
 const AIM_TOLERANCE_DEG = 15;
+const OFFENSIVE_SLOTS = [0, 1, 2];
+const DEFENSIVE_SLOT = 3;
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
@@ -36,6 +38,16 @@ function hasImpulseAction(ability: AbilitySchema | null | undefined): boolean {
   for (const node of ability.triggers) {
     for (const action of node.actions) {
       if (action.type === 'APPLY_IMPULSE') return true;
+    }
+  }
+  return false;
+}
+
+function hasTeleportAction(ability: AbilitySchema | null | undefined): boolean {
+  if (!ability) return false;
+  for (const node of ability.triggers) {
+    for (const action of node.actions) {
+      if (action.type === 'TELEPORT') return true;
     }
   }
   return false;
@@ -113,7 +125,7 @@ export class BotController {
       this.bot.inputMove = Vector2D.zero();
     }
 
-    const projSpeed = this.bot.primaryAbility?.trajectory?.speed ?? 400;
+    const projSpeed = this.bot.getAbility(0)?.trajectory?.speed ?? 400;
     const tFlight = dist / projSpeed;
     const intercept = target.pos.add(target.vel.scale(tFlight));
     this.bot.aimTarget = intercept;
@@ -126,25 +138,29 @@ export class BotController {
       intercept.y - this.bot.pos.y,
       intercept.x - this.bot.pos.x,
     );
-    if (
-      angleDiff(this.bot.facingAngle, aimAngle) < (AIM_TOLERANCE_DEG * Math.PI) / 180 &&
-      this.bot.primaryCooldownTimerMs <= 0
-    ) {
-      this.tryCastPrimary(this.bot, target, interpreter, world);
-    }
 
     const outsideHex = !isInsideHex(
       this.bot.pos,
       world.hexCenter,
       arena.currentRadius,
     );
+
     if (
       (this.bot.instabilityPct > 80 ||
         this.bot.tags.has('in_lava') ||
         outsideHex) &&
-      this.bot.secondaryCooldownTimerMs <= 0
+      this.bot.isSlotReady(DEFENSIVE_SLOT)
     ) {
-      this.tryCastSecondary(this.bot, interpreter, world);
+      this.tryCastSlot(this.bot, DEFENSIVE_SLOT, interpreter, world);
+    } else if (
+      angleDiff(this.bot.facingAngle, aimAngle) < (AIM_TOLERANCE_DEG * Math.PI) / 180
+    ) {
+      for (const slotIndex of OFFENSIVE_SLOTS) {
+        if (this.bot.isSlotReady(slotIndex)) {
+          this.tryCastSlot(this.bot, slotIndex, interpreter, world);
+          break;
+        }
+      }
     }
   }
 
@@ -173,43 +189,51 @@ export class BotController {
     }
 
     let slot: DraftSelection['slot'] = 'PASSIVE';
-    if (best.type === 'ACTIVE_ABILITY') {
-      const secCd = this.bot.secondaryAbility?.cooldownMs ?? Infinity;
-      const priCd = this.bot.primaryAbility?.cooldownMs ?? 0;
-      slot = secCd >= priCd ? 'SECONDARY' : 'PRIMARY';
+    if (best.type === 'ACTIVE_ABILITY' && best.abilityPayload) {
+      const ability = best.abilityPayload;
+      const isMobility =
+        ability.recoilKick >= 200 ||
+        hasImpulseAction(ability) ||
+        hasTeleportAction(ability);
+
+      if (isMobility) {
+        slot = 'R';
+      } else {
+        let targetSlot = 0;
+        let bestCd = -1;
+        for (const i of OFFENSIVE_SLOTS) {
+          const existing = this.bot.getAbility(i);
+          const cd = existing?.cooldownMs ?? 0;
+          if (existing === null) {
+            targetSlot = i;
+            bestCd = Infinity;
+            break;
+          }
+          if (cd > bestCd) {
+            bestCd = cd;
+            targetSlot = i;
+          }
+        }
+        slot = (['Q', 'W', 'E'] as const)[targetSlot];
+      }
     }
 
     return { card: best, slot };
   }
 
-  private tryCastPrimary(
+  private tryCastSlot(
     bot: Player,
-    target: Player,
+    slotIndex: number,
     interpreter: Interpreter,
     world: PhysicsWorld,
   ): void {
-    const ability = bot.primaryAbility;
-    if (!ability || bot.primaryCooldownTimerMs > 0) return;
+    const ability = bot.getAbility(slotIndex);
+    if (!ability || !bot.isSlotReady(slotIndex)) return;
 
     const aimDir = bot.aimTarget.sub(bot.pos);
     if (aimDir.magSq() < 0.01) return;
 
     interpreter.executeAbility(ability, bot, aimDir, world);
-    bot.primaryCooldownTimerMs = bot.getEffectiveCooldown(ability.cooldownMs);
-  }
-
-  private tryCastSecondary(
-    bot: Player,
-    interpreter: Interpreter,
-    world: PhysicsWorld,
-  ): void {
-    const ability = bot.secondaryAbility;
-    if (!ability || bot.secondaryCooldownTimerMs > 0) return;
-
-    const aimDir = bot.aimTarget.sub(bot.pos);
-    if (aimDir.magSq() < 0.01) return;
-
-    interpreter.executeAbility(ability, bot, aimDir, world);
-    bot.secondaryCooldownTimerMs = bot.getEffectiveCooldown(ability.cooldownMs);
+    bot.triggerSlotCooldown(slotIndex);
   }
 }
