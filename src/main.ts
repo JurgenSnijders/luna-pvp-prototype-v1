@@ -7,7 +7,7 @@ import { PhysicsWorld } from './engine/PhysicsWorld';
 import { BotController } from './entities/BotController';
 import { Player } from './entities/Player';
 import { ArenaShrink } from './game/ArenaShrink';
-import { MatchManager, type MatchState } from './game/MatchManager';
+import { MatchManager, type GameMode, type MatchState } from './game/MatchManager';
 import { applyField } from './primitives/Fields';
 import { Interpreter } from './primitives/Interpreter';
 import { Vector2D } from './math/Vector2D';
@@ -34,6 +34,8 @@ let botController: BotController;
 let matchHUD: MatchHUD;
 let intermissionHandled = false;
 let isIntermissionDraft = false;
+
+const keys = new Set<string>();
 
 const debugOptions: DebugOptions = {
   showVectors: false,
@@ -87,6 +89,26 @@ function resetArena(): void {
   world.dummies = [];
 }
 
+function respawnCombatants(): void {
+  matchManager.respawnAllCombatants(
+    player,
+    bot,
+    world,
+    arenaShrink,
+    getHexCenter(),
+  );
+  for (const dummy of world.dummies) {
+    if (dummy.isDead) continue;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * arenaShrink.initialRadius * 0.5;
+    const pos = getHexCenter().add(Vector2D.fromAngle(angle, dist));
+    dummy.pos = pos.clone();
+    dummy.prevPos = pos.clone();
+    dummy.vel = Vector2D.zero();
+    dummy.instabilityPct = 0;
+  }
+}
+
 function tryCastPrimary(caster: Player): void {
   const ability = caster.primaryAbility;
   if (!ability || caster.primaryCooldownTimerMs > 0) return;
@@ -125,9 +147,21 @@ function applySpatialFields(dt: number): void {
   }
 }
 
+function canDraftOpen(): boolean {
+  return (
+    matchManager.mode === 'SANDBOX' || matchManager.state === 'LOBBY'
+  );
+}
+
+function canCombatInput(): boolean {
+  if (draftModal.isOpen()) return false;
+  if (matchManager.mode === 'SANDBOX') return true;
+  return matchManager.state === 'ROUND_ACTIVE';
+}
+
 function handleEquip(selection: DraftSelection): void {
   applyDraftSelection(player, selection);
-  if (isIntermissionDraft) {
+  if (isIntermissionDraft && matchManager.mode === 'MATCH') {
     matchManager.completeIntermission(player, bot, world, arenaShrink, getHexCenter());
     isIntermissionDraft = false;
   }
@@ -145,6 +179,8 @@ function handleIntermissionDraft(): void {
 }
 
 function handleMatchStateChange(): void {
+  if (matchManager.mode !== 'MATCH') return;
+
   const s = matchManager.state;
   if (s === 'INTERMISSION_DRAFT') {
     handleIntermissionDraft();
@@ -155,6 +191,72 @@ function handleMatchStateChange(): void {
   if (s === 'ROUND_ACTIVE') {
     matchManager.resetRoundEntities(player, bot, world, arenaShrink, getHexCenter());
   }
+}
+
+function handleModeChange(mode: GameMode): void {
+  intermissionHandled = false;
+  isIntermissionDraft = false;
+
+  if (draftModal.isOpen()) {
+    draftModal.close();
+  }
+
+  if (mode === 'SANDBOX') {
+    arenaShrink.enabled = false;
+    arenaShrink.reset();
+    loop.setPaused(false);
+  } else {
+    arenaShrink.enabled = true;
+    arenaShrink.reset();
+  }
+}
+
+function applyPlayerInput(): void {
+  let mx = 0;
+  let my = 0;
+  if (keys.has('w')) my -= 1;
+  if (keys.has('s')) my += 1;
+  if (keys.has('a')) mx -= 1;
+  if (keys.has('d')) mx += 1;
+  const move = new Vector2D(mx, my);
+  player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
+
+  if (player.primaryCast) tryCastPrimary(player);
+  if (player.secondaryCast) tryCastSecondary(player);
+}
+
+function syncArenaRadius(dt: number): void {
+  if (arenaShrink.enabled) {
+    arenaShrink.update(dt);
+    world.hexRadius = arenaShrink.currentRadius;
+  } else {
+    world.hexRadius = arenaShrink.initialRadius;
+  }
+}
+
+function runSimulationStep(dt: number): void {
+  syncArenaRadius(dt);
+  applyPlayerInput();
+
+  if (botController.enabled) {
+    botController.update(dt, player, world, arenaShrink, interpreter);
+  }
+
+  interpreter.updateTrajectories(world, dt);
+  applySpatialFields(dt);
+  world.step(dt);
+  interpreter.processLifecycleEvents(world);
+  matchManager.checkRoundEliminations(
+    player,
+    bot,
+    world,
+    arenaShrink,
+    getHexCenter(),
+  );
+  particles.update(dt);
+
+  player.clearCastInputs();
+  bot.clearCastInputs();
 }
 
 function init(): void {
@@ -180,21 +282,25 @@ function init(): void {
   bot.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
 
   arenaShrink = new ArenaShrink(hexRadius);
+  arenaShrink.enabled = false;
   matchManager = new MatchManager();
   botController = new BotController(bot);
 
   matchHUD = new MatchHUD({
     onStartMatch: () => {
+      if (matchManager.mode !== 'MATCH') return;
       arenaShrink.resize(getHexRadius());
       matchManager.startMatch();
     },
     onPlayAgain: () => {
+      if (matchManager.mode !== 'MATCH') return;
       arenaShrink.resize(getHexRadius());
       matchManager.startMatch();
     },
   });
 
   matchManager.onStateChange = (_state: MatchState) => handleMatchStateChange();
+  matchManager.onModeChange = (mode: GameMode) => handleModeChange(mode);
 
   draftModal = new DraftModal({
     getLoadout: () => ({
@@ -204,7 +310,10 @@ function init(): void {
     }),
     onEquip: handleEquip,
     onOpenChange: (open) => {
-      if (matchManager.state === 'LOBBY' && !isIntermissionDraft) {
+      if (
+        matchManager.mode === 'SANDBOX' ||
+        (matchManager.state === 'LOBBY' && !isIntermissionDraft)
+      ) {
         loop.setPaused(open);
       }
     },
@@ -225,21 +334,31 @@ function init(): void {
       },
       onReset: resetArena,
       openDraftModal: () => {
-        if (matchManager.state === 'LOBBY') draftModal.open();
+        if (canDraftOpen()) draftModal.open();
       },
       matchManager,
       botController,
+      arenaShrink,
       onRestartMatch: () => {
+        if (matchManager.mode !== 'MATCH') return;
         arenaShrink.resize(getHexRadius());
         matchManager.startMatch();
       },
+      onRespawnCombatants: respawnCombatants,
     },
   );
 
-  const keys = new Set<string>();
+  // Position combatants for sandbox start
+  matchManager.respawnAllCombatants(
+    player,
+    bot,
+    world,
+    arenaShrink,
+    getHexCenter(),
+  );
 
   window.addEventListener('keydown', (e) => {
-    if (matchManager.state === 'LOBBY') {
+    if (canDraftOpen()) {
       if (e.key === 'Tab') {
         e.preventDefault();
         draftModal.toggle();
@@ -254,10 +373,7 @@ function init(): void {
     keys.add(e.key.toLowerCase());
     if (e.key === ' ') {
       e.preventDefault();
-      if (
-        matchManager.state === 'ROUND_ACTIVE' &&
-        !draftModal.isOpen()
-      ) {
+      if (canCombatInput()) {
         player.primaryCast = true;
       }
     }
@@ -265,13 +381,13 @@ function init(): void {
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
   window.addEventListener('mousemove', (e) => {
-    if (matchManager.state === 'ROUND_ACTIVE') {
+    if (matchManager.mode === 'SANDBOX' || matchManager.state === 'ROUND_ACTIVE') {
       player.aimTarget = new Vector2D(e.clientX, e.clientY);
     }
   });
 
   canvas.addEventListener('mousedown', (e) => {
-    if (draftModal.isOpen() || matchManager.state !== 'ROUND_ACTIVE') return;
+    if (!canCombatInput()) return;
     if (e.button === 0) player.primaryCast = true;
     if (e.button === 2) player.secondaryCast = true;
   });
@@ -279,59 +395,39 @@ function init(): void {
 
   loop = new Loop({
     onUpdate(dt) {
-      matchManager.update(dt);
+      if (matchManager.mode === 'MATCH') {
+        matchManager.update(dt);
+      }
+
       matchHUD.update(
         matchManager.state,
         matchManager.getSnapshot(),
         matchManager.stateTimer,
+        matchManager.mode,
       );
 
       world.hexCenter = getHexCenter();
 
+      if (matchManager.mode === 'SANDBOX') {
+        if (draftModal.isOpen()) return;
+        runSimulationStep(dt);
+        return;
+      }
+
+      // MATCH mode state gating
       const state = matchManager.state;
       if (state === 'LOBBY' || state === 'MATCH_OVER' || state === 'INTERMISSION_DRAFT') {
         world.hexRadius = arenaShrink.initialRadius;
         return;
       }
-      if (draftModal.isOpen() && matchManager.state === 'LOBBY') return;
 
-      if (state === 'COUNTDOWN') {
-        world.hexRadius = arenaShrink.initialRadius;
-        return;
-      }
-
-      if (state === 'ROUND_OVER') {
+      if (state === 'COUNTDOWN' || state === 'ROUND_OVER') {
         world.hexRadius = arenaShrink.initialRadius;
         return;
       }
 
       if (state === 'ROUND_ACTIVE') {
-        arenaShrink.update(dt);
-        world.hexRadius = arenaShrink.currentRadius;
-
-        let mx = 0;
-        let my = 0;
-        if (keys.has('w')) my -= 1;
-        if (keys.has('s')) my += 1;
-        if (keys.has('a')) mx -= 1;
-        if (keys.has('d')) mx += 1;
-        const move = new Vector2D(mx, my);
-        player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
-
-        if (player.primaryCast) tryCastPrimary(player);
-        if (player.secondaryCast) tryCastSecondary(player);
-
-        botController.update(dt, player, world, arenaShrink, interpreter);
-
-        interpreter.updateTrajectories(world, dt);
-        applySpatialFields(dt);
-        world.step(dt);
-        interpreter.processLifecycleEvents(world);
-        matchManager.checkRoundEliminations(player, bot);
-        particles.update(dt);
-
-        player.clearCastInputs();
-        bot.clearCastInputs();
+        runSimulationStep(dt);
       }
     },
     onRender(alpha) {

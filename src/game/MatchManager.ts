@@ -3,6 +3,8 @@ import type { Player } from '../entities/Player';
 import type { ArenaShrink } from './ArenaShrink';
 import { Vector2D } from '../math/Vector2D';
 
+export type GameMode = 'MATCH' | 'SANDBOX';
+
 export type MatchState =
   | 'LOBBY'
   | 'COUNTDOWN'
@@ -25,6 +27,7 @@ const COUNTDOWN_DURATION = 3.0;
 const ROUND_OVER_DURATION = 1.5;
 
 export class MatchManager {
+  mode: GameMode = 'SANDBOX';
   state: MatchState = 'LOBBY';
   playerWins = 0;
   botWins = 0;
@@ -33,6 +36,7 @@ export class MatchManager {
   stateTimer = 0;
   lastRoundWinner: RoundWinner | null = null;
   onStateChange?: (state: MatchState) => void;
+  onModeChange?: (mode: GameMode) => void;
 
   getSnapshot(): MatchSnapshot {
     return {
@@ -44,7 +48,24 @@ export class MatchManager {
     };
   }
 
+  setMode(mode: GameMode): void {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    this.stateTimer = 0;
+
+    if (mode === 'MATCH') {
+      this.playerWins = 0;
+      this.botWins = 0;
+      this.roundNumber = 1;
+      this.lastRoundWinner = null;
+      this.transitionTo('LOBBY', 0);
+    }
+
+    this.onModeChange?.(mode);
+  }
+
   startMatch(): void {
+    if (this.mode !== 'MATCH') return;
     this.playerWins = 0;
     this.botWins = 0;
     this.roundNumber = 1;
@@ -53,6 +74,8 @@ export class MatchManager {
   }
 
   update(dt: number): void {
+    if (this.mode !== 'MATCH') return;
+
     if (this.state === 'COUNTDOWN' || this.state === 'ROUND_OVER') {
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
@@ -69,7 +92,30 @@ export class MatchManager {
     }
   }
 
-  checkRoundEliminations(player: Player, bot: Player): void {
+  checkRoundEliminations(
+    player: Player,
+    bot: Player,
+    world: PhysicsWorld,
+    arena: ArenaShrink,
+    hexCenter: Vector2D,
+  ): void {
+    if (this.mode === 'SANDBOX') {
+      if (player.isDead) {
+        player.resetCombatState();
+        player.resetPosition(
+          hexCenter.add(new Vector2D(-arena.initialRadius * 0.4, 0)),
+        );
+      }
+      if (bot.isDead) {
+        bot.resetCombatState();
+        bot.resetPosition(
+          hexCenter.add(new Vector2D(arena.initialRadius * 0.4, 0)),
+        );
+      }
+      world.dummies = world.dummies.filter((d) => !d.isDead);
+      return;
+    }
+
     if (this.state !== 'ROUND_ACTIVE') return;
 
     if (player.isDead && bot.isDead) {
@@ -87,6 +133,7 @@ export class MatchManager {
   }
 
   forceRoundResult(winner: 'player' | 'bot'): void {
+    if (this.mode !== 'MATCH') return;
     if (this.state !== 'ROUND_ACTIVE' && this.state !== 'COUNTDOWN') return;
     if (winner === 'player') {
       this.playerWins++;
@@ -105,10 +152,31 @@ export class MatchManager {
     arena: ArenaShrink,
     hexCenter: Vector2D,
   ): void {
+    if (this.mode !== 'MATCH') return;
     if (this.state !== 'INTERMISSION_DRAFT') return;
     this.roundNumber++;
     this.resetRoundEntities(player, bot, world, arena, hexCenter);
     this.transitionTo('COUNTDOWN', COUNTDOWN_DURATION);
+  }
+
+  respawnAllCombatants(
+    player: Player,
+    bot: Player,
+    world: PhysicsWorld,
+    arena: ArenaShrink,
+    hexCenter: Vector2D,
+  ): void {
+    const offset = this.mode === 'SANDBOX' ? 0.4 : 0.5;
+    const playerSpawn = hexCenter.add(new Vector2D(-arena.initialRadius * offset, 0));
+    const botSpawn = hexCenter.add(new Vector2D(arena.initialRadius * offset, 0));
+
+    player.resetCombatState();
+    player.resetPosition(playerSpawn);
+    bot.resetCombatState();
+    bot.resetPosition(botSpawn);
+
+    this.ensurePlayerInWorld(world, player);
+    this.ensurePlayerInWorld(world, bot);
   }
 
   resetRoundEntities(

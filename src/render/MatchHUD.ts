@@ -1,4 +1,4 @@
-import type { MatchSnapshot, MatchState } from '../game/MatchManager';
+import type { GameMode, MatchSnapshot, MatchState } from '../game/MatchManager';
 
 export interface MatchHUDCallbacks {
   onStartMatch: () => void;
@@ -7,6 +7,7 @@ export interface MatchHUDCallbacks {
 
 export class MatchHUD {
   private root: HTMLElement;
+  private header: HTMLElement;
   private roundLabel: HTMLElement;
   private playerPips: HTMLElement;
   private botPips: HTMLElement;
@@ -17,6 +18,7 @@ export class MatchHUD {
   private matchOverTitle: HTMLElement;
   private matchOverScore: HTMLElement;
   private playAgainBtn: HTMLButtonElement;
+  private sandboxBadge: HTMLElement;
 
   constructor(private callbacks: MatchHUDCallbacks) {
     this.root = document.createElement('div');
@@ -25,8 +27,8 @@ export class MatchHUD {
       pointer-events: none; font-family: system-ui, sans-serif;
     `;
 
-    const header = document.createElement('div');
-    header.style.cssText = `
+    this.header = document.createElement('div');
+    this.header.style.cssText = `
       position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
       display: flex; flex-direction: column; align-items: center; gap: 8px;
       padding: 12px 24px; border-radius: 12px;
@@ -51,9 +53,23 @@ export class MatchHUD {
     pipRow.appendChild(vs);
     pipRow.appendChild(this.botPips);
 
-    header.appendChild(this.roundLabel);
-    header.appendChild(pipRow);
-    this.root.appendChild(header);
+    this.header.appendChild(this.roundLabel);
+    this.header.appendChild(pipRow);
+    this.root.appendChild(this.header);
+
+    this.sandboxBadge = document.createElement('div');
+    this.sandboxBadge.textContent =
+      'SANDBOX MODE — Press [Tab] or [B] to Synthesize / Draft';
+    this.sandboxBadge.style.cssText = `
+      position: absolute; top: 16px; left: 16px;
+      padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      letter-spacing: 0.04em; color: #a8e6ff;
+      background: rgba(10, 10, 20, 0.7); backdrop-filter: blur(10px);
+      border: 1px solid rgba(0, 200, 255, 0.35);
+      box-shadow: 0 0 16px rgba(0, 200, 255, 0.15);
+      display: none;
+    `;
+    this.root.appendChild(this.sandboxBadge);
 
     this.countdownBanner = document.createElement('div');
     this.countdownBanner.style.cssText = `
@@ -155,7 +171,25 @@ export class MatchHUD {
     });
   }
 
-  update(state: MatchState, snapshot: MatchSnapshot, stateTimer: number): void {
+  update(
+    state: MatchState,
+    snapshot: MatchSnapshot,
+    stateTimer: number,
+    mode: GameMode,
+  ): void {
+    if (mode === 'SANDBOX') {
+      this.header.style.display = 'none';
+      this.lobbyBtn.style.display = 'none';
+      this.matchOverModal.style.display = 'none';
+      this.countdownBanner.style.opacity = '0';
+      this.roundToast.style.opacity = '0';
+      this.sandboxBadge.style.display = 'block';
+      return;
+    }
+
+    this.sandboxBadge.style.display = 'none';
+    this.header.style.display = 'flex';
+
     this.roundLabel.textContent = `ROUND ${snapshot.roundNumber}`;
     this.fillPips(this.playerPips, snapshot.playerWins, '#00ccff');
     this.fillPips(this.botPips, snapshot.botWins, '#ff8844');

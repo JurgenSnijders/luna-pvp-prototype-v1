@@ -6,6 +6,7 @@ export class ArenaShrink {
   shrinkRate = 15;
   elapsedSec = 0;
   isShrinking = false;
+  enabled = true;
 
   constructor(initialRadius: number) {
     this.initialRadius = initialRadius;
@@ -14,6 +15,12 @@ export class ArenaShrink {
   }
 
   update(dt: number): void {
+    if (!this.enabled) {
+      this.isShrinking = false;
+      this.currentRadius = this.initialRadius;
+      return;
+    }
+
     this.elapsedSec += dt;
     if (this.elapsedSec > this.gracePeriodSec) {
       const shrinkElapsed = this.elapsedSec - this.gracePeriodSec;
