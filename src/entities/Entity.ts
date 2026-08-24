@@ -18,6 +18,7 @@ export class Entity {
   baseLinearDrag: number;
   isDead: boolean;
   instabilityPct: number;
+  knockbackResistance: number;
   tags: Set<string>;
 
   constructor(
@@ -42,6 +43,7 @@ export class Entity {
     this.baseLinearDrag = this.linearDrag;
     this.isDead = false;
     this.instabilityPct = options.instabilityPct ?? 0;
+    this.knockbackResistance = 0;
     this.tags = new Set(options.tags ?? []);
   }
 

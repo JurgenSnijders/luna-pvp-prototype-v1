@@ -5,6 +5,14 @@ import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import type { Interpreter } from '../primitives/Interpreter';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_MODEL,
+  getAiSettings,
+  setAiSettings,
+  synthesizeCards,
+  type AiSettings,
+} from '../ai/Synthesizer';
 import { PRESETS, PRESET_NAMES } from './Presets';
 import { validateAbilitySchema } from '../types/schema';
 
@@ -16,6 +24,7 @@ export interface InspectorContext {
   getDebugOptions: () => DebugOptions;
   setDebugOptions: (opts: DebugOptions) => void;
   onReset: () => void;
+  openDraftModal: () => void;
 }
 
 export class InspectorUI {
@@ -248,6 +257,73 @@ export class InspectorUI {
   }
 
   private buildHarnessTab(parent: HTMLElement): void {
+    const aiSection = document.createElement('div');
+    aiSection.style.cssText = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+    const aiTitle = document.createElement('div');
+    aiTitle.textContent = 'AI Synthesizer Settings';
+    aiTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+    aiSection.appendChild(aiTitle);
+
+    const settings = getAiSettings();
+
+    const apiKeyInput = document.createElement('input');
+    apiKeyInput.type = 'password';
+    apiKeyInput.placeholder = 'API Key';
+    apiKeyInput.value = settings.apiKey;
+    apiKeyInput.style.cssText = this.inputStyle();
+
+    const baseUrlInput = document.createElement('input');
+    baseUrlInput.type = 'text';
+    baseUrlInput.placeholder = 'Base URL';
+    baseUrlInput.value = settings.baseUrl || DEFAULT_BASE_URL;
+    baseUrlInput.style.cssText = this.inputStyle();
+
+    const modelInput = document.createElement('input');
+    modelInput.type = 'text';
+    modelInput.placeholder = 'Model';
+    modelInput.value = settings.model || DEFAULT_MODEL;
+    modelInput.style.cssText = this.inputStyle();
+
+    const saveSettings = (): void => {
+      const s: AiSettings = {
+        apiKey: apiKeyInput.value,
+        baseUrl: baseUrlInput.value || DEFAULT_BASE_URL,
+        model: modelInput.value || DEFAULT_MODEL,
+      };
+      setAiSettings(s);
+    };
+
+    apiKeyInput.onchange = saveSettings;
+    baseUrlInput.onchange = saveSettings;
+    modelInput.onchange = saveSettings;
+
+    aiSection.appendChild(apiKeyInput);
+    aiSection.appendChild(baseUrlInput);
+    aiSection.appendChild(modelInput);
+
+    const openDraftBtn = document.createElement('button');
+    openDraftBtn.textContent = 'Open Draft Synthesizer';
+    openDraftBtn.style.cssText = this.buttonStyle(true) + 'width:100%;margin-top:8px;margin-bottom:6px;';
+    openDraftBtn.onclick = () => this.ctx.openDraftModal();
+    aiSection.appendChild(openDraftBtn);
+
+    const testBtn = document.createElement('button');
+    testBtn.textContent = 'Test Synthesizer';
+    testBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
+    testBtn.onclick = async () => {
+      saveSettings();
+      const p = this.ctx.player;
+      const cards = await synthesizeCards('test kinetic vortex', {
+        primaryAbility: p.primaryAbility,
+        secondaryAbility: p.secondaryAbility,
+        passives: p.passives,
+      });
+      alert(`Synthesized ${cards.length} cards: ${cards.map((c) => c.title).join(', ')}`);
+    };
+    aiSection.appendChild(testBtn);
+
+    parent.appendChild(aiSection);
+
     const buttons: Array<{ label: string; action: () => void }> = [
       {
         label: 'Spawn Dummy',
@@ -295,6 +371,14 @@ export class InspectorUI {
     }
   }
 
+  private inputStyle(): string {
+    return `
+      width:100%;padding:8px;margin-bottom:6px;box-sizing:border-box;
+      background:#0a0a14;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px;font-size:12px;
+    `;
+  }
+
   private randomHexPosition(): Vector2D {
     const { world } = this.ctx;
     for (let i = 0; i < 50; i++) {
@@ -324,6 +408,9 @@ export class InspectorUI {
       <div>Entities: ${w.getEntityCount()}</div>
       <div>Zones: ${w.zones.filter((z) => !z.isDead).length}</div>
       <div>Velocity: ${p.vel.mag().toFixed(1)} px/s</div>
+      <div>Primary: ${p.primaryAbility?.name ?? 'none'}</div>
+      <div>Secondary: ${p.secondaryAbility?.name ?? 'none'}</div>
+      <div>Passives: ${p.passives.length}</div>
     `;
   }
 }

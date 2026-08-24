@@ -95,7 +95,8 @@ export class PhysicsWorld {
   applyKnockback(target: Entity, direction: Vector2D, baseForce: number): void {
     const dir = direction.magSq() > 0 ? direction.normalize() : Vector2D.zero();
     const instabilityScale = 1 + (target.instabilityPct / 100) * 1.5;
-    const impulse = dir.scale((baseForce / target.mass) * instabilityScale);
+    const resistance = Math.min(0.75, target.knockbackResistance ?? 0);
+    const impulse = dir.scale((baseForce / target.mass) * instabilityScale * (1 - resistance));
     target.vel = target.vel.add(impulse);
   }
 

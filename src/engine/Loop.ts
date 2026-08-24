@@ -11,6 +11,7 @@ export class Loop {
   private lastTime = 0;
   private accumulator = 0;
   private rafId = 0;
+  private paused = false;
 
   constructor(private callbacks: LoopCallbacks) {}
 
@@ -27,19 +28,35 @@ export class Loop {
     cancelAnimationFrame(this.rafId);
   }
 
+  setPaused(p: boolean): void {
+    if (this.paused && !p) {
+      this.lastTime = performance.now();
+      this.accumulator = 0;
+    }
+    this.paused = p;
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   private frame = (now: number): void => {
     if (!this.running) return;
 
-    const frameDt = Math.min((now - this.lastTime) / 1000, MAX_FRAME_DT);
-    this.lastTime = now;
-    this.accumulator += frameDt;
+    if (!this.paused) {
+      const frameDt = Math.min((now - this.lastTime) / 1000, MAX_FRAME_DT);
+      this.lastTime = now;
+      this.accumulator += frameDt;
 
-    while (this.accumulator >= FIXED_DT) {
-      this.callbacks.onUpdate(FIXED_DT);
-      this.accumulator -= FIXED_DT;
+      while (this.accumulator >= FIXED_DT) {
+        this.callbacks.onUpdate(FIXED_DT);
+        this.accumulator -= FIXED_DT;
+      }
+    } else {
+      this.lastTime = now;
     }
 
-    const alpha = this.accumulator / FIXED_DT;
+    const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
     this.callbacks.onRender(alpha);
     this.rafId = requestAnimationFrame(this.frame);
   };

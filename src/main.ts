@@ -1,5 +1,6 @@
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
+import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
 import { PhysicsWorld } from './engine/PhysicsWorld';
 import { Player } from './entities/Player';
@@ -8,6 +9,7 @@ import { Interpreter } from './primitives/Interpreter';
 import { Vector2D } from './math/Vector2D';
 import { CanvasRenderer, type DebugOptions } from './render/CanvasRenderer';
 import { ParticleSystem } from './render/ParticleSystem';
+import type { DraftSelection } from './types/cards';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -18,6 +20,8 @@ let interpreter: Interpreter;
 let particles: ParticleSystem;
 let renderer: CanvasRenderer;
 let inspector: InspectorUI;
+let draftModal: DraftModal;
+let loop: Loop;
 
 const debugOptions: DebugOptions = {
   showVectors: false,
@@ -52,14 +56,26 @@ function resetArena(): void {
   world.clearProjectilesAndZones();
 }
 
-function tryCast(ability: typeof player.primaryAbility): void {
-  if (!ability || player.cooldownTimerMs > 0) return;
+function tryCastPrimary(): void {
+  const ability = player.primaryAbility;
+  if (!ability || player.primaryCooldownTimerMs > 0) return;
 
   const aimDir = player.aimTarget.sub(player.pos);
   if (aimDir.magSq() < 0.01) return;
 
   interpreter.executeAbility(ability, player, aimDir, world);
-  player.cooldownTimerMs = ability.cooldownMs;
+  player.primaryCooldownTimerMs = player.getEffectiveCooldown(ability.cooldownMs);
+}
+
+function tryCastSecondary(): void {
+  const ability = player.secondaryAbility;
+  if (!ability || player.secondaryCooldownTimerMs > 0) return;
+
+  const aimDir = player.aimTarget.sub(player.pos);
+  if (aimDir.magSq() < 0.01) return;
+
+  interpreter.executeAbility(ability, player, aimDir, world);
+  player.secondaryCooldownTimerMs = player.getEffectiveCooldown(ability.cooldownMs);
 }
 
 function applySpatialFields(dt: number): void {
@@ -74,6 +90,28 @@ function applySpatialFields(dt: number): void {
     for (const entity of combatants) {
       if (entity.isDead) continue;
       applyField(zone, entity, dt, world);
+    }
+  }
+}
+
+function handleEquip(selection: DraftSelection): void {
+  const { card, slot } = selection;
+
+  if (slot === 'PASSIVE' && card.passivePayload) {
+    for (const mod of card.passivePayload) {
+      player.applyPassiveModifier(mod);
+    }
+    return;
+  }
+
+  if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
+    const ability = structuredClone(card.abilityPayload);
+    if (slot === 'PRIMARY') {
+      player.primaryAbility = ability;
+      player.primaryCooldownTimerMs = 0;
+    } else if (slot === 'SECONDARY') {
+      player.secondaryAbility = ability;
+      player.secondaryCooldownTimerMs = 0;
     }
   }
 }
@@ -95,6 +133,16 @@ function init(): void {
   player.primaryAbility = structuredClone(PRESETS['Kinetic Railgun']);
   player.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
 
+  draftModal = new DraftModal({
+    getLoadout: () => ({
+      primaryAbility: player.primaryAbility,
+      secondaryAbility: player.secondaryAbility,
+      passives: player.passives,
+    }),
+    onEquip: handleEquip,
+    onOpenChange: (open) => loop.setPaused(open),
+  });
+
   inspector = new InspectorUI(
     document.getElementById('inspector-root')!,
     {
@@ -109,16 +157,27 @@ function init(): void {
         debugOptions.showIds = opts.showIds;
       },
       onReset: resetArena,
+      openDraftModal: () => draftModal.open(),
     },
   );
 
   const keys = new Set<string>();
 
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      draftModal.toggle();
+      return;
+    }
+    if (e.key === 'b' || e.key === 'B') {
+      draftModal.toggle();
+      return;
+    }
+
     keys.add(e.key.toLowerCase());
     if (e.key === ' ') {
       e.preventDefault();
-      player.primaryCast = true;
+      if (!draftModal.isOpen()) player.primaryCast = true;
     }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -128,13 +187,16 @@ function init(): void {
   });
 
   canvas.addEventListener('mousedown', (e) => {
+    if (draftModal.isOpen()) return;
     if (e.button === 0) player.primaryCast = true;
     if (e.button === 2) player.secondaryCast = true;
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  const loop = new Loop({
+  loop = new Loop({
     onUpdate(dt) {
+      if (draftModal.isOpen()) return;
+
       world.hexCenter = getHexCenter();
       world.hexRadius = getHexRadius();
 
@@ -147,8 +209,8 @@ function init(): void {
       const move = new Vector2D(mx, my);
       player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
 
-      if (player.primaryCast) tryCast(player.primaryAbility);
-      if (player.secondaryCast) tryCast(player.secondaryAbility);
+      if (player.primaryCast) tryCastPrimary();
+      if (player.secondaryCast) tryCastSecondary();
 
       interpreter.updateTrajectories(world, dt);
       applySpatialFields(dt);
