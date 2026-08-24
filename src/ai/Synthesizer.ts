@@ -192,6 +192,765 @@ function loadoutSummary(loadout: PlayerLoadout): string {
 - Passives: ${loadout.passives.length}`;
 }
 
+function diagnoseDraftCardsValidation(val: unknown): string[] {
+  const reasons: string[] = [];
+
+  if (val === null || typeof val !== 'object') {
+    reasons.push('root:not_object');
+    return reasons;
+  }
+
+  let cards: unknown[] | null = null;
+  if (Array.isArray(val)) {
+    cards = val;
+    reasons.push(`root:top_level_array length=${val.length}`);
+  } else {
+    const root = val as Record<string, unknown>;
+    reasons.push(`root:keys=${Object.keys(root).join(',') || '(none)'}`);
+    if (Array.isArray(root.cards)) {
+      cards = root.cards;
+      reasons.push(`root:cards_array length=${root.cards.length}`);
+    } else {
+      reasons.push('root:missing_cards_array');
+      return reasons;
+    }
+  }
+
+  if (!cards) return reasons;
+  if (cards.length !== 3) reasons.push(`cards:expected_3 got_${cards.length}`);
+
+  const rarities = new Set(['COMMON', 'RARE', 'EPIC', 'CHAOTIC']);
+  const cardTypes = new Set(['ACTIVE_ABILITY', 'PASSIVE_UPGRADE']);
+
+  cards.forEach((raw, i) => {
+    if (raw === null || typeof raw !== 'object') {
+      reasons.push(`card[${i}]:not_object`);
+      return;
+    }
+    const c = raw as Record<string, unknown>;
+    if (typeof c.id !== 'string') reasons.push(`card[${i}]:missing_id`);
+    if (typeof c.title !== 'string') reasons.push(`card[${i}]:missing_title`);
+    if (typeof c.tagline !== 'string') reasons.push(`card[${i}]:missing_tagline`);
+    if (typeof c.description !== 'string') reasons.push(`card[${i}]:missing_description`);
+    if (typeof c.rarity !== 'string' || !rarities.has(c.rarity)) {
+      reasons.push(`card[${i}]:invalid_rarity=${String(c.rarity)}`);
+    }
+    if (typeof c.type !== 'string' || !cardTypes.has(c.type)) {
+      reasons.push(`card[${i}]:invalid_type=${String(c.type)}`);
+    }
+    if (typeof c.budgetCost !== 'number' || !Number.isFinite(c.budgetCost)) {
+      reasons.push(`card[${i}]:invalid_budgetCost=${String(c.budgetCost)}`);
+    }
+
+    if (c.type === 'ACTIVE_ABILITY') {
+      if (c.abilityPayload === undefined) {
+        reasons.push(`card[${i}]:missing_abilityPayload`);
+      } else if (!validateAbilitySchema(c.abilityPayload)) {
+        const payload = c.abilityPayload as Record<string, unknown>;
+        reasons.push(
+          `card[${i}]:abilityPayload_invalid keys=${Object.keys(payload ?? {}).join(',')}`,
+        );
+        if (typeof payload?.id !== 'string') reasons.push(`card[${i}]:ability_missing_id`);
+        if (typeof payload?.name !== 'string') reasons.push(`card[${i}]:ability_missing_name`);
+        if (!Array.isArray(payload?.triggers)) reasons.push(`card[${i}]:ability_missing_triggers`);
+        if (payload?.trajectory !== undefined) {
+          const traj = payload.trajectory as Record<string, unknown>;
+          reasons.push(`card[${i}]:trajectory_type=${String(traj?.type)}`);
+        }
+        reasons.push(...diagnoseAbilityPayload(c.abilityPayload, i));
+        reasons.push(...diagnoseAbilitySchemaSteps(c.abilityPayload, i));
+      }
+    }
+
+    if (c.type === 'PASSIVE_UPGRADE' && !Array.isArray(c.passivePayload)) {
+      reasons.push(`card[${i}]:missing_passivePayload`);
+    }
+  });
+
+  return reasons;
+}
+
+function diagnoseAbilityPayload(payload: unknown, cardIndex: number): string[] {
+  const reasons: string[] = [];
+  if (payload === null || typeof payload !== 'object') {
+    reasons.push(`card[${cardIndex}]:ability_not_object`);
+    return reasons;
+  }
+
+  const p = payload as Record<string, unknown>;
+  if (typeof p.cooldownMs === 'string') {
+    reasons.push(`card[${cardIndex}]:cooldownMs_is_string`);
+  } else if (typeof p.cooldownMs !== 'number') {
+    reasons.push(`card[${cardIndex}]:cooldownMs_type=${typeof p.cooldownMs}`);
+  }
+  if (typeof p.recoilKick === 'string') {
+    reasons.push(`card[${cardIndex}]:recoilKick_is_string`);
+  } else if (typeof p.recoilKick !== 'number') {
+    reasons.push(`card[${cardIndex}]:recoilKick_type=${typeof p.recoilKick}`);
+  }
+
+  if (
+    p.metadata !== undefined &&
+    (p.metadata === null || typeof p.metadata !== 'object' || Array.isArray(p.metadata))
+  ) {
+    reasons.push(`card[${cardIndex}]:metadata_invalid_type=${typeof p.metadata}`);
+  }
+
+  if (p.trajectory !== undefined && typeof p.trajectory === 'object' && p.trajectory !== null) {
+    const traj = p.trajectory as Record<string, unknown>;
+    for (const key of ['speed', 'maxRange', 'piercing', 'turnAccel']) {
+      if (typeof traj[key] === 'string') {
+        reasons.push(`card[${cardIndex}]:trajectory_${key}_is_string`);
+      }
+    }
+  }
+
+  if (!Array.isArray(p.triggers)) {
+    reasons.push(`card[${cardIndex}]:triggers_not_array`);
+    return reasons;
+  }
+
+  const validTriggers = new Set([
+    'ON_CAST', 'ON_TICK', 'ON_HIT', 'ON_EXPIRY', 'ON_RETURN', 'ON_HAZARD_CONTACT',
+  ]);
+  const validActions = new Set([
+    'ADD_INSTABILITY', 'APPLY_IMPULSE', 'SPAWN_FIELD', 'SPAWN_CHILD_PROJECTILE',
+    'MODIFY_STAT', 'TELEPORT',
+  ]);
+
+  p.triggers.forEach((raw, ti) => {
+    if (raw === null || typeof raw !== 'object') {
+      reasons.push(`card[${cardIndex}]:trigger[${ti}]:not_object`);
+      return;
+    }
+    const trig = raw as Record<string, unknown>;
+    const triggerVal = trig.trigger ?? trig.on;
+    if (typeof triggerVal !== 'string' || !validTriggers.has(triggerVal)) {
+      reasons.push(`card[${cardIndex}]:trigger[${ti}]:invalid=${String(triggerVal)}`);
+      if (trig.on !== undefined && trig.trigger === undefined) {
+        reasons.push(`card[${cardIndex}]:trigger[${ti}]:uses_on_key`);
+      }
+    }
+    if (!Array.isArray(trig.actions)) {
+      reasons.push(`card[${cardIndex}]:trigger[${ti}]:missing_actions`);
+      return;
+    }
+    trig.actions.forEach((rawAction, ai) => {
+      if (rawAction === null || typeof rawAction !== 'object') {
+        reasons.push(`card[${cardIndex}]:trigger[${ti}]:action[${ai}]:not_object`);
+        return;
+      }
+      const action = rawAction as Record<string, unknown>;
+      if (typeof action.type !== 'string' || !validActions.has(action.type)) {
+        reasons.push(`card[${cardIndex}]:trigger[${ti}]:action[${ai}]:invalid_type=${String(action.type)}`);
+      }
+      if (action.type === 'SPAWN_FIELD' && action.field && typeof action.field === 'object') {
+        const field = action.field as Record<string, unknown>;
+        if (typeof field.fieldType === 'string' && !['RADIAL_IMPULSE', 'VORTEX_TANGENT', 'FRICTION_OVERRIDE', 'MASS_ATTRACTOR'].includes(field.fieldType)) {
+          reasons.push(`card[${cardIndex}]:trigger[${ti}]:action[${ai}]:invalid_fieldType=${field.fieldType}`);
+        }
+        for (const key of ['radius', 'strength', 'durationMs']) {
+          if (typeof field[key] === 'string') {
+            reasons.push(`card[${cardIndex}]:trigger[${ti}]:action[${ai}]:field_${key}_is_string`);
+          }
+        }
+      }
+      for (const key of ['amount', 'baseForce', 'distance', 'value']) {
+        if (typeof action[key] === 'string') {
+          reasons.push(`card[${cardIndex}]:trigger[${ti}]:action[${ai}]:${key}_is_string`);
+        }
+      }
+    });
+  });
+
+  return reasons;
+}
+
+function diagnoseAbilitySchemaSteps(payload: unknown, cardIndex: number): string[] {
+  const reasons: string[] = [];
+  if (payload === null || typeof payload !== 'object') {
+    reasons.push(`card[${cardIndex}]:schema:not_object`);
+    return reasons;
+  }
+
+  const p = payload as Record<string, unknown>;
+  if (typeof p.cooldownMs !== 'number' || !Number.isFinite(p.cooldownMs)) {
+    reasons.push(`card[${cardIndex}]:schema:cooldownMs=${String(p.cooldownMs)}`);
+  }
+  if (typeof p.recoilKick !== 'number' || !Number.isFinite(p.recoilKick)) {
+    reasons.push(`card[${cardIndex}]:schema:recoilKick=${String(p.recoilKick)}`);
+  }
+
+  if (!Array.isArray(p.triggers)) {
+    reasons.push(`card[${cardIndex}]:schema:triggers_type=${typeof p.triggers}`);
+    return reasons;
+  }
+
+  p.triggers.forEach((raw, ti) => {
+    if (raw === null || typeof raw !== 'object') {
+      reasons.push(`card[${cardIndex}]:schema:trigger[${ti}]:not_object`);
+      return;
+    }
+    const trig = raw as Record<string, unknown>;
+    if (!Array.isArray(trig.actions)) {
+      reasons.push(
+        `card[${cardIndex}]:schema:trigger[${ti}]:actions_type=${typeof trig.actions}`,
+      );
+      return;
+    }
+    const triggerProbe = {
+      id: 'probe_trigger',
+      name: 'probe',
+      cooldownMs: 100,
+      recoilKick: 0,
+      triggers: [trig],
+    };
+    if (!validateAbilitySchema(triggerProbe)) {
+      reasons.push(`card[${cardIndex}]:schema:trigger[${ti}]_invalid`);
+    }
+  });
+
+  if (p.trajectory !== undefined) {
+    const trajectoryProbe = {
+      id: 'probe_trajectory',
+      name: 'probe',
+      cooldownMs: 100,
+      recoilKick: 0,
+      triggers: [],
+      trajectory: p.trajectory,
+    };
+    if (!validateAbilitySchema(trajectoryProbe)) {
+      reasons.push(`card[${cardIndex}]:schema:trajectory_block_invalid`);
+    }
+    const traj = p.trajectory as Record<string, unknown>;
+    for (const key of ['speed', 'maxRange', 'piercing', 'turnAccel', 'orbitRadius', 'orbitSpeed']) {
+      const val = traj[key];
+      if (val !== undefined && (typeof val !== 'number' || !Number.isFinite(val))) {
+        reasons.push(`card[${cardIndex}]:schema:trajectory.${key}=${String(val)}`);
+      }
+    }
+  }
+
+  if (!validateAbilitySchema(payload)) {
+    reasons.push(`card[${cardIndex}]:schema:validate_failed`);
+  }
+
+  return reasons;
+}
+
+const TRIGGER_ALIASES: Record<string, TriggerNode['trigger']> = {
+  ON_IMPACT: 'ON_HIT',
+  ON_COLLISION: 'ON_HIT',
+  ON_CONTACT: 'ON_HIT',
+  ON_DESTROY: 'ON_EXPIRY',
+  ON_DEATH: 'ON_EXPIRY',
+  ON_SPAWN: 'ON_CAST',
+};
+
+const ACTION_ALIASES: Record<string, string> = {
+  SPAWN_PROJECTILE: 'SPAWN_CHILD_PROJECTILE',
+  CREATE_PROJECTILE: 'SPAWN_CHILD_PROJECTILE',
+  SPAWN_FIELD_ZONE: 'SPAWN_FIELD',
+  IMPULSE: 'APPLY_IMPULSE',
+  INSTABILITY: 'ADD_INSTABILITY',
+};
+
+const FIELD_ALIASES: Record<string, string> = {
+  VORTEX: 'VORTEX_TANGENT',
+  IMPULSE: 'RADIAL_IMPULSE',
+  RADIAL: 'RADIAL_IMPULSE',
+  ATTRACTOR: 'MASS_ATTRACTOR',
+  GRAVITY: 'MASS_ATTRACTOR',
+  BLACK_HOLE: 'MASS_ATTRACTOR',
+  SINGULARITY: 'MASS_ATTRACTOR',
+  FRICTION: 'FRICTION_OVERRIDE',
+  ICE: 'FRICTION_OVERRIDE',
+};
+
+const TRAJECTORY_ALIASES: Record<string, string> = {
+  HOMING: 'HOMING_SLERP',
+  SEEKER: 'HOMING_SLERP',
+  BOOMERANG: 'RETURN_TO_SOURCE',
+  ORBIT: 'ORBIT_ANCHOR',
+  BLINK: 'DISCONTINUOUS_BLINK',
+};
+
+function normalizeEnumToken(value: string, aliases: Record<string, string>): string {
+  const compact = value.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return aliases[compact] ?? compact;
+}
+
+function normalizeTriggerAlias(trigger: string): string {
+  return normalizeEnumToken(trigger, TRIGGER_ALIASES as Record<string, string>);
+}
+
+function normalizeActionAlias(actionType: string): string {
+  return normalizeEnumToken(actionType, ACTION_ALIASES);
+}
+
+function normalizeFieldTypeAlias(fieldType: string): string {
+  return normalizeEnumToken(fieldType, FIELD_ALIASES);
+}
+
+function coerceNumericFields(obj: Record<string, unknown>, keys: string[]): void {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) {
+      obj[key] = Number(v);
+    }
+  }
+}
+
+function isValidActionProbe(action: unknown): boolean {
+  const schema = {
+    id: 'probe_action',
+    name: 'probe',
+    cooldownMs: 0,
+    recoilKick: 0,
+    triggers: [{ trigger: 'ON_HIT' as const, actions: [action] }],
+  };
+  return validateAbilitySchema(schema) !== null;
+}
+
+function filterValidActions(actions: unknown[]): unknown[] {
+  return actions
+    .map(repairActionPayload)
+    .filter((action) => isValidActionProbe(action));
+}
+
+function repairModifyStatAction(obj: Record<string, unknown>): void {
+  if (obj.type !== 'MODIFY_STAT') return;
+  if (typeof obj.stat === 'string') {
+    const raw = obj.stat.trim();
+    const lower = raw.toLowerCase();
+    const statMap: Record<string, string> = {
+      mass: 'mass',
+      linear_drag: 'linearDrag',
+      lineardrag: 'linearDrag',
+      move_speed: 'moveSpeed',
+      movespeed: 'moveSpeed',
+      instability: 'instabilityPct',
+      instabilitypct: 'instabilityPct',
+    };
+    obj.stat = statMap[lower] ?? statMap[lower.replace(/_/g, '')] ?? lower;
+  }
+  if (typeof obj.mode === 'string') {
+    obj.mode = obj.mode.toLowerCase();
+  }
+  coerceNumericFields(obj, ['value']);
+}
+
+function stripNullFields(obj: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) {
+      delete obj[key];
+    }
+  }
+}
+
+function ensureFiniteNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
+    return Number(value);
+  }
+  return fallback;
+}
+
+function repairTrajectoryConfig(traj: unknown): unknown {
+  if (traj === null || typeof traj !== 'object') return traj;
+  const t = { ...(traj as Record<string, unknown>) };
+  stripNullFields(t);
+  if (typeof t.type === 'string') {
+    t.type = normalizeEnumToken(t.type, TRAJECTORY_ALIASES);
+  }
+  coerceNumericFields(t, [
+    'speed',
+    'maxRange',
+    'piercing',
+    'turnAccel',
+    'orbitRadius',
+    'orbitSpeed',
+    'blinkDistance',
+  ]);
+  return t;
+}
+
+function repairFieldConfig(field: unknown): unknown {
+  if (field === null || typeof field !== 'object') return field;
+  const f = { ...(field as Record<string, unknown>) };
+  stripNullFields(f);
+  if (typeof f.fieldType === 'string') {
+    f.fieldType = normalizeFieldTypeAlias(f.fieldType);
+  }
+  if (f.durationMs === undefined && f.duration !== undefined) {
+    f.durationMs = f.duration;
+    delete f.duration;
+  }
+  if (typeof f.fieldType === 'string') {
+    f.radius = ensureFiniteNumber(f.radius, 80);
+    f.strength = ensureFiniteNumber(f.strength, 500);
+    f.durationMs = ensureFiniteNumber(f.durationMs, 2000);
+  }
+  return f;
+}
+
+function repairActionPayload(action: unknown): unknown {
+  if (action === null || typeof action !== 'object') return action;
+  const obj = { ...(action as Record<string, unknown>) };
+  stripNullFields(obj);
+
+  if (obj.baseForce === undefined && obj.force !== undefined) {
+    obj.baseForce = obj.force;
+    delete obj.force;
+  }
+  if (obj.amount === undefined && obj.instability !== undefined) {
+    obj.amount = obj.instability;
+    delete obj.instability;
+  }
+  if (typeof obj.type === 'string') {
+    obj.type = normalizeActionAlias(obj.type);
+  }
+  repairModifyStatAction(obj);
+  coerceNumericFields(obj, ['amount', 'baseForce', 'distance', 'value', 'aimOffsetDeg']);
+  if (obj.type === 'APPLY_IMPULSE') {
+    obj.baseForce = ensureFiniteNumber(obj.baseForce, 400);
+  }
+  if (obj.type === 'ADD_INSTABILITY') {
+    obj.amount = ensureFiniteNumber(obj.amount, 20);
+  }
+  if (obj.type === 'TELEPORT') {
+    obj.distance = ensureFiniteNumber(obj.distance, 100);
+  }
+  if (obj.field !== undefined) {
+    obj.field = repairFieldConfig(obj.field);
+  }
+  if (obj.trajectory !== undefined) {
+    obj.trajectory = repairTrajectoryConfig(obj.trajectory);
+  }
+  if (Array.isArray(obj.triggers)) {
+    obj.triggers = obj.triggers.map(repairTriggerNode);
+  }
+
+  return obj;
+}
+
+function repairTriggerNode(node: unknown): unknown {
+  if (node === null || typeof node !== 'object') return node;
+  const obj = { ...(node as Record<string, unknown>) };
+  stripNullFields(obj);
+
+  if (obj.trigger === undefined && typeof obj.on === 'string') {
+    obj.trigger = obj.on;
+    delete obj.on;
+  }
+  if (!Array.isArray(obj.actions) && Array.isArray(obj.effects)) {
+    obj.actions = obj.effects;
+    delete obj.effects;
+  }
+  if (!Array.isArray(obj.actions) && obj.actions && typeof obj.actions === 'object') {
+    obj.actions = [obj.actions];
+  }
+  if (!Array.isArray(obj.actions)) {
+    obj.actions = [];
+  }
+  if (typeof obj.trigger === 'string') {
+    obj.trigger = normalizeTriggerAlias(obj.trigger);
+  }
+  obj.actions = filterValidActions(obj.actions as unknown[]);
+  if (Array.isArray(obj.children)) {
+    obj.children = obj.children.map(repairTriggerNode);
+  }
+
+  return obj;
+}
+
+function repairTriggersField(triggers: unknown): unknown[] {
+  if (Array.isArray(triggers)) {
+    return triggers.map(repairTriggerNode) as unknown[];
+  }
+  if (triggers !== null && typeof triggers === 'object') {
+    return Object.entries(triggers as Record<string, unknown>).map(([key, val]) => {
+      if (val && typeof val === 'object' && !Array.isArray(val) && 'type' in val) {
+        return repairTriggerNode({ trigger: key, actions: [val] });
+      }
+      if (val && typeof val === 'object' && !Array.isArray(val) && 'actions' in val) {
+        return repairTriggerNode({ trigger: key, ...(val as Record<string, unknown>) });
+      }
+      return repairTriggerNode({ trigger: key, actions: val });
+    }) as unknown[];
+  }
+  return [];
+}
+
+function repairAbilityPayload(payload: unknown): unknown {
+  if (payload === null || typeof payload !== 'object') return payload;
+  const obj = { ...(payload as Record<string, unknown>) };
+  stripNullFields(obj);
+
+  obj.cooldownMs = ensureFiniteNumber(obj.cooldownMs, 800);
+  obj.recoilKick = ensureFiniteNumber(obj.recoilKick, 50);
+
+  if (obj.trajectory !== undefined) {
+    obj.trajectory = repairTrajectoryConfig(obj.trajectory);
+  }
+  obj.triggers = repairTriggersField(obj.triggers);
+  if (
+    obj.metadata !== undefined &&
+    (obj.metadata === null || typeof obj.metadata !== 'object' || Array.isArray(obj.metadata))
+  ) {
+    delete obj.metadata;
+  }
+
+  if (!validateAbilitySchema(obj)) {
+    obj.triggers = [];
+    if (!validateAbilitySchema(obj)) {
+      delete obj.trajectory;
+    }
+  }
+
+  return obj;
+}
+
+function repairDraftCard(card: unknown): unknown {
+  if (card === null || typeof card !== 'object') return card;
+  const obj = { ...(card as Record<string, unknown>) };
+  if (typeof obj.type === 'string') {
+    obj.type = obj.type.toUpperCase();
+  }
+  if (typeof obj.rarity === 'string') {
+    obj.rarity = obj.rarity.toUpperCase();
+  }
+  if (typeof obj.budgetCost !== 'number' || !Number.isFinite(obj.budgetCost)) {
+    obj.budgetCost = ensureFiniteNumber(obj.budgetCost, 100);
+  }
+  if (obj.abilityPayload !== undefined) {
+    obj.abilityPayload = repairAbilityPayload(obj.abilityPayload);
+  }
+  return obj;
+}
+
+function summarizeValidationFailure(diagnosis: string[], normalizedDiagnosis: string[]): string {
+  const all = [...diagnosis, ...normalizedDiagnosis];
+  const detailed = all.filter(
+    (r) =>
+      r.includes('schema:') ||
+      r.includes('trigger[') ||
+      r.includes('_is_string') ||
+      r.includes('_type=') ||
+      r.includes('invalid_type') ||
+      r.includes('invalid_fieldType') ||
+      r.includes('invalid=') ||
+      r.includes('uses_on_key') ||
+      r.includes('metadata_invalid') ||
+      r.includes('missing_actions'),
+  );
+  const nonGeneric = detailed.length > 0
+    ? detailed
+    : all.filter((r) => !r.includes('abilityPayload_invalid'));
+  const summary = (nonGeneric.length > 0 ? nonGeneric : all).slice(0, 8);
+  return summary.join('; ');
+}
+
+function deepNormalizeLLMValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(deepNormalizeLLMValue);
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === 'trigger' && typeof v === 'string') {
+        out[k] = normalizeTriggerAlias(v);
+      } else if (k === 'fieldType' && typeof v === 'string') {
+        out[k] = normalizeFieldTypeAlias(v);
+      } else if (k === 'metadata') {
+        if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+          out[k] = deepNormalizeLLMValue(v);
+        }
+      } else {
+        out[k] = deepNormalizeLLMValue(v);
+      }
+    }
+    return out;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed !== '' && /^-?\d+(\.\d+)?$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+  }
+
+  return value;
+}
+
+function normalizeLLMResponse(parsed: unknown): unknown {
+  const coerced = deepNormalizeLLMValue(parsed);
+
+  if (coerced === null || typeof coerced !== 'object') return coerced;
+  const root = coerced as Record<string, unknown>;
+
+  if (Array.isArray(root.cards)) {
+    root.cards = root.cards.map(repairDraftCard);
+    return root;
+  }
+  if (Array.isArray(coerced)) {
+    return coerced.map(repairDraftCard);
+  }
+
+  return coerced;
+}
+
+function coerceMessageContent(raw: unknown): string {
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          const text = (part as { text?: unknown }).text;
+          return typeof text === 'string' ? text : '';
+        }
+        return '';
+      })
+      .join('');
+  }
+  return '';
+}
+
+function jsonErrorContext(content: string, errorMsg: string): string {
+  const posMatch = errorMsg.match(/position (\d+)/i);
+  if (!posMatch) return '';
+  const pos = Number(posMatch[1]);
+  const start = Math.max(0, pos - 50);
+  const end = Math.min(content.length, pos + 50);
+  return ` near "...${content.slice(start, pos)}>>${content.slice(pos, end)}..."`;
+}
+
+function tryCloseTruncatedJson(text: string): string {
+  let braces = 0;
+  let brackets = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const ch of text) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') braces++;
+    if (ch === '}') braces--;
+    if (ch === '[') brackets++;
+    if (ch === ']') brackets--;
+  }
+
+  let repaired = text;
+  while (brackets > 0) {
+    repaired += ']';
+    brackets--;
+  }
+  while (braces > 0) {
+    repaired += '}';
+    braces--;
+  }
+  return repaired;
+}
+
+function buildJsonRepairCandidates(text: string): string[] {
+  const variants = new Set<string>();
+  const add = (value: string): void => {
+    const trimmed = value.trim();
+    if (trimmed) variants.add(trimmed);
+  };
+
+  add(text);
+  add(text.replace(/,\s*([}\]])/g, '$1'));
+  add(text.replace(/,\s*,/g, ','));
+
+  const noBlockComments = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  const noComments = noBlockComments.replace(/^\s*\/\/.*$/gm, '');
+  add(noComments);
+  add(noComments.replace(/,\s*([}\]])/g, '$1'));
+
+  const unquotedKeys = noComments.replace(
+    /([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g,
+    '$1"$2":',
+  );
+  add(unquotedKeys);
+  add(unquotedKeys.replace(/,\s*([}\]])/g, '$1'));
+
+  const nullishFixed = noComments
+    .replace(/\bundefined\b/g, 'null')
+    .replace(/\bNaN\b/g, '0')
+    .replace(/\b-Infinity\b/g, '-999999')
+    .replace(/\bInfinity\b/g, '999999');
+  add(nullishFixed);
+  add(nullishFixed.replace(/,\s*([}\]])/g, '$1'));
+
+  const singleQuoted = nullishFixed.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"');
+  add(singleQuoted);
+  add(singleQuoted.replace(/,\s*([}\]])/g, '$1'));
+
+  add(tryCloseTruncatedJson(nullishFixed));
+  add(tryCloseTruncatedJson(nullishFixed).replace(/,\s*([}\]])/g, '$1'));
+
+  return [...variants];
+}
+
+function tryParseLLMJson(content: string): { ok: true; value: unknown } | { ok: false; error: string } {
+  const baseCandidates: string[] = [];
+  const trimmed = content.trim();
+  baseCandidates.push(trimmed);
+
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch?.[1]) baseCandidates.push(fenceMatch[1].trim());
+
+  const braceStart = trimmed.indexOf('{');
+  const braceEnd = trimmed.lastIndexOf('}');
+  if (braceStart >= 0 && braceEnd > braceStart) {
+    baseCandidates.push(trimmed.slice(braceStart, braceEnd + 1));
+  }
+
+  const arrayStart = trimmed.indexOf('[');
+  const arrayEnd = trimmed.lastIndexOf(']');
+  if (arrayStart >= 0 && arrayEnd > arrayStart) {
+    baseCandidates.push(trimmed.slice(arrayStart, arrayEnd + 1));
+  }
+
+  const allCandidates = new Set<string>();
+  for (const base of baseCandidates) {
+    for (const repaired of buildJsonRepairCandidates(base)) {
+      allCandidates.add(repaired);
+    }
+  }
+
+  let lastError = 'unknown parse error';
+  let lastCandidate = trimmed;
+  for (const candidate of allCandidates) {
+    try {
+      return { ok: true, value: JSON.parse(candidate) };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'parse error';
+      lastCandidate = candidate;
+    }
+  }
+
+  return { ok: false, error: `${lastError}${jsonErrorContext(lastCandidate, lastError)}` };
+}
+
 async function callLLM(
   systemPrompt: string,
   userPrompt: string,
@@ -221,6 +980,7 @@ async function callLLM(
           { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
+        max_tokens: 8192,
       }),
       signal: controller.signal,
     });
@@ -232,24 +992,31 @@ async function callLLM(
     }
 
     const data = await response.json();
-    let content = data.choices?.[0]?.message?.content ?? '';
-    if (typeof content !== 'string' || !content) {
+    let content = coerceMessageContent(data.choices?.[0]?.message?.content);
+    if (!content) {
+      const altContent = coerceMessageContent(data.candidates?.[0]?.content?.parts);
+      if (altContent) content = altContent;
+    }
+    if (!content) {
       lastApiError = 'Invalid LLM response: empty content';
       return null;
     }
     content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      lastApiError = 'Invalid LLM response: JSON parse failed';
+    const parseResult = tryParseLLMJson(content);
+    if (!parseResult.ok) {
+      lastApiError = `Invalid LLM response: JSON parse failed (${parseResult.error})`;
       return null;
     }
+    const parsed = parseResult.value;
 
-    const validated = validateDraftCards(parsed);
+    const normalized = normalizeLLMResponse(parsed);
+    let validated = validateDraftCards(normalized);
     if (!validated) {
-      lastApiError = 'Invalid LLM response: card validation failed';
+      const diagnosis = diagnoseDraftCardsValidation(parsed);
+      const normalizedDiagnosis = diagnoseDraftCardsValidation(normalized);
+      const failureSummary = summarizeValidationFailure(diagnosis, normalizedDiagnosis);
+      lastApiError = `Invalid LLM response: card validation failed (${failureSummary})`;
       return null;
     }
 
