@@ -12,7 +12,12 @@ import type {
   SkillCategory,
 } from '../types/cards';
 import { CATEGORY_SLOT_MAP, getCategoryLabel, validateDraftCards } from '../types/cards';
-import type { AbilitySchema, TriggerNode } from '../types/schema';
+import type {
+  AbilitySchema,
+  TrajectoryConfig,
+  TriggerNode,
+} from '../types/schema';
+import { validateAbilitySchema } from '../types/schema';
 
 export const STORAGE_KEY_API = 'LUNA_AI_API_KEY';
 export const STORAGE_KEY_BASE_URL = 'LUNA_AI_BASE_URL';
@@ -28,6 +33,31 @@ export interface AiSettings {
   apiKey: string;
   baseUrl: string;
   model: string;
+}
+
+let lastApiError: string | null = null;
+let lastCallSucceeded = false;
+let lastSynthesisSource: 'api' | 'heuristic' = 'heuristic';
+let lastSynthesisError: string | null = null;
+
+export function getApiConnectionStatus(): {
+  online: boolean;
+  model: string;
+  lastError: string | null;
+} {
+  const settings = getAiSettings();
+  return {
+    online: settings.apiKey.trim().length > 0 && lastCallSucceeded,
+    model: settings.model.trim() || DEFAULT_MODEL,
+    lastError: lastApiError,
+  };
+}
+
+export function getLastSynthesisMeta(): {
+  source: 'api' | 'heuristic';
+  error: string | null;
+} {
+  return { source: lastSynthesisSource, error: lastSynthesisError };
 }
 
 export function getAiSettings(): AiSettings {
@@ -61,7 +91,7 @@ export function setAiSettings(settings: AiSettings): void {
 const SCHEMA_REFERENCE = `AbilitySchema trajectories: LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
 Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
 Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
-Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_CHILD_PROJECTILE, TELEPORT, MODIFY_STAT
+Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_CHILD_PROJECTILE (optional aimOffsetDeg), TELEPORT, MODIFY_STAT
 
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
 Passive ops: ADD, MULTIPLY`;
@@ -168,6 +198,9 @@ async function callLLM(
   settings: AiSettings,
   category: SkillCategory,
 ): Promise<DraftCard[] | null> {
+  lastCallSucceeded = false;
+  lastApiError = null;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -192,23 +225,73 @@ async function callLLM(
       signal: controller.signal,
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const body = (await response.text()).slice(0, 180);
+      lastApiError = `HTTP ${response.status}: ${body || response.statusText}`;
+      return null;
+    }
 
     const data = await response.json();
     let content = data.choices?.[0]?.message?.content ?? '';
-    if (typeof content !== 'string' || !content) return null;
+    if (typeof content !== 'string' || !content) {
+      lastApiError = 'Invalid LLM response: empty content';
+      return null;
+    }
     content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    const parsed = JSON.parse(content);
-    const validated = validateDraftCards(parsed);
-    if (!validated) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      lastApiError = 'Invalid LLM response: JSON parse failed';
+      return null;
+    }
 
+    const validated = validateDraftCards(parsed);
+    if (!validated) {
+      lastApiError = 'Invalid LLM response: card validation failed';
+      return null;
+    }
+
+    lastCallSucceeded = true;
+    lastApiError = null;
     return balanceCards(validated, category);
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      lastApiError = 'Request timed out (8s)';
+    } else if (err instanceof Error) {
+      lastApiError = err.message;
+    } else {
+      lastApiError = 'Unknown API error';
+    }
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sanitizeAbilityForLLM(schema: AbilitySchema): AbilitySchema {
+  const raw: AbilitySchema = {
+    id: schema.id,
+    name: schema.name,
+    cooldownMs: schema.cooldownMs,
+    recoilKick: schema.recoilKick,
+    triggers: structuredClone(schema.triggers),
+  };
+  if (schema.trajectory) {
+    raw.trajectory = structuredClone(schema.trajectory);
+  }
+
+  const validated = validateAbilitySchema(raw);
+  if (validated) return validated;
+
+  return {
+    id: schema.id,
+    name: schema.name,
+    cooldownMs: schema.cooldownMs,
+    recoilKick: schema.recoilKick,
+    triggers: [],
+  };
 }
 
 async function fetchLLMForge(
@@ -233,12 +316,14 @@ async function fetchLLMEvolution(
   loadout: PlayerLoadout,
   settings: AiSettings,
 ): Promise<DraftCard[] | null> {
-  const userPrompt = `Mutation prompt: "${prompt}"
+  const sanitized = sanitizeAbilityForLLM(context.baseAbility);
+  const userPrompt = `Base Ability:
+${JSON.stringify(sanitized, null, 2)}
+
+User Mutation Request: ${prompt}
+
 Category: ${context.category} (${getCategoryLabel(context.category)}) → slot ${context.slotKey}
 ${loadoutSummary(loadout)}
-
-Base AbilitySchema JSON:
-${JSON.stringify(context.baseAbility, null, 2)}
 
 Generate 3 distinct evolved ACTIVE_ABILITY variants that preserve core identity while applying the mutation.`;
 
@@ -313,50 +398,491 @@ function ensureTrigger(schema: AbilitySchema, trigger: TriggerNode['trigger']): 
   return node;
 }
 
-function mutateCluster(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
-  const schema = structuredClone(base);
-  const diff: string[] = [];
-  const p = prompt.toLowerCase();
+type EvolutionTheme = 'scatter' | 'explosive' | 'orbit' | 'bounce' | 'generic';
 
-  if (schema.trajectory) {
-    const pierce = (schema.trajectory.piercing ?? 0) + 1;
-    schema.trajectory.piercing = Math.min(4, pierce);
-    diff.push(`+ Piercing ${schema.trajectory.piercing}`);
-  }
-
-  const target = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
-  const node = ensureTrigger(schema, target);
-  node.actions.push({
-    type: 'SPAWN_CHILD_PROJECTILE',
-    trajectory: {
-      type: 'LINEAR',
-      speed: 400,
-      maxRange: 280,
-      piercing: 0,
-    },
-    triggers: [
-      {
-        trigger: 'ON_HIT',
-        actions: [{ type: 'APPLY_IMPULSE', baseForce: 350 }],
-      },
-    ],
-  });
-  diff.push(`+ SPAWN_CHILD_PROJECTILE on ${target}`);
-
-  schema.id = `${base.id}_cluster`;
-  schema.name = `${base.name} Mk-II`;
-  return { schema, diff };
+interface EvolutionVariant {
+  schema: AbilitySchema;
+  diff: string[];
+  tagline: string;
+  id: string;
 }
 
-function mutateSpatialField(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
-  const schema = structuredClone(base);
-  const diff: string[] = [];
+function parseEvolutionQuantity(prompt: string): number {
+  const match = prompt.match(/(?:split into|explode into|spawn|create)?\s*(\d+)/i);
+  if (match) {
+    return Math.max(2, Math.min(6, parseInt(match[1], 10)));
+  }
+  if (/\b(split|cluster|scatter|multi|fork)\b/i.test(prompt)) {
+    return 3;
+  }
+  return 3;
+}
+
+function detectEvolutionTheme(prompt: string): EvolutionTheme {
+  const p = prompt.toLowerCase();
+  if (/\b(split|beam|multi|scatter|fork)\b/.test(p)) return 'scatter';
+  if (/\b(explode|cluster|bomb|detonate|shrapnel)\b/.test(p)) return 'explosive';
+  if (/\b(orbit|shield|barrier|satellite)\b/.test(p)) return 'orbit';
+  if (/\b(bounce|ricochet|return|boomerang)\b/.test(p)) return 'bounce';
+  return 'generic';
+}
+
+function deriveVariantName(baseName: string, prompt: string, label: string): string {
+  const qtyMatch = prompt.match(/(\d+)/);
+  const qty = qtyMatch ? qtyMatch[1] : null;
+  if (qty) return `${baseName} · ${qty}-${label}`;
+  return `${baseName} · ${label}`;
+}
+
+function defaultLinearTraj(overrides: Partial<TrajectoryConfig> = {}): TrajectoryConfig {
+  return {
+    type: 'LINEAR',
+    speed: 400,
+    maxRange: 280,
+    piercing: 0,
+    ...overrides,
+  };
+}
+
+function spawnFanChildren(
+  node: TriggerNode,
+  baseTraj: TrajectoryConfig,
+  count: number,
+  spreadDegPerCount = 15,
+): void {
+  const halfFan = spreadDegPerCount * count;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const aimOffsetDeg = -halfFan + t * (2 * halfFan);
+    node.actions.push({
+      type: 'SPAWN_CHILD_PROJECTILE',
+      trajectory: { ...baseTraj },
+      aimOffsetDeg,
+      triggers: [
+        {
+          trigger: 'ON_HIT',
+          actions: [{ type: 'APPLY_IMPULSE', baseForce: 300 }],
+        },
+      ],
+    });
+  }
+}
+
+function spawnFragmentBurst(
+  node: TriggerNode,
+  count: number,
+  speed = 380,
+): void {
+  const halfFan = 15 * count;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const aimOffsetDeg = -halfFan + t * (2 * halfFan);
+    node.actions.push({
+      type: 'SPAWN_CHILD_PROJECTILE',
+      trajectory: defaultLinearTraj({ speed, maxRange: 260 }),
+      aimOffsetDeg,
+      triggers: [
+        {
+          trigger: 'ON_HIT',
+          actions: [{ type: 'APPLY_IMPULSE', baseForce: 280 }],
+        },
+      ],
+    });
+  }
+}
+
+function addRadialDetonation(node: TriggerNode, strength = 700): void {
+  node.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType: 'RADIAL_IMPULSE',
+      radius: 95,
+      strength,
+      durationMs: 400,
+    },
+  });
+}
+
+function addSingularity(node: TriggerNode): void {
+  node.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType: 'MASS_ATTRACTOR',
+      radius: 110,
+      strength: 7500,
+      durationMs: 2400,
+    },
+  });
+}
+
+function addChainBomblet(node: TriggerNode, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    const aimOffsetDeg = -20 + t * 40;
+    node.actions.push({
+      type: 'SPAWN_CHILD_PROJECTILE',
+      trajectory: defaultLinearTraj({ speed: 180, maxRange: 160 }),
+      aimOffsetDeg,
+      triggers: [
+        {
+          trigger: 'ON_EXPIRY',
+          actions: [
+            {
+              type: 'SPAWN_FIELD',
+              field: {
+                fieldType: 'RADIAL_IMPULSE',
+                radius: 70,
+                strength: 550,
+                durationMs: 350,
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+}
+
+function baseChildTraj(base: AbilitySchema): TrajectoryConfig {
+  if (base.trajectory) {
+    return {
+      ...structuredClone(base.trajectory),
+      type: 'LINEAR',
+      speed: Math.min(600, base.trajectory.speed ?? 400),
+      maxRange: Math.min(400, base.trajectory.maxRange ?? 300),
+      piercing: 0,
+    };
+  }
+  return defaultLinearTraj();
+}
+
+function buildScatterVariants(
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
+  const childTraj = baseChildTraj(base);
+  const halfFan = 15 * n;
+
+  // Variant 1: Fork/Scatter — ON_CAST fan, drop parent trajectory
+  const fork = structuredClone(base);
+  delete fork.trajectory;
+  const castNode = ensureTrigger(fork, 'ON_CAST');
+  spawnFanChildren(castNode, childTraj, n, 15);
+  fork.id = `${base.id}_fork`;
+  fork.name = deriveVariantName(base.name, prompt, 'Fork');
+
+  // Variant 2: Death Split — ON_EXPIRY fragments
+  const death = structuredClone(base);
+  if (!death.trajectory) {
+    death.trajectory = defaultLinearTraj({ speed: 450, maxRange: 500 });
+  }
+  const expiryNode = ensureTrigger(death, 'ON_EXPIRY');
+  spawnFragmentBurst(expiryNode, n);
+  death.id = `${base.id}_death_split`;
+  death.name = deriveVariantName(base.name, prompt, 'Death Split');
+
+  // Variant 3: Piercing Beam
+  const beam = structuredClone(base);
+  beam.trajectory = {
+    type: 'LINEAR',
+    speed: 1200,
+    maxRange: beam.trajectory?.maxRange ?? 900,
+    piercing: n,
+  };
+  const tickNode = ensureTrigger(beam, 'ON_TICK');
+  tickNode.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType: 'FRICTION_OVERRIDE',
+      radius: 28,
+      strength: 0,
+      durationMs: 400,
+      frictionValue: 0.04,
+    },
+  });
+  beam.id = `${base.id}_beam`;
+  beam.name = deriveVariantName(base.name, prompt, 'Beam');
+
+  return [
+    {
+      schema: fork,
+      diff: [`+ ${n}-way scatter (±${halfFan}°)`],
+      tagline: 'Fork Scatter',
+      id: 'evo_fork',
+    },
+    {
+      schema: death,
+      diff: [`+ Death split ×${n} on ON_EXPIRY`],
+      tagline: 'Death Split',
+      id: 'evo_death_split',
+    },
+    {
+      schema: beam,
+      diff: [`Trajectory → LINEAR beam`, `piercing ${n}`, '+ Beam trail ON_TICK'],
+      tagline: 'Piercing Beam',
+      id: 'evo_beam',
+    },
+  ];
+}
+
+function buildExplosiveVariants(
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
+  // Variant 1: Radial Bomb Burst
+  const bomb = structuredClone(base);
+  if (!bomb.trajectory) {
+    bomb.trajectory = defaultLinearTraj({ speed: 480, maxRange: 520 });
+  }
+  const hitNode = ensureTrigger(bomb, 'ON_HIT');
+  addRadialDetonation(hitNode, 750);
+  spawnFragmentBurst(hitNode, n, 420);
+  bomb.id = `${base.id}_bomb`;
+  bomb.name = deriveVariantName(base.name, prompt, 'Bomb Burst');
+
+  // Variant 2: Vortex Detonation
+  const vortex = structuredClone(base);
+  if (!vortex.trajectory) {
+    vortex.trajectory = defaultLinearTraj({ speed: 360, maxRange: 480 });
+  }
+  const expiryNode = ensureTrigger(vortex, 'ON_EXPIRY');
+  addSingularity(expiryNode);
+  vortex.id = `${base.id}_singularity`;
+  vortex.name = deriveVariantName(base.name, prompt, 'Singularity');
+
+  // Variant 3: Chain Reaction
+  const chain = structuredClone(base);
+  if (!chain.trajectory) {
+    chain.trajectory = defaultLinearTraj({ speed: 400, maxRange: 450 });
+  }
+  const chainHit = ensureTrigger(chain, 'ON_HIT');
+  addChainBomblet(chainHit, n);
+  chain.id = `${base.id}_chain`;
+  chain.name = deriveVariantName(base.name, prompt, 'Chain');
+
+  return [
+    {
+      schema: bomb,
+      diff: [`+ RADIAL_IMPULSE on ON_HIT`, `+ ${n} shrapnel fragments`],
+      tagline: 'Radial Bomb Burst',
+      id: 'evo_bomb',
+    },
+    {
+      schema: vortex,
+      diff: ['+ MASS_ATTRACTOR singularity on ON_EXPIRY'],
+      tagline: 'Vortex Detonation',
+      id: 'evo_vortex',
+    },
+    {
+      schema: chain,
+      diff: [`+ ${n} delayed chain bomblets on ON_HIT`],
+      tagline: 'Chain Reaction',
+      id: 'evo_chain',
+    },
+  ];
+}
+
+function buildOrbitVariants(
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
+  const orbitSpeeds = [4, -3, 2.5, 5, -2, 3.5];
+
+  // Variant 1: Satellite Ring
+  const ring = structuredClone(base);
+  delete ring.trajectory;
+  const castNode = ensureTrigger(ring, 'ON_CAST');
+  for (let i = 0; i < n; i++) {
+    castNode.actions.push({
+      type: 'SPAWN_CHILD_PROJECTILE',
+      trajectory: {
+        type: 'ORBIT_ANCHOR',
+        orbitRadius: 55 + i * 25,
+        orbitSpeed: orbitSpeeds[i % orbitSpeeds.length],
+        maxRange: 800,
+      },
+      triggers: [
+        {
+          trigger: 'ON_HIT',
+          actions: [{ type: 'ADD_INSTABILITY', amount: 18 }],
+        },
+      ],
+    });
+  }
+  ring.id = `${base.id}_satellites`;
+  ring.name = deriveVariantName(base.name, prompt, 'Satellites');
+
+  // Variant 2: Shield Barrier
+  const shield = structuredClone(base);
+  shield.trajectory = {
+    type: 'ORBIT_ANCHOR',
+    orbitRadius: 60,
+    orbitSpeed: 5,
+    maxRange: 800,
+  };
+  const tickNode = ensureTrigger(shield, 'ON_TICK');
+  tickNode.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType: 'RADIAL_IMPULSE',
+      radius: 50,
+      strength: 200,
+      durationMs: 200,
+    },
+  });
+  shield.id = `${base.id}_barrier`;
+  shield.name = deriveVariantName(base.name, prompt, 'Barrier');
+
+  // Variant 3: Expiring Nova
+  const nova = structuredClone(base);
+  delete nova.trajectory;
+  const novaCast = ensureTrigger(nova, 'ON_CAST');
+  for (let i = 0; i < n; i++) {
+    novaCast.actions.push({
+      type: 'SPAWN_CHILD_PROJECTILE',
+      trajectory: {
+        type: 'ORBIT_ANCHOR',
+        orbitRadius: 50 + i * 20,
+        orbitSpeed: orbitSpeeds[i % orbitSpeeds.length],
+        maxRange: 800,
+      },
+      triggers: [
+        {
+          trigger: 'ON_EXPIRY',
+          actions: [
+            {
+              type: 'SPAWN_FIELD',
+              field: {
+                fieldType: 'MASS_ATTRACTOR',
+                radius: 90,
+                strength: 6000,
+                durationMs: 1800,
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+  nova.id = `${base.id}_nova`;
+  nova.name = deriveVariantName(base.name, prompt, 'Nova');
+
+  return [
+    {
+      schema: ring,
+      diff: [`+ ${n} ORBIT_ANCHOR satellites on ON_CAST`],
+      tagline: 'Satellite Ring',
+      id: 'evo_satellites',
+    },
+    {
+      schema: shield,
+      diff: ['Trajectory → ORBIT_ANCHOR', '+ Pulse barrier ON_TICK'],
+      tagline: 'Shield Barrier',
+      id: 'evo_barrier',
+    },
+    {
+      schema: nova,
+      diff: [`+ ${n} orbiting attractor bombs`],
+      tagline: 'Expiring Nova',
+      id: 'evo_nova',
+    },
+  ];
+}
+
+function buildBounceVariants(
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
+  // Variant 1: Boomerang
+  const boom = structuredClone(base);
+  boom.trajectory = {
+    ...(boom.trajectory ?? defaultLinearTraj({ speed: 350, maxRange: 500 })),
+    type: 'RETURN_TO_SOURCE',
+    turnAccel: boom.trajectory?.turnAccel ?? 1100,
+  };
+  boom.id = `${base.id}_boomerang`;
+  boom.name = deriveVariantName(base.name, prompt, 'Boomerang');
+
+  // Variant 2: Ricochet Pierce
+  const rico = structuredClone(base);
+  rico.trajectory = {
+    ...(rico.trajectory ?? defaultLinearTraj({ speed: 380, maxRange: 550 })),
+    type: 'RETURN_TO_SOURCE',
+    piercing: n,
+    turnAccel: rico.trajectory?.turnAccel ?? 1000,
+  };
+  rico.id = `${base.id}_ricochet`;
+  rico.name = deriveVariantName(base.name, prompt, 'Ricochet');
+
+  // Variant 3: Return Trap
+  const trap = structuredClone(base);
+  trap.trajectory = {
+    ...(trap.trajectory ?? defaultLinearTraj({ speed: 340, maxRange: 480 })),
+    type: 'RETURN_TO_SOURCE',
+    turnAccel: trap.trajectory?.turnAccel ?? 1200,
+  };
+  const returnNode = ensureTrigger(trap, 'ON_RETURN');
+  returnNode.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType: 'VORTEX_TANGENT',
+      radius: 90,
+      strength: -550,
+      durationMs: 2200,
+    },
+  });
+  trap.id = `${base.id}_return_trap`;
+  trap.name = deriveVariantName(base.name, prompt, 'Return Trap');
+
+  return [
+    {
+      schema: boom,
+      diff: ['Trajectory → RETURN_TO_SOURCE'],
+      tagline: 'Boomerang',
+      id: 'evo_boomerang',
+    },
+    {
+      schema: rico,
+      diff: ['Trajectory → RETURN_TO_SOURCE', `+ Piercing ${n}`],
+      tagline: 'Ricochet Pierce',
+      id: 'evo_ricochet',
+    },
+    {
+      schema: trap,
+      diff: ['Trajectory → RETURN_TO_SOURCE', '+ VORTEX on ON_RETURN'],
+      tagline: 'Return Trap',
+      id: 'evo_return_trap',
+    },
+  ];
+}
+
+function buildGenericVariants(
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
   const p = prompt.toLowerCase();
 
+  // Cluster fragments
+  const cluster = structuredClone(base);
+  if (cluster.trajectory) {
+    cluster.trajectory.piercing = Math.min(4, (cluster.trajectory.piercing ?? 0) + 1);
+  }
+  const clusterTarget = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
+  const clusterNode = ensureTrigger(cluster, clusterTarget);
+  spawnFragmentBurst(clusterNode, n);
+  cluster.id = `${base.id}_cluster`;
+  cluster.name = deriveVariantName(base.name, prompt, 'Cluster');
+
+  // Spatial field
+  const field = structuredClone(base);
   let fieldType: 'VORTEX_TANGENT' | 'RADIAL_IMPULSE' | 'FRICTION_OVERRIDE' = 'VORTEX_TANGENT';
   let strength = -500;
   let frictionValue: number | undefined;
-
   if (/\b(ice|cold|frost|slipstream|friction)\b/.test(p)) {
     fieldType = 'FRICTION_OVERRIDE';
     strength = 0;
@@ -368,10 +894,9 @@ function mutateSpatialField(base: AbilitySchema, prompt: string): { schema: Abil
     fieldType = 'VORTEX_TANGENT';
     strength = -650;
   }
-
-  const target = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
-  const node = ensureTrigger(schema, target);
-  node.actions.push({
+  const fieldTarget = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
+  const fieldNode = ensureTrigger(field, fieldTarget);
+  fieldNode.actions.push({
     type: 'SPAWN_FIELD',
     field: {
       fieldType,
@@ -381,97 +906,111 @@ function mutateSpatialField(base: AbilitySchema, prompt: string): { schema: Abil
       ...(frictionValue !== undefined ? { frictionValue } : {}),
     },
   });
-  diff.push(`+ SPAWN_FIELD ${fieldType} on ${target}`);
+  field.id = `${base.id}_field`;
+  field.name = deriveVariantName(base.name, prompt, 'Trap');
 
-  schema.id = `${base.id}_field`;
-  schema.name = `${base.name} Trap`;
-  return { schema, diff };
-}
-
-function mutateKinematic(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
-  const schema = structuredClone(base);
-  const diff: string[] = [];
-  const p = prompt.toLowerCase();
-
-  if (/\b(dash|blink|teleport|phase)\b/.test(p) || !schema.trajectory) {
-    const node = ensureTrigger(schema, 'ON_CAST');
-    if (/\b(blink|teleport|phase)\b/.test(p) || !schema.trajectory) {
+  // Kinematic
+  const motion = structuredClone(base);
+  const motionDiff: string[] = [];
+  if (/\b(dash|blink|teleport|phase)\b/.test(p) || !motion.trajectory) {
+    const node = ensureTrigger(motion, 'ON_CAST');
+    if (/\b(blink|teleport|phase)\b/.test(p) || !motion.trajectory) {
       node.actions.push({ type: 'TELEPORT', distance: 110 });
-      diff.push('+ TELEPORT on ON_CAST');
+      motionDiff.push('+ TELEPORT on ON_CAST');
     } else {
       node.actions.push({ type: 'APPLY_IMPULSE', baseForce: 600 });
-      diff.push('+ Recoil dash impulse on ON_CAST');
+      motionDiff.push('+ Recoil dash impulse on ON_CAST');
     }
   }
-
-  if (schema.trajectory) {
-    if (/\b(boomerang|return)\b/.test(p)) {
-      schema.trajectory = {
-        ...schema.trajectory,
-        type: 'RETURN_TO_SOURCE',
-        turnAccel: schema.trajectory.turnAccel ?? 1000,
-      };
-      diff.push('Trajectory → RETURN_TO_SOURCE');
-    } else if (/\b(homing|seek|track)\b/.test(p)) {
-      schema.trajectory = {
-        ...schema.trajectory,
+  if (motion.trajectory) {
+    if (/\b(homing|seek|track)\b/.test(p) || motionDiff.length === 0) {
+      motion.trajectory = {
+        ...motion.trajectory,
         type: 'HOMING_SLERP',
-        turnAccel: schema.trajectory.turnAccel ?? 700,
+        turnAccel: motion.trajectory.turnAccel ?? 700,
       };
-      diff.push('Trajectory → HOMING_SLERP');
-    } else if (!diff.length) {
-      schema.trajectory = {
-        ...schema.trajectory,
-        type: 'HOMING_SLERP',
-        turnAccel: schema.trajectory.turnAccel ?? 650,
-      };
-      diff.push('Trajectory → HOMING_SLERP');
+      motionDiff.push('Trajectory → HOMING_SLERP');
     }
-  } else if (!diff.length) {
-    schema.trajectory = {
-      type: 'RETURN_TO_SOURCE',
-      speed: 340,
-      maxRange: 480,
-      turnAccel: 1100,
+  } else if (motionDiff.length === 0) {
+    motion.trajectory = {
+      type: 'HOMING_SLERP',
+      speed: 380,
+      maxRange: 520,
+      turnAccel: 650,
     };
-    diff.push('+ Trajectory RETURN_TO_SOURCE');
+    motionDiff.push('+ Trajectory HOMING_SLERP');
   }
+  motion.id = `${base.id}_motion`;
+  motion.name = deriveVariantName(base.name, prompt, 'Arc');
 
-  schema.id = `${base.id}_motion`;
-  schema.name = `${base.name} Arc`;
-  return { schema, diff };
+  return [
+    {
+      schema: cluster,
+      diff: [
+        ...(cluster.trajectory ? [`+ Piercing ${cluster.trajectory.piercing}`] : []),
+        `+ ${n} fragments on ${clusterTarget}`,
+      ],
+      tagline: 'Cluster Payload',
+      id: 'evo_cluster',
+    },
+    {
+      schema: field,
+      diff: [`+ SPAWN_FIELD ${fieldType} on ${fieldTarget}`],
+      tagline: 'Spatial Trap',
+      id: 'evo_field',
+    },
+    {
+      schema: motion,
+      diff: motionDiff,
+      tagline: 'Motion Augment',
+      id: 'evo_motion',
+    },
+  ];
+}
+
+function buildThemeVariants(
+  theme: EvolutionTheme,
+  base: AbilitySchema,
+  prompt: string,
+  n: number,
+): EvolutionVariant[] {
+  switch (theme) {
+    case 'scatter':
+      return buildScatterVariants(base, prompt, n);
+    case 'explosive':
+      return buildExplosiveVariants(base, prompt, n);
+    case 'orbit':
+      return buildOrbitVariants(base, prompt, n);
+    case 'bounce':
+      return buildBounceVariants(base, prompt, n);
+    default:
+      return buildGenericVariants(base, prompt, n);
+  }
 }
 
 export function generateOfflineEvolution(
   prompt: string,
   context: EvolutionContext,
 ): DraftCard[] {
+  const n = parseEvolutionQuantity(prompt);
+  const theme = detectEvolutionTheme(prompt);
   const basePower = scoreAbilitySchema(context.baseAbility);
-
-  const variants = [
-    mutateCluster(context.baseAbility, prompt),
-    mutateSpatialField(context.baseAbility, prompt),
-    mutateKinematic(context.baseAbility, prompt),
-  ];
-
+  const variants = buildThemeVariants(theme, context.baseAbility, prompt, n);
   const rarities: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
-  const taglines = ['Cluster Payload', 'Spatial Trap', 'Motion Augment'];
-  const ids = ['evo_cluster', 'evo_field', 'evo_motion'];
 
   return variants.map((v, i) => {
     let schema = v.schema;
     let balanced = balanceAbilitySchema(schema, context.category);
 
-    // Evolution guardrail: avoid accidental nerfs below 95% of base power
     if (scoreAbilitySchema(balanced) < basePower * 0.95) {
       schema = structuredClone(v.schema);
       balanced = balanceAbilitySchema(schema, context.category);
     }
 
     return makeActiveCard(
-      ids[i],
+      v.id,
       balanced.name,
-      taglines[i],
+      v.tagline,
       `Evolved from ${context.baseAbility.name}: ${prompt.slice(0, 48) || 'mutation'}`,
       rarities[i],
       balanced,
@@ -763,8 +1302,17 @@ export async function synthesizeAbility(
       online = await fetchLLMForge(prompt, category, loadout, settings);
     }
 
-    if (online) return online;
+    if (online) {
+      lastSynthesisSource = 'api';
+      lastSynthesisError = null;
+      return online;
+    }
   }
+
+  lastSynthesisSource = 'heuristic';
+  lastSynthesisError = settings.apiKey.trim()
+    ? lastApiError
+    : 'No API key configured';
 
   if (passiveOnly) return generateOfflinePassives(prompt);
   if (evolution) return generateOfflineEvolution(prompt, evolution);

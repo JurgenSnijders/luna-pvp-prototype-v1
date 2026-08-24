@@ -134,7 +134,10 @@ export class Interpreter {
           trajectory: action.trajectory,
           triggers: action.triggers ?? [],
         };
-        this.executeAbility(childSchema, source, aimDir, world, depth + 1, hitPos);
+        const offsetRad = (action.aimOffsetDeg ?? 0) * (Math.PI / 180);
+        const baseAngle = Math.atan2(aimDir.y, aimDir.x);
+        const childAim = Vector2D.fromAngle(baseAngle + offsetRad);
+        this.executeAbility(childSchema, source, childAim, world, depth + 1, hitPos);
         break;
       }
       case 'TELEPORT': {

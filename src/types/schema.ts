@@ -66,6 +66,8 @@ export interface SpawnChildProjectileAction {
   type: 'SPAWN_CHILD_PROJECTILE';
   trajectory: TrajectoryConfig;
   triggers?: TriggerNode[];
+  /** Degrees offset from the parent aim direction (for fan/scatter shots). */
+  aimOffsetDeg?: number;
 }
 
 export interface ModifyStatAction {
@@ -253,6 +255,10 @@ function validateActionPayload(value: unknown): ActionPayload | null {
           triggers.push(node);
         }
         action.triggers = triggers;
+      }
+      if (value.aimOffsetDeg !== undefined) {
+        if (!isNumber(value.aimOffsetDeg)) return null;
+        action.aimOffsetDeg = value.aimOffsetDeg;
       }
       return action;
     }

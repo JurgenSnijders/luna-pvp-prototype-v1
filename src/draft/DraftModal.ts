@@ -1,4 +1,10 @@
-import { synthesizeAbility } from '../ai/Synthesizer';
+import {
+  DEFAULT_MODEL,
+  getAiSettings,
+  getApiConnectionStatus,
+  getLastSynthesisMeta,
+  synthesizeAbility,
+} from '../ai/Synthesizer';
 import type {
   ActionSlotKey,
   CardRarity,
@@ -155,6 +161,8 @@ export class DraftModal {
   private modeRow: HTMLElement;
   private categoryRow: HTMLElement;
   private evolutionBanner: HTMLElement;
+  private apiStatusPill: HTMLElement;
+  private apiWarningBanner: HTMLElement;
   private promptInput: HTMLInputElement;
   private chipsRow: HTMLElement;
   private cardsContainer: HTMLElement;
@@ -195,16 +203,32 @@ export class DraftModal {
 
     const header = document.createElement('div');
     header.style.cssText =
-      'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;';
+      'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;gap:10px;';
     const title = document.createElement('h2');
     title.textContent = 'Synthesizer Workshop';
-    title.style.cssText = 'margin:0;font-size:18px;letter-spacing:0.02em;';
+    title.style.cssText = 'margin:0;font-size:18px;letter-spacing:0.02em;flex-shrink:0;';
+
+    this.apiStatusPill = document.createElement('div');
+    this.apiStatusPill.style.cssText = `
+      margin-left:auto;margin-right:8px;padding:4px 10px;border-radius:999px;font-size:11px;
+      border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:#aaa;
+      white-space:nowrap;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;
+    `;
+
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
     closeBtn.style.cssText = this.btnStyle();
     closeBtn.onclick = () => this.close();
     header.appendChild(title);
+    header.appendChild(this.apiStatusPill);
     header.appendChild(closeBtn);
+
+    this.apiWarningBanner = document.createElement('div');
+    this.apiWarningBanner.style.cssText = `
+      display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;flex-shrink:0;
+      background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);
+      color:#fcd34d;font-size:12px;line-height:1.35;
+    `;
 
     const overviewLabel = document.createElement('div');
     overviewLabel.textContent = 'ARSENAL DOCK';
@@ -280,6 +304,7 @@ export class DraftModal {
     `;
 
     this.panel.appendChild(header);
+    this.panel.appendChild(this.apiWarningBanner);
     this.panel.appendChild(overviewLabel);
     this.panel.appendChild(this.loadoutBar);
     this.panel.appendChild(this.modeRow);
@@ -380,6 +405,7 @@ export class DraftModal {
     this.evolutionContext = null;
     this.presetSlot = null;
     this.cards = [];
+    this.clearSynthesisWarning();
     this.open_ = true;
     this.overlay.style.display = 'flex';
     requestAnimationFrame(() => {
@@ -412,6 +438,7 @@ export class DraftModal {
     this.evolutionContext = null;
     this.presetSlot = null;
     this.cards = cards;
+    this.clearSynthesisWarning();
     this.open_ = true;
     this.overlay.style.display = 'flex';
     requestAnimationFrame(() => {
@@ -448,9 +475,49 @@ export class DraftModal {
   }
 
   private refreshUI(): void {
+    this.renderApiStatusPill();
     this.renderLoadoutOverview();
     this.renderSynthesisControls();
     this.renderResultCards();
+  }
+
+  private renderApiStatusPill(): void {
+    const status = getApiConnectionStatus();
+    const settings = getAiSettings();
+    const model = status.model || settings.model || DEFAULT_MODEL;
+    const hasKey = settings.apiKey.trim().length > 0;
+
+    if (status.online) {
+      this.apiStatusPill.textContent = `● ${model} (Active)`;
+      this.apiStatusPill.style.color = '#6ee7b7';
+      this.apiStatusPill.style.borderColor = 'rgba(52,211,153,0.45)';
+      this.apiStatusPill.style.background = 'rgba(52,211,153,0.12)';
+      this.apiStatusPill.title = 'AI online — last synthesis succeeded';
+    } else if (!hasKey) {
+      this.apiStatusPill.textContent = '○ Heuristic Mode';
+      this.apiStatusPill.style.color = '#fcd34d';
+      this.apiStatusPill.style.borderColor = 'rgba(245,158,11,0.4)';
+      this.apiStatusPill.style.background = 'rgba(245,158,11,0.1)';
+      this.apiStatusPill.title = 'No API key configured — using offline heuristics';
+    } else {
+      this.apiStatusPill.textContent = '○ Heuristic Fallback';
+      this.apiStatusPill.style.color = '#fcd34d';
+      this.apiStatusPill.style.borderColor = 'rgba(245,158,11,0.4)';
+      this.apiStatusPill.style.background = 'rgba(245,158,11,0.1)';
+      this.apiStatusPill.title = status.lastError
+        ? `Last error: ${status.lastError}`
+        : 'API key set — awaiting successful call';
+    }
+  }
+
+  private showSynthesisWarning(message: string): void {
+    this.apiWarningBanner.style.display = 'block';
+    this.apiWarningBanner.textContent = message;
+  }
+
+  private clearSynthesisWarning(): void {
+    this.apiWarningBanner.style.display = 'none';
+    this.apiWarningBanner.textContent = '';
   }
 
   private renderLoadoutOverview(): void {
@@ -668,6 +735,7 @@ export class DraftModal {
           ? 'cluster bomblets on impact'
           : 'kinetic combat ability');
 
+    this.clearSynthesisWarning();
     this.loadingEl.style.display = 'block';
     this.loadingEl.textContent = 'Synthesizing...';
     this.cardsContainer.innerHTML = '';
@@ -686,6 +754,21 @@ export class DraftModal {
         this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
         this.mode === 'PASSIVE_UPGRADES',
       );
+
+      const meta = getLastSynthesisMeta();
+      if (meta.source === 'heuristic' && meta.error) {
+        if (meta.error === 'No API key configured') {
+          this.showSynthesisWarning(
+            'Heuristic Mode (no API key). Displaying offline cards.',
+          );
+        } else {
+          this.showSynthesisWarning(
+            `API call failed: ${meta.error}. Displaying heuristic cards.`,
+          );
+        }
+      }
+
+      this.renderApiStatusPill();
       this.renderResultCards();
     } finally {
       this.loadingEl.style.display = 'none';
