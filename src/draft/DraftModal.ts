@@ -25,6 +25,7 @@ export interface DraftModalCallbacks {
 }
 
 type WorkshopMode = 'FORGE_NEW' | 'EVOLVE_EXISTING' | 'PASSIVE_UPGRADES';
+type BadgeKind = 'trajectory' | 'field' | 'trigger';
 
 const RARITY_COLORS: Record<CardRarity, string> = {
   COMMON: '#888888',
@@ -33,6 +34,46 @@ const RARITY_COLORS: Record<CardRarity, string> = {
   CHAOTIC: '#ff8800',
 };
 
+const RARITY_BTN: Record<CardRarity, { border: string; bg: string }> = {
+  COMMON: { border: '#64748b', bg: 'rgba(100,116,139,0.25)' },
+  RARE: { border: '#00ccff', bg: 'rgba(0,200,255,0.22)' },
+  EPIC: { border: '#aa44ff', bg: 'rgba(170,68,255,0.22)' },
+  CHAOTIC: { border: '#ff8800', bg: 'rgba(255,136,0,0.22)' },
+};
+
+const SLOT_ACCENT: Record<ActionSlotKey, string> = {
+  LMB: '#00ccff',
+  RMB: '#00ccff',
+  Q: '#f0c040',
+  E: '#aa44ff',
+  SPACE: '#34d399',
+};
+
+const BADGE_COLORS: Record<BadgeKind, { bg: string; text: string }> = {
+  trajectory: { bg: 'rgba(0,200,255,0.15)', text: '#6ee7ff' },
+  field: { bg: 'rgba(170,68,255,0.15)', text: '#d8b4fe' },
+  trigger: { bg: 'rgba(245,158,11,0.15)', text: '#fcd34d' },
+};
+
+const TRAJECTORY_LABELS = new Set([
+  'LINEAR',
+  'RETURN TO SOURCE',
+  'ORBIT ANCHOR',
+  'HOMING SLERP',
+  'DISCONTINUOUS BLINK',
+]);
+
+const FIELD_LABELS = new Set([
+  'RADIAL IMPULSE',
+  'VORTEX TANGENT',
+  'FRICTION OVERRIDE',
+  'MASS ATTRACTOR',
+]);
+
+const POWER_MAX = 300;
+const PASSIVE_POWER_MAX = 45;
+const STYLE_ID = 'luna-workshop-styles';
+
 const SUGGEST_CHIPS = [
   '+ Bouncing',
   '+ Black Hole on Hit',
@@ -40,40 +81,71 @@ const SUGGEST_CHIPS = [
   '+ Cluster Bomblets',
 ];
 
-function extractMechanicBadgesFromAbility(s: AbilitySchema): string[] {
-  const badges: string[] = [];
-  if (s.trajectory) badges.push(`[${s.trajectory.type.replace(/_/g, ' ')}]`);
-  badges.push(`[CD ${s.cooldownMs}ms]`);
-  if (s.recoilKick > 0) badges.push(`[Recoil ${s.recoilKick}]`);
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function classifyBadge(label: string): BadgeKind {
+  const clean = label.replace(/^\[|\]$/g, '').trim().toUpperCase();
+  if (TRAJECTORY_LABELS.has(clean)) return 'trajectory';
+  if (FIELD_LABELS.has(clean)) return 'field';
+  return 'trigger';
+}
+
+function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
+  const resolved = kind ?? classifyBadge(label);
+  const colors = BADGE_COLORS[resolved];
+  const span = document.createElement('span');
+  span.textContent = label;
+  span.style.cssText = `
+    font-size:9px;padding:2px 6px;border-radius:4px;
+    background:${colors.bg};color:${colors.text};white-space:nowrap;
+  `;
+  return span;
+}
+
+function extractMechanicBadgesFromAbility(s: AbilitySchema): { label: string; kind: BadgeKind }[] {
+  const badges: { label: string; kind: BadgeKind }[] = [];
+  if (s.trajectory) {
+    badges.push({
+      label: `[${s.trajectory.type.replace(/_/g, ' ')}]`,
+      kind: 'trajectory',
+    });
+  }
 
   for (const node of s.triggers) {
     for (const action of node.actions) {
       if (action.type === 'SPAWN_FIELD') {
-        badges.push(`[${action.field.fieldType.replace(/_/g, ' ')}]`);
+        badges.push({
+          label: `[${action.field.fieldType.replace(/_/g, ' ')}]`,
+          kind: 'field',
+        });
       }
-      if (action.type === 'TELEPORT') badges.push('[TELEPORT]');
-      if (action.type === 'APPLY_IMPULSE') badges.push('[IMPULSE]');
-      if (action.type === 'SPAWN_CHILD_PROJECTILE') badges.push('[CLUSTER]');
+      if (action.type === 'TELEPORT') badges.push({ label: '[TELEPORT]', kind: 'trigger' });
+      if (action.type === 'APPLY_IMPULSE') badges.push({ label: '[IMPULSE]', kind: 'trigger' });
+      if (action.type === 'SPAWN_CHILD_PROJECTILE') badges.push({ label: '[CLUSTER]', kind: 'trigger' });
     }
   }
   return badges;
 }
 
-function extractMechanicBadges(card: DraftCard): string[] {
-  const badges: string[] = [];
-
+function extractMechanicBadges(card: DraftCard): { label: string; kind: BadgeKind }[] {
   if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
-    badges.push(...extractMechanicBadgesFromAbility(card.abilityPayload));
+    return extractMechanicBadgesFromAbility(card.abilityPayload);
   }
 
   if (card.type === 'PASSIVE_UPGRADE' && card.passivePayload) {
-    for (const mod of card.passivePayload) {
+    return card.passivePayload.map((mod) => {
       const sign = mod.op === 'MULTIPLY' ? `${Math.round((mod.value - 1) * 100)}%` : `+${mod.value}`;
-      badges.push(`[${mod.stat} ${sign}]`);
-    }
+      return { label: `[${mod.stat} ${sign}]`, kind: 'trigger' as const };
+    });
   }
 
-  return badges;
+  return [];
 }
 
 export class DraftModal {
@@ -97,19 +169,22 @@ export class DraftModal {
   private presetSlot: ActionSlotKey | null = null;
 
   constructor(private callbacks: DraftModalCallbacks) {
+    this.injectStyles();
+
     this.overlay = document.createElement('div');
     this.overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 10000;
-      display: none; align-items: stretch; justify-content: center;
+      display: none; align-items: center; justify-content: center;
       background: rgba(4,6,14,0.72); backdrop-filter: blur(12px);
       opacity: 0; transition: opacity 0.2s ease;
-      pointer-events: auto; padding: 20px;
+      pointer-events: auto; padding: 16px;
     `;
 
     this.panel = document.createElement('div');
     this.panel.style.cssText = `
-      width: min(1180px, 100%); max-height: 100%; overflow-y: auto;
-      padding: 22px 24px 28px; border-radius: 18px;
+      width: min(1180px, 100%); height: min(92vh, 880px); overflow: hidden;
+      display: flex; flex-direction: column;
+      padding: 16px 20px 18px; border-radius: 18px;
       background: linear-gradient(160deg, rgba(16,18,32,0.92), rgba(10,12,24,0.88));
       border: 1px solid rgba(255,255,255,0.12);
       box-shadow: 0 24px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
@@ -119,10 +194,11 @@ export class DraftModal {
     this.panel.dataset.panel = 'true';
 
     const header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    header.style.cssText =
+      'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;';
     const title = document.createElement('h2');
     title.textContent = 'Synthesizer Workshop';
-    title.style.cssText = 'margin:0;font-size:20px;letter-spacing:0.02em;';
+    title.style.cssText = 'margin:0;font-size:18px;letter-spacing:0.02em;';
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
     closeBtn.style.cssText = this.btnStyle();
@@ -131,34 +207,36 @@ export class DraftModal {
     header.appendChild(closeBtn);
 
     const overviewLabel = document.createElement('div');
-    overviewLabel.textContent = 'LOADOUT OVERVIEW';
+    overviewLabel.textContent = 'ARSENAL DOCK';
     overviewLabel.style.cssText =
-      'font-size:11px;letter-spacing:0.08em;color:#889;margin-bottom:8px;font-weight:600;';
+      'font-size:10px;letter-spacing:0.08em;color:#889;margin-bottom:6px;font-weight:600;flex-shrink:0;';
 
     this.loadoutBar = document.createElement('div');
     this.loadoutBar.style.cssText =
-      'display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;';
+      'display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px;flex-shrink:0;';
 
     this.modeRow = document.createElement('div');
-    this.modeRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;';
+    this.modeRow.style.cssText =
+      'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;flex-shrink:0;';
 
     this.categoryRow = document.createElement('div');
-    this.categoryRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;';
+    this.categoryRow.style.cssText =
+      'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;flex-shrink:0;';
 
     this.evolutionBanner = document.createElement('div');
     this.evolutionBanner.style.cssText = `
-      display:none;margin-bottom:12px;padding:12px 14px;border-radius:10px;
+      display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;flex-shrink:0;
       background:rgba(0,200,255,0.08);border:1px solid rgba(0,200,255,0.25);
     `;
 
     const promptRow = document.createElement('div');
-    promptRow.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;';
+    promptRow.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;flex-shrink:0;';
     this.promptInput = document.createElement('input');
     this.promptInput.type = 'text';
     this.promptInput.placeholder = 'Describe your ability... (e.g. "ice vortex boomerang")';
     this.promptInput.style.cssText = `
-      flex:1;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);
-      background:rgba(8,10,20,0.9);color:#e0e0e8;font-size:14px;
+      flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);
+      background:rgba(8,10,20,0.9);color:#e0e0e8;font-size:13px;
     `;
     this.promptInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -174,14 +252,17 @@ export class DraftModal {
     promptRow.appendChild(synthBtn);
 
     this.chipsRow = document.createElement('div');
-    this.chipsRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;';
+    this.chipsRow.style.cssText =
+      'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;flex-shrink:0;';
     for (const chip of SUGGEST_CHIPS) {
       const btn = document.createElement('button');
       btn.textContent = chip;
       btn.style.cssText = this.chipStyle();
       btn.onclick = () => {
         const cur = this.promptInput.value.trim();
-        this.promptInput.value = cur ? `${cur} ${chip.replace(/^\+\s*/, '')}` : chip.replace(/^\+\s*/, '');
+        this.promptInput.value = cur
+          ? `${cur} ${chip.replace(/^\+\s*/, '')}`
+          : chip.replace(/^\+\s*/, '');
         this.promptInput.focus();
       };
       this.chipsRow.appendChild(btn);
@@ -189,10 +270,14 @@ export class DraftModal {
 
     this.loadingEl = document.createElement('div');
     this.loadingEl.textContent = 'Synthesizing...';
-    this.loadingEl.style.cssText = 'display:none;text-align:center;color:#888;margin-bottom:12px;';
+    this.loadingEl.style.cssText =
+      'display:none;text-align:center;color:#888;margin-bottom:6px;flex-shrink:0;font-size:12px;';
 
     this.cardsContainer = document.createElement('div');
-    this.cardsContainer.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;justify-content:center;';
+    this.cardsContainer.style.cssText = `
+      flex:1;min-height:0;overflow:hidden;
+      display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch;
+    `;
 
     this.panel.appendChild(header);
     this.panel.appendChild(overviewLabel);
@@ -212,22 +297,77 @@ export class DraftModal {
     });
   }
 
+  private injectStyles(): void {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      @keyframes evolvePulse {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(0,200,255,0.5), 0 0 12px rgba(0,200,255,0.25); }
+        50% { box-shadow: 0 0 0 2px rgba(0,200,255,0.9), 0 0 20px rgba(0,200,255,0.45); }
+      }
+      .evolve-source { animation: evolvePulse 1.6s ease-in-out infinite; }
+    `;
+    document.head.appendChild(style);
+  }
+
   private btnStyle(primary = false): string {
     return `
-      padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;
+      padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
       border:1px solid ${primary ? '#00ccff' : 'rgba(255,255,255,0.15)'};
       background:${primary ? 'rgba(0,200,255,0.2)' : 'rgba(255,255,255,0.05)'};
       color:#e0e0e8;
     `;
   }
 
+  private btnStyleRarity(rarity: CardRarity): string {
+    const theme = RARITY_BTN[rarity];
+    return `
+      padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
+      border:1px solid ${theme.border};background:${theme.bg};color:#e0e0e8;
+    `;
+  }
+
   private chipStyle(active = false): string {
     return `
-      padding:4px 10px;border-radius:999px;cursor:pointer;font-size:11px;
+      padding:3px 9px;border-radius:999px;cursor:pointer;font-size:11px;
       border:1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.14)'};
       background:${active ? 'rgba(0,200,255,0.22)' : 'rgba(255,255,255,0.04)'};
       color:${active ? '#dff' : '#bbb'};
     `;
+  }
+
+  private renderPowerBar(
+    cost: number,
+    rarity: CardRarity,
+    isPassive = false,
+  ): HTMLElement {
+    const max = isPassive ? PASSIVE_POWER_MAX : POWER_MAX;
+    const pct = Math.min(100, Math.round((cost / max) * 100));
+    const color = RARITY_COLORS[rarity];
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-bottom:10px;';
+
+    const label = document.createElement('div');
+    label.textContent = `⚡ Power: ${Math.round(cost)}`;
+    label.style.cssText = 'font-size:11px;color:#ccc;margin-bottom:4px;';
+
+    const track = document.createElement('div');
+    track.style.cssText =
+      'height:4px;border-radius:2px;background:rgba(255,255,255,0.08);overflow:hidden;';
+
+    const fill = document.createElement('div');
+    fill.style.cssText = `
+      height:100%;width:${pct}%;border-radius:2px;
+      background:${color};box-shadow:0 0 6px ${color}66;
+      transition:width 0.2s ease;
+    `;
+
+    track.appendChild(fill);
+    wrap.appendChild(label);
+    wrap.appendChild(track);
+    return wrap;
   }
 
   isOpen(): boolean {
@@ -284,14 +424,10 @@ export class DraftModal {
 
   private setMode(mode: WorkshopMode): void {
     this.mode = mode;
-    if (mode !== 'EVOLVE_EXISTING') {
-      // Keep evolution context only in evolve mode
-      if (mode === 'FORGE_NEW' && !this.presetSlot) {
-        this.evolutionContext = null;
-      }
+    if (mode === 'FORGE_NEW' && !this.presetSlot) {
+      this.evolutionContext = null;
     }
     if (mode === 'EVOLVE_EXISTING' && !this.evolutionContext) {
-      // Auto-pick first filled slot
       const loadout = this.callbacks.getLoadout();
       for (const key of ACTION_SLOT_KEYS) {
         const idx = ACTION_SLOT_INDEX[key];
@@ -325,57 +461,42 @@ export class DraftModal {
       const idx = ACTION_SLOT_INDEX[key];
       const ability = loadout.abilities[idx];
       const category = SLOT_CATEGORY_MAP[key];
-      const selected =
-        this.presetSlot === key ||
-        (this.evolutionContext?.slotKey === key && this.mode === 'EVOLVE_EXISTING');
+      const accent = SLOT_ACCENT[key];
+      const isEvolveSource =
+        this.mode === 'EVOLVE_EXISTING' && this.evolutionContext?.slotKey === key;
+      const isPreset =
+        !isEvolveSource && this.presetSlot === key && this.mode === 'FORGE_NEW';
 
       const panel = document.createElement('div');
       panel.style.cssText = `
-        padding:12px;border-radius:12px;min-height:130px;
-        background:rgba(255,255,255,${selected ? '0.08' : '0.04'});
-        border:1px solid ${selected ? 'rgba(0,200,255,0.45)' : 'rgba(255,255,255,0.1)'};
-        display:flex;flex-direction:column;gap:6px;
+        display:flex;flex-direction:column;justify-content:space-between;
+        height:100px;padding:8px 10px;border-radius:10px;overflow:hidden;
+        background:${hexToRgba(accent, 0.06)};
+        border:1px solid ${hexToRgba(accent, 0.22)};
+        border-left:3px solid ${accent};
+        ${isPreset ? `box-shadow:inset 0 0 0 1px ${accent};` : ''}
       `;
+      if (isEvolveSource) {
+        panel.classList.add('evolve-source');
+        panel.dataset.evolveActive = 'true';
+      }
 
-      const header = document.createElement('div');
-      header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+      const topRow = document.createElement('div');
+      topRow.style.cssText =
+        'display:flex;justify-content:space-between;align-items:flex-start;gap:4px;';
+
       const slotLabel = document.createElement('div');
       slotLabel.textContent = `${key} · ${getCategoryLabel(category)}`;
-      slotLabel.style.cssText = 'font-size:11px;color:#8ab;font-weight:600;';
-      header.appendChild(slotLabel);
-
-      const name = document.createElement('div');
-      name.textContent = ability?.name ?? 'Empty';
-      name.style.cssText = `font-size:13px;font-weight:bold;color:${ability ? '#eee' : '#666'};`;
-
-      const stats = document.createElement('div');
-      if (ability) {
-        stats.textContent = `CD ${ability.cooldownMs}ms · Recoil ${ability.recoilKick}`;
-        stats.style.cssText = 'font-size:10px;color:#888;';
-      } else {
-        stats.textContent = 'No ability equipped';
-        stats.style.cssText = 'font-size:10px;color:#555;';
-      }
-
-      const badges = document.createElement('div');
-      badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;';
-      if (ability) {
-        for (const b of extractMechanicBadgesFromAbility(ability).slice(0, 4)) {
-          const span = document.createElement('span');
-          span.textContent = b;
-          span.style.cssText =
-            'font-size:8px;padding:2px 5px;border-radius:4px;background:rgba(255,255,255,0.07);color:#bbb;';
-          badges.appendChild(span);
-        }
-      }
+      slotLabel.style.cssText = `font-size:10px;color:${accent};font-weight:600;flex-shrink:0;`;
 
       const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:6px;margin-top:auto;';
+      actions.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
 
       const evolveBtn = document.createElement('button');
       evolveBtn.textContent = 'Evolve';
       evolveBtn.disabled = !ability;
-      evolveBtn.style.cssText = this.btnStyle(true) + 'flex:1;font-size:11px;padding:6px 8px;';
+      evolveBtn.style.cssText =
+        this.btnStyle(true) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
       if (!ability) evolveBtn.style.opacity = '0.4';
       evolveBtn.onclick = () => {
         if (!ability) return;
@@ -393,7 +514,8 @@ export class DraftModal {
 
       const replaceBtn = document.createElement('button');
       replaceBtn.textContent = 'Replace';
-      replaceBtn.style.cssText = this.btnStyle(false) + 'flex:1;font-size:11px;padding:6px 8px;';
+      replaceBtn.style.cssText =
+        this.btnStyle(false) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
       replaceBtn.onclick = () => {
         this.presetSlot = key;
         this.selectedCategory = category;
@@ -405,12 +527,43 @@ export class DraftModal {
 
       actions.appendChild(evolveBtn);
       actions.appendChild(replaceBtn);
+      topRow.appendChild(slotLabel);
+      topRow.appendChild(actions);
 
-      panel.appendChild(header);
+      const name = document.createElement('div');
+      name.textContent = ability?.name ?? 'Empty';
+      name.style.cssText = `
+        font-size:12px;font-weight:bold;color:${ability ? '#eee' : '#666'};
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      `;
+
+      const bottom = document.createElement('div');
+      bottom.style.cssText = 'display:flex;flex-direction:column;gap:3px;min-height:0;';
+
+      const stats = document.createElement('div');
+      if (ability) {
+        stats.textContent = `CD ${ability.cooldownMs}ms · Recoil ${ability.recoilKick}`;
+        stats.style.cssText = 'font-size:9px;color:#888;';
+      } else {
+        stats.textContent = 'No ability equipped';
+        stats.style.cssText = 'font-size:9px;color:#555;';
+      }
+
+      const badges = document.createElement('div');
+      badges.style.cssText =
+        'display:flex;flex-wrap:nowrap;gap:3px;overflow:hidden;';
+      if (ability) {
+        for (const b of extractMechanicBadgesFromAbility(ability).slice(0, 3)) {
+          badges.appendChild(renderBadge(b.label, b.kind));
+        }
+      }
+
+      bottom.appendChild(stats);
+      bottom.appendChild(badges);
+
+      panel.appendChild(topRow);
       panel.appendChild(name);
-      panel.appendChild(stats);
-      panel.appendChild(badges);
-      panel.appendChild(actions);
+      panel.appendChild(bottom);
       this.loadoutBar.appendChild(panel);
     }
   }
@@ -447,28 +600,31 @@ export class DraftModal {
     }
 
     if (this.mode === 'EVOLVE_EXISTING' && this.evolutionContext) {
-      this.evolutionBanner.style.display = 'block';
+      this.evolutionBanner.style.display = 'flex';
+      this.evolutionBanner.style.alignItems = 'center';
+      this.evolutionBanner.style.gap = '10px';
+      this.evolutionBanner.style.flexWrap = 'wrap';
       this.evolutionBanner.innerHTML = '';
+
       const text = document.createElement('div');
-      text.style.cssText = 'font-size:13px;';
+      text.style.cssText = 'font-size:12px;flex-shrink:0;';
       text.innerHTML = `Evolving <strong>${this.evolutionContext.baseAbility.name}</strong> · ${this.evolutionContext.slotKey} (${getCategoryLabel(this.evolutionContext.category)})`;
+
+      const badgeRow = document.createElement('div');
+      badgeRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;flex:1;';
+      for (const b of extractMechanicBadgesFromAbility(this.evolutionContext.baseAbility).slice(0, 5)) {
+        badgeRow.appendChild(renderBadge(b.label, b.kind));
+      }
+
       const change = document.createElement('button');
       change.textContent = 'Change Base';
-      change.style.cssText = this.btnStyle(false) + 'margin-top:8px;font-size:11px;';
+      change.style.cssText = this.btnStyle(false) + 'font-size:10px;padding:4px 8px;flex-shrink:0;';
       change.onclick = () => {
         this.evolutionContext = null;
         this.refreshUI();
       };
+
       this.evolutionBanner.appendChild(text);
-      const badgeRow = document.createElement('div');
-      badgeRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;';
-      for (const b of extractMechanicBadgesFromAbility(this.evolutionContext.baseAbility).slice(0, 5)) {
-        const span = document.createElement('span');
-        span.textContent = b;
-        span.style.cssText =
-          'font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.08);color:#ccc;';
-        badgeRow.appendChild(span);
-      }
       this.evolutionBanner.appendChild(badgeRow);
       this.evolutionBanner.appendChild(change);
     } else if (this.mode === 'EVOLVE_EXISTING' && !this.evolutionContext) {
@@ -476,7 +632,7 @@ export class DraftModal {
       this.evolutionBanner.innerHTML = '';
       const text = document.createElement('div');
       text.textContent = 'Select a filled slot above and click Evolve to choose a base spell.';
-      text.style.cssText = 'font-size:13px;color:#aaa;';
+      text.style.cssText = 'font-size:12px;color:#aaa;';
       this.evolutionBanner.appendChild(text);
     } else {
       this.evolutionBanner.style.display = 'none';
@@ -486,7 +642,8 @@ export class DraftModal {
     if (this.mode === 'PASSIVE_UPGRADES') {
       this.promptInput.placeholder = 'Describe a passive upgrade... (e.g. "faster movement")';
     } else if (this.mode === 'EVOLVE_EXISTING') {
-      this.promptInput.placeholder = 'Describe the mutation... (e.g. "split into 3 gravity bomblets")';
+      this.promptInput.placeholder =
+        'Describe the mutation... (e.g. "split into 3 gravity bomblets")';
     } else {
       this.promptInput.placeholder = 'Describe your ability... (e.g. "ice vortex boomerang")';
     }
@@ -503,7 +660,8 @@ export class DraftModal {
       return;
     }
 
-    const prompt = this.promptInput.value.trim() ||
+    const prompt =
+      this.promptInput.value.trim() ||
       (this.mode === 'PASSIVE_UPGRADES'
         ? 'kinetic conditioning'
         : this.mode === 'EVOLVE_EXISTING'
@@ -542,35 +700,37 @@ export class DraftModal {
       const el = document.createElement('div');
       const color = RARITY_COLORS[card.rarity];
       el.style.cssText = `
-        flex:1;min-width:260px;max-width:320px;padding:16px;border-radius:12px;
+        display:flex;flex-direction:column;min-height:0;overflow:hidden;
+        padding:12px 14px;border-radius:12px;
         background:rgba(20,20,35,0.9);border:2px solid ${color};
-        box-shadow:0 0 20px ${color}44;
+        box-shadow:0 0 24px ${color}55, inset 0 1px 0 ${color}22;
       `;
 
       const rarityBadge = document.createElement('div');
       rarityBadge.textContent = card.rarity;
-      rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:4px;`;
+      rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
 
       const cardTitle = document.createElement('div');
       cardTitle.textContent = card.title;
-      cardTitle.style.cssText = 'font-size:16px;font-weight:bold;margin-bottom:2px;';
+      cardTitle.style.cssText =
+        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
 
       const tagline = document.createElement('div');
       tagline.textContent = card.tagline;
-      tagline.style.cssText = 'font-size:11px;color:#888;margin-bottom:8px;';
+      tagline.style.cssText = 'font-size:11px;color:#888;margin-bottom:6px;flex-shrink:0;';
 
       const desc = document.createElement('div');
       desc.textContent = card.description;
-      desc.style.cssText = 'font-size:12px;color:#aaa;margin-bottom:10px;line-height:1.4;';
+      desc.style.cssText = `
+        font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+      `;
 
       const badges = document.createElement('div');
-      badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;';
-      for (const b of extractMechanicBadges(card)) {
-        const span = document.createElement('span');
-        span.textContent = b;
-        span.style.cssText =
-          'font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.08);color:#ccc;';
-        badges.appendChild(span);
+      badges.style.cssText =
+        'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;flex-shrink:0;';
+      for (const b of extractMechanicBadges(card).slice(0, 6)) {
+        badges.appendChild(renderBadge(b.label, b.kind));
       }
 
       el.appendChild(rarityBadge);
@@ -581,15 +741,22 @@ export class DraftModal {
 
       if (card.evolutionDiff && card.evolutionDiff.length > 0) {
         const diffList = document.createElement('div');
-        diffList.style.cssText = 'font-size:10px;color:#6cf;margin-bottom:8px;line-height:1.4;';
+        diffList.style.cssText =
+          'font-size:10px;color:#6cf;margin-bottom:6px;line-height:1.35;flex-shrink:0;';
         diffList.textContent = card.evolutionDiff.join(' · ');
         el.appendChild(diffList);
       }
 
-      const cost = document.createElement('div');
-      cost.textContent = `Budget: ${Math.round(card.budgetCost)}`;
-      cost.style.cssText = 'font-size:10px;color:#666;margin-bottom:10px;';
-      el.appendChild(cost);
+      el.appendChild(
+        this.renderPowerBar(
+          card.budgetCost,
+          card.rarity,
+          card.type === 'PASSIVE_UPGRADE',
+        ),
+      );
+
+      const footer = document.createElement('div');
+      footer.style.cssText = 'margin-top:auto;flex-shrink:0;';
 
       if (card.type === 'ACTIVE_ABILITY') {
         const compareAgainst = this.getCompareAbility(loadout);
@@ -598,7 +765,7 @@ export class DraftModal {
           const diffEl = document.createElement('div');
           diffEl.textContent = diff;
           diffEl.style.cssText = 'font-size:10px;color:#4f8;margin-bottom:8px;';
-          el.appendChild(diffEl);
+          footer.appendChild(diffEl);
         }
 
         const targetSlot =
@@ -609,29 +776,31 @@ export class DraftModal {
         if (targetSlot && !this.intermissionMode) {
           const equipBtn = document.createElement('button');
           equipBtn.textContent = `Equip to ${targetSlot}`;
-          equipBtn.style.cssText = this.btnStyle(true) + 'width:100%;';
+          equipBtn.style.cssText = this.btnStyleRarity(card.rarity) + 'width:100%;';
           equipBtn.onclick = () => this.equip(card, targetSlot);
-          el.appendChild(equipBtn);
+          footer.appendChild(equipBtn);
         } else {
           const btnContainer = document.createElement('div');
           btnContainer.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
           for (const key of ACTION_SLOT_KEYS) {
             const slotBtn = document.createElement('button');
             slotBtn.textContent = `[${key}]`;
-            slotBtn.style.cssText = this.btnStyle(key === 'LMB') + 'flex:1;min-width:48px;';
+            slotBtn.style.cssText =
+              this.btnStyleRarity(card.rarity) + 'flex:1;min-width:44px;padding:6px 8px;';
             slotBtn.onclick = () => this.equip(card, key);
             btnContainer.appendChild(slotBtn);
           }
-          el.appendChild(btnContainer);
+          footer.appendChild(btnContainer);
         }
       } else {
         const passiveBtn = document.createElement('button');
         passiveBtn.textContent = 'Equip Passive';
-        passiveBtn.style.cssText = this.btnStyle(true) + 'width:100%;';
+        passiveBtn.style.cssText = this.btnStyleRarity(card.rarity) + 'width:100%;';
         passiveBtn.onclick = () => this.equip(card, 'PASSIVE');
-        el.appendChild(passiveBtn);
+        footer.appendChild(passiveBtn);
       }
 
+      el.appendChild(footer);
       this.cardsContainer.appendChild(el);
     }
   }
