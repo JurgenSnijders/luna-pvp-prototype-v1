@@ -35,12 +35,10 @@ export class CanvasRenderer {
     const ctx = this.ctx;
     this.ringRotation += 0.02;
 
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, width, height);
-
-    this.drawLavaSea(ctx, world);
-    this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
+    this.drawLavaSea(ctx, world, width, height);
+    this.drawLavaHeatWaves(ctx, world, width, height);
     this.drawOuterBarrier(ctx, world);
+    this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
     this.drawZones(ctx, world);
     particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
@@ -59,38 +57,87 @@ export class CanvasRenderer {
   private drawLavaSea(
     ctx: CanvasRenderingContext2D,
     world: PhysicsWorld,
+    width: number,
+    height: number,
   ): void {
-    const outerR = getOuterWallRadius(world.hexRadius);
     const { hexCenter: center } = world;
-    const now = performance.now();
+    const gradRadius = Math.hypot(width, height) * 0.55;
 
     const gradient = ctx.createRadialGradient(
       center.x,
       center.y,
-      world.hexRadius * 0.3,
+      0,
       center.x,
       center.y,
-      outerR,
+      gradRadius,
     );
-    gradient.addColorStop(0, 'rgba(58, 10, 0, 1.0)');
-    gradient.addColorStop(0.6, 'rgba(180, 40, 0, 1.0)');
-    gradient.addColorStop(1, 'rgba(100, 0, 0, 1.0)');
+    gradient.addColorStop(0, 'rgba(210, 50, 0, 1.0)');
+    gradient.addColorStop(0.45, 'rgba(130, 20, 0, 1.0)');
+    gradient.addColorStop(1, 'rgba(40, 5, 0, 1.0)');
 
     ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, outerR, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(0, 0, width, height);
+  }
 
-    for (let i = 0; i < 5; i++) {
+  private drawLavaHeatWaves(
+    ctx: CanvasRenderingContext2D,
+    world: PhysicsWorld,
+    width: number,
+    height: number,
+  ): void {
+    const { hexCenter: center, hexRadius } = world;
+    const now = performance.now() * 0.0015;
+    const maxR = Math.hypot(width, height) * 0.6;
+
+    for (let i = 0; i < 8; i++) {
       const rippleR =
-        world.hexRadius * (0.55 + i * 0.12) +
-        Math.sin(now * 0.003 + i * 1.4) * 8;
-      const alpha = 0.08 + 0.06 * Math.sin(now * 0.003 + i * 0.9);
-      ctx.strokeStyle = `rgba(255, 120, 40, ${alpha})`;
+        hexRadius * (0.5 + i * 0.15) +
+        Math.sin(now + i * 0.8) * 20 +
+        (i / 8) * (maxR - hexRadius);
+      const alpha = 0.04 + 0.08 * (0.5 + 0.5 * Math.sin(now + i * 0.8));
+      ctx.strokeStyle = `rgba(255, 100, 30, ${alpha})`;
+      ctx.lineWidth = 1.5 + (i % 3);
+      ctx.beginPath();
+      ctx.ellipse(
+        center.x,
+        center.y,
+        rippleR * 1.05,
+        rippleR * 0.92,
+        now * 0.1 + i * 0.3,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const phase = now + i * 1.7;
+      const startX = (width * (0.1 + i * 0.2) + Math.sin(phase) * 40) % width;
+      const startY = (height * (0.2 + i * 0.15) + Math.cos(phase * 0.7) * 30) % height;
+      ctx.strokeStyle = 'rgba(255, 90, 20, 0.08)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(center.x, center.y, rippleR, 0, Math.PI * 2);
+      ctx.moveTo(startX, startY);
+      ctx.bezierCurveTo(
+        startX + 120 + Math.sin(phase) * 50,
+        startY - 80 + Math.cos(phase) * 40,
+        startX + 240 + Math.cos(phase * 1.2) * 60,
+        startY + 60 + Math.sin(phase * 0.9) * 50,
+        startX + 360,
+        startY + 20,
+      );
       ctx.stroke();
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI * 2 * i) / 6 + now * 0.4;
+      const spotR = hexRadius * (1.02 + 0.04 * Math.sin(now * 2 + i));
+      const spot = center.add(Vector2D.fromAngle(angle, spotR));
+      const spotAlpha = 0.15 + 0.1 * Math.sin(now * 2 + i);
+      ctx.fillStyle = `rgba(255, 140, 40, ${spotAlpha})`;
+      ctx.beginPath();
+      ctx.arc(spot.x, spot.y, 6 + Math.sin(now + i) * 2, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -100,27 +147,44 @@ export class CanvasRenderer {
   ): void {
     const outerR = getOuterWallRadius(world.hexRadius);
     const { hexCenter: center } = world;
-    const now = performance.now();
-    const pulse = 0.5 + 0.3 * Math.sin(now * 0.004);
+    const now = performance.now() * 0.001;
+    const pulse = 0.45 + 0.25 * Math.sin(now * 3);
+
+    ctx.fillStyle = 'rgba(255, 120, 0, 0.06)';
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, outerR, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.strokeStyle = `rgba(255, 170, 0, ${pulse})`;
-    ctx.lineWidth = 4;
-    ctx.shadowColor = 'rgba(255, 120, 0, 0.6)';
-    ctx.shadowBlur = 12;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#ff8800';
+    ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.arc(center.x, center.y, outerR, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
     ctx.setLineDash([12, 18]);
-    ctx.lineDashOffset = -now * 0.02;
-    ctx.strokeStyle = `rgba(255, 200, 80, ${0.35 + pulse * 0.25})`;
+    ctx.lineDashOffset = -now * 20;
+    ctx.strokeStyle = `rgba(255, 200, 80, ${0.25 + pulse * 0.3})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(center.x, center.y, outerR - 2, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.lineDashOffset = 0;
+
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 180) * (60 * i);
+      const node = center.add(Vector2D.fromAngle(angle, outerR));
+      ctx.fillStyle = '#ffcc00';
+      ctx.shadowColor = 'rgba(255, 200, 0, 0.8)';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
   }
 
   private drawHexPlatform(

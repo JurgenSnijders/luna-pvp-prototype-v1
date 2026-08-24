@@ -1,3 +1,4 @@
+import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 
 const POOL_SIZE = 512;
@@ -10,6 +11,7 @@ interface Particle {
   color: string;
   size: number;
   alpha: number;
+  peakAlpha: number;
   active: boolean;
 }
 
@@ -26,6 +28,7 @@ export class ParticleSystem {
         color: '#ffffff',
         size: 2,
         alpha: 1,
+        peakAlpha: 1,
         active: false,
       });
     }
@@ -37,6 +40,7 @@ export class ParticleSystem {
     life: number,
     color: string,
     size: number,
+    initialAlpha = 1,
   ): void {
     const slot = this.pool.find((p) => !p.active);
     if (!slot) return;
@@ -46,7 +50,8 @@ export class ParticleSystem {
     slot.maxLife = life;
     slot.color = color;
     slot.size = size;
-    slot.alpha = 1;
+    slot.alpha = initialAlpha;
+    slot.peakAlpha = initialAlpha;
     slot.active = true;
   }
 
@@ -91,6 +96,33 @@ export class ParticleSystem {
     }
   }
 
+  spawnAmbientEmber(
+    bounds: { width: number; height: number },
+    safeCenter: Vector2D,
+    safeRadius: number,
+  ): void {
+    const colors = ['#ff6600', '#ffaa22'];
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const x = Math.random() * bounds.width;
+      const y = Math.random() * bounds.height;
+      const pos = new Vector2D(x, y);
+      if (isInsideHex(pos, safeCenter, safeRadius)) continue;
+
+      this.spawn(
+        pos,
+        new Vector2D(
+          (Math.random() - 0.5) * 20,
+          -15 - Math.random() * 25,
+        ),
+        0.8 + Math.random() * 0.8,
+        colors[Math.floor(Math.random() * colors.length)],
+        1.5 + Math.random() * 1.5,
+        0.8,
+      );
+      return;
+    }
+  }
+
   expandingRing(pos: Vector2D, radius: number, color: string): void {
     const segments = 12;
     for (let i = 0; i < segments; i++) {
@@ -116,7 +148,7 @@ export class ParticleSystem {
       }
       p.pos = p.pos.add(p.vel.scale(dt));
       p.vel = p.vel.scale(0.95);
-      p.alpha = p.life / p.maxLife;
+      p.alpha = p.peakAlpha * (p.life / p.maxLife);
     }
   }
 

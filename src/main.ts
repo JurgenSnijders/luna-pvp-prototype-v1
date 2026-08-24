@@ -255,6 +255,13 @@ function runSimulationStep(dt: number): void {
       particles.ember(entity.pos);
     }
   }
+  for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
+    particles.spawnAmbientEmber(
+      { width: window.innerWidth, height: window.innerHeight },
+      world.hexCenter,
+      world.hexRadius,
+    );
+  }
 
   matchManager.checkRoundEliminations(
     player,
