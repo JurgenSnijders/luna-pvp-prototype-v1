@@ -1,5 +1,5 @@
 import type { Player } from '../entities/Player';
-import { ACTION_SLOT_KEYS } from '../types/cards';
+import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
 
@@ -14,7 +14,16 @@ interface SlotElements {
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
   countdown: HTMLElement;
+  accent: string;
 }
+
+const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
+  LMB: { color: '#00e5ff', bg: 'rgba(0, 229, 255, 0.12)' },
+  RMB: { color: '#00e5ff', bg: 'rgba(0, 229, 255, 0.12)' },
+  Q: { color: '#ffd700', bg: 'rgba(255, 215, 0, 0.12)' },
+  E: { color: '#aa44ff', bg: 'rgba(170, 68, 255, 0.12)' },
+  SPACE: { color: '#44ff88', bg: 'rgba(68, 255, 136, 0.12)' },
+};
 
 export class ActionBarHUD {
   private root: HTMLElement;
@@ -33,33 +42,41 @@ export class ActionBarHUD {
       const slotEl = this.createSlot(i, key);
       this.slots.push(slotEl);
       this.root.appendChild(slotEl.root);
+
+      // Visual gap between weapons (E) and mobility (SPACE)
+      if (i === 3) {
+        const spacer = document.createElement('div');
+        spacer.style.cssText = 'width: 16px; flex-shrink: 0;';
+        this.root.appendChild(spacer);
+      }
     }
 
     document.body.appendChild(this.root);
   }
 
-  private createSlot(slotIndex: number, key: string): SlotElements {
+  private createSlot(slotIndex: number, key: ActionSlotKey): SlotElements {
+    const accent = BADGE_STYLES[key];
     const root = document.createElement('div');
     root.style.cssText = `
-      width: 64px; height: 64px; position: relative; overflow: hidden;
+      width: 60px; height: 60px; position: relative; overflow: hidden;
       backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
-      border: 1px dashed rgba(0, 229, 255, 0.25); border-radius: 8px;
+      border: 1px dashed ${accent.color}40; border-radius: 8px;
       cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
     `;
 
     const badge = document.createElement('div');
     badge.textContent = key;
     badge.style.cssText = `
-      position: absolute; top: 4px; left: 4px;
-      font-size: 10px; font-weight: 700; color: #00e5ff;
-      background: rgba(0, 229, 255, 0.12); padding: 1px 5px; border-radius: 4px;
+      position: absolute; top: 3px; left: 3px;
+      font-size: ${key === 'SPACE' ? '8px' : '9px'}; font-weight: 700; color: ${accent.color};
+      background: ${accent.bg}; padding: 1px 4px; border-radius: 4px;
     `;
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
     label.style.cssText = `
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      padding: 14px 4px 4px; font-size: 9px; color: #666; text-align: center;
+      padding: 14px 3px 3px; font-size: 8px; color: #666; text-align: center;
       line-height: 1.2; word-break: break-word;
     `;
 
@@ -73,7 +90,7 @@ export class ActionBarHUD {
     const countdown = document.createElement('div');
     countdown.style.cssText = `
       position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,0.8);
+      font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,0.8);
       pointer-events: none;
     `;
 
@@ -84,8 +101,8 @@ export class ActionBarHUD {
 
     root.addEventListener('dragover', (e) => {
       e.preventDefault();
-      root.style.borderColor = 'rgba(0, 229, 255, 0.8)';
-      root.style.boxShadow = '0 0 12px rgba(0, 229, 255, 0.4)';
+      root.style.borderColor = accent.color;
+      root.style.boxShadow = `0 0 12px ${accent.color}66`;
     });
 
     root.addEventListener('dragleave', () => {
@@ -113,7 +130,7 @@ export class ActionBarHUD {
       if (!ability) this.callbacks.onEmptySlotClick(slotIndex);
     });
 
-    return { root, badge, label, cooldownOverlay, countdown };
+    return { root, badge, label, cooldownOverlay, countdown, accent: accent.color };
   }
 
   update(player: Player): void {
@@ -123,6 +140,7 @@ export class ActionBarHUD {
       const ratio = player.getSlotCooldownRatio(i);
       const remaining = player.getSlotCooldownRemainingMs(i);
       const ready = player.isSlotReady(i);
+      const accent = slot.accent;
 
       if (ability) {
         slot.root.dataset.hasAbility = 'true';
@@ -130,7 +148,7 @@ export class ActionBarHUD {
           ? `${ability.name.slice(0, 9)}…`
           : ability.name;
         slot.label.style.color = '#ccc';
-        slot.label.style.fontSize = '9px';
+        slot.label.style.fontSize = '8px';
         slot.root.style.borderStyle = 'solid';
       } else {
         slot.root.dataset.hasAbility = 'false';
@@ -151,12 +169,10 @@ export class ActionBarHUD {
       }
 
       if (ready && ability) {
-        slot.root.style.borderColor = 'rgba(0, 229, 255, 0.7)';
-        slot.root.style.boxShadow = '0 0 10px rgba(0, 229, 255, 0.35)';
+        slot.root.style.borderColor = accent;
+        slot.root.style.boxShadow = `0 0 10px ${accent}59`;
       } else if (!slot.root.matches(':hover')) {
-        slot.root.style.borderColor = ability
-          ? 'rgba(0, 229, 255, 0.3)'
-          : 'rgba(0, 229, 255, 0.25)';
+        slot.root.style.borderColor = ability ? `${accent}4d` : `${accent}40`;
         slot.root.style.boxShadow = '';
       }
     }

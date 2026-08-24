@@ -30,15 +30,16 @@ export interface DraftCard {
   budgetCost: number;
 }
 
-export type ActionSlotKey = 'Q' | 'W' | 'E' | 'R';
+export type ActionSlotKey = 'LMB' | 'RMB' | 'Q' | 'E' | 'SPACE';
 export type SlotType = ActionSlotKey | 'PASSIVE';
 
-export const ACTION_SLOT_KEYS: readonly ActionSlotKey[] = ['Q', 'W', 'E', 'R'];
-export const ACTION_SLOT_INDEX: Record<ActionSlotKey, 0 | 1 | 2 | 3> = {
-  Q: 0,
-  W: 1,
-  E: 2,
-  R: 3,
+export const ACTION_SLOT_KEYS: readonly ActionSlotKey[] = ['LMB', 'RMB', 'Q', 'E', 'SPACE'];
+export const ACTION_SLOT_INDEX: Record<ActionSlotKey, 0 | 1 | 2 | 3 | 4> = {
+  LMB: 0,
+  RMB: 1,
+  Q: 2,
+  E: 3,
+  SPACE: 4,
 };
 
 export interface DraftSelection {
@@ -47,7 +48,13 @@ export interface DraftSelection {
 }
 
 export interface PlayerLoadout {
-  abilities: [AbilitySchema | null, AbilitySchema | null, AbilitySchema | null, AbilitySchema | null];
+  abilities: [
+    AbilitySchema | null,
+    AbilitySchema | null,
+    AbilitySchema | null,
+    AbilitySchema | null,
+    AbilitySchema | null,
+  ];
   passives: PassiveModifierPayload[];
 }
 

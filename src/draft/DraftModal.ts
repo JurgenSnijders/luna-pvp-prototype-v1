@@ -259,7 +259,7 @@ export class DraftModal {
         for (const key of ACTION_SLOT_KEYS) {
           const slotBtn = document.createElement('button');
           slotBtn.textContent = `[${key}]`;
-          slotBtn.style.cssText = this.btnStyle(key === 'Q') + 'flex:1;min-width:48px;';
+          slotBtn.style.cssText = this.btnStyle(key === 'LMB') + 'flex:1;min-width:48px;';
           slotBtn.onclick = () => this.equip(card, key);
           btnContainer.appendChild(slotBtn);
         }

@@ -109,10 +109,11 @@ async function fetchLLMDraft(
   try {
     const userPromptText = `Player prompt: "${prompt}"
 Current loadout:
-- Q: ${loadout.abilities[0]?.name ?? 'Empty'}
-- W: ${loadout.abilities[1]?.name ?? 'Empty'}
-- E: ${loadout.abilities[2]?.name ?? 'Empty'}
-- R: ${loadout.abilities[3]?.name ?? 'Empty'}
+- LMB: ${loadout.abilities[0]?.name ?? 'Empty'}
+- RMB: ${loadout.abilities[1]?.name ?? 'Empty'}
+- Q: ${loadout.abilities[2]?.name ?? 'Empty'}
+- E: ${loadout.abilities[3]?.name ?? 'Empty'}
+- SPACE: ${loadout.abilities[4]?.name ?? 'Empty'}
 - Passives: ${loadout.passives.length}
 
 Generate 3 thematic draft cards based on the prompt.`;

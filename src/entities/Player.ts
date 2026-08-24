@@ -3,7 +3,17 @@ import type { AbilitySchema } from '../types/schema';
 import type { PassiveModifierPayload } from '../types/cards';
 import { Entity, generateEntityId } from './Entity';
 
-const SLOT_COUNT = 4;
+const SLOT_COUNT = 5;
+
+type AbilitySlotTuple = [
+  AbilitySchema | null,
+  AbilitySchema | null,
+  AbilitySchema | null,
+  AbilitySchema | null,
+  AbilitySchema | null,
+];
+type NumberSlotTuple = [number, number, number, number, number];
+type BoolSlotTuple = [boolean, boolean, boolean, boolean, boolean];
 
 export class Player extends Entity {
   moveSpeed: number;
@@ -11,15 +21,15 @@ export class Player extends Entity {
   baseAcceleration: number;
   friction: number;
   facingAngle: number;
-  abilities: [AbilitySchema | null, AbilitySchema | null, AbilitySchema | null, AbilitySchema | null];
-  cooldownTimersMs: [number, number, number, number];
-  slotCooldownTotalsMs: [number, number, number, number];
+  abilities: AbilitySlotTuple;
+  cooldownTimersMs: NumberSlotTuple;
+  slotCooldownTotalsMs: NumberSlotTuple;
   passives: PassiveModifierPayload[];
   cooldownReductionPct: number;
 
   inputMove: Vector2D;
   aimTarget: Vector2D;
-  slotCastFlags: [boolean, boolean, boolean, boolean];
+  slotCastFlags: BoolSlotTuple;
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -34,14 +44,14 @@ export class Player extends Entity {
     this.baseAcceleration = 1200;
     this.friction = 8;
     this.facingAngle = 0;
-    this.abilities = [null, null, null, null];
-    this.cooldownTimersMs = [0, 0, 0, 0];
-    this.slotCooldownTotalsMs = [0, 0, 0, 0];
+    this.abilities = [null, null, null, null, null];
+    this.cooldownTimersMs = [0, 0, 0, 0, 0];
+    this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
     this.passives = [];
     this.cooldownReductionPct = 0;
     this.inputMove = Vector2D.zero();
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
-    this.slotCastFlags = [false, false, false, false];
+    this.slotCastFlags = [false, false, false, false, false];
   }
 
   setAbility(slotIndex: number, ability: AbilitySchema | null): void {
@@ -158,7 +168,7 @@ export class Player extends Entity {
   }
 
   clearCastInputs(): void {
-    this.slotCastFlags = [false, false, false, false];
+    this.slotCastFlags = [false, false, false, false, false];
   }
 
   resetCombatState(): void {
@@ -166,8 +176,8 @@ export class Player extends Entity {
     this.instabilityPct = 0;
     this.vel = Vector2D.zero();
     this.accel = Vector2D.zero();
-    this.cooldownTimersMs = [0, 0, 0, 0];
-    this.slotCooldownTotalsMs = [0, 0, 0, 0];
+    this.cooldownTimersMs = [0, 0, 0, 0, 0];
+    this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
     this.clearCastInputs();
   }
 

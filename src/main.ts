@@ -69,7 +69,8 @@ function assignDefaultLoadout(target: Player): void {
   target.setAbility(0, structuredClone(PRESETS['Kinetic Railgun']));
   target.setAbility(1, structuredClone(PRESETS['Graviton Boomerang']));
   target.setAbility(2, structuredClone(PRESETS['Cryo Ice Trail']));
-  target.setAbility(3, structuredClone(PRESETS['Phase Nova']));
+  target.setAbility(3, structuredClone(PRESETS['Singularity Scatter']));
+  target.setAbility(4, structuredClone(PRESETS['Phase Nova']));
 }
 
 function applyDraftSelection(target: Player, selection: DraftSelection): void {
@@ -220,12 +221,6 @@ function applyPlayerInput(): void {
   if (keys.has('d')) mx += 1;
   const move = new Vector2D(mx, my);
   player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
-
-  for (let i = 0; i < 4; i++) {
-    if (player.slotCastFlags[i]) {
-      tryCastSlot(player, i);
-    }
-  }
 }
 
 function syncArenaRadius(dt: number): void {
@@ -405,14 +400,12 @@ function init(): void {
 
     if (!canCombatInput()) return;
 
-    if (e.code === 'KeyQ') tryCastSlot(player, 0);
-    if (e.code === 'KeyW') tryCastSlot(player, 1);
-    if (e.code === 'KeyE') tryCastSlot(player, 2);
-    if (e.code === 'KeyR') tryCastSlot(player, 3);
+    if (e.code === 'KeyQ') tryCastSlot(player, 2);
+    if (e.code === 'KeyE') tryCastSlot(player, 3);
 
     if (e.key === ' ') {
       e.preventDefault();
-      player.slotCastFlags[0] = true;
+      tryCastSlot(player, 4);
     }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -425,8 +418,8 @@ function init(): void {
 
   canvas.addEventListener('mousedown', (e) => {
     if (!canCombatInput()) return;
-    if (e.button === 0) player.slotCastFlags[0] = true;
-    if (e.button === 2) player.slotCastFlags[3] = true;
+    if (e.button === 0) tryCastSlot(player, 0);
+    if (e.button === 2) tryCastSlot(player, 1);
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 

@@ -7,7 +7,7 @@ import {
 } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import type { Interpreter } from '../primitives/Interpreter';
-import { ACTION_SLOT_KEYS, type DraftCard, type DraftSelection } from '../types/cards';
+import type { DraftCard, DraftSelection } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
 import type { Player } from './Player';
 
@@ -19,8 +19,8 @@ const KITE_DIST = 180;
 const EDGE_REPEL_DIST = 120;
 const DODGE_RADIUS = 200;
 const AIM_TOLERANCE_DEG = 15;
-const OFFENSIVE_SLOTS = [0, 1, 2];
-const DEFENSIVE_SLOT = 3;
+const OFFENSIVE_SLOTS = [0, 1, 2, 3];
+const MOBILITY_SLOT = 4;
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
@@ -149,9 +149,9 @@ export class BotController {
       (this.bot.instabilityPct > 80 ||
         this.bot.tags.has('in_lava') ||
         outsideHex) &&
-      this.bot.isSlotReady(DEFENSIVE_SLOT)
+      this.bot.isSlotReady(MOBILITY_SLOT)
     ) {
-      this.tryCastSlot(this.bot, DEFENSIVE_SLOT, interpreter, world);
+      this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world);
     } else if (
       angleDiff(this.bot.facingAngle, aimAngle) < (AIM_TOLERANCE_DEG * Math.PI) / 180
     ) {
@@ -197,7 +197,7 @@ export class BotController {
         hasTeleportAction(ability);
 
       if (isMobility) {
-        slot = 'R';
+        slot = 'SPACE';
       } else {
         let targetSlot = 0;
         let bestCd = -1;
@@ -214,7 +214,7 @@ export class BotController {
             targetSlot = i;
           }
         }
-        slot = (['Q', 'W', 'E'] as const)[targetSlot];
+        slot = (['LMB', 'RMB', 'Q', 'E'] as const)[targetSlot];
       }
     }
 
