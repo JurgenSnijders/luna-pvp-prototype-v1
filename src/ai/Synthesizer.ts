@@ -16,8 +16,11 @@ export const STORAGE_KEY_API = 'LUNA_AI_API_KEY';
 export const STORAGE_KEY_BASE_URL = 'LUNA_AI_BASE_URL';
 export const STORAGE_KEY_MODEL = 'LUNA_AI_MODEL';
 
-export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-export const DEFAULT_MODEL = 'gpt-4o-mini';
+export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+
+const LEGACY_MODELS = new Set(['gpt-4o-mini', 'gemini-2.0-flash']);
+const LEGACY_BASE_URL = 'https://api.openai.com/v1';
 
 export interface AiSettings {
   apiKey: string;
@@ -26,10 +29,24 @@ export interface AiSettings {
 }
 
 export function getAiSettings(): AiSettings {
+  const storedModel = localStorage.getItem(STORAGE_KEY_MODEL);
+  const storedBaseUrl = localStorage.getItem(STORAGE_KEY_BASE_URL);
+  const normalizedBaseUrl = storedBaseUrl?.replace(/\/+$/, '') ?? '';
+
+  const model =
+    !storedModel || LEGACY_MODELS.has(storedModel)
+      ? DEFAULT_MODEL
+      : storedModel;
+
+  const baseUrl =
+    !storedBaseUrl || normalizedBaseUrl === LEGACY_BASE_URL
+      ? DEFAULT_BASE_URL
+      : storedBaseUrl;
+
   return {
     apiKey: localStorage.getItem(STORAGE_KEY_API) ?? '',
-    baseUrl: localStorage.getItem(STORAGE_KEY_BASE_URL) ?? DEFAULT_BASE_URL,
-    model: localStorage.getItem(STORAGE_KEY_MODEL) ?? DEFAULT_MODEL,
+    baseUrl,
+    model,
   };
 }
 
@@ -61,13 +78,6 @@ Passive ops: ADD, MULTIPLY
 Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.
 Return exactly 3 cards: mix of active abilities and at least one passive upgrade.`;
 
-function stripMarkdownJson(text: string): string {
-  const trimmed = text.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) return fenceMatch[1].trim();
-  return trimmed;
-}
-
 function balanceCard(card: DraftCard): DraftCard {
   const balanced = { ...card };
 
@@ -97,7 +107,7 @@ async function fetchLLMDraft(
   const timeout = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const userMessage = `Player prompt: "${prompt}"
+    const userPromptText = `Player prompt: "${prompt}"
 Current loadout:
 - Primary: ${loadout.primaryAbility?.name ?? 'none'}
 - Secondary: ${loadout.secondaryAbility?.name ?? 'none'}
@@ -105,20 +115,22 @@ Current loadout:
 
 Generate 3 thematic draft cards based on the prompt.`;
 
-    const response = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const cleanBaseUrl = settings.baseUrl.replace(/\/+$/, '');
+    const endpoint = `${cleanBaseUrl}/chat/completions`;
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${settings.apiKey}`,
+        Authorization: `Bearer ${settings.apiKey.trim()}`,
       },
       body: JSON.stringify({
-        model: settings.model,
-        response_format: { type: 'json_object' },
+        model: settings.model.trim() || DEFAULT_MODEL,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
+          { role: 'user', content: userPromptText },
         ],
-        temperature: 0.8,
+        response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
     });
@@ -126,10 +138,11 @@ Generate 3 thematic draft cards based on the prompt.`;
     if (!response.ok) return null;
 
     const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== 'string') return null;
+    let content = data.choices?.[0]?.message?.content ?? '';
+    if (typeof content !== 'string' || !content) return null;
+    content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    const parsed = JSON.parse(stripMarkdownJson(content));
+    const parsed = JSON.parse(content);
     const validated = validateDraftCards(parsed);
     if (!validated) return null;
 

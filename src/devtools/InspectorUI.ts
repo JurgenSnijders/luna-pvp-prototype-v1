@@ -276,19 +276,19 @@ export class InspectorUI {
 
     const apiKeyInput = document.createElement('input');
     apiKeyInput.type = 'password';
-    apiKeyInput.placeholder = 'API Key';
+    apiKeyInput.placeholder = 'Gemini API Key (Google AI Studio)';
     apiKeyInput.value = settings.apiKey;
     apiKeyInput.style.cssText = this.inputStyle();
 
     const baseUrlInput = document.createElement('input');
     baseUrlInput.type = 'text';
-    baseUrlInput.placeholder = 'Base URL';
+    baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai/';
     baseUrlInput.value = settings.baseUrl || DEFAULT_BASE_URL;
     baseUrlInput.style.cssText = this.inputStyle();
 
     const modelInput = document.createElement('input');
     modelInput.type = 'text';
-    modelInput.placeholder = 'Model';
+    modelInput.placeholder = 'gemini-3.5-flash-lite';
     modelInput.value = settings.model || DEFAULT_MODEL;
     modelInput.style.cssText = this.inputStyle();
 
