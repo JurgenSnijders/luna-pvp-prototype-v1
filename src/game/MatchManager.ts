@@ -100,13 +100,13 @@ export class MatchManager {
     hexCenter: Vector2D,
   ): void {
     if (this.mode === 'SANDBOX') {
-      if (player.isDead) {
+      if (player.instabilityPct >= 500) {
         player.resetCombatState();
         player.resetPosition(
           hexCenter.add(new Vector2D(-arena.initialRadius * 0.4, 0)),
         );
       }
-      if (bot.isDead) {
+      if (bot.instabilityPct >= 500) {
         bot.resetCombatState();
         bot.resetPosition(
           hexCenter.add(new Vector2D(arena.initialRadius * 0.4, 0)),
@@ -118,14 +118,17 @@ export class MatchManager {
 
     if (this.state !== 'ROUND_ACTIVE') return;
 
-    if (player.isDead && bot.isDead) {
+    const playerDead = this.isCombatantEliminated(player);
+    const botDead = this.isCombatantEliminated(bot);
+
+    if (playerDead && botDead) {
       this.lastRoundWinner = 'draw';
       this.transitionTo('ROUND_OVER', ROUND_OVER_DURATION);
-    } else if (player.isDead) {
+    } else if (playerDead) {
       this.botWins++;
       this.lastRoundWinner = 'bot';
       this.transitionTo('ROUND_OVER', ROUND_OVER_DURATION);
-    } else if (bot.isDead) {
+    } else if (botDead) {
       this.playerWins++;
       this.lastRoundWinner = 'player';
       this.transitionTo('ROUND_OVER', ROUND_OVER_DURATION);
@@ -200,6 +203,13 @@ export class MatchManager {
 
     this.ensurePlayerInWorld(world, player);
     this.ensurePlayerInWorld(world, bot);
+  }
+
+  private isCombatantEliminated(entity: Player): boolean {
+    return (
+      (entity.tags.has('in_lava') && entity.instabilityPct >= 300) ||
+      entity.instabilityPct >= 500
+    );
   }
 
   private ensurePlayerInWorld(world: PhysicsWorld, combatant: Player): void {

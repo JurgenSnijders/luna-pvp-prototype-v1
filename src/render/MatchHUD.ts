@@ -59,7 +59,7 @@ export class MatchHUD {
 
     this.sandboxBadge = document.createElement('div');
     this.sandboxBadge.textContent =
-      'SANDBOX MODE — Press [Tab] or [B] to Synthesize / Draft';
+      '[ SANDBOX MODE ] — Press [Tab] / [B] to Synthesize / Draft';
     this.sandboxBadge.style.cssText = `
       position: absolute; top: 16px; left: 16px;
       padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;

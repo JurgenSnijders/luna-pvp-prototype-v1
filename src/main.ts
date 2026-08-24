@@ -246,6 +246,16 @@ function runSimulationStep(dt: number): void {
   applySpatialFields(dt);
   world.step(dt);
   interpreter.processLifecycleEvents(world);
+
+  for (const impact of world.pendingWallImpacts) {
+    particles.burstSparks(impact, 6, '#ffaa44');
+  }
+  for (const entity of world.getCombatants()) {
+    if (entity.tags.has('in_lava') && Math.random() < 0.2) {
+      particles.ember(entity.pos);
+    }
+  }
+
   matchManager.checkRoundEliminations(
     player,
     bot,

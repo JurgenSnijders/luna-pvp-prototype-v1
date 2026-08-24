@@ -1,6 +1,5 @@
 import {
-  clampToHex,
-  getVoidRadius,
+  getOuterWallRadius,
   isInsideHex,
 } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
@@ -11,8 +10,9 @@ import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 
 export const MAX_ENTITIES = 256;
-const HAZARD_INSTABILITY_PER_SEC = 15;
-const HAZARD_DRAG = 0.05;
+const LAVA_INSTABILITY_PER_SEC = 18;
+const LAVA_DRAG = 0.15;
+const WALL_RESTITUTION = 0.45;
 const COLLISION_RESTITUTION = 0.3;
 
 export interface PendingHit {
@@ -32,6 +32,7 @@ export class PhysicsWorld {
 
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
+  pendingWallImpacts: Vector2D[] = [];
 
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
@@ -119,11 +120,13 @@ export class PhysicsWorld {
   clearEventQueues(): void {
     this.pendingHits = [];
     this.pendingExpirations = [];
+    this.pendingWallImpacts = [];
   }
 
   step(dt: number): void {
     this.pendingHits = [];
     this.pendingExpirations = [];
+    this.pendingWallImpacts = [];
 
     for (const dummy of this.dummies) {
       if (!dummy.isDead) {
@@ -193,29 +196,48 @@ export class PhysicsWorld {
   }
 
   private resolveHexBoundaries(dt: number): void {
-    const voidRadius = getVoidRadius(this.hexRadius);
+    const outerWallRadius = getOuterWallRadius(this.hexRadius);
     const movable = [...this.players, ...this.dummies, ...this.projectiles].filter(
       (e) => !e.isDead,
     );
 
     for (const entity of movable) {
-      const distFromCenter = entity.pos.dist(this.hexCenter);
+      const delta = entity.pos.sub(this.hexCenter);
+      const dist = delta.mag();
+      const boundRadius = outerWallRadius - entity.radius;
 
-      if (distFromCenter > voidRadius) {
-        entity.isDead = true;
-        if (entity instanceof Projectile && !entity.expiryReason) {
-          entity.expiryReason = 'lifetime';
+      if (dist > boundRadius && dist > 0.0001) {
+        const normal = delta.scale(1 / dist);
+        const velDotNormal = entity.vel.dot(normal);
+        entity.pos = this.hexCenter.add(normal.scale(boundRadius));
+        entity.vel = entity.vel.sub(
+          normal.scale((1 + WALL_RESTITUTION) * velDotNormal),
+        );
+
+        if (velDotNormal > 0) {
+          this.pendingWallImpacts.push(
+            this.hexCenter.add(normal.scale(outerWallRadius)),
+          );
         }
-        continue;
+
+        if (entity.tags.has('projectile')) {
+          const proj = entity as Projectile;
+          if (proj.pierceRemaining <= 0) {
+            proj.isDead = true;
+            proj.expiryReason = 'hit';
+          }
+        }
       }
 
-      if (!isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
+      if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
+        entity.tags.delete('in_lava');
+      } else {
+        entity.tags.add('in_lava');
         entity.instabilityPct = Math.min(
           500,
-          entity.instabilityPct + HAZARD_INSTABILITY_PER_SEC * dt,
+          entity.instabilityPct + LAVA_INSTABILITY_PER_SEC * dt,
         );
-        entity.linearDrag = HAZARD_DRAG;
-        entity.pos = clampToHex(entity.pos, this.hexCenter, this.hexRadius);
+        entity.linearDrag = LAVA_DRAG;
       }
     }
   }

@@ -74,6 +74,23 @@ export class ParticleSystem {
     );
   }
 
+  ember(pos: Vector2D): void {
+    const count = 1 + Math.floor(Math.random() * 2);
+    const colors = ['#ff5500', '#ffaa00'];
+    for (let i = 0; i < count; i++) {
+      this.spawn(
+        pos,
+        new Vector2D(
+          (Math.random() - 0.5) * 30,
+          -10 - Math.random() * 20,
+        ),
+        0.4 + Math.random() * 0.3,
+        colors[Math.floor(Math.random() * colors.length)],
+        2 + Math.random(),
+      );
+    }
+  }
+
   expandingRing(pos: Vector2D, radius: number, color: string): void {
     const segments = 12;
     for (let i = 0; i < segments; i++) {

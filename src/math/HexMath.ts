@@ -150,7 +150,15 @@ export function clampToHex(
   return bestPoint.sub(normal.scale(0.01));
 }
 
+/** Outer arena barrier multiplier relative to safe hex platform radius. */
+export const OUTER_WALL_FACTOR = 1.55;
+
+/** Hard collision perimeter of the full playfield. */
+export function getOuterWallRadius(platformRadius: number): number {
+  return platformRadius * OUTER_WALL_FACTOR;
+}
+
 /** Circumradius of the safe play hexagon. */
 export function getVoidRadius(hexRadius: number): number {
-  return hexRadius * 1.5;
+  return getOuterWallRadius(hexRadius);
 }

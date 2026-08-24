@@ -139,7 +139,9 @@ export class BotController {
       arena.currentRadius,
     );
     if (
-      (this.bot.instabilityPct > 80 || outsideHex) &&
+      (this.bot.instabilityPct > 80 ||
+        this.bot.tags.has('in_lava') ||
+        outsideHex) &&
       this.bot.secondaryCooldownTimerMs <= 0
     ) {
       this.tryCastSecondary(this.bot, interpreter, world);
