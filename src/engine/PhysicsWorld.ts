@@ -256,7 +256,7 @@ export class PhysicsWorld {
   }
 
   private pruneDead(): void {
-    this.players = this.players.filter((e) => !e.isDead);
+    // Players persist through elimination; MatchManager resets them between rounds.
     this.dummies = this.dummies.filter((e) => !e.isDead);
     this.projectiles = this.projectiles.filter((e) => !e.isDead);
     this.zones = this.zones.filter((e) => !e.isDead);

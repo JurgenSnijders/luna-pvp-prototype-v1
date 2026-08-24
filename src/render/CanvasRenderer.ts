@@ -29,6 +29,8 @@ export class CanvasRenderer {
     debug: DebugOptions,
     width: number,
     height: number,
+    shrinkProgress = 0,
+    isShrinking = false,
   ): void {
     const ctx = this.ctx;
     this.ringRotation += 0.02;
@@ -37,7 +39,7 @@ export class CanvasRenderer {
     ctx.fillRect(0, 0, width, height);
 
     this.drawVoidBackground(ctx, world, width, height);
-    this.drawHexPlatform(ctx, world);
+    this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
     this.drawZones(ctx, world);
     particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
@@ -75,7 +77,12 @@ export class CanvasRenderer {
     ctx.fillRect(0, 0, width, height);
   }
 
-  private drawHexPlatform(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+  private drawHexPlatform(
+    ctx: CanvasRenderingContext2D,
+    world: PhysicsWorld,
+    shrinkProgress: number,
+    isShrinking: boolean,
+  ): void {
     const vertices = getHexVertices(world.hexCenter, world.hexRadius);
     ctx.beginPath();
     ctx.moveTo(vertices[0].x, vertices[0].y);
@@ -91,6 +98,22 @@ export class CanvasRenderer {
     ctx.shadowBlur = 12;
     ctx.stroke();
     ctx.shadowBlur = 0;
+
+    if (isShrinking) {
+      const pulse = 0.4 + 0.4 * Math.sin(performance.now() * 0.006);
+      ctx.beginPath();
+      ctx.moveTo(vertices[0].x, vertices[0].y);
+      for (let i = 1; i < vertices.length; i++) {
+        ctx.lineTo(vertices[i].x, vertices[i].y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = `rgba(255, 40, 40, ${pulse})`;
+      ctx.lineWidth = 3 + 3 * shrinkProgress;
+      ctx.shadowColor = 'rgba(255, 40, 40, 0.8)';
+      ctx.shadowBlur = 8 + 12 * shrinkProgress;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
   }
 
   private drawZones(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
@@ -126,13 +149,14 @@ export class CanvasRenderer {
     for (const player of world.players) {
       if (player.isDead) continue;
       const pos = this.lerpPos(player, alpha);
-      ctx.fillStyle = '#00ccff';
+      const isBot = player.tags.has('bot');
+      ctx.fillStyle = isBot ? '#ff8844' : '#00ccff';
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, player.radius, 0, Math.PI * 2);
       ctx.fill();
 
       const aimEnd = pos.add(Vector2D.fromAngle(player.facingAngle, player.radius + 14));
-      ctx.strokeStyle = '#88eeff';
+      ctx.strokeStyle = isBot ? '#ffbb88' : '#88eeff';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);

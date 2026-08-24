@@ -21,13 +21,13 @@ export class Player extends Entity {
   primaryCast: boolean;
   secondaryCast: boolean;
 
-  constructor(pos: Vector2D) {
+  constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
       mass: 1,
       radius: 18,
       linearDrag: 3,
       instabilityPct: 0,
-      tags: ['player', 'combatant'],
+      tags,
     });
     this.moveSpeed = 280;
     this.baseMoveSpeed = 280;
@@ -125,5 +125,20 @@ export class Player extends Entity {
   clearCastInputs(): void {
     this.primaryCast = false;
     this.secondaryCast = false;
+  }
+
+  resetCombatState(): void {
+    this.isDead = false;
+    this.instabilityPct = 0;
+    this.vel = Vector2D.zero();
+    this.accel = Vector2D.zero();
+    this.primaryCooldownTimerMs = 0;
+    this.secondaryCooldownTimerMs = 0;
+    this.clearCastInputs();
+  }
+
+  resetPosition(spawn: Vector2D): void {
+    this.pos = spawn.clone();
+    this.prevPos = spawn.clone();
   }
 }

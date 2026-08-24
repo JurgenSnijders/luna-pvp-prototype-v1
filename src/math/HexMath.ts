@@ -77,6 +77,31 @@ export function getClosestEdgeNormal(
   return bestNormal.magSq() > 0 ? bestNormal.normalize() : Vector2D.fromAngle(0);
 }
 
+/** Shortest distance from a point to the nearest hex edge segment. */
+export function getDistanceToNearestEdge(
+  point: Vector2D,
+  center: Vector2D,
+  radius: number,
+): number {
+  const vertices = getHexVertices(center, radius);
+  let bestDist = Infinity;
+
+  for (let i = 0; i < 6; i++) {
+    const a = vertices[i];
+    const b = vertices[(i + 1) % 6];
+    const edge = b.sub(a);
+    const edgeLenSq = edge.magSq();
+    if (edgeLenSq === 0) continue;
+
+    const ap = point.sub(a);
+    const t = Math.max(0, Math.min(1, ap.dot(edge) / edgeLenSq));
+    const closest = a.add(edge.scale(t));
+    bestDist = Math.min(bestDist, point.dist(closest));
+  }
+
+  return bestDist;
+}
+
 /** Project a point outside the hex back onto the perimeter. */
 export function clampToHex(
   point: Vector2D,

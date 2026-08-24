@@ -1,3 +1,5 @@
+import type { MatchManager } from '../game/MatchManager';
+import type { BotController } from '../entities/BotController';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Player } from '../entities/Player';
 import { Dummy } from '../entities/Dummy';
@@ -25,6 +27,9 @@ export interface InspectorContext {
   setDebugOptions: (opts: DebugOptions) => void;
   onReset: () => void;
   openDraftModal: () => void;
+  matchManager?: MatchManager;
+  botController?: BotController;
+  onRestartMatch?: () => void;
 }
 
 export class InspectorUI {
@@ -324,6 +329,49 @@ export class InspectorUI {
 
     parent.appendChild(aiSection);
 
+    if (this.ctx.matchManager && this.ctx.botController) {
+      const matchSection = document.createElement('div');
+      matchSection.style.cssText =
+        'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+      const matchTitle = document.createElement('div');
+      matchTitle.textContent = 'Match Controls';
+      matchTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+      matchSection.appendChild(matchTitle);
+
+      const forceWinBtn = document.createElement('button');
+      forceWinBtn.textContent = 'Force Win Round';
+      forceWinBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
+      forceWinBtn.onclick = () => this.ctx.matchManager!.forceRoundResult('player');
+      matchSection.appendChild(forceWinBtn);
+
+      const forceLoseBtn = document.createElement('button');
+      forceLoseBtn.textContent = 'Force Lose Round';
+      forceLoseBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
+      forceLoseBtn.onclick = () => this.ctx.matchManager!.forceRoundResult('bot');
+      matchSection.appendChild(forceLoseBtn);
+
+      const restartBtn = document.createElement('button');
+      restartBtn.textContent = 'Restart Match';
+      restartBtn.style.cssText = this.buttonStyle(true) + 'width:100%;margin-bottom:6px;';
+      restartBtn.onclick = () => this.ctx.onRestartMatch?.();
+      matchSection.appendChild(restartBtn);
+
+      const aiToggleRow = document.createElement('label');
+      aiToggleRow.style.cssText =
+        'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-top:4px;';
+      const aiCheckbox = document.createElement('input');
+      aiCheckbox.type = 'checkbox';
+      aiCheckbox.checked = this.ctx.botController!.enabled;
+      aiCheckbox.onchange = () => {
+        this.ctx.botController!.enabled = aiCheckbox.checked;
+      };
+      aiToggleRow.appendChild(aiCheckbox);
+      aiToggleRow.appendChild(document.createTextNode('Bot AI Enabled'));
+      matchSection.appendChild(aiToggleRow);
+
+      parent.appendChild(matchSection);
+    }
+
     const buttons: Array<{ label: string; action: () => void }> = [
       {
         label: 'Spawn Dummy',
@@ -403,7 +451,14 @@ export class InspectorUI {
 
     const p = this.ctx.player;
     const w = this.ctx.world;
+    const mm = this.ctx.matchManager;
+    const matchInfo = mm
+      ? `<div>Match: ${mm.state}</div>
+         <div>Score: ${mm.playerWins} — ${mm.botWins}</div>
+         <div>Round: ${mm.roundNumber}</div>`
+      : '';
     this.telemetryEl.innerHTML = `
+      ${matchInfo}
       <div>FPS: ${this.fps}</div>
       <div>Entities: ${w.getEntityCount()}</div>
       <div>Zones: ${w.zones.filter((z) => !z.isDead).length}</div>

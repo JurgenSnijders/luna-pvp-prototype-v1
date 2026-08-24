@@ -1,13 +1,18 @@
+import { generateOfflineDraft } from './ai/Synthesizer';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
 import { PhysicsWorld } from './engine/PhysicsWorld';
+import { BotController } from './entities/BotController';
 import { Player } from './entities/Player';
+import { ArenaShrink } from './game/ArenaShrink';
+import { MatchManager, type MatchState } from './game/MatchManager';
 import { applyField } from './primitives/Fields';
 import { Interpreter } from './primitives/Interpreter';
 import { Vector2D } from './math/Vector2D';
 import { CanvasRenderer, type DebugOptions } from './render/CanvasRenderer';
+import { MatchHUD } from './render/MatchHUD';
 import { ParticleSystem } from './render/ParticleSystem';
 import type { DraftSelection } from './types/cards';
 
@@ -16,12 +21,19 @@ const ctx = canvas.getContext('2d')!;
 
 let world: PhysicsWorld;
 let player: Player;
+let bot: Player;
 let interpreter: Interpreter;
 let particles: ParticleSystem;
 let renderer: CanvasRenderer;
 let inspector: InspectorUI;
 let draftModal: DraftModal;
 let loop: Loop;
+let matchManager: MatchManager;
+let arenaShrink: ArenaShrink;
+let botController: BotController;
+let matchHUD: MatchHUD;
+let intermissionHandled = false;
+let isIntermissionDraft = false;
 
 const debugOptions: DebugOptions = {
   showVectors: false,
@@ -44,38 +56,57 @@ function resize(): void {
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  arenaShrink?.resize(getHexRadius());
+}
+
+function applyDraftSelection(target: Player, selection: DraftSelection): void {
+  const { card, slot } = selection;
+
+  if (slot === 'PASSIVE' && card.passivePayload) {
+    for (const mod of card.passivePayload) {
+      target.applyPassiveModifier(mod);
+    }
+    return;
+  }
+
+  if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
+    const ability = structuredClone(card.abilityPayload);
+    if (slot === 'PRIMARY') {
+      target.primaryAbility = ability;
+      target.primaryCooldownTimerMs = 0;
+    } else if (slot === 'SECONDARY') {
+      target.secondaryAbility = ability;
+      target.secondaryCooldownTimerMs = 0;
+    }
+  }
 }
 
 function resetArena(): void {
   const center = getHexCenter();
-  player.pos = center.clone();
-  player.prevPos = center.clone();
-  player.vel = Vector2D.zero();
-  player.instabilityPct = 0;
+  matchManager.resetRoundEntities(player, bot, world, arenaShrink, center);
   world.dummies = [];
-  world.clearProjectilesAndZones();
 }
 
-function tryCastPrimary(): void {
-  const ability = player.primaryAbility;
-  if (!ability || player.primaryCooldownTimerMs > 0) return;
+function tryCastPrimary(caster: Player): void {
+  const ability = caster.primaryAbility;
+  if (!ability || caster.primaryCooldownTimerMs > 0) return;
 
-  const aimDir = player.aimTarget.sub(player.pos);
+  const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
 
-  interpreter.executeAbility(ability, player, aimDir, world);
-  player.primaryCooldownTimerMs = player.getEffectiveCooldown(ability.cooldownMs);
+  interpreter.executeAbility(ability, caster, aimDir, world);
+  caster.primaryCooldownTimerMs = caster.getEffectiveCooldown(ability.cooldownMs);
 }
 
-function tryCastSecondary(): void {
-  const ability = player.secondaryAbility;
-  if (!ability || player.secondaryCooldownTimerMs > 0) return;
+function tryCastSecondary(caster: Player): void {
+  const ability = caster.secondaryAbility;
+  if (!ability || caster.secondaryCooldownTimerMs > 0) return;
 
-  const aimDir = player.aimTarget.sub(player.pos);
+  const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
 
-  interpreter.executeAbility(ability, player, aimDir, world);
-  player.secondaryCooldownTimerMs = player.getEffectiveCooldown(ability.cooldownMs);
+  interpreter.executeAbility(ability, caster, aimDir, world);
+  caster.secondaryCooldownTimerMs = caster.getEffectiveCooldown(ability.cooldownMs);
 }
 
 function applySpatialFields(dt: number): void {
@@ -95,24 +126,34 @@ function applySpatialFields(dt: number): void {
 }
 
 function handleEquip(selection: DraftSelection): void {
-  const { card, slot } = selection;
+  applyDraftSelection(player, selection);
+  if (isIntermissionDraft) {
+    matchManager.completeIntermission(player, bot, world, arenaShrink, getHexCenter());
+    isIntermissionDraft = false;
+  }
+}
 
-  if (slot === 'PASSIVE' && card.passivePayload) {
-    for (const mod of card.passivePayload) {
-      player.applyPassiveModifier(mod);
-    }
-    return;
+function handleIntermissionDraft(): void {
+  if (intermissionHandled) return;
+  intermissionHandled = true;
+  isIntermissionDraft = true;
+
+  const cards = generateOfflineDraft('intermission combat upgrade');
+  const botSelection = botController.selectDraftCard(cards);
+  applyDraftSelection(bot, botSelection);
+  draftModal.openIntermission(cards);
+}
+
+function handleMatchStateChange(): void {
+  const s = matchManager.state;
+  if (s === 'INTERMISSION_DRAFT') {
+    handleIntermissionDraft();
+  } else {
+    intermissionHandled = false;
   }
 
-  if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
-    const ability = structuredClone(card.abilityPayload);
-    if (slot === 'PRIMARY') {
-      player.primaryAbility = ability;
-      player.primaryCooldownTimerMs = 0;
-    } else if (slot === 'SECONDARY') {
-      player.secondaryAbility = ability;
-      player.secondaryCooldownTimerMs = 0;
-    }
+  if (s === 'ROUND_ACTIVE') {
+    matchManager.resetRoundEntities(player, bot, world, arenaShrink, getHexCenter());
   }
 }
 
@@ -121,9 +162,12 @@ function init(): void {
   window.addEventListener('resize', resize);
 
   const center = getHexCenter();
-  world = new PhysicsWorld(center, getHexRadius());
+  const hexRadius = getHexRadius();
+  world = new PhysicsWorld(center, hexRadius);
   player = new Player(center.clone());
+  bot = new Player(center.clone(), ['bot', 'combatant']);
   world.addPlayer(player);
+  world.addPlayer(bot);
 
   interpreter = new Interpreter();
   particles = new ParticleSystem();
@@ -132,6 +176,25 @@ function init(): void {
 
   player.primaryAbility = structuredClone(PRESETS['Kinetic Railgun']);
   player.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
+  bot.primaryAbility = structuredClone(PRESETS['Kinetic Railgun']);
+  bot.secondaryAbility = structuredClone(PRESETS['Phase Nova']);
+
+  arenaShrink = new ArenaShrink(hexRadius);
+  matchManager = new MatchManager();
+  botController = new BotController(bot);
+
+  matchHUD = new MatchHUD({
+    onStartMatch: () => {
+      arenaShrink.resize(getHexRadius());
+      matchManager.startMatch();
+    },
+    onPlayAgain: () => {
+      arenaShrink.resize(getHexRadius());
+      matchManager.startMatch();
+    },
+  });
+
+  matchManager.onStateChange = (_state: MatchState) => handleMatchStateChange();
 
   draftModal = new DraftModal({
     getLoadout: () => ({
@@ -140,7 +203,11 @@ function init(): void {
       passives: player.passives,
     }),
     onEquip: handleEquip,
-    onOpenChange: (open) => loop.setPaused(open),
+    onOpenChange: (open) => {
+      if (matchManager.state === 'LOBBY' && !isIntermissionDraft) {
+        loop.setPaused(open);
+      }
+    },
   });
 
   inspector = new InspectorUI(
@@ -157,37 +224,54 @@ function init(): void {
         debugOptions.showIds = opts.showIds;
       },
       onReset: resetArena,
-      openDraftModal: () => draftModal.open(),
+      openDraftModal: () => {
+        if (matchManager.state === 'LOBBY') draftModal.open();
+      },
+      matchManager,
+      botController,
+      onRestartMatch: () => {
+        arenaShrink.resize(getHexRadius());
+        matchManager.startMatch();
+      },
     },
   );
 
   const keys = new Set<string>();
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      draftModal.toggle();
-      return;
-    }
-    if (e.key === 'b' || e.key === 'B') {
-      draftModal.toggle();
-      return;
+    if (matchManager.state === 'LOBBY') {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        draftModal.toggle();
+        return;
+      }
+      if (e.key === 'b' || e.key === 'B') {
+        draftModal.toggle();
+        return;
+      }
     }
 
     keys.add(e.key.toLowerCase());
     if (e.key === ' ') {
       e.preventDefault();
-      if (!draftModal.isOpen()) player.primaryCast = true;
+      if (
+        matchManager.state === 'ROUND_ACTIVE' &&
+        !draftModal.isOpen()
+      ) {
+        player.primaryCast = true;
+      }
     }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
   window.addEventListener('mousemove', (e) => {
-    player.aimTarget = new Vector2D(e.clientX, e.clientY);
+    if (matchManager.state === 'ROUND_ACTIVE') {
+      player.aimTarget = new Vector2D(e.clientX, e.clientY);
+    }
   });
 
   canvas.addEventListener('mousedown', (e) => {
-    if (draftModal.isOpen()) return;
+    if (draftModal.isOpen() || matchManager.state !== 'ROUND_ACTIVE') return;
     if (e.button === 0) player.primaryCast = true;
     if (e.button === 2) player.secondaryCast = true;
   });
@@ -195,30 +279,60 @@ function init(): void {
 
   loop = new Loop({
     onUpdate(dt) {
-      if (draftModal.isOpen()) return;
+      matchManager.update(dt);
+      matchHUD.update(
+        matchManager.state,
+        matchManager.getSnapshot(),
+        matchManager.stateTimer,
+      );
 
       world.hexCenter = getHexCenter();
-      world.hexRadius = getHexRadius();
 
-      let mx = 0;
-      let my = 0;
-      if (keys.has('w')) my -= 1;
-      if (keys.has('s')) my += 1;
-      if (keys.has('a')) mx -= 1;
-      if (keys.has('d')) mx += 1;
-      const move = new Vector2D(mx, my);
-      player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
+      const state = matchManager.state;
+      if (state === 'LOBBY' || state === 'MATCH_OVER' || state === 'INTERMISSION_DRAFT') {
+        world.hexRadius = arenaShrink.initialRadius;
+        return;
+      }
+      if (draftModal.isOpen() && matchManager.state === 'LOBBY') return;
 
-      if (player.primaryCast) tryCastPrimary();
-      if (player.secondaryCast) tryCastSecondary();
+      if (state === 'COUNTDOWN') {
+        world.hexRadius = arenaShrink.initialRadius;
+        return;
+      }
 
-      interpreter.updateTrajectories(world, dt);
-      applySpatialFields(dt);
-      world.step(dt);
-      interpreter.processLifecycleEvents(world);
-      particles.update(dt);
+      if (state === 'ROUND_OVER') {
+        world.hexRadius = arenaShrink.initialRadius;
+        return;
+      }
 
-      player.clearCastInputs();
+      if (state === 'ROUND_ACTIVE') {
+        arenaShrink.update(dt);
+        world.hexRadius = arenaShrink.currentRadius;
+
+        let mx = 0;
+        let my = 0;
+        if (keys.has('w')) my -= 1;
+        if (keys.has('s')) my += 1;
+        if (keys.has('a')) mx -= 1;
+        if (keys.has('d')) mx += 1;
+        const move = new Vector2D(mx, my);
+        player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
+
+        if (player.primaryCast) tryCastPrimary(player);
+        if (player.secondaryCast) tryCastSecondary(player);
+
+        botController.update(dt, player, world, arenaShrink, interpreter);
+
+        interpreter.updateTrajectories(world, dt);
+        applySpatialFields(dt);
+        world.step(dt);
+        interpreter.processLifecycleEvents(world);
+        matchManager.checkRoundEliminations(player, bot);
+        particles.update(dt);
+
+        player.clearCastInputs();
+        bot.clearCastInputs();
+      }
     },
     onRender(alpha) {
       renderer.render(
@@ -228,6 +342,8 @@ function init(): void {
         debugOptions,
         window.innerWidth,
         window.innerHeight,
+        arenaShrink.getShrinkProgress(),
+        arenaShrink.isShrinking,
       );
       inspector.updateTelemetry();
     },

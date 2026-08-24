@@ -168,6 +168,19 @@ export class DraftModal {
     else this.open();
   }
 
+  openIntermission(cards: DraftCard[]): void {
+    this.cards = cards;
+    this.renderCards();
+    this.open_ = true;
+    this.overlay.style.display = 'flex';
+    requestAnimationFrame(() => {
+      this.overlay.style.opacity = '1';
+      const panel = this.overlay.querySelector('[data-panel]') as HTMLElement;
+      if (panel) panel.style.transform = 'scale(1)';
+    });
+    this.callbacks.onOpenChange(true);
+  }
+
   private async synthesize(): Promise<void> {
     const prompt = this.promptInput.value.trim() || 'kinetic combat ability';
     this.loadingEl.style.display = 'block';
