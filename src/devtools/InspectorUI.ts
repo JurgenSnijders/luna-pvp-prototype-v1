@@ -382,6 +382,9 @@ export class InspectorUI {
         if (shrinkCheckbox) {
           shrinkCheckbox.checked = this.ctx.arenaShrink?.enabled ?? false;
         }
+        if (aiCheckbox && this.ctx.botController) {
+          aiCheckbox.checked = this.ctx.botController.enabled;
+        }
       };
 
       matchModeBtn.onclick = () => {
@@ -453,11 +456,12 @@ export class InspectorUI {
 
       matchSection.appendChild(matchOnlyControls);
 
+      let aiCheckbox: HTMLInputElement | null = null;
       if (this.ctx.botController) {
         const aiToggleRow = document.createElement('label');
         aiToggleRow.style.cssText =
           'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-top:4px;';
-        const aiCheckbox = document.createElement('input');
+        aiCheckbox = document.createElement('input');
         aiCheckbox.type = 'checkbox';
         aiCheckbox.checked = this.ctx.botController.enabled;
         aiCheckbox.onchange = () => {

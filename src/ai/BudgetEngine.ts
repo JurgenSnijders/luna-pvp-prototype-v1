@@ -1,4 +1,4 @@
-import type { PassiveModifierPayload } from '../types/cards';
+import type { PassiveModifierPayload, SkillCategory } from '../types/cards';
 import type {
   AbilitySchema,
   ActionPayload,
@@ -7,6 +7,17 @@ import type {
   TriggerNode,
 } from '../types/schema';
 import { validateAbilitySchema } from '../types/schema';
+
+export const CATEGORY_BUDGETS: Record<
+  SkillCategory,
+  { targetPower: number; minCdMs: number; baseCdScale: number }
+> = {
+  PRIMARY: { targetPower: 70, minCdMs: 500, baseCdScale: 900 },
+  SECONDARY: { targetPower: 110, minCdMs: 1200, baseCdScale: 1500 },
+  UTILITY: { targetPower: 120, minCdMs: 2500, baseCdScale: 2000 },
+  ULTIMATE: { targetPower: 240, minCdMs: 6000, baseCdScale: 3500 },
+  MOBILITY: { targetPower: 90, minCdMs: 2000, baseCdScale: 1800 },
+};
 
 const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
   LINEAR: 1.0,
@@ -117,13 +128,23 @@ function minimalFallbackSchema(): AbilitySchema {
 
 export function balanceAbilitySchema(
   schema: AbilitySchema,
-  targetBudget = 100,
+  category: SkillCategory = 'SECONDARY',
 ): AbilitySchema {
+  const budget = CATEGORY_BUDGETS[category];
+  const originalRecoil = schema.recoilKick;
   const clamped = clampSchemaValues(schema);
   const totalPower = scoreAbilitySchema(clamped);
 
-  clamped.cooldownMs = Math.max(500, Math.round((totalPower / targetBudget) * 1200));
-  clamped.recoilKick = Math.max(0, Math.round(totalPower / 2));
+  clamped.cooldownMs = Math.max(
+    budget.minCdMs,
+    Math.round((totalPower / budget.targetPower) * budget.baseCdScale),
+  );
+
+  if (category === 'MOBILITY') {
+    clamped.recoilKick = originalRecoil;
+  } else {
+    clamped.recoilKick = Math.max(0, Math.round(totalPower / 2.5));
+  }
 
   const validated = validateAbilitySchema(clamped);
   return validated ?? minimalFallbackSchema();

@@ -6,11 +6,13 @@ import {
 import type {
   CardRarity,
   DraftCard,
+  EvolutionContext,
   PassiveModifierPayload,
   PlayerLoadout,
+  SkillCategory,
 } from '../types/cards';
-import { validateDraftCards } from '../types/cards';
-import type { AbilitySchema } from '../types/schema';
+import { CATEGORY_SLOT_MAP, getCategoryLabel, validateDraftCards } from '../types/cards';
+import type { AbilitySchema, TriggerNode } from '../types/schema';
 
 export const STORAGE_KEY_API = 'LUNA_AI_API_KEY';
 export const STORAGE_KEY_BASE_URL = 'LUNA_AI_BASE_URL';
@@ -56,33 +58,85 @@ export function setAiSettings(settings: AiSettings): void {
   localStorage.setItem(STORAGE_KEY_MODEL, settings.model);
 }
 
-const SYSTEM_PROMPT = `You are a 2D physics ability synthesizer for a top-down kinetic arena game.
-Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
-
-Each DraftCard must have:
-- id, title, tagline, description (strings)
-- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
-- type: "ACTIVE_ABILITY" | "PASSIVE_UPGRADE"
-- budgetCost: number
-- abilityPayload (for ACTIVE_ABILITY): AbilitySchema with id, name, cooldownMs, recoilKick, optional trajectory, triggers[]
-- passivePayload (for PASSIVE_UPGRADE): array of { stat, op, value }
-
-AbilitySchema trajectories: LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
+const SCHEMA_REFERENCE = `AbilitySchema trajectories: LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
 Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
 Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
 Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_CHILD_PROJECTILE, TELEPORT, MODIFY_STAT
 
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
-Passive ops: ADD, MULTIPLY
+Passive ops: ADD, MULTIPLY`;
+
+const FORGE_SYSTEM_PROMPT = `You are a 2D physics ability synthesizer for a top-down kinetic arena game.
+Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
+
+Each DraftCard must have:
+- id, title, tagline, description (strings)
+- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
+- type: "ACTIVE_ABILITY" (all 3 cards must be ACTIVE_ABILITY for forge mode)
+- category: the requested SkillCategory
+- budgetCost: number
+- abilityPayload: AbilitySchema with id, name, cooldownMs, recoilKick, optional trajectory, triggers[]
+
+${SCHEMA_REFERENCE}
+
+Category design constraints:
+- PRIMARY: rapid-fire skillshots, low payload, short cooldown pacing
+- SECONDARY: medium area/skillshot pressure
+- UTILITY: crowd control, zones, friction patches, vortices
+- ULTIMATE: high-impact screen presence, large fields, long cooldown pacing
+- MOBILITY: displacement, teleports, dashes, escapes — prioritize movement over damage
 
 Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.
-Return exactly 3 cards: mix of active abilities and at least one passive upgrade.`;
+Return exactly 3 distinct ACTIVE_ABILITY cards tuned for the requested category.`;
 
-function balanceCard(card: DraftCard): DraftCard {
+const EVOLUTION_SYSTEM_PROMPT = `You are an ability evolver for a 2D physics kinetic arena game.
+You receive a base AbilitySchema JSON and a player mutation prompt.
+Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
+
+Each DraftCard must have:
+- id, title, tagline, description (strings)
+- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
+- type: "ACTIVE_ABILITY"
+- category: the provided SkillCategory
+- evolutionDiff: string[] summarizing mutations (e.g. "+ SPAWN_CHILD_PROJECTILE", "Trajectory → HOMING_SLERP")
+- budgetCost: number
+- abilityPayload: mutated AbilitySchema
+
+${SCHEMA_REFERENCE}
+
+Rules:
+- Preserve the core identity of the base spell (name stem, primary trajectory when possible)
+- Layer on the requested mutations distinctly across the 3 variants
+- Variant A: cluster / multi-payload (SPAWN_CHILD_PROJECTILE or pierce)
+- Variant B: spatial field / trap (SPAWN_FIELD on ON_HIT or ON_EXPIRY)
+- Variant C: kinematic / motion augment (RETURN_TO_SOURCE, HOMING_SLERP, TELEPORT, or recoil dash)
+- Do NOT invent invalid action or trajectory types
+- Return exactly 3 ACTIVE_ABILITY evolution variants`;
+
+const PASSIVE_SYSTEM_PROMPT = `You are a passive upgrade synthesizer for a 2D physics kinetic arena game.
+Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
+
+Each DraftCard must have:
+- id, title, tagline, description (strings)
+- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
+- type: "PASSIVE_UPGRADE"
+- budgetCost: number
+- passivePayload: array of { stat, op, value }
+
+Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
+Passive ops: ADD, MULTIPLY
+
+Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
+
+function balanceCard(card: DraftCard, category: SkillCategory = 'SECONDARY'): DraftCard {
   const balanced = { ...card };
+  balanced.category = balanced.category ?? category;
 
   if (balanced.type === 'ACTIVE_ABILITY' && balanced.abilityPayload) {
-    balanced.abilityPayload = balanceAbilitySchema(balanced.abilityPayload);
+    balanced.abilityPayload = balanceAbilitySchema(
+      balanced.abilityPayload,
+      balanced.category ?? category,
+    );
     balanced.budgetCost = scoreAbilitySchema(balanced.abilityPayload);
   }
 
@@ -94,30 +148,30 @@ function balanceCard(card: DraftCard): DraftCard {
   return balanced;
 }
 
-function balanceCards(cards: DraftCard[]): DraftCard[] {
-  return cards.map(balanceCard);
+function balanceCards(cards: DraftCard[], category: SkillCategory = 'SECONDARY'): DraftCard[] {
+  return cards.map((c) => balanceCard(c, category));
 }
 
-async function fetchLLMDraft(
-  prompt: string,
-  loadout: PlayerLoadout,
-  settings: AiSettings,
-): Promise<DraftCard[] | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const userPromptText = `Player prompt: "${prompt}"
-Current loadout:
+function loadoutSummary(loadout: PlayerLoadout): string {
+  return `Current loadout:
 - LMB: ${loadout.abilities[0]?.name ?? 'Empty'}
 - RMB: ${loadout.abilities[1]?.name ?? 'Empty'}
 - Q: ${loadout.abilities[2]?.name ?? 'Empty'}
 - E: ${loadout.abilities[3]?.name ?? 'Empty'}
 - SPACE: ${loadout.abilities[4]?.name ?? 'Empty'}
-- Passives: ${loadout.passives.length}
+- Passives: ${loadout.passives.length}`;
+}
 
-Generate 3 thematic draft cards based on the prompt.`;
+async function callLLM(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AiSettings,
+  category: SkillCategory,
+): Promise<DraftCard[] | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
 
+  try {
     const cleanBaseUrl = settings.baseUrl.replace(/\/+$/, '');
     const endpoint = `${cleanBaseUrl}/chat/completions`;
 
@@ -130,8 +184,8 @@ Generate 3 thematic draft cards based on the prompt.`;
       body: JSON.stringify({
         model: settings.model.trim() || DEFAULT_MODEL,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPromptText },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
       }),
@@ -149,12 +203,59 @@ Generate 3 thematic draft cards based on the prompt.`;
     const validated = validateDraftCards(parsed);
     if (!validated) return null;
 
-    return balanceCards(validated);
+    return balanceCards(validated, category);
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchLLMForge(
+  prompt: string,
+  category: SkillCategory,
+  loadout: PlayerLoadout,
+  settings: AiSettings,
+): Promise<DraftCard[] | null> {
+  const slot = CATEGORY_SLOT_MAP[category];
+  const userPrompt = `Player prompt: "${prompt}"
+Target category: ${category} (${getCategoryLabel(category)}) → slot ${slot}
+${loadoutSummary(loadout)}
+
+Generate 3 thematic ACTIVE_ABILITY draft cards for this category.`;
+
+  return callLLM(FORGE_SYSTEM_PROMPT, userPrompt, settings, category);
+}
+
+async function fetchLLMEvolution(
+  prompt: string,
+  context: EvolutionContext,
+  loadout: PlayerLoadout,
+  settings: AiSettings,
+): Promise<DraftCard[] | null> {
+  const userPrompt = `Mutation prompt: "${prompt}"
+Category: ${context.category} (${getCategoryLabel(context.category)}) → slot ${context.slotKey}
+${loadoutSummary(loadout)}
+
+Base AbilitySchema JSON:
+${JSON.stringify(context.baseAbility, null, 2)}
+
+Generate 3 distinct evolved ACTIVE_ABILITY variants that preserve core identity while applying the mutation.`;
+
+  return callLLM(EVOLUTION_SYSTEM_PROMPT, userPrompt, settings, context.category);
+}
+
+async function fetchLLMPassive(
+  prompt: string,
+  loadout: PlayerLoadout,
+  settings: AiSettings,
+): Promise<DraftCard[] | null> {
+  const userPrompt = `Player prompt: "${prompt}"
+${loadoutSummary(loadout)}
+
+Generate 3 thematic PASSIVE_UPGRADE draft cards.`;
+
+  return callLLM(PASSIVE_SYSTEM_PROMPT, userPrompt, settings, 'SECONDARY');
 }
 
 function makeActiveCard(
@@ -164,8 +265,10 @@ function makeActiveCard(
   description: string,
   rarity: CardRarity,
   schema: AbilitySchema,
+  category: SkillCategory = 'SECONDARY',
+  evolutionDiff?: string[],
 ): DraftCard {
-  const balanced = balanceAbilitySchema(schema);
+  const balanced = balanceAbilitySchema(schema, category);
   return {
     id,
     title,
@@ -175,6 +278,8 @@ function makeActiveCard(
     type: 'ACTIVE_ABILITY',
     abilityPayload: balanced,
     budgetCost: scoreAbilitySchema(balanced),
+    category,
+    evolutionDiff,
   };
 }
 
@@ -199,7 +304,187 @@ function makePassiveCard(
   };
 }
 
-export function generateOfflineDraft(prompt: string): DraftCard[] {
+function ensureTrigger(schema: AbilitySchema, trigger: TriggerNode['trigger']): TriggerNode {
+  let node = schema.triggers.find((t) => t.trigger === trigger);
+  if (!node) {
+    node = { trigger, actions: [] };
+    schema.triggers.push(node);
+  }
+  return node;
+}
+
+function mutateCluster(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
+  const schema = structuredClone(base);
+  const diff: string[] = [];
+  const p = prompt.toLowerCase();
+
+  if (schema.trajectory) {
+    const pierce = (schema.trajectory.piercing ?? 0) + 1;
+    schema.trajectory.piercing = Math.min(4, pierce);
+    diff.push(`+ Piercing ${schema.trajectory.piercing}`);
+  }
+
+  const target = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
+  const node = ensureTrigger(schema, target);
+  node.actions.push({
+    type: 'SPAWN_CHILD_PROJECTILE',
+    trajectory: {
+      type: 'LINEAR',
+      speed: 400,
+      maxRange: 280,
+      piercing: 0,
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'APPLY_IMPULSE', baseForce: 350 }],
+      },
+    ],
+  });
+  diff.push(`+ SPAWN_CHILD_PROJECTILE on ${target}`);
+
+  schema.id = `${base.id}_cluster`;
+  schema.name = `${base.name} Mk-II`;
+  return { schema, diff };
+}
+
+function mutateSpatialField(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
+  const schema = structuredClone(base);
+  const diff: string[] = [];
+  const p = prompt.toLowerCase();
+
+  let fieldType: 'VORTEX_TANGENT' | 'RADIAL_IMPULSE' | 'FRICTION_OVERRIDE' = 'VORTEX_TANGENT';
+  let strength = -500;
+  let frictionValue: number | undefined;
+
+  if (/\b(ice|cold|frost|slipstream|friction)\b/.test(p)) {
+    fieldType = 'FRICTION_OVERRIDE';
+    strength = 0;
+    frictionValue = 0.02;
+  } else if (/\b(blast|impulse|push|knock)\b/.test(p)) {
+    fieldType = 'RADIAL_IMPULSE';
+    strength = 700;
+  } else if (/\b(black hole|singularity|pull|attract)\b/.test(p)) {
+    fieldType = 'VORTEX_TANGENT';
+    strength = -650;
+  }
+
+  const target = /\b(expiry|expire)\b/.test(p) ? 'ON_EXPIRY' : 'ON_HIT';
+  const node = ensureTrigger(schema, target);
+  node.actions.push({
+    type: 'SPAWN_FIELD',
+    field: {
+      fieldType,
+      radius: 90,
+      strength,
+      durationMs: 2200,
+      ...(frictionValue !== undefined ? { frictionValue } : {}),
+    },
+  });
+  diff.push(`+ SPAWN_FIELD ${fieldType} on ${target}`);
+
+  schema.id = `${base.id}_field`;
+  schema.name = `${base.name} Trap`;
+  return { schema, diff };
+}
+
+function mutateKinematic(base: AbilitySchema, prompt: string): { schema: AbilitySchema; diff: string[] } {
+  const schema = structuredClone(base);
+  const diff: string[] = [];
+  const p = prompt.toLowerCase();
+
+  if (/\b(dash|blink|teleport|phase)\b/.test(p) || !schema.trajectory) {
+    const node = ensureTrigger(schema, 'ON_CAST');
+    if (/\b(blink|teleport|phase)\b/.test(p) || !schema.trajectory) {
+      node.actions.push({ type: 'TELEPORT', distance: 110 });
+      diff.push('+ TELEPORT on ON_CAST');
+    } else {
+      node.actions.push({ type: 'APPLY_IMPULSE', baseForce: 600 });
+      diff.push('+ Recoil dash impulse on ON_CAST');
+    }
+  }
+
+  if (schema.trajectory) {
+    if (/\b(boomerang|return)\b/.test(p)) {
+      schema.trajectory = {
+        ...schema.trajectory,
+        type: 'RETURN_TO_SOURCE',
+        turnAccel: schema.trajectory.turnAccel ?? 1000,
+      };
+      diff.push('Trajectory → RETURN_TO_SOURCE');
+    } else if (/\b(homing|seek|track)\b/.test(p)) {
+      schema.trajectory = {
+        ...schema.trajectory,
+        type: 'HOMING_SLERP',
+        turnAccel: schema.trajectory.turnAccel ?? 700,
+      };
+      diff.push('Trajectory → HOMING_SLERP');
+    } else if (!diff.length) {
+      schema.trajectory = {
+        ...schema.trajectory,
+        type: 'HOMING_SLERP',
+        turnAccel: schema.trajectory.turnAccel ?? 650,
+      };
+      diff.push('Trajectory → HOMING_SLERP');
+    }
+  } else if (!diff.length) {
+    schema.trajectory = {
+      type: 'RETURN_TO_SOURCE',
+      speed: 340,
+      maxRange: 480,
+      turnAccel: 1100,
+    };
+    diff.push('+ Trajectory RETURN_TO_SOURCE');
+  }
+
+  schema.id = `${base.id}_motion`;
+  schema.name = `${base.name} Arc`;
+  return { schema, diff };
+}
+
+export function generateOfflineEvolution(
+  prompt: string,
+  context: EvolutionContext,
+): DraftCard[] {
+  const basePower = scoreAbilitySchema(context.baseAbility);
+
+  const variants = [
+    mutateCluster(context.baseAbility, prompt),
+    mutateSpatialField(context.baseAbility, prompt),
+    mutateKinematic(context.baseAbility, prompt),
+  ];
+
+  const rarities: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
+  const taglines = ['Cluster Payload', 'Spatial Trap', 'Motion Augment'];
+  const ids = ['evo_cluster', 'evo_field', 'evo_motion'];
+
+  return variants.map((v, i) => {
+    let schema = v.schema;
+    let balanced = balanceAbilitySchema(schema, context.category);
+
+    // Evolution guardrail: avoid accidental nerfs below 95% of base power
+    if (scoreAbilitySchema(balanced) < basePower * 0.95) {
+      schema = structuredClone(v.schema);
+      balanced = balanceAbilitySchema(schema, context.category);
+    }
+
+    return makeActiveCard(
+      ids[i],
+      balanced.name,
+      taglines[i],
+      `Evolved from ${context.baseAbility.name}: ${prompt.slice(0, 48) || 'mutation'}`,
+      rarities[i],
+      balanced,
+      context.category,
+      v.diff,
+    );
+  });
+}
+
+export function generateOfflineDraft(
+  prompt: string,
+  category: SkillCategory = 'SECONDARY',
+): DraftCard[] {
   const p = prompt.toLowerCase();
   const isChaotic = /\b(chaos|chaotic|wild|unstable)\b/.test(p);
 
@@ -293,7 +578,7 @@ export function generateOfflineDraft(prompt: string): DraftCard[] {
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 800 }] }],
     };
     passiveMods = [{ stat: 'COOLDOWN_REDUCTION_PCT', op: 'ADD', value: 10 }];
-  } else if (/\b(dash|blink|phase|teleport|nova)\b/.test(p)) {
+  } else if (/\b(dash|blink|phase|teleport|nova)\b/.test(p) || category === 'MOBILITY') {
     commonSchema = {
       id: 'off_phase',
       name: 'Phase Dash',
@@ -380,23 +665,115 @@ export function generateOfflineDraft(prompt: string): DraftCard[] {
   const rareRarity: CardRarity = 'RARE';
   const passiveRarity: CardRarity = 'EPIC';
 
+  // Intermission / legacy path: mixed active + passive for bot draft compatibility
   return [
-    makeActiveCard('card_common', commonSchema.name, 'Standard Issue', `A ${prompt.slice(0, 40) || 'kinetic'} ability`, commonRarity, commonSchema),
-    makeActiveCard('card_rare', rareSchema.name, 'Advanced Variant', `Enhanced ${prompt.slice(0, 30) || 'combat'} mechanic`, rareRarity, rareSchema),
+    makeActiveCard('card_common', commonSchema.name, 'Standard Issue', `A ${prompt.slice(0, 40) || 'kinetic'} ability`, commonRarity, commonSchema, category),
+    makeActiveCard('card_rare', rareSchema.name, 'Advanced Variant', `Enhanced ${prompt.slice(0, 30) || 'combat'} mechanic`, rareRarity, rareSchema, category),
     makePassiveCard('card_passive', 'Evolution Buff', 'Permanent Augment', `Passive upgrade from "${prompt.slice(0, 30) || 'training'}"`, passiveRarity, passiveMods),
   ];
+}
+
+export function generateOfflineForge(
+  prompt: string,
+  category: SkillCategory,
+): DraftCard[] {
+  const draft = generateOfflineDraft(prompt, category);
+  // Replace passive with a third active for forge mode
+  const base = draft[1].abilityPayload ?? draft[0].abilityPayload!;
+  const third = structuredClone(base);
+  third.id = `${third.id}_forge3`;
+  third.name = `${third.name} Apex`;
+  if (third.trajectory) {
+    third.trajectory.piercing = Math.min(4, (third.trajectory.piercing ?? 0) + 1);
+  } else {
+    third.triggers.push({
+      trigger: 'ON_CAST',
+      actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'RADIAL_IMPULSE', radius: 80, strength: 550, durationMs: 400 } }],
+    });
+  }
+
+  return [
+    draft[0],
+    draft[1],
+    makeActiveCard(
+      'card_epic',
+      third.name,
+      'Apex Variant',
+      `Category-tuned ${getCategoryLabel(category)} forge`,
+      'EPIC',
+      third,
+      category,
+    ),
+  ];
+}
+
+export function generateOfflinePassives(prompt: string): DraftCard[] {
+  const p = prompt.toLowerCase();
+  const sets: PassiveModifierPayload[][] = [
+    [{ stat: 'MOVE_SPEED', op: 'MULTIPLY', value: 1.12 }],
+    [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.15 }],
+    [{ stat: 'COOLDOWN_REDUCTION_PCT', op: 'ADD', value: 10 }],
+  ];
+
+  if (/\b(mass|heavy)\b/.test(p)) {
+    sets[0] = [{ stat: 'MASS', op: 'MULTIPLY', value: 1.15 }];
+  }
+  if (/\b(speed|agility|swift)\b/.test(p)) {
+    sets[1] = [
+      { stat: 'MOVE_SPEED', op: 'MULTIPLY', value: 1.18 },
+      { stat: 'ACCELERATION', op: 'MULTIPLY', value: 1.1 },
+    ];
+  }
+  if (/\b(cdr|cooldown|haste)\b/.test(p)) {
+    sets[2] = [{ stat: 'COOLDOWN_REDUCTION_PCT', op: 'ADD', value: 15 }];
+  }
+
+  const titles = ['Kinetic Conditioning', 'Impact Plating', 'Flux Capacitor'];
+  const rarities: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
+
+  return sets.map((mods, i) =>
+    makePassiveCard(
+      `passive_${i}`,
+      titles[i],
+      'Permanent Augment',
+      `Passive upgrade from "${prompt.slice(0, 30) || 'training'}"`,
+      rarities[i],
+      mods,
+    ),
+  );
+}
+
+export async function synthesizeAbility(
+  prompt: string,
+  category: SkillCategory,
+  loadout: PlayerLoadout,
+  evolution?: EvolutionContext,
+  passiveOnly = false,
+): Promise<DraftCard[]> {
+  const settings = getAiSettings();
+
+  if (settings.apiKey.trim()) {
+    let online: DraftCard[] | null = null;
+
+    if (passiveOnly) {
+      online = await fetchLLMPassive(prompt, loadout, settings);
+    } else if (evolution) {
+      online = await fetchLLMEvolution(prompt, evolution, loadout, settings);
+    } else {
+      online = await fetchLLMForge(prompt, category, loadout, settings);
+    }
+
+    if (online) return online;
+  }
+
+  if (passiveOnly) return generateOfflinePassives(prompt);
+  if (evolution) return generateOfflineEvolution(prompt, evolution);
+  return generateOfflineForge(prompt, category);
 }
 
 export async function synthesizeCards(
   prompt: string,
   loadout: PlayerLoadout,
 ): Promise<DraftCard[]> {
-  const settings = getAiSettings();
-
-  if (settings.apiKey.trim()) {
-    const online = await fetchLLMDraft(prompt, loadout, settings);
-    if (online) return online;
-  }
-
-  return generateOfflineDraft(prompt);
+  return synthesizeAbility(prompt, 'SECONDARY', loadout);
 }

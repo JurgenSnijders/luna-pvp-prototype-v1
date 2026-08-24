@@ -18,6 +18,9 @@ export interface PassiveModifierPayload {
   value: number;
 }
 
+export type SkillCategory = 'PRIMARY' | 'SECONDARY' | 'UTILITY' | 'ULTIMATE' | 'MOBILITY';
+export type SynthesisMode = 'FORGE_NEW' | 'EVOLVE_EXISTING';
+
 export interface DraftCard {
   id: string;
   title: string;
@@ -28,6 +31,8 @@ export interface DraftCard {
   abilityPayload?: AbilitySchema;
   passivePayload?: PassiveModifierPayload[];
   budgetCost: number;
+  category?: SkillCategory;
+  evolutionDiff?: string[];
 }
 
 export type ActionSlotKey = 'LMB' | 'RMB' | 'Q' | 'E' | 'SPACE';
@@ -41,6 +46,52 @@ export const ACTION_SLOT_INDEX: Record<ActionSlotKey, 0 | 1 | 2 | 3 | 4> = {
   E: 3,
   SPACE: 4,
 };
+
+export const CATEGORY_SLOT_MAP: Record<SkillCategory, ActionSlotKey> = {
+  PRIMARY: 'LMB',
+  SECONDARY: 'RMB',
+  UTILITY: 'Q',
+  ULTIMATE: 'E',
+  MOBILITY: 'SPACE',
+};
+
+export const SLOT_CATEGORY_MAP: Record<ActionSlotKey, SkillCategory> = {
+  LMB: 'PRIMARY',
+  RMB: 'SECONDARY',
+  Q: 'UTILITY',
+  E: 'ULTIMATE',
+  SPACE: 'MOBILITY',
+};
+
+export const SKILL_CATEGORIES: readonly SkillCategory[] = [
+  'PRIMARY',
+  'SECONDARY',
+  'UTILITY',
+  'ULTIMATE',
+  'MOBILITY',
+];
+
+export interface EvolutionContext {
+  baseAbility: AbilitySchema;
+  slotKey: ActionSlotKey;
+  category: SkillCategory;
+}
+
+const CATEGORY_LABELS: Record<SkillCategory, string> = {
+  PRIMARY: 'Primary',
+  SECONDARY: 'Secondary',
+  UTILITY: 'Utility',
+  ULTIMATE: 'Ultimate',
+  MOBILITY: 'Mobility',
+};
+
+export function getCategoryLabel(cat: SkillCategory): string {
+  return CATEGORY_LABELS[cat];
+}
+
+export function getSlotForCategory(cat: SkillCategory): ActionSlotKey {
+  return CATEGORY_SLOT_MAP[cat];
+}
 
 export interface DraftSelection {
   card: DraftCard;
@@ -128,6 +179,15 @@ export function validateDraftCard(val: unknown): DraftCard | null {
       passives.push(mod);
     }
     card.passivePayload = passives;
+  }
+
+  if (isString(val.category) && SKILL_CATEGORIES.includes(val.category as SkillCategory)) {
+    card.category = val.category as SkillCategory;
+  }
+
+  if (Array.isArray(val.evolutionDiff)) {
+    const diffs = val.evolutionDiff.filter((d): d is string => typeof d === 'string');
+    if (diffs.length > 0) card.evolutionDiff = diffs;
   }
 
   return card;

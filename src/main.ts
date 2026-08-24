@@ -206,9 +206,11 @@ function handleModeChange(mode: GameMode): void {
     arenaShrink.enabled = false;
     arenaShrink.reset();
     loop.setPaused(false);
+    botController.enabled = false;
   } else {
     arenaShrink.enabled = true;
     arenaShrink.reset();
+    botController.enabled = true;
   }
 }
 
@@ -298,6 +300,7 @@ function init(): void {
   arenaShrink.enabled = false;
   matchManager = new MatchManager();
   botController = new BotController(bot);
+  botController.enabled = matchManager.mode === 'MATCH';
 
   matchHUD = new MatchHUD({
     onStartMatch: () => {
