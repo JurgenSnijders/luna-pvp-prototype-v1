@@ -445,13 +445,17 @@ export class Interpreter {
         );
       }
       const visuals = projectile.visuals;
-      if (visuals?.trailType === 'NEON_RIBBON') {
-        this.particles?.neonRibbon(projectile.pos, visuals.color);
-      } else {
-        const color = trailColor(visuals);
-        if (color) {
-          this.particles?.trail(projectile.pos, color);
+      const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation
+      if (projectile.pos.distSq(projectile.lastTrailPos) > TRAIL_MIN_DIST_SQ) {
+        if (visuals?.trailType === 'NEON_RIBBON') {
+          this.particles?.neonRibbon(projectile.pos, visuals.color);
+        } else {
+          const color = trailColor(visuals);
+          if (color) {
+            this.particles?.trail(projectile.pos, color);
+          }
         }
+        projectile.lastTrailPos.copyFrom(projectile.pos);
       }
     }
   }

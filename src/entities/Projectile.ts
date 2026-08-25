@@ -22,6 +22,7 @@ export class Projectile extends Entity {
   orbitAngle: number;
   blinkTimerMs: number;
   expiryReason: ExpiryReason;
+  lastTrailPos: Vector2D;
 
   constructor(
     pos: Vector2D,
@@ -55,6 +56,7 @@ export class Projectile extends Entity {
     this.orbitAngle = aimAngle;
     this.blinkTimerMs = 0;
     this.expiryReason = null;
+    this.lastTrailPos = Vector2D.create(pos.x, pos.y);
 
     const speed = config.speed ?? 400;
     this.vel = Vector2D.fromAngle(aimAngle, speed);

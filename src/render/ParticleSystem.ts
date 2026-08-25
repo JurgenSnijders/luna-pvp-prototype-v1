@@ -1,7 +1,7 @@
 import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 
-const POOL_SIZE = 512;
+const POOL_SIZE = 2048;
 
 interface Particle {
   pos: Vector2D;
@@ -17,12 +17,15 @@ interface Particle {
 
 export class ParticleSystem {
   private pool: Particle[] = [];
+  private freeList: number[] = [];
 
   constructor() {
+    this.freeList = new Array(POOL_SIZE);
     for (let i = 0; i < POOL_SIZE; i++) {
+      this.freeList[i] = POOL_SIZE - 1 - i;
       this.pool.push({
-        pos: Vector2D.zero(),
-        vel: Vector2D.zero(),
+        pos: Vector2D.create(0, 0),
+        vel: Vector2D.create(0, 0),
         life: 0,
         maxLife: 1,
         color: '#ffffff',
@@ -42,10 +45,11 @@ export class ParticleSystem {
     size: number,
     initialAlpha = 1,
   ): void {
-    const slot = this.pool.find((p) => !p.active);
-    if (!slot) return;
-    slot.pos = pos.clone();
-    slot.vel = vel.clone();
+    if (this.freeList.length === 0) return;
+    const index = this.freeList.pop()!;
+    const slot = this.pool[index];
+    slot.pos.copyFrom(pos);
+    slot.vel.copyFrom(vel);
     slot.life = life;
     slot.maxLife = life;
     slot.color = color;
@@ -224,15 +228,17 @@ export class ParticleSystem {
   }
 
   update(dt: number): void {
-    for (const p of this.pool) {
+    for (let i = 0; i < this.pool.length; i++) {
+      const p = this.pool[i];
       if (!p.active) continue;
       p.life -= dt;
       if (p.life <= 0) {
         p.active = false;
+        this.freeList.push(i);
         continue;
       }
-      p.pos = p.pos.add(p.vel.scale(dt));
-      p.vel = p.vel.scale(0.95);
+      p.pos.addScaledMut(p.vel, dt);
+      p.vel.scaleMut(0.95);
       p.alpha = p.peakAlpha * (p.life / p.maxLife);
     }
   }

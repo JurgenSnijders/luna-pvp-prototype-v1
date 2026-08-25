@@ -1,8 +1,44 @@
 export class Vector2D {
   constructor(
-    public readonly x: number,
-    public readonly y: number,
+    public x: number,
+    public y: number,
   ) {}
+
+  set(x: number, y: number): this {
+    this.x = x;
+    this.y = y;
+    return this;
+  }
+
+  copyFrom(v: Vector2D): this {
+    this.x = v.x;
+    this.y = v.y;
+    return this;
+  }
+
+  addMut(v: Vector2D): this {
+    this.x += v.x;
+    this.y += v.y;
+    return this;
+  }
+
+  subMut(v: Vector2D): this {
+    this.x -= v.x;
+    this.y -= v.y;
+    return this;
+  }
+
+  scaleMut(s: number): this {
+    this.x *= s;
+    this.y *= s;
+    return this;
+  }
+
+  addScaledMut(v: Vector2D, s: number): this {
+    this.x += v.x * s;
+    this.y += v.y * s;
+    return this;
+  }
 
   add(v: Vector2D): Vector2D {
     return new Vector2D(this.x + v.x, this.y + v.y);
@@ -17,7 +53,7 @@ export class Vector2D {
   }
 
   mag(): number {
-    return Math.hypot(this.x, this.y);
+    return Math.sqrt(this.x * this.x + this.y * this.y);
   }
 
   magSq(): number {
@@ -48,11 +84,13 @@ export class Vector2D {
   }
 
   dist(v: Vector2D): number {
-    return this.sub(v).mag();
+    return Math.sqrt(this.distSq(v));
   }
 
   distSq(v: Vector2D): number {
-    return this.sub(v).magSq();
+    const dx = this.x - v.x;
+    const dy = this.y - v.y;
+    return dx * dx + dy * dy;
   }
 
   lerp(v: Vector2D, t: number): Vector2D {
@@ -64,6 +102,10 @@ export class Vector2D {
 
   clone(): Vector2D {
     return new Vector2D(this.x, this.y);
+  }
+
+  static create(x: number, y: number): Vector2D {
+    return new Vector2D(x, y);
   }
 
   static zero(): Vector2D {

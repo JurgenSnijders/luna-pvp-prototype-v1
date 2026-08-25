@@ -24,7 +24,7 @@ export function updateTrajectory(
 ): void {
   if (proj.isDead) return;
 
-  proj.prevPos = proj.pos.clone();
+  proj.prevPos.copyFrom(proj.pos);
 
   const config = proj.config;
   const speed = config.speed ?? 400;
@@ -141,14 +141,14 @@ function updateHomingSlerp(
   turnAccel: number,
 ): void {
   const combatants = world.getCombatants();
-  let nearestDist = Infinity;
+  let nearestDistSq = Infinity;
   let nearestPos: Vector2D | null = null;
 
   for (const target of combatants) {
     if (target.id === proj.sourceEntityId) continue;
-    const dist = proj.pos.dist(target.pos);
-    if (dist < nearestDist) {
-      nearestDist = dist;
+    const distSq = proj.pos.distSq(target.pos);
+    if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
       nearestPos = target.pos;
     }
   }

@@ -34,6 +34,9 @@ export class PhysicsWorld {
   pendingExpirations: Projectile[] = [];
   pendingWallImpacts: Vector2D[] = [];
 
+  private combatantsCache: Entity[] = [];
+  private entityRegistry = new Map<string, Entity>();
+
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
     this.hexRadius = hexRadius;
@@ -44,12 +47,12 @@ export class PhysicsWorld {
   }
 
   getEntityCount(): number {
-    return (
-      this.players.filter((e) => !e.isDead).length +
-      this.dummies.filter((e) => !e.isDead).length +
-      this.projectiles.filter((e) => !e.isDead).length +
-      this.zones.filter((e) => !e.isDead).length
-    );
+    let count = 0;
+    for (const e of this.players) if (!e.isDead) count++;
+    for (const e of this.dummies) if (!e.isDead) count++;
+    for (const e of this.projectiles) if (!e.isDead) count++;
+    for (const e of this.zones) if (!e.isDead) count++;
+    return count;
   }
 
   canAddEntity(): boolean {
@@ -57,26 +60,28 @@ export class PhysicsWorld {
   }
 
   getEntityById(id: string): Entity | null {
-    for (const p of this.players) if (p.id === id && !p.isDead) return p;
-    for (const d of this.dummies) if (d.id === id && !d.isDead) return d;
-    for (const pr of this.projectiles) if (pr.id === id && !pr.isDead) return pr;
-    for (const z of this.zones) if (z.id === id && !z.isDead) return z;
-    return null;
+    const entity = this.entityRegistry.get(id);
+    return entity && !entity.isDead ? entity : null;
   }
 
   addPlayer(player: Player): void {
     if (!this.canAddEntity()) return;
     this.players.push(player);
+    this.entityRegistry.set(player.id, player);
+    this.refreshCombatantsCache();
   }
 
   addDummy(dummy: Dummy): void {
     if (!this.canAddEntity()) return;
     this.dummies.push(dummy);
+    this.entityRegistry.set(dummy.id, dummy);
+    this.refreshCombatantsCache();
   }
 
   addProjectile(projectile: Projectile): boolean {
     if (!this.canAddEntity()) return false;
     this.projectiles.push(projectile);
+    this.entityRegistry.set(projectile.id, projectile);
     return true;
   }
 
@@ -86,11 +91,18 @@ export class PhysicsWorld {
     return true;
   }
 
+  refreshCombatantsCache(): void {
+    this.combatantsCache.length = 0;
+    for (const p of this.players) {
+      if (!p.isDead) this.combatantsCache.push(p);
+    }
+    for (const d of this.dummies) {
+      if (!d.isDead) this.combatantsCache.push(d);
+    }
+  }
+
   getCombatants(): Entity[] {
-    return [
-      ...this.players.filter((e) => !e.isDead),
-      ...this.dummies.filter((e) => !e.isDead),
-    ];
+    return this.combatantsCache;
   }
 
   applyKnockback(target: Entity, direction: Vector2D, baseForce: number): void {
@@ -103,16 +115,22 @@ export class PhysicsWorld {
 
   getEntitiesInRadius(center: Vector2D, radius: number): Entity[] {
     const results: Entity[] = [];
-    const all = [
-      ...this.players,
-      ...this.dummies,
-      ...this.projectiles,
-    ].filter((e) => !e.isDead);
+    const radiusSq = radius * radius;
 
-    for (const entity of all) {
-      if (entity.pos.dist(center) <= radius + entity.radius) {
-        results.push(entity);
-      }
+    for (const entity of this.players) {
+      if (entity.isDead) continue;
+      const reach = radius + entity.radius;
+      if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
+    }
+    for (const entity of this.dummies) {
+      if (entity.isDead) continue;
+      const reach = radius + entity.radius;
+      if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
+    }
+    for (const entity of this.projectiles) {
+      if (entity.isDead) continue;
+      const reach = radius + entity.radius;
+      if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
     }
     return results;
   }
@@ -128,25 +146,33 @@ export class PhysicsWorld {
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
 
+    this.refreshCombatantsCache();
+
     for (const dummy of this.dummies) {
       if (!dummy.isDead) {
         dummy.chaseVector = dummy.getChaseVector(this.players);
       }
     }
 
-    const updatables: Entity[] = [
-      ...this.players,
-      ...this.dummies,
-      ...this.projectiles,
-      ...this.zones,
-    ];
-
-    for (const entity of updatables) {
+    for (const entity of this.players) {
       if (entity.isDead) continue;
       entity.update(dt);
-      if (!entity.tags.has('kinematic')) {
-        entity.integrate(dt);
-      }
+      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+    }
+    for (const entity of this.dummies) {
+      if (entity.isDead) continue;
+      entity.update(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+    }
+    for (const entity of this.projectiles) {
+      if (entity.isDead) continue;
+      entity.update(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+    }
+    for (const entity of this.zones) {
+      if (entity.isDead) continue;
+      entity.update(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt);
     }
 
     this.resolveCircleCollisions();
@@ -157,7 +183,7 @@ export class PhysicsWorld {
   }
 
   private resolveCircleCollisions(): void {
-    const combatants = this.getCombatants();
+    const combatants = this.combatantsCache;
 
     for (let i = 0; i < combatants.length; i++) {
       for (let j = i + 1; j < combatants.length; j++) {
@@ -197,53 +223,64 @@ export class PhysicsWorld {
 
   private resolveHexBoundaries(dt: number): void {
     const outerWallRadius = getOuterWallRadius(this.hexRadius);
-    const movable = [...this.players, ...this.dummies, ...this.projectiles].filter(
-      (e) => !e.isDead,
-    );
 
-    for (const entity of movable) {
-      const delta = entity.pos.sub(this.hexCenter);
-      const dist = delta.mag();
-      const boundRadius = outerWallRadius - entity.radius;
+    for (const entity of this.players) {
+      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+    }
+    for (const entity of this.dummies) {
+      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+    }
+    for (const entity of this.projectiles) {
+      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+    }
+  }
 
-      if (dist > boundRadius && dist > 0.0001) {
-        const normal = delta.scale(1 / dist);
-        const velDotNormal = entity.vel.dot(normal);
-        entity.pos = this.hexCenter.add(normal.scale(boundRadius));
-        entity.vel = entity.vel.sub(
-          normal.scale((1 + WALL_RESTITUTION) * velDotNormal),
+  private resolveHexBoundaryForEntity(
+    entity: Entity,
+    dt: number,
+    outerWallRadius: number,
+  ): void {
+    const delta = entity.pos.sub(this.hexCenter);
+    const dist = delta.mag();
+    const boundRadius = outerWallRadius - entity.radius;
+
+    if (dist > boundRadius && dist > 0.0001) {
+      const normal = delta.scale(1 / dist);
+      const velDotNormal = entity.vel.dot(normal);
+      entity.pos = this.hexCenter.add(normal.scale(boundRadius));
+      entity.vel = entity.vel.sub(
+        normal.scale((1 + WALL_RESTITUTION) * velDotNormal),
+      );
+
+      if (velDotNormal > 0) {
+        this.pendingWallImpacts.push(
+          this.hexCenter.add(normal.scale(outerWallRadius)),
         );
-
-        if (velDotNormal > 0) {
-          this.pendingWallImpacts.push(
-            this.hexCenter.add(normal.scale(outerWallRadius)),
-          );
-        }
-
-        if (entity.tags.has('projectile')) {
-          const proj = entity as Projectile;
-          if (proj.pierceRemaining <= 0) {
-            proj.isDead = true;
-            proj.expiryReason = 'hit';
-          }
-        }
       }
 
-      if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
-        entity.tags.delete('in_lava');
-      } else {
-        entity.tags.add('in_lava');
-        entity.instabilityPct = Math.min(
-          500,
-          entity.instabilityPct + LAVA_INSTABILITY_PER_SEC * dt,
-        );
-        entity.linearDrag = LAVA_DRAG;
+      if (entity.tags.has('projectile')) {
+        const proj = entity as Projectile;
+        if (proj.pierceRemaining <= 0) {
+          proj.isDead = true;
+          proj.expiryReason = 'hit';
+        }
       }
+    }
+
+    if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
+      entity.tags.delete('in_lava');
+    } else {
+      entity.tags.add('in_lava');
+      entity.instabilityPct = Math.min(
+        500,
+        entity.instabilityPct + LAVA_INSTABILITY_PER_SEC * dt,
+      );
+      entity.linearDrag = LAVA_DRAG;
     }
   }
 
   private resolveProjectileHits(): void {
-    const combatants = this.getCombatants();
+    const combatants = this.combatantsCache;
 
     for (const projectile of this.projectiles) {
       if (projectile.isDead) continue;
@@ -251,8 +288,9 @@ export class PhysicsWorld {
       for (const target of combatants) {
         if (target.id === projectile.sourceEntityId) continue;
 
-        const dist = projectile.pos.dist(target.pos);
-        if (dist > projectile.radius + target.radius) continue;
+        const minDist = projectile.radius + target.radius;
+        const minDistSq = minDist * minDist;
+        if (projectile.pos.distSq(target.pos) > minDistSq) continue;
 
         if (!projectile.registerHit(target.id)) continue;
 
@@ -278,13 +316,62 @@ export class PhysicsWorld {
   }
 
   private pruneDead(): void {
-    // Players persist through elimination; MatchManager resets them between rounds.
-    this.dummies = this.dummies.filter((e) => !e.isDead);
-    this.projectiles = this.projectiles.filter((e) => !e.isDead);
-    this.zones = this.zones.filter((e) => !e.isDead);
+    let pruned = false;
+
+    let write = 0;
+    for (let read = 0; read < this.dummies.length; read++) {
+      if (!this.dummies[read].isDead) {
+        this.dummies[write++] = this.dummies[read];
+      } else {
+        this.entityRegistry.delete(this.dummies[read].id);
+        pruned = true;
+      }
+    }
+    if (write < this.dummies.length) {
+      this.dummies.length = write;
+      pruned = true;
+    }
+
+    write = 0;
+    for (let read = 0; read < this.projectiles.length; read++) {
+      if (!this.projectiles[read].isDead) {
+        this.projectiles[write++] = this.projectiles[read];
+      } else {
+        this.entityRegistry.delete(this.projectiles[read].id);
+        pruned = true;
+      }
+    }
+    if (write < this.projectiles.length) {
+      this.projectiles.length = write;
+      pruned = true;
+    }
+
+    write = 0;
+    for (let read = 0; read < this.zones.length; read++) {
+      if (!this.zones[read].isDead) {
+        this.zones[write++] = this.zones[read];
+      } else {
+        this.entityRegistry.delete(this.zones[read].id);
+        pruned = true;
+      }
+    }
+    if (write < this.zones.length) {
+      this.zones.length = write;
+      pruned = true;
+    }
+
+    if (pruned) {
+      this.refreshCombatantsCache();
+    }
   }
 
   clearProjectilesAndZones(): void {
+    for (const projectile of this.projectiles) {
+      this.entityRegistry.delete(projectile.id);
+    }
+    for (const zone of this.zones) {
+      this.entityRegistry.delete(zone.id);
+    }
     this.projectiles = [];
     this.zones = [];
   }

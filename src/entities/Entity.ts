@@ -48,12 +48,11 @@ export class Entity {
   }
 
   integrate(dt: number): void {
-    this.prevPos = this.pos.clone();
-    this.vel = this.vel.add(this.accel.scale(dt));
-    const dragFactor = Math.max(0, 1 - this.linearDrag * dt);
-    this.vel = this.vel.scale(dragFactor);
-    this.pos = this.pos.add(this.vel.scale(dt));
-    this.accel = Vector2D.zero();
+    this.prevPos.copyFrom(this.pos);
+    this.vel.addScaledMut(this.accel, dt);
+    this.vel.scaleMut(Math.max(0, 1 - this.linearDrag * dt));
+    this.pos.addScaledMut(this.vel, dt);
+    this.accel.set(0, 0);
   }
 
   update(_dt: number): void {

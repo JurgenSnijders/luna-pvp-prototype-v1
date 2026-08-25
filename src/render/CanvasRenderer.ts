@@ -37,6 +37,10 @@ export class CanvasRenderer {
   private bgCacheCanvas: HTMLCanvasElement | null = null;
   private bgCacheKey = '';
   private spriteCache = new Map<string, SpriteEntry>();
+  private cachedHexRadius = -1;
+  private cachedHexCenterX = NaN;
+  private cachedHexCenterY = NaN;
+  private cachedHexVertices: Vector2D[] = [];
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -237,7 +241,17 @@ export class CanvasRenderer {
     shrinkProgress: number,
     isShrinking: boolean,
   ): void {
-    const vertices = getHexVertices(world.hexCenter, world.hexRadius);
+    if (
+      world.hexRadius !== this.cachedHexRadius ||
+      world.hexCenter.x !== this.cachedHexCenterX ||
+      world.hexCenter.y !== this.cachedHexCenterY
+    ) {
+      this.cachedHexVertices = getHexVertices(world.hexCenter, world.hexRadius);
+      this.cachedHexRadius = world.hexRadius;
+      this.cachedHexCenterX = world.hexCenter.x;
+      this.cachedHexCenterY = world.hexCenter.y;
+    }
+    const vertices = this.cachedHexVertices;
     ctx.beginPath();
     ctx.moveTo(vertices[0].x, vertices[0].y);
     for (let i = 1; i < vertices.length; i++) {
