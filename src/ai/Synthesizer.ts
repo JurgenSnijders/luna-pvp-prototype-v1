@@ -89,12 +89,20 @@ export function setAiSettings(settings: AiSettings): void {
   localStorage.setItem(STORAGE_KEY_MODEL, settings.model);
 }
 
-const SCHEMA_REFERENCE = `AbilitySchema trajectories: LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
+const SCHEMA_REFERENCE = `AbilitySchema trajectories (use ONLY these): LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
 Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
 Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
 Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_PROJECTILE (with projectileTrajectory + optional emitter { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL, aimOffsetDeg }), TELEPORT, MODIFY_STAT
 Emitter distributions: FAN, RADIAL, RANDOM_CONE, PARALLEL
-Visuals (optional): { color, size, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS, impactVfx: SPARKS|SHOCKWAVE|VORTEX_SWIRL }
+Visuals REQUIRED on abilityPayload: { color: hex string, size: number, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS, impactVfx: SPARKS|SHOCKWAVE|VORTEX_SWIRL }
+
+SPAWN PATH (required): every ACTIVE ability MUST spawn something on cast via ONE of:
+1. Root trajectory: abilityPayload.trajectory { type, speed, maxRange } — Interpreter fires this projectile immediately
+2. ON_CAST + SPAWN_PROJECTILE { projectileTrajectory, emitter }
+3. ON_CAST + SPAWN_FIELD or TELEPORT (utility/mobility only)
+Do NOT put the only projectile on ON_HIT/ON_EXPIRY without a root trajectory — those triggers never fire if nothing is spawned.
+Optional root emitter alongside trajectory: emitter { count, spreadDeg, distribution }.
+SPAWN_CHILD_PROJECTILE is invalid — use SPAWN_PROJECTILE.
 
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
 Passive ops: ADD, MULTIPLY`;
@@ -108,7 +116,7 @@ Each DraftCard must have:
 - type: "ACTIVE_ABILITY" (all 3 cards must be ACTIVE_ABILITY for forge mode)
 - category: the requested SkillCategory
 - budgetCost: number
-- abilityPayload: AbilitySchema with id, name, cooldownMs, recoilKick, optional trajectory, triggers[]
+- abilityPayload: AbilitySchema with id, name, cooldownMs, recoilKick, visuals, trajectory (or ON_CAST SPAWN_PROJECTILE), triggers[]
 
 ${SCHEMA_REFERENCE}
 
@@ -477,7 +485,25 @@ const TRAJECTORY_ALIASES: Record<string, string> = {
   BOOMERANG: 'RETURN_TO_SOURCE',
   ORBIT: 'ORBIT_ANCHOR',
   BLINK: 'DISCONTINUOUS_BLINK',
+  LASER: 'LINEAR',
+  BEAM: 'LINEAR',
+  PROJECTILE: 'LINEAR',
+  BOLT: 'LINEAR',
+  SHOT: 'LINEAR',
+  RAIL: 'LINEAR',
+  RAILGUN: 'LINEAR',
 };
+
+const VALID_TRAJECTORY_TYPES = new Set([
+  'LINEAR',
+  'RETURN_TO_SOURCE',
+  'ORBIT_ANCHOR',
+  'HOMING_SLERP',
+  'DISCONTINUOUS_BLINK',
+]);
+
+const VALID_TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS']);
+const VALID_IMPACT_VFX = new Set(['SPARKS', 'SHOCKWAVE', 'VORTEX_SWIRL']);
 
 function normalizeEnumToken(value: string, aliases: Record<string, string>): string {
   const compact = value.trim().toUpperCase().replace(/[\s-]+/g, '_');
@@ -505,21 +531,14 @@ function coerceNumericFields(obj: Record<string, unknown>, keys: string[]): void
   }
 }
 
-function isValidActionProbe(action: unknown): boolean {
-  const schema = {
-    id: 'probe_action',
-    name: 'probe',
-    cooldownMs: 0,
-    recoilKick: 0,
-    triggers: [{ trigger: 'ON_HIT' as const, actions: [action] }],
-  };
-  return validateAbilitySchema(schema) !== null;
-}
-
 function filterValidActions(actions: unknown[]): unknown[] {
   return actions
     .map(repairActionPayload)
-    .filter((action) => isValidActionProbe(action));
+    .filter((action) => {
+      if (action === null || typeof action !== 'object') return false;
+      const type = (action as Record<string, unknown>).type;
+      return typeof type === 'string' && type.length > 0;
+    });
 }
 
 function repairModifyStatAction(obj: Record<string, unknown>): void {
@@ -560,12 +579,36 @@ function ensureFiniteNumber(value: unknown, fallback: number): number {
   return fallback;
 }
 
+function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
+  const obj =
+    raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+      ? { ...(raw as Record<string, unknown>) }
+      : {};
+  stripNullFields(obj);
+  coerceNumericFields(obj, ['size']);
+  const trail =
+    typeof obj.trailType === 'string' ? obj.trailType.toUpperCase() : 'NONE';
+  const impact =
+    typeof obj.impactVfx === 'string' ? obj.impactVfx.toUpperCase() : 'SPARKS';
+  return {
+    color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
+    size: ensureFiniteNumber(obj.size, 8),
+    trailType: VALID_TRAIL_TYPES.has(trail) ? trail : 'NONE',
+    impactVfx: VALID_IMPACT_VFX.has(impact) ? impact : 'SPARKS',
+  };
+}
+
 function repairTrajectoryConfig(traj: unknown): unknown {
-  if (traj === null || typeof traj !== 'object') return traj;
+  if (traj === null || typeof traj !== 'object') {
+    return { type: 'LINEAR', speed: 400, maxRange: 500 };
+  }
   const t = { ...(traj as Record<string, unknown>) };
   stripNullFields(t);
   if (typeof t.type === 'string') {
     t.type = normalizeEnumToken(t.type, TRAJECTORY_ALIASES);
+  }
+  if (typeof t.type !== 'string' || !VALID_TRAJECTORY_TYPES.has(t.type)) {
+    t.type = 'LINEAR';
   }
   coerceNumericFields(t, [
     'speed',
@@ -633,8 +676,9 @@ function repairActionPayload(action: unknown): unknown {
       obj.projectileTrajectory = obj.trajectory;
       delete obj.trajectory;
     }
-    if (obj.projectileTrajectory !== undefined) {
-      obj.projectileTrajectory = repairTrajectoryConfig(obj.projectileTrajectory);
+    obj.projectileTrajectory = repairTrajectoryConfig(obj.projectileTrajectory);
+    if (obj.visuals !== undefined) {
+      obj.visuals = repairVisualDescriptor(obj.visuals);
     }
     if (obj.emitter === undefined || typeof obj.emitter !== 'object') {
       obj.emitter = {
@@ -728,19 +772,15 @@ function repairAbilityPayload(payload: unknown): unknown {
   if (obj.trajectory !== undefined) {
     obj.trajectory = repairTrajectoryConfig(obj.trajectory);
   }
+  if (obj.visuals !== undefined) {
+    obj.visuals = repairVisualDescriptor(obj.visuals);
+  }
   obj.triggers = repairTriggersField(obj.triggers);
   if (
     obj.metadata !== undefined &&
     (obj.metadata === null || typeof obj.metadata !== 'object' || Array.isArray(obj.metadata))
   ) {
     delete obj.metadata;
-  }
-
-  if (!validateAbilitySchema(obj)) {
-    obj.triggers = [];
-    if (!validateAbilitySchema(obj)) {
-      delete obj.trajectory;
-    }
   }
 
   return obj;

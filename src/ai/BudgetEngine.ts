@@ -405,6 +405,43 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
   return node;
 }
 
+function hasOnCastEffect(triggers: TriggerNode[]): boolean {
+  return triggers.some((n) => n.trigger === 'ON_CAST' && n.actions.length > 0);
+}
+
+function promoteRootEmitter(
+  schema: AbilitySchema,
+  obj: Record<string, unknown>,
+): void {
+  const emitterRaw = obj.rootEmitter ?? obj.emitter;
+  if (emitterRaw === undefined || !schema.trajectory) return;
+
+  const emitter = sanitizeEmitter(emitterRaw);
+  const needsFan =
+    emitter.count > 1 ||
+    emitter.spreadDeg > 0 ||
+    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0);
+  if (!needsFan) return;
+
+  const lifecycle = schema.triggers.filter((t) => t.trigger !== 'ON_CAST');
+  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
+  const spawn: Extract<ActionPayload, { type: 'SPAWN_PROJECTILE' }> = {
+    type: 'SPAWN_PROJECTILE',
+    projectileTrajectory: schema.trajectory,
+    emitter,
+  };
+  if (lifecycle.length > 0) spawn.triggers = lifecycle;
+  if (schema.visuals) spawn.visuals = schema.visuals;
+
+  delete schema.trajectory;
+  schema.triggers = schema.triggers.filter((t) => t.trigger === 'ON_CAST');
+  if (onCast) {
+    onCast.actions.push(spawn);
+  } else {
+    schema.triggers.unshift({ trigger: 'ON_CAST', actions: [spawn] });
+  }
+}
+
 export function sanitizeAbilitySchema(
   raw: unknown,
   _category: SkillCategory = 'SECONDARY',
@@ -439,6 +476,12 @@ export function sanitizeAbilitySchema(
 
   if (isObject(obj.metadata)) {
     schema.metadata = obj.metadata as Record<string, unknown>;
+  }
+
+  promoteRootEmitter(schema, obj);
+
+  if (!schema.trajectory && !hasOnCastEffect(schema.triggers)) {
+    schema.trajectory = sanitizeTrajectory(obj.trajectory);
   }
 
   const validated = validateAbilitySchema(schema);
