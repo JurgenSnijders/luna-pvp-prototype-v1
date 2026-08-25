@@ -36,11 +36,28 @@ export interface InspectorContext {
   onRespawnCombatants?: () => void;
 }
 
+interface TelemetryRefs {
+  mode: HTMLElement;
+  match: HTMLElement;
+  score: HTMLElement;
+  round: HTMLElement;
+  fps: HTMLElement;
+  entities: HTMLElement;
+  zones: HTMLElement;
+  velocity: HTMLElement;
+  slots: HTMLElement[];
+  passives: HTMLElement;
+}
+
+const TELEMETRY_UPDATE_INTERVAL_MS = 200;
+
 export class InspectorUI {
   private fps = 0;
   private frameCount = 0;
   private lastFpsTime = performance.now();
+  private lastTelemetryDomUpdate = 0;
   private telemetryEl!: HTMLElement;
+  private telemetryRefs: TelemetryRefs | null = null;
   private jsonTextarea!: HTMLTextAreaElement;
   private errorBanner!: HTMLElement;
 
@@ -461,13 +478,14 @@ export class InspectorUI {
         const aiToggleRow = document.createElement('label');
         aiToggleRow.style.cssText =
           'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-top:4px;';
-        aiCheckbox = document.createElement('input');
-        aiCheckbox.type = 'checkbox';
-        aiCheckbox.checked = this.ctx.botController.enabled;
-        aiCheckbox.onchange = () => {
-          this.ctx.botController!.enabled = aiCheckbox.checked;
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = this.ctx.botController.enabled;
+        checkbox.onchange = () => {
+          this.ctx.botController!.enabled = checkbox.checked;
         };
-        aiToggleRow.appendChild(aiCheckbox);
+        aiCheckbox = checkbox;
+        aiToggleRow.appendChild(checkbox);
         aiToggleRow.appendChild(document.createTextNode('Bot AI Enabled'));
         matchSection.appendChild(aiToggleRow);
       }
@@ -544,6 +562,37 @@ export class InspectorUI {
     return world.hexCenter.clone();
   }
 
+  private buildTelemetryDom(): TelemetryRefs {
+    this.telemetryEl.textContent = '';
+    const makeRow = (): HTMLElement => {
+      const row = document.createElement('div');
+      this.telemetryEl.appendChild(row);
+      return row;
+    };
+
+    const refs: TelemetryRefs = {
+      mode: makeRow(),
+      match: makeRow(),
+      score: makeRow(),
+      round: makeRow(),
+      fps: makeRow(),
+      entities: makeRow(),
+      zones: makeRow(),
+      velocity: makeRow(),
+      slots: ACTION_SLOT_KEYS.map(() => makeRow()),
+      passives: makeRow(),
+    };
+
+    if (!this.ctx.matchManager) {
+      refs.mode.style.display = 'none';
+      refs.match.style.display = 'none';
+      refs.score.style.display = 'none';
+      refs.round.style.display = 'none';
+    }
+
+    return refs;
+  }
+
   updateTelemetry(): void {
     this.frameCount++;
     const now = performance.now();
@@ -553,32 +602,46 @@ export class InspectorUI {
       this.lastFpsTime = now;
     }
 
+    // DOM writes are throttled; only the FPS counter above runs per frame.
+    if (now - this.lastTelemetryDomUpdate < TELEMETRY_UPDATE_INTERVAL_MS) return;
+    this.lastTelemetryDomUpdate = now;
+
+    if (!this.telemetryRefs) {
+      this.telemetryRefs = this.buildTelemetryDom();
+    }
+    const refs = this.telemetryRefs;
+
     const p = this.ctx.player;
     const w = this.ctx.world;
     const mm = this.ctx.matchManager;
-    const matchInfo = mm
-      ? `<div>Mode: ${mm.mode}</div>
-         <div>Match: ${mm.state}</div>
-         <div>Score: ${mm.playerWins} — ${mm.botWins}</div>
-         <div>Round: ${mm.roundNumber}</div>`
-      : '';
-    const slotLines = ACTION_SLOT_KEYS.map((key, i) => {
+
+    if (mm) {
+      refs.mode.textContent = `Mode: ${mm.mode}`;
+      refs.match.textContent = `Match: ${mm.state}`;
+      refs.score.textContent = `Score: ${mm.playerWins} — ${mm.botWins}`;
+      refs.round.textContent = `Round: ${mm.roundNumber}`;
+    }
+
+    refs.fps.textContent = `FPS: ${this.fps}`;
+    refs.entities.textContent = `Entities: ${w.getEntityCount()}`;
+
+    let liveZones = 0;
+    for (const zone of w.zones) {
+      if (!zone.isDead) liveZones++;
+    }
+    refs.zones.textContent = `Zones: ${liveZones}`;
+    refs.velocity.textContent = `Velocity: ${p.vel.mag().toFixed(1)} px/s`;
+
+    for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
       const ability = p.getAbility(i);
       const name = ability?.name ?? 'Empty';
       const remaining = p.getSlotCooldownRemainingMs(i);
       const status = remaining > 0
         ? `${(remaining / 1000).toFixed(1)}s`
         : ability ? 'Ready' : '—';
-      return `<div>${key}: ${name} (${status})</div>`;
-    }).join('');
-    this.telemetryEl.innerHTML = `
-      ${matchInfo}
-      <div>FPS: ${this.fps}</div>
-      <div>Entities: ${w.getEntityCount()}</div>
-      <div>Zones: ${w.zones.filter((z) => !z.isDead).length}</div>
-      <div>Velocity: ${p.vel.mag().toFixed(1)} px/s</div>
-      ${slotLines}
-      <div>Passives: ${p.passives.length}</div>
-    `;
+      refs.slots[i].textContent = `${ACTION_SLOT_KEYS[i]}: ${name} (${status})`;
+    }
+
+    refs.passives.textContent = `Passives: ${p.passives.length}`;
   }
 }
