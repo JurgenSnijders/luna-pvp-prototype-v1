@@ -29,6 +29,7 @@ const DEFAULT_EMITTER: EmitterConfig = {
 const DEFAULT_VISUALS: VisualDescriptor = {
   color: '#00e5ff',
   size: 8,
+  projectileStyle: 'DISC',
   trailType: 'NONE',
   impactVfx: 'SPARKS',
 };
@@ -52,6 +53,8 @@ function trailColor(visuals: VisualDescriptor | null | undefined): string | null
       return '#88ddff';
     case 'MAGMA_SPARKS':
       return '#ff6622';
+    case 'NEON_RIBBON':
+      return visuals.color;
     default:
       return visuals.color;
   }
@@ -60,6 +63,7 @@ function trailColor(visuals: VisualDescriptor | null | undefined): string | null
 export class Interpreter {
   particles: ParticleSystem | null = null;
   private returnTriggeredProjectiles: Projectile[] = [];
+  private activeCastVisuals: VisualDescriptor | null = null;
 
   setParticleSystem(particles: ParticleSystem): void {
     this.particles = particles;
@@ -82,6 +86,7 @@ export class Interpreter {
     };
 
     const visuals = schema.visuals ?? DEFAULT_VISUALS;
+    this.activeCastVisuals = visuals;
     this.particles?.triggerMuzzleFlash(castCtx.origin, heading, visuals.color);
 
     if (schema.recoilKick > 0 && ctx.depth === 0) {
@@ -116,6 +121,8 @@ export class Interpreter {
       }
       world.addProjectile(projectile);
     }
+
+    this.activeCastVisuals = null;
   }
 
   private executeEmitter(
@@ -231,11 +238,16 @@ export class Interpreter {
         break;
       }
       case 'SPAWN_PROJECTILE': {
+        const inheritedVisuals =
+          action.visuals ??
+          (ctx.sourceEntity instanceof Projectile ? ctx.sourceEntity.visuals : null) ??
+          this.activeCastVisuals ??
+          DEFAULT_VISUALS;
         this.executeEmitter(
           action.emitter ?? DEFAULT_EMITTER,
           action.projectileTrajectory,
           action.triggers,
-          action.visuals,
+          inheritedVisuals,
           ctx,
           world,
         );
@@ -422,18 +434,24 @@ export class Interpreter {
     for (const projectile of world.projectiles) {
       if (projectile.isDead) continue;
       const tickNodes = projectile.getTriggers('ON_TICK');
-      if (tickNodes.length === 0) continue;
-      this.dispatchProjectileTriggers(
-        projectile,
-        'ON_TICK',
-        null,
-        world,
-        projectile.pos,
-        projectile.depth,
-      );
-      const color = trailColor(projectile.visuals);
-      if (color) {
-        this.particles?.trail(projectile.pos, color);
+      if (tickNodes.length > 0) {
+        this.dispatchProjectileTriggers(
+          projectile,
+          'ON_TICK',
+          null,
+          world,
+          projectile.pos,
+          projectile.depth,
+        );
+      }
+      const visuals = projectile.visuals;
+      if (visuals?.trailType === 'NEON_RIBBON') {
+        this.particles?.neonRibbon(projectile.pos, visuals.color);
+      } else {
+        const color = trailColor(visuals);
+        if (color) {
+          this.particles?.trail(projectile.pos, color);
+        }
       }
     }
   }

@@ -79,6 +79,25 @@ export class ParticleSystem {
     );
   }
 
+  neonRibbon(pos: Vector2D, color: string): void {
+    this.spawn(
+      pos,
+      Vector2D.fromAngle(Math.random() * Math.PI * 2, 6),
+      0.55,
+      color,
+      4.5 + Math.random() * 1.5,
+      0.95,
+    );
+    this.spawn(
+      pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, 2)),
+      Vector2D.fromAngle(Math.random() * Math.PI * 2, 4),
+      0.35,
+      '#ffffff',
+      2,
+      0.7,
+    );
+  }
+
   ember(pos: Vector2D): void {
     const count = 1 + Math.floor(Math.random() * 2);
     const colors = ['#ff5500', '#ffaa00'];
@@ -159,11 +178,27 @@ export class ParticleSystem {
   triggerImpactBurst(
     pos: Vector2D,
     color: string,
-    vfxType: 'SPARKS' | 'SHOCKWAVE' | 'VORTEX_SWIRL' = 'SPARKS',
+    vfxType:
+      | 'SPARKS'
+      | 'SHOCKWAVE'
+      | 'ICE_BURST'
+      | 'VORTEX_SWIRL'
+      | 'MINI_NUKE' = 'SPARKS',
   ): void {
     switch (vfxType) {
       case 'SHOCKWAVE':
         this.expandingRing(pos, 50, color);
+        break;
+      case 'ICE_BURST':
+        this.expandingRing(pos, 55, '#88ddff');
+        this.burstSparks(pos, 12, color);
+        this.burstSparks(pos, 8, '#88ddff');
+        break;
+      case 'MINI_NUKE':
+        this.expandingRing(pos, 50, color);
+        this.expandingRing(pos, 90, color);
+        this.burstSparks(pos, 20, color);
+        this.burstSparks(pos, 10, '#ffffff');
         break;
       case 'VORTEX_SWIRL': {
         const segments = 14;

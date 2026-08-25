@@ -29,9 +29,21 @@ export type ActionType =
 
 export type EmitterDistribution = 'FAN' | 'RADIAL' | 'RANDOM_CONE' | 'PARALLEL';
 
-export type TrailType = 'NONE' | 'SMOKE' | 'ICE_GLOW' | 'MAGMA_SPARKS';
+export type ProjectileStyle =
+  | 'DISC'
+  | 'BEAM'
+  | 'PULSING_ORB'
+  | 'SHURIKEN'
+  | 'CHAOS_LIGHTNING';
 
-export type ImpactVfx = 'SPARKS' | 'SHOCKWAVE' | 'VORTEX_SWIRL';
+export type TrailType = 'NONE' | 'SMOKE' | 'ICE_GLOW' | 'MAGMA_SPARKS' | 'NEON_RIBBON';
+
+export type ImpactVfx =
+  | 'SPARKS'
+  | 'SHOCKWAVE'
+  | 'ICE_BURST'
+  | 'VORTEX_SWIRL'
+  | 'MINI_NUKE';
 
 export interface TrajectoryConfig {
   type: TrajectoryType;
@@ -63,6 +75,7 @@ export interface EmitterConfig {
 export interface VisualDescriptor {
   color: string;
   size: number;
+  projectileStyle: ProjectileStyle;
   trailType: TrailType;
   impactVfx: ImpactVfx;
 }
@@ -171,17 +184,28 @@ const EMITTER_DISTRIBUTIONS: ReadonlySet<string> = new Set([
   'PARALLEL',
 ]);
 
+const PROJECTILE_STYLES: ReadonlySet<string> = new Set([
+  'DISC',
+  'BEAM',
+  'PULSING_ORB',
+  'SHURIKEN',
+  'CHAOS_LIGHTNING',
+]);
+
 const TRAIL_TYPES: ReadonlySet<string> = new Set([
   'NONE',
   'SMOKE',
   'ICE_GLOW',
   'MAGMA_SPARKS',
+  'NEON_RIBBON',
 ]);
 
 const IMPACT_VFX_TYPES: ReadonlySet<string> = new Set([
   'SPARKS',
   'SHOCKWAVE',
+  'ICE_BURST',
   'VORTEX_SWIRL',
+  'MINI_NUKE',
 ]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -286,9 +310,18 @@ function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
   if (!isString(value.trailType) || !TRAIL_TYPES.has(value.trailType)) return null;
   if (!isString(value.impactVfx) || !IMPACT_VFX_TYPES.has(value.impactVfx)) return null;
 
+  let projectileStyle: ProjectileStyle = 'DISC';
+  if (value.projectileStyle !== undefined) {
+    if (!isString(value.projectileStyle) || !PROJECTILE_STYLES.has(value.projectileStyle)) {
+      return null;
+    }
+    projectileStyle = value.projectileStyle as ProjectileStyle;
+  }
+
   return {
     color: value.color,
     size: value.size,
+    projectileStyle,
     trailType: value.trailType as TrailType,
     impactVfx: value.impactVfx as ImpactVfx,
   };

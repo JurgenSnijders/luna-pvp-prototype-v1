@@ -15,7 +15,8 @@ export const PRESETS: Record<string, AbilitySchema> = {
     },
     visuals: {
       color: '#aa44ff',
-      size: 8,
+      size: 10,
+      projectileStyle: 'SHURIKEN',
       trailType: 'SMOKE',
       impactVfx: 'VORTEX_SWIRL',
     },
@@ -44,9 +45,10 @@ export const PRESETS: Record<string, AbilitySchema> = {
     recoilKick: 100,
     visuals: {
       color: '#ff44aa',
-      size: 8,
+      size: 16,
+      projectileStyle: 'PULSING_ORB',
       trailType: 'MAGMA_SPARKS',
-      impactVfx: 'SHOCKWAVE',
+      impactVfx: 'MINI_NUKE',
     },
     triggers: [
       {
@@ -142,9 +144,10 @@ export const PRESETS: Record<string, AbilitySchema> = {
     recoilKick: 0,
     visuals: {
       color: '#44ffff',
-      size: 8,
-      trailType: 'NONE',
-      impactVfx: 'SHOCKWAVE',
+      size: 10,
+      projectileStyle: 'CHAOS_LIGHTNING',
+      trailType: 'NEON_RIBBON',
+      impactVfx: 'MINI_NUKE',
     },
     triggers: [
       {
@@ -180,9 +183,10 @@ export const PRESETS: Record<string, AbilitySchema> = {
     },
     visuals: {
       color: '#88ddff',
-      size: 8,
+      size: 14,
+      projectileStyle: 'PULSING_ORB',
       trailType: 'ICE_GLOW',
-      impactVfx: 'SPARKS',
+      impactVfx: 'ICE_BURST',
     },
     triggers: [
       {
@@ -215,9 +219,10 @@ export const PRESETS: Record<string, AbilitySchema> = {
     },
     visuals: {
       color: '#ffaa44',
-      size: 8,
-      trailType: 'MAGMA_SPARKS',
-      impactVfx: 'SPARKS',
+      size: 5,
+      projectileStyle: 'BEAM',
+      trailType: 'NEON_RIBBON',
+      impactVfx: 'SHOCKWAVE',
     },
     triggers: [
       {

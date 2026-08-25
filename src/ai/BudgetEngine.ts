@@ -5,6 +5,7 @@ import type {
   EmitterConfig,
   EmitterDistribution,
   ImpactVfx,
+  ProjectileStyle,
   TrajectoryConfig,
   TrajectoryType,
   TrailType,
@@ -50,8 +51,21 @@ const EMITTER_DISTRIBUTIONS = new Set([
   'PARALLEL',
 ]);
 
-const TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS']);
-const IMPACT_VFX_TYPES = new Set(['SPARKS', 'SHOCKWAVE', 'VORTEX_SWIRL']);
+const PROJECTILE_STYLES = new Set([
+  'DISC',
+  'BEAM',
+  'PULSING_ORB',
+  'SHURIKEN',
+  'CHAOS_LIGHTNING',
+]);
+const TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON']);
+const IMPACT_VFX_TYPES = new Set([
+  'SPARKS',
+  'SHOCKWAVE',
+  'ICE_BURST',
+  'VORTEX_SWIRL',
+  'MINI_NUKE',
+]);
 const FIELD_TYPES = new Set([
   'RADIAL_IMPULSE',
   'VORTEX_TANGENT',
@@ -206,10 +220,15 @@ function sanitizeVisuals(raw: unknown): VisualDescriptor {
     typeof obj.trailType === 'string' ? obj.trailType.toUpperCase() : 'NONE';
   const impactRaw =
     typeof obj.impactVfx === 'string' ? obj.impactVfx.toUpperCase() : 'SPARKS';
+  const styleRaw =
+    typeof obj.projectileStyle === 'string'
+      ? obj.projectileStyle.toUpperCase()
+      : 'DISC';
 
   return {
     color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
-    size: clamp(ensureFiniteNumber(obj.size, 8), 1, 32),
+    size: clamp(ensureFiniteNumber(obj.size, 8), 4, 32),
+    projectileStyle: (PROJECTILE_STYLES.has(styleRaw) ? styleRaw : 'DISC') as ProjectileStyle,
     trailType: (TRAIL_TYPES.has(trailRaw) ? trailRaw : 'NONE') as TrailType,
     impactVfx: (IMPACT_VFX_TYPES.has(impactRaw) ? impactRaw : 'SPARKS') as ImpactVfx,
   };
@@ -554,6 +573,7 @@ function minimalFallbackSchema(): AbilitySchema {
     visuals: {
       color: '#00e5ff',
       size: 8,
+      projectileStyle: 'DISC',
       trailType: 'NONE',
       impactVfx: 'SPARKS',
     },

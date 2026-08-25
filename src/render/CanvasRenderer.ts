@@ -2,6 +2,8 @@ import { getClosestEdgeNormal, getHexVertices, getOuterWallRadius } from '../mat
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Entity } from '../entities/Entity';
+import type { Projectile } from '../entities/Projectile';
+import type { ProjectileStyle } from '../types/schema';
 import type { ParticleSystem } from './ParticleSystem';
 
 export interface DebugOptions {
@@ -289,22 +291,211 @@ export class CanvasRenderer {
     world: PhysicsWorld,
     alpha: number,
   ): void {
+    const now = performance.now();
     for (const proj of world.projectiles) {
       if (proj.isDead) continue;
       const pos = this.lerpPos(proj, alpha);
-      ctx.fillStyle = '#ffff44';
-      ctx.shadowColor = '#ffaa00';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, proj.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 200, 50, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, proj.radius + 4, 0, Math.PI * 2);
-      ctx.stroke();
+      const color = proj.visuals?.color ?? '#00e5ff';
+      const style: ProjectileStyle = proj.visuals?.projectileStyle ?? 'DISC';
+      const radius = Math.max(4, Math.min(32, proj.radius));
+      const heading =
+        proj.vel.magSq() > 0
+          ? proj.vel.normalize()
+          : Vector2D.fromAngle(proj.aimAngle);
+
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = color;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+
+      switch (style) {
+        case 'BEAM':
+          this.drawBeamProjectile(ctx, pos, heading, radius, color);
+          break;
+        case 'PULSING_ORB':
+          this.drawPulsingOrbProjectile(ctx, pos, radius, color, now);
+          break;
+        case 'SHURIKEN':
+          this.drawShurikenProjectile(ctx, pos, radius, color, now);
+          break;
+        case 'CHAOS_LIGHTNING':
+          this.drawChaosLightningProjectile(ctx, proj, pos, radius, color, alpha);
+          break;
+        case 'DISC':
+        default:
+          this.drawDiscProjectile(ctx, pos, radius, color);
+          break;
+      }
+
       ctx.shadowBlur = 0;
     }
+  }
+
+  private drawDiscProjectile(
+    ctx: CanvasRenderingContext2D,
+    pos: Vector2D,
+    radius: number,
+    color: string,
+  ): void {
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  private drawPulsingOrbProjectile(
+    ctx: CanvasRenderingContext2D,
+    pos: Vector2D,
+    radius: number,
+    color: string,
+    now: number,
+  ): void {
+    const pulse = Math.sin(now * 0.01) * 3;
+    const outer = radius + pulse;
+
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, outer + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, outer, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, outer, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  private drawBeamProjectile(
+    ctx: CanvasRenderingContext2D,
+    pos: Vector2D,
+    heading: Vector2D,
+    radius: number,
+    color: string,
+  ): void {
+    const halfLen = (radius * 3) / 2;
+    const start = pos.sub(heading.scale(halfLen));
+    const end = pos.add(heading.scale(halfLen));
+
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = radius;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, radius * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  private drawShurikenProjectile(
+    ctx: CanvasRenderingContext2D,
+    pos: Vector2D,
+    radius: number,
+    color: string,
+    now: number,
+  ): void {
+    const points = 4;
+    const outer = radius;
+    const inner = radius * 0.35;
+    const rotation = now * 0.02;
+
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    ctx.rotate(rotation);
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outer : inner;
+      const angle = (i * Math.PI) / points - Math.PI / 2;
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawChaosLightningProjectile(
+    ctx: CanvasRenderingContext2D,
+    proj: Projectile,
+    pos: Vector2D,
+    radius: number,
+    color: string,
+    alpha: number,
+  ): void {
+    const prev = proj.prevPos.lerp(proj.pos, alpha);
+    const bolts = 3;
+
+    for (let b = 0; b < bolts; b++) {
+      const segments = 5;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      for (let i = 1; i < segments; i++) {
+        const t = i / segments;
+        const base = prev.lerp(pos, t);
+        const jitter = (Math.random() - 0.5) * radius * 2.2;
+        const perp = new Vector2D(-(pos.y - prev.y), pos.x - prev.x);
+        const offset =
+          perp.magSq() > 0
+            ? perp.normalize().scale(jitter)
+            : Vector2D.fromAngle(Math.random() * Math.PI * 2, jitter);
+        const p = base.add(offset);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = b === 0 ? '#ffffff' : color;
+      ctx.lineWidth = b === 0 ? Math.max(1.5, radius * 0.35) : Math.max(1, radius * 0.55);
+      ctx.globalAlpha = b === 0 ? 0.95 : 0.7 - b * 0.15;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, Math.max(2, radius * 0.35), 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private instabilityColor(pct: number): string {

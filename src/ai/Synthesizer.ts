@@ -94,7 +94,8 @@ Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
 Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
 Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_PROJECTILE (with projectileTrajectory + optional emitter { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL, aimOffsetDeg }), TELEPORT, MODIFY_STAT
 Emitter distributions: FAN, RADIAL, RANDOM_CONE, PARALLEL
-Visuals REQUIRED on abilityPayload: { color: hex string, size: number, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS, impactVfx: SPARKS|SHOCKWAVE|VORTEX_SWIRL }
+Visuals REQUIRED on abilityPayload: { color: hex string, size: number (4-32), projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
+Style guidance: BEAM for lasers/railguns (thin size 4-8, NEON_RIBBON trail); SHURIKEN for spinning blades; CHAOS_LIGHTNING for erratic electric; PULSING_ORB for gravity/void bombs (size 16-32); DISC for default bolts. Match size to style. Use ICE_BURST for frost impacts, MINI_NUKE for detonations.
 
 SPAWN PATH (required): every ACTIVE ability MUST spawn something on cast via ONE of:
 1. Root trajectory: abilityPayload.trajectory { type, speed, maxRange } — Interpreter fires this projectile immediately
@@ -128,6 +129,7 @@ Category design constraints:
 - MOBILITY: displacement, teleports, dashes, escapes — prioritize movement over damage
 
 Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.
+Pick projectileStyle from the player prompt (not always DISC) — lasers get BEAM, blades get SHURIKEN, lightning gets CHAOS_LIGHTNING, gravity bombs get PULSING_ORB.
 Return exactly 3 distinct ACTIVE_ABILITY cards tuned for the requested category.`;
 
 const EVOLUTION_SYSTEM_PROMPT = `You are an ability evolver for a 2D physics kinetic arena game.
@@ -151,6 +153,7 @@ Rules:
 - Variant A: cluster / multi-payload (SPAWN_PROJECTILE with emitter count>1 or pierce)
 - Variant B: spatial field / trap (SPAWN_FIELD on ON_HIT or ON_EXPIRY)
 - Variant C: kinematic / motion augment (RETURN_TO_SOURCE, HOMING_SLERP, TELEPORT, or recoil dash)
+- Evolve projectileStyle when the mutation implies a visual change (e.g. laser → BEAM, explode → PULSING_ORB + MINI_NUKE)
 - Do NOT invent invalid action or trajectory types
 - Return exactly 3 ACTIVE_ABILITY evolution variants`;
 
@@ -502,8 +505,32 @@ const VALID_TRAJECTORY_TYPES = new Set([
   'DISCONTINUOUS_BLINK',
 ]);
 
-const VALID_TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS']);
-const VALID_IMPACT_VFX = new Set(['SPARKS', 'SHOCKWAVE', 'VORTEX_SWIRL']);
+const VALID_TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON']);
+const VALID_IMPACT_VFX = new Set(['SPARKS', 'SHOCKWAVE', 'ICE_BURST', 'VORTEX_SWIRL', 'MINI_NUKE']);
+const VALID_PROJECTILE_STYLES = new Set([
+  'DISC',
+  'BEAM',
+  'PULSING_ORB',
+  'SHURIKEN',
+  'CHAOS_LIGHTNING',
+]);
+
+const PROJECTILE_STYLE_ALIASES: Record<string, string> = {
+  LASER: 'BEAM',
+  RAIL: 'BEAM',
+  RAILGUN: 'BEAM',
+  BOLT: 'DISC',
+  ORB: 'PULSING_ORB',
+  VOID: 'PULSING_ORB',
+  BOMB: 'PULSING_ORB',
+  BLADE: 'SHURIKEN',
+  STAR: 'SHURIKEN',
+  SPINNING: 'SHURIKEN',
+  LIGHTNING: 'CHAOS_LIGHTNING',
+  ELECTRIC: 'CHAOS_LIGHTNING',
+  CHAOS: 'CHAOS_LIGHTNING',
+  ARC: 'CHAOS_LIGHTNING',
+};
 
 function normalizeEnumToken(value: string, aliases: Record<string, string>): string {
   const compact = value.trim().toUpperCase().replace(/[\s-]+/g, '_');
@@ -590,9 +617,14 @@ function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
     typeof obj.trailType === 'string' ? obj.trailType.toUpperCase() : 'NONE';
   const impact =
     typeof obj.impactVfx === 'string' ? obj.impactVfx.toUpperCase() : 'SPARKS';
+  const styleRaw =
+    typeof obj.projectileStyle === 'string'
+      ? normalizeEnumToken(obj.projectileStyle, PROJECTILE_STYLE_ALIASES)
+      : 'DISC';
   return {
     color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
-    size: ensureFiniteNumber(obj.size, 8),
+    size: Math.max(4, Math.min(32, ensureFiniteNumber(obj.size, 8))),
+    projectileStyle: VALID_PROJECTILE_STYLES.has(styleRaw) ? styleRaw : 'DISC',
     trailType: VALID_TRAIL_TYPES.has(trail) ? trail : 'NONE',
     impactVfx: VALID_IMPACT_VFX.has(impact) ? impact : 'SPARKS',
   };
@@ -1894,6 +1926,7 @@ export function generateOfflineDraft(
       cooldownMs: 800,
       recoilKick: 80,
       trajectory: { type: 'RETURN_TO_SOURCE', speed: 350, maxRange: 500, turnAccel: 1200, piercing: 1 },
+      visuals: { color: '#aa44ff', size: 10, projectileStyle: 'SHURIKEN', trailType: 'SMOKE', impactVfx: 'VORTEX_SWIRL' },
       triggers: [{
         trigger: 'ON_RETURN',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'VORTEX_TANGENT', radius: 80, strength: -400, durationMs: 2000 } }],
@@ -1905,6 +1938,7 @@ export function generateOfflineDraft(
       cooldownMs: 900,
       recoilKick: 60,
       trajectory: { type: 'HOMING_SLERP', speed: 380, maxRange: 550, turnAccel: 600 },
+      visuals: { color: '#66aaff', size: 8, projectileStyle: 'DISC', trailType: 'SMOKE', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 25 }] }],
     };
     passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.15 }];
@@ -1915,6 +1949,7 @@ export function generateOfflineDraft(
       cooldownMs: 600,
       recoilKick: 50,
       trajectory: { type: 'LINEAR', speed: 650, maxRange: 650 },
+      visuals: { color: '#88ddff', size: 14, projectileStyle: 'PULSING_ORB', trailType: 'ICE_GLOW', impactVfx: 'ICE_BURST' },
       triggers: [{
         trigger: 'ON_TICK',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'FRICTION_OVERRIDE', radius: 40, strength: 0, durationMs: 2000, frictionValue: 0.02 } }],
@@ -1925,6 +1960,7 @@ export function generateOfflineDraft(
       name: 'Frost Nova',
       cooldownMs: 1000,
       recoilKick: 30,
+      visuals: { color: '#aaddff', size: 16, projectileStyle: 'PULSING_ORB', trailType: 'ICE_GLOW', impactVfx: 'ICE_BURST' },
       triggers: [{
         trigger: 'ON_CAST',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'FRICTION_OVERRIDE', radius: 100, strength: 0, durationMs: 3000, frictionValue: 0.02 } }],
@@ -1938,6 +1974,7 @@ export function generateOfflineDraft(
       cooldownMs: 900,
       recoilKick: 70,
       trajectory: { type: 'ORBIT_ANCHOR', orbitRadius: 70, orbitSpeed: 4, maxRange: 800 },
+      visuals: { color: '#ff44aa', size: 18, projectileStyle: 'PULSING_ORB', trailType: 'MAGMA_SPARKS', impactVfx: 'MINI_NUKE' },
       triggers: [{
         trigger: 'ON_EXPIRY',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'MASS_ATTRACTOR', radius: 110, strength: 7000, durationMs: 2500 } }],
@@ -1949,19 +1986,21 @@ export function generateOfflineDraft(
       cooldownMs: 1100,
       recoilKick: 90,
       trajectory: { type: 'LINEAR', speed: 300, maxRange: 400 },
+      visuals: { color: '#aa44ff', size: 20, projectileStyle: 'PULSING_ORB', trailType: 'SMOKE', impactVfx: 'VORTEX_SWIRL' },
       triggers: [{
         trigger: 'ON_EXPIRY',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'VORTEX_TANGENT', radius: 100, strength: -600, durationMs: 2500 } }],
       }],
     };
     passiveMods = [{ stat: 'MASS', op: 'MULTIPLY', value: 1.15 }];
-  } else if (/\b(railgun|sniper|heavy)\b/.test(p)) {
+  } else if (/\b(railgun|sniper|heavy|laser)\b/.test(p)) {
     commonSchema = {
       id: 'off_rail',
       name: 'Kinetic Rail',
       cooldownMs: 1000,
       recoilKick: 400,
       trajectory: { type: 'LINEAR', speed: 1400, maxRange: 900 },
+      visuals: { color: '#ffaa44', size: 5, projectileStyle: 'BEAM', trailType: 'NEON_RIBBON', impactVfx: 'SHOCKWAVE' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 1200 }, { type: 'ADD_INSTABILITY', amount: 40 }] }],
     };
     rareSchema = {
@@ -1970,15 +2009,17 @@ export function generateOfflineDraft(
       cooldownMs: 1200,
       recoilKick: 300,
       trajectory: { type: 'LINEAR', speed: 1100, maxRange: 800, piercing: 2 },
+      visuals: { color: '#ffcc66', size: 6, projectileStyle: 'BEAM', trailType: 'NEON_RIBBON', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 800 }] }],
     };
     passiveMods = [{ stat: 'COOLDOWN_REDUCTION_PCT', op: 'ADD', value: 10 }];
-  } else if (/\b(dash|blink|phase|teleport|nova)\b/.test(p) || category === 'MOBILITY') {
+  } else if (/\b(dash|blink|phase|teleport|nova|lightning|chaos)\b/.test(p) || category === 'MOBILITY') {
     commonSchema = {
       id: 'off_phase',
       name: 'Phase Dash',
       cooldownMs: 1200,
       recoilKick: 0,
+      visuals: { color: '#44ffff', size: 10, projectileStyle: 'CHAOS_LIGHTNING', trailType: 'NEON_RIBBON', impactVfx: 'MINI_NUKE' },
       triggers: [
         { trigger: 'ON_CAST', actions: [
           { type: 'SPAWN_FIELD', field: { fieldType: 'RADIAL_IMPULSE', radius: 90, strength: 500, durationMs: 350 } },
@@ -1992,6 +2033,7 @@ export function generateOfflineDraft(
       cooldownMs: 900,
       recoilKick: 40,
       trajectory: { type: 'DISCONTINUOUS_BLINK', speed: 500, maxRange: 600, blinkDistance: 80 },
+      visuals: { color: '#88ffff', size: 8, projectileStyle: 'CHAOS_LIGHTNING', trailType: 'NEON_RIBBON', impactVfx: 'SHOCKWAVE' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 500 }] }],
     };
     passiveMods = [{ stat: 'MOVE_SPEED', op: 'MULTIPLY', value: 1.12 }];
@@ -2002,6 +2044,7 @@ export function generateOfflineDraft(
       cooldownMs: 500,
       recoilKick: 30,
       trajectory: { type: 'LINEAR', speed: 800, maxRange: 500 },
+      visuals: { color: '#00e5ff', size: 7, projectileStyle: 'DISC', trailType: 'NEON_RIBBON', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 15 }] }],
     };
     rareSchema = {
@@ -2010,19 +2053,21 @@ export function generateOfflineDraft(
       cooldownMs: 700,
       recoilKick: 50,
       trajectory: { type: 'HOMING_SLERP', speed: 500, maxRange: 600, turnAccel: 900 },
+      visuals: { color: '#44ffaa', size: 7, projectileStyle: 'DISC', trailType: 'SMOKE', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 400 }] }],
     };
     passiveMods = [
       { stat: 'MOVE_SPEED', op: 'MULTIPLY', value: 1.2 },
       { stat: 'ACCELERATION', op: 'MULTIPLY', value: 1.15 },
     ];
-  } else if (/\b(shield|orbit)\b/.test(p)) {
+  } else if (/\b(shield|orbit|shuriken|blade)\b/.test(p)) {
     commonSchema = {
       id: 'off_shield_orbit',
       name: 'Guardian Orbit',
       cooldownMs: 1000,
       recoilKick: 20,
       trajectory: { type: 'ORBIT_ANCHOR', orbitRadius: 55, orbitSpeed: 5, maxRange: 800 },
+      visuals: { color: '#cc88ff', size: 10, projectileStyle: 'SHURIKEN', trailType: 'SMOKE', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 20 }] }],
     };
     rareSchema = {
@@ -2030,6 +2075,7 @@ export function generateOfflineDraft(
       name: 'Repulsion Field',
       cooldownMs: 1100,
       recoilKick: 50,
+      visuals: { color: '#ff8844', size: 12, projectileStyle: 'PULSING_ORB', trailType: 'NONE', impactVfx: 'SHOCKWAVE' },
       triggers: [{
         trigger: 'ON_CAST',
         actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'RADIAL_IMPULSE', radius: 80, strength: 700, durationMs: 500 } }],
@@ -2043,6 +2089,7 @@ export function generateOfflineDraft(
       cooldownMs: 700,
       recoilKick: 60,
       trajectory: { type: 'LINEAR', speed: 500, maxRange: 550 },
+      visuals: { color: '#00e5ff', size: 8, projectileStyle: 'DISC', trailType: 'NONE', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 500 }] }],
     };
     rareSchema = {
@@ -2051,6 +2098,7 @@ export function generateOfflineDraft(
       cooldownMs: 900,
       recoilKick: 80,
       trajectory: { type: 'RETURN_TO_SOURCE', speed: 320, maxRange: 450, turnAccel: 1000 },
+      visuals: { color: '#ffaa44', size: 9, projectileStyle: 'SHURIKEN', trailType: 'SMOKE', impactVfx: 'SPARKS' },
       triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 20 }] }],
     };
     passiveMods = [{ stat: 'MOVE_SPEED', op: 'ADD', value: 30 }];

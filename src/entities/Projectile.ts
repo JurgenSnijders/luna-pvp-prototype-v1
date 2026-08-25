@@ -34,7 +34,7 @@ export class Projectile extends Entity {
   ) {
     super(generateEntityId('projectile'), pos, {
       mass: 0.1,
-      radius: 8,
+      radius: Math.max(4, Math.min(32, visuals?.size ?? 8)),
       linearDrag: 0,
       tags: ['projectile', 'kinematic'],
     });
