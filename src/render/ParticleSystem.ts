@@ -138,6 +138,56 @@ export class ParticleSystem {
     }
   }
 
+  triggerMuzzleFlash(pos: Vector2D, dir: Vector2D, color: string): void {
+    const heading = dir.magSq() > 0 ? dir.normalize() : Vector2D.fromAngle(0);
+    const baseAngle = Math.atan2(heading.y, heading.x);
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const cone = -0.55 + t * 1.1;
+      const speed = 90 + Math.random() * 140;
+      this.spawn(
+        pos.add(heading.scale(10)),
+        Vector2D.fromAngle(baseAngle + cone, speed),
+        0.18 + Math.random() * 0.2,
+        color,
+        2 + Math.random() * 2.5,
+      );
+    }
+  }
+
+  triggerImpactBurst(
+    pos: Vector2D,
+    color: string,
+    vfxType: 'SPARKS' | 'SHOCKWAVE' | 'VORTEX_SWIRL' = 'SPARKS',
+  ): void {
+    switch (vfxType) {
+      case 'SHOCKWAVE':
+        this.expandingRing(pos, 50, color);
+        break;
+      case 'VORTEX_SWIRL': {
+        const segments = 14;
+        for (let i = 0; i < segments; i++) {
+          const angle = (Math.PI * 2 * i) / segments;
+          const radial = Vector2D.fromAngle(angle, 40);
+          const tangent = new Vector2D(-radial.y, radial.x).normalize().scale(90);
+          this.spawn(
+            pos.add(radial.scale(0.3)),
+            tangent.add(radial.scale(-0.4)),
+            0.45,
+            color,
+            3,
+          );
+        }
+        break;
+      }
+      case 'SPARKS':
+      default:
+        this.burstSparks(pos, 10, color);
+        break;
+    }
+  }
+
   update(dt: number): void {
     for (const p of this.pool) {
       if (!p.active) continue;

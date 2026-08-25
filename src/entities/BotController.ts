@@ -233,7 +233,17 @@ export class BotController {
     const aimDir = bot.aimTarget.sub(bot.pos);
     if (aimDir.magSq() < 0.01) return;
 
-    interpreter.executeAbility(ability, bot, aimDir, world);
+    const heading = aimDir.normalize();
+    interpreter.executeAbility(
+      ability,
+      {
+        origin: bot.pos.clone(),
+        heading,
+        caster: bot,
+        depth: 0,
+      },
+      world,
+    );
     bot.triggerSlotCooldown(slotIndex);
   }
 }

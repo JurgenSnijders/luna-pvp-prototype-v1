@@ -1,5 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
-import type { TrajectoryConfig, TriggerNode } from '../types/schema';
+import type { TrajectoryConfig, TriggerNode, VisualDescriptor } from '../types/schema';
 import { Entity, generateEntityId } from './Entity';
 
 export type ExpiryReason = 'range' | 'lifetime' | 'return' | 'hit' | null;
@@ -14,6 +14,8 @@ export class Projectile extends Entity {
   hitEntityIds: Set<string>;
   triggerMap: Map<string, TriggerNode[]>;
   aimAngle: number;
+  depth: number;
+  visuals: VisualDescriptor | null;
 
   isReturning: boolean;
   onReturnTriggered: boolean;
@@ -27,6 +29,8 @@ export class Projectile extends Entity {
     sourceEntityId: string,
     aimAngle: number,
     triggerMap: Map<string, TriggerNode[]> = new Map(),
+    depth = 0,
+    visuals: VisualDescriptor | null = null,
   ) {
     super(generateEntityId('projectile'), pos, {
       mass: 0.1,
@@ -43,6 +47,8 @@ export class Projectile extends Entity {
     this.hitEntityIds = new Set();
     this.triggerMap = triggerMap;
     this.aimAngle = aimAngle;
+    this.depth = depth;
+    this.visuals = visuals;
 
     this.isReturning = false;
     this.onReturnTriggered = false;

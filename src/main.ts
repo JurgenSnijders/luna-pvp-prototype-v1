@@ -1,4 +1,5 @@
 import { generateOfflineDraft } from './ai/Synthesizer';
+import { sanitizeAbilitySchema } from './ai/BudgetEngine';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
 import { SpellLibrary } from './devtools/SpellLibrary';
@@ -84,7 +85,10 @@ function applyDraftSelection(target: Player, selection: DraftSelection): void {
   }
 
   if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
-    const ability = structuredClone(card.abilityPayload);
+    const ability = sanitizeAbilitySchema(
+      structuredClone(card.abilityPayload),
+      card.category ?? 'SECONDARY',
+    );
     const slotIndex = ACTION_SLOT_INDEX[slot as keyof typeof ACTION_SLOT_INDEX];
     if (slotIndex !== undefined) {
       target.setAbility(slotIndex, ability);
@@ -128,7 +132,17 @@ function tryCastSlot(caster: Player, slotIndex: number): void {
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
 
-  interpreter.executeAbility(ability, caster, aimDir, world);
+  const heading = aimDir.normalize();
+  interpreter.executeAbility(
+    ability,
+    {
+      origin: caster.pos.clone(),
+      heading,
+      caster,
+      depth: 0,
+    },
+    world,
+  );
   caster.triggerSlotCooldown(slotIndex);
 }
 

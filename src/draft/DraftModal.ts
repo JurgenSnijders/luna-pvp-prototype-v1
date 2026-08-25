@@ -133,7 +133,7 @@ function extractMechanicBadgesFromAbility(s: AbilitySchema): { label: string; ki
       }
       if (action.type === 'TELEPORT') badges.push({ label: '[TELEPORT]', kind: 'trigger' });
       if (action.type === 'APPLY_IMPULSE') badges.push({ label: '[IMPULSE]', kind: 'trigger' });
-      if (action.type === 'SPAWN_CHILD_PROJECTILE') badges.push({ label: '[CLUSTER]', kind: 'trigger' });
+      if (action.type === 'SPAWN_PROJECTILE') badges.push({ label: '[EMITTER]', kind: 'trigger' });
     }
   }
   return badges;

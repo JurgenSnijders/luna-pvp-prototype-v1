@@ -23,9 +23,15 @@ export type ActionType =
   | 'ADD_INSTABILITY'
   | 'APPLY_IMPULSE'
   | 'SPAWN_FIELD'
-  | 'SPAWN_CHILD_PROJECTILE'
+  | 'SPAWN_PROJECTILE'
   | 'MODIFY_STAT'
   | 'TELEPORT';
+
+export type EmitterDistribution = 'FAN' | 'RADIAL' | 'RANDOM_CONE' | 'PARALLEL';
+
+export type TrailType = 'NONE' | 'SMOKE' | 'ICE_GLOW' | 'MAGMA_SPARKS';
+
+export type ImpactVfx = 'SPARKS' | 'SHOCKWAVE' | 'VORTEX_SWIRL';
 
 export interface TrajectoryConfig {
   type: TrajectoryType;
@@ -46,6 +52,21 @@ export interface FieldConfig {
   frictionValue?: number;
 }
 
+export interface EmitterConfig {
+  count: number;
+  spreadDeg: number;
+  aimOffsetDeg?: number;
+  distribution: EmitterDistribution;
+  inheritVelocityRatio?: number;
+}
+
+export interface VisualDescriptor {
+  color: string;
+  size: number;
+  trailType: TrailType;
+  impactVfx: ImpactVfx;
+}
+
 export interface AddInstabilityAction {
   type: 'ADD_INSTABILITY';
   amount: number;
@@ -62,12 +83,12 @@ export interface SpawnFieldAction {
   field: FieldConfig;
 }
 
-export interface SpawnChildProjectileAction {
-  type: 'SPAWN_CHILD_PROJECTILE';
-  trajectory: TrajectoryConfig;
+export interface SpawnProjectileAction {
+  type: 'SPAWN_PROJECTILE';
+  projectileTrajectory: TrajectoryConfig;
+  emitter?: EmitterConfig;
   triggers?: TriggerNode[];
-  /** Degrees offset from the parent aim direction (for fan/scatter shots). */
-  aimOffsetDeg?: number;
+  visuals?: VisualDescriptor;
 }
 
 export interface ModifyStatAction {
@@ -87,7 +108,7 @@ export type ActionPayload =
   | AddInstabilityAction
   | ApplyImpulseAction
   | SpawnFieldAction
-  | SpawnChildProjectileAction
+  | SpawnProjectileAction
   | ModifyStatAction
   | TeleportAction;
 
@@ -104,8 +125,11 @@ export interface AbilitySchema {
   recoilKick: number;
   trajectory?: TrajectoryConfig;
   triggers: TriggerNode[];
+  visuals?: VisualDescriptor;
   metadata?: Record<string, unknown>;
 }
+
+export type { TriggerContext } from './triggerContext';
 
 const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'LINEAR',
@@ -135,9 +159,29 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'ADD_INSTABILITY',
   'APPLY_IMPULSE',
   'SPAWN_FIELD',
-  'SPAWN_CHILD_PROJECTILE',
+  'SPAWN_PROJECTILE',
   'MODIFY_STAT',
   'TELEPORT',
+]);
+
+const EMITTER_DISTRIBUTIONS: ReadonlySet<string> = new Set([
+  'FAN',
+  'RADIAL',
+  'RANDOM_CONE',
+  'PARALLEL',
+]);
+
+const TRAIL_TYPES: ReadonlySet<string> = new Set([
+  'NONE',
+  'SMOKE',
+  'ICE_GLOW',
+  'MAGMA_SPARKS',
+]);
+
+const IMPACT_VFX_TYPES: ReadonlySet<string> = new Set([
+  'SPARKS',
+  'SHOCKWAVE',
+  'VORTEX_SWIRL',
 ]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -211,6 +255,45 @@ function validateFieldConfig(value: unknown): FieldConfig | null {
   return config;
 }
 
+function validateEmitterConfig(value: unknown): EmitterConfig | null {
+  if (!isObject(value)) return null;
+  if (!isNumber(value.count) || !isNumber(value.spreadDeg)) return null;
+  if (!isString(value.distribution) || !EMITTER_DISTRIBUTIONS.has(value.distribution)) {
+    return null;
+  }
+
+  const config: EmitterConfig = {
+    count: value.count,
+    spreadDeg: value.spreadDeg,
+    distribution: value.distribution as EmitterDistribution,
+  };
+
+  if (value.aimOffsetDeg !== undefined) {
+    if (!isNumber(value.aimOffsetDeg)) return null;
+    config.aimOffsetDeg = value.aimOffsetDeg;
+  }
+  if (value.inheritVelocityRatio !== undefined) {
+    if (!isNumber(value.inheritVelocityRatio)) return null;
+    config.inheritVelocityRatio = value.inheritVelocityRatio;
+  }
+
+  return config;
+}
+
+function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
+  if (!isObject(value)) return null;
+  if (!isString(value.color) || !isNumber(value.size)) return null;
+  if (!isString(value.trailType) || !TRAIL_TYPES.has(value.trailType)) return null;
+  if (!isString(value.impactVfx) || !IMPACT_VFX_TYPES.has(value.impactVfx)) return null;
+
+  return {
+    color: value.color,
+    size: value.size,
+    trailType: value.trailType as TrailType,
+    impactVfx: value.impactVfx as ImpactVfx,
+  };
+}
+
 function validateActionPayload(value: unknown): ActionPayload | null {
   if (!isObject(value) || !isString(value.type)) return null;
   if (!ACTION_TYPES.has(value.type)) return null;
@@ -239,13 +322,18 @@ function validateActionPayload(value: unknown): ActionPayload | null {
       return { type: 'SPAWN_FIELD', field };
     }
 
-    case 'SPAWN_CHILD_PROJECTILE': {
-      const trajectory = validateTrajectoryConfig(value.trajectory);
-      if (!trajectory) return null;
-      const action: SpawnChildProjectileAction = {
-        type: 'SPAWN_CHILD_PROJECTILE',
-        trajectory,
+    case 'SPAWN_PROJECTILE': {
+      const projectileTrajectory = validateTrajectoryConfig(value.projectileTrajectory);
+      if (!projectileTrajectory) return null;
+      const action: SpawnProjectileAction = {
+        type: 'SPAWN_PROJECTILE',
+        projectileTrajectory,
       };
+      if (value.emitter !== undefined) {
+        const emitter = validateEmitterConfig(value.emitter);
+        if (!emitter) return null;
+        action.emitter = emitter;
+      }
       if (value.triggers !== undefined) {
         if (!Array.isArray(value.triggers)) return null;
         const triggers: TriggerNode[] = [];
@@ -256,9 +344,10 @@ function validateActionPayload(value: unknown): ActionPayload | null {
         }
         action.triggers = triggers;
       }
-      if (value.aimOffsetDeg !== undefined) {
-        if (!isNumber(value.aimOffsetDeg)) return null;
-        action.aimOffsetDeg = value.aimOffsetDeg;
+      if (value.visuals !== undefined) {
+        const visuals = validateVisualDescriptor(value.visuals);
+        if (!visuals) return null;
+        action.visuals = visuals;
       }
       return action;
     }
@@ -354,6 +443,12 @@ export function validateAbilitySchema(json: unknown): AbilitySchema | null {
     const trajectory = validateTrajectoryConfig(json.trajectory);
     if (!trajectory) return null;
     schema.trajectory = trajectory;
+  }
+
+  if (json.visuals !== undefined) {
+    const visuals = validateVisualDescriptor(json.visuals);
+    if (!visuals) return null;
+    schema.visuals = visuals;
   }
 
   if (json.metadata !== undefined) {

@@ -1,6 +1,7 @@
 import {
   balanceAbilitySchema,
   balancePassiveModifiers,
+  sanitizeAbilitySchema,
   scoreAbilitySchema,
 } from './BudgetEngine';
 import type {
@@ -91,7 +92,9 @@ export function setAiSettings(settings: AiSettings): void {
 const SCHEMA_REFERENCE = `AbilitySchema trajectories: LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
 Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
 Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
-Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_CHILD_PROJECTILE (optional aimOffsetDeg), TELEPORT, MODIFY_STAT
+Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_PROJECTILE (with projectileTrajectory + optional emitter { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL, aimOffsetDeg }), TELEPORT, MODIFY_STAT
+Emitter distributions: FAN, RADIAL, RANDOM_CONE, PARALLEL
+Visuals (optional): { color, size, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS, impactVfx: SPARKS|SHOCKWAVE|VORTEX_SWIRL }
 
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
 Passive ops: ADD, MULTIPLY`;
@@ -128,7 +131,7 @@ Each DraftCard must have:
 - rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
 - type: "ACTIVE_ABILITY"
 - category: the provided SkillCategory
-- evolutionDiff: string[] summarizing mutations (e.g. "+ SPAWN_CHILD_PROJECTILE", "Trajectory → HOMING_SLERP")
+- evolutionDiff: string[] summarizing mutations (e.g. "+ SPAWN_PROJECTILE FAN×3", "Trajectory → HOMING_SLERP")
 - budgetCost: number
 - abilityPayload: mutated AbilitySchema
 
@@ -137,7 +140,7 @@ ${SCHEMA_REFERENCE}
 Rules:
 - Preserve the core identity of the base spell (name stem, primary trajectory when possible)
 - Layer on the requested mutations distinctly across the 3 variants
-- Variant A: cluster / multi-payload (SPAWN_CHILD_PROJECTILE or pierce)
+- Variant A: cluster / multi-payload (SPAWN_PROJECTILE with emitter count>1 or pierce)
 - Variant B: spatial field / trap (SPAWN_FIELD on ON_HIT or ON_EXPIRY)
 - Variant C: kinematic / motion augment (RETURN_TO_SOURCE, HOMING_SLERP, TELEPORT, or recoil dash)
 - Do NOT invent invalid action or trajectory types
@@ -164,7 +167,7 @@ function balanceCard(card: DraftCard, category: SkillCategory = 'SECONDARY'): Dr
 
   if (balanced.type === 'ACTIVE_ABILITY' && balanced.abilityPayload) {
     balanced.abilityPayload = balanceAbilitySchema(
-      balanced.abilityPayload,
+      sanitizeAbilitySchema(balanced.abilityPayload, balanced.category ?? category),
       balanced.category ?? category,
     );
     balanced.budgetCost = scoreAbilitySchema(balanced.abilityPayload);
@@ -314,7 +317,7 @@ function diagnoseAbilityPayload(payload: unknown, cardIndex: number): string[] {
     'ON_CAST', 'ON_TICK', 'ON_HIT', 'ON_EXPIRY', 'ON_RETURN', 'ON_HAZARD_CONTACT',
   ]);
   const validActions = new Set([
-    'ADD_INSTABILITY', 'APPLY_IMPULSE', 'SPAWN_FIELD', 'SPAWN_CHILD_PROJECTILE',
+    'ADD_INSTABILITY', 'APPLY_IMPULSE', 'SPAWN_FIELD', 'SPAWN_PROJECTILE',
     'MODIFY_STAT', 'TELEPORT',
   ]);
 
@@ -448,8 +451,9 @@ const TRIGGER_ALIASES: Record<string, TriggerNode['trigger']> = {
 };
 
 const ACTION_ALIASES: Record<string, string> = {
-  SPAWN_PROJECTILE: 'SPAWN_CHILD_PROJECTILE',
-  CREATE_PROJECTILE: 'SPAWN_CHILD_PROJECTILE',
+  SPAWN_CHILD_PROJECTILE: 'SPAWN_PROJECTILE',
+  SPAWN_PROJECTILE: 'SPAWN_PROJECTILE',
+  CREATE_PROJECTILE: 'SPAWN_PROJECTILE',
   SPAWN_FIELD_ZONE: 'SPAWN_FIELD',
   IMPULSE: 'APPLY_IMPULSE',
   INSTABILITY: 'ADD_INSTABILITY',
@@ -624,7 +628,38 @@ function repairActionPayload(action: unknown): unknown {
   if (obj.field !== undefined) {
     obj.field = repairFieldConfig(obj.field);
   }
-  if (obj.trajectory !== undefined) {
+  if (obj.type === 'SPAWN_PROJECTILE') {
+    if (obj.projectileTrajectory === undefined && obj.trajectory !== undefined) {
+      obj.projectileTrajectory = obj.trajectory;
+      delete obj.trajectory;
+    }
+    if (obj.projectileTrajectory !== undefined) {
+      obj.projectileTrajectory = repairTrajectoryConfig(obj.projectileTrajectory);
+    }
+    if (obj.emitter === undefined || typeof obj.emitter !== 'object') {
+      obj.emitter = {
+        count: 1,
+        spreadDeg: 0,
+        distribution: 'FAN',
+        ...(obj.aimOffsetDeg !== undefined
+          ? { aimOffsetDeg: ensureFiniteNumber(obj.aimOffsetDeg, 0) }
+          : {}),
+      };
+    } else {
+      const emitter = { ...(obj.emitter as Record<string, unknown>) };
+      coerceNumericFields(emitter, ['count', 'spreadDeg', 'aimOffsetDeg', 'inheritVelocityRatio']);
+      if (typeof emitter.distribution !== 'string') emitter.distribution = 'FAN';
+      if (emitter.count === undefined) emitter.count = 1;
+      if (emitter.spreadDeg === undefined) {
+        emitter.spreadDeg = ensureFiniteNumber(emitter.count, 1) > 1 ? 30 : 0;
+      }
+      if (obj.aimOffsetDeg !== undefined && emitter.aimOffsetDeg === undefined) {
+        emitter.aimOffsetDeg = ensureFiniteNumber(obj.aimOffsetDeg, 0);
+      }
+      obj.emitter = emitter;
+    }
+    delete obj.aimOffsetDeg;
+  } else if (obj.trajectory !== undefined) {
     obj.trajectory = repairTrajectoryConfig(obj.trajectory);
   }
   if (Array.isArray(obj.triggers)) {
@@ -724,7 +759,10 @@ function repairDraftCard(card: unknown): unknown {
     obj.budgetCost = ensureFiniteNumber(obj.budgetCost, 100);
   }
   if (obj.abilityPayload !== undefined) {
-    obj.abilityPayload = repairAbilityPayload(obj.abilityPayload);
+    const repaired = repairAbilityPayload(obj.abilityPayload);
+    const category =
+      typeof obj.category === 'string' ? (obj.category as SkillCategory) : 'SECONDARY';
+    obj.abilityPayload = sanitizeAbilitySchema(repaired, category);
   }
   return obj;
 }
@@ -1217,22 +1255,22 @@ function spawnFanChildren(
   count: number,
   spreadDegPerCount = 15,
 ): void {
-  const halfFan = spreadDegPerCount * count;
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const aimOffsetDeg = -halfFan + t * (2 * halfFan);
-    node.actions.push({
-      type: 'SPAWN_CHILD_PROJECTILE',
-      trajectory: { ...baseTraj },
-      aimOffsetDeg,
-      triggers: [
-        {
-          trigger: 'ON_HIT',
-          actions: [{ type: 'APPLY_IMPULSE', baseForce: 300 }],
-        },
-      ],
-    });
-  }
+  const spreadDeg = spreadDegPerCount * count * 2;
+  node.actions.push({
+    type: 'SPAWN_PROJECTILE',
+    projectileTrajectory: { ...baseTraj },
+    emitter: {
+      count,
+      spreadDeg,
+      distribution: 'FAN',
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'APPLY_IMPULSE', baseForce: 300 }],
+      },
+    ],
+  });
 }
 
 function spawnFragmentBurst(
@@ -1240,22 +1278,21 @@ function spawnFragmentBurst(
   count: number,
   speed = 380,
 ): void {
-  const halfFan = 15 * count;
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const aimOffsetDeg = -halfFan + t * (2 * halfFan);
-    node.actions.push({
-      type: 'SPAWN_CHILD_PROJECTILE',
-      trajectory: defaultLinearTraj({ speed, maxRange: 260 }),
-      aimOffsetDeg,
-      triggers: [
-        {
-          trigger: 'ON_HIT',
-          actions: [{ type: 'APPLY_IMPULSE', baseForce: 280 }],
-        },
-      ],
-    });
-  }
+  node.actions.push({
+    type: 'SPAWN_PROJECTILE',
+    projectileTrajectory: defaultLinearTraj({ speed, maxRange: 260 }),
+    emitter: {
+      count,
+      spreadDeg: 15 * count * 2,
+      distribution: 'FAN',
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'APPLY_IMPULSE', baseForce: 280 }],
+      },
+    ],
+  });
 }
 
 function addRadialDetonation(node: TriggerNode, strength = 700): void {
@@ -1283,31 +1320,31 @@ function addSingularity(node: TriggerNode): void {
 }
 
 function addChainBomblet(node: TriggerNode, count: number): void {
-  for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1);
-    const aimOffsetDeg = -20 + t * 40;
-    node.actions.push({
-      type: 'SPAWN_CHILD_PROJECTILE',
-      trajectory: defaultLinearTraj({ speed: 180, maxRange: 160 }),
-      aimOffsetDeg,
-      triggers: [
-        {
-          trigger: 'ON_EXPIRY',
-          actions: [
-            {
-              type: 'SPAWN_FIELD',
-              field: {
-                fieldType: 'RADIAL_IMPULSE',
-                radius: 70,
-                strength: 550,
-                durationMs: 350,
-              },
+  node.actions.push({
+    type: 'SPAWN_PROJECTILE',
+    projectileTrajectory: defaultLinearTraj({ speed: 180, maxRange: 160 }),
+    emitter: {
+      count,
+      spreadDeg: 40,
+      distribution: 'FAN',
+    },
+    triggers: [
+      {
+        trigger: 'ON_EXPIRY',
+        actions: [
+          {
+            type: 'SPAWN_FIELD',
+            field: {
+              fieldType: 'RADIAL_IMPULSE',
+              radius: 70,
+              strength: 550,
+              durationMs: 350,
             },
-          ],
-        },
-      ],
-    });
-  }
+          },
+        ],
+      },
+    ],
+  });
 }
 
 function baseChildTraj(base: AbilitySchema): TrajectoryConfig {
@@ -1464,12 +1501,18 @@ function buildOrbitVariants(
   const castNode = ensureTrigger(ring, 'ON_CAST');
   for (let i = 0; i < n; i++) {
     castNode.actions.push({
-      type: 'SPAWN_CHILD_PROJECTILE',
-      trajectory: {
+      type: 'SPAWN_PROJECTILE',
+      projectileTrajectory: {
         type: 'ORBIT_ANCHOR',
         orbitRadius: 55 + i * 25,
         orbitSpeed: orbitSpeeds[i % orbitSpeeds.length],
         maxRange: 800,
+      },
+      emitter: {
+        count: 1,
+        spreadDeg: 0,
+        distribution: 'FAN',
+        aimOffsetDeg: (360 / Math.max(1, n)) * i,
       },
       triggers: [
         {
@@ -1509,12 +1552,18 @@ function buildOrbitVariants(
   const novaCast = ensureTrigger(nova, 'ON_CAST');
   for (let i = 0; i < n; i++) {
     novaCast.actions.push({
-      type: 'SPAWN_CHILD_PROJECTILE',
-      trajectory: {
+      type: 'SPAWN_PROJECTILE',
+      projectileTrajectory: {
         type: 'ORBIT_ANCHOR',
         orbitRadius: 50 + i * 20,
         orbitSpeed: orbitSpeeds[i % orbitSpeeds.length],
         maxRange: 800,
+      },
+      emitter: {
+        count: 1,
+        spreadDeg: 0,
+        distribution: 'FAN',
+        aimOffsetDeg: (360 / Math.max(1, n)) * i,
       },
       triggers: [
         {

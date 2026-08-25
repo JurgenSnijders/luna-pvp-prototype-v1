@@ -13,6 +13,12 @@ export const PRESETS: Record<string, AbilitySchema> = {
       turnAccel: 1200,
       piercing: 2,
     },
+    visuals: {
+      color: '#aa44ff',
+      size: 8,
+      trailType: 'SMOKE',
+      impactVfx: 'VORTEX_SWIRL',
+    },
     triggers: [
       {
         trigger: 'ON_RETURN',
@@ -36,18 +42,25 @@ export const PRESETS: Record<string, AbilitySchema> = {
     name: 'Singularity Scatter',
     cooldownMs: 1200,
     recoilKick: 100,
+    visuals: {
+      color: '#ff44aa',
+      size: 8,
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'SHOCKWAVE',
+    },
     triggers: [
       {
         trigger: 'ON_CAST',
         actions: [
           {
-            type: 'SPAWN_CHILD_PROJECTILE',
-            trajectory: {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
               type: 'ORBIT_ANCHOR',
               orbitRadius: 60,
               orbitSpeed: 4,
               maxRange: 800,
             },
+            emitter: { count: 1, spreadDeg: 0, distribution: 'FAN', aimOffsetDeg: 0 },
             triggers: [
               {
                 trigger: 'ON_EXPIRY',
@@ -66,13 +79,14 @@ export const PRESETS: Record<string, AbilitySchema> = {
             ],
           },
           {
-            type: 'SPAWN_CHILD_PROJECTILE',
-            trajectory: {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
               type: 'ORBIT_ANCHOR',
               orbitRadius: 90,
               orbitSpeed: -3,
               maxRange: 800,
             },
+            emitter: { count: 1, spreadDeg: 0, distribution: 'FAN', aimOffsetDeg: 120 },
             triggers: [
               {
                 trigger: 'ON_EXPIRY',
@@ -91,13 +105,14 @@ export const PRESETS: Record<string, AbilitySchema> = {
             ],
           },
           {
-            type: 'SPAWN_CHILD_PROJECTILE',
-            trajectory: {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
               type: 'ORBIT_ANCHOR',
               orbitRadius: 120,
               orbitSpeed: 2.5,
               maxRange: 800,
             },
+            emitter: { count: 1, spreadDeg: 0, distribution: 'FAN', aimOffsetDeg: 240 },
             triggers: [
               {
                 trigger: 'ON_EXPIRY',
@@ -125,6 +140,12 @@ export const PRESETS: Record<string, AbilitySchema> = {
     name: 'Phase Nova',
     cooldownMs: 1500,
     recoilKick: 0,
+    visuals: {
+      color: '#44ffff',
+      size: 8,
+      trailType: 'NONE',
+      impactVfx: 'SHOCKWAVE',
+    },
     triggers: [
       {
         trigger: 'ON_CAST',
@@ -157,6 +178,12 @@ export const PRESETS: Record<string, AbilitySchema> = {
       speed: 700,
       maxRange: 700,
     },
+    visuals: {
+      color: '#88ddff',
+      size: 8,
+      trailType: 'ICE_GLOW',
+      impactVfx: 'SPARKS',
+    },
     triggers: [
       {
         trigger: 'ON_TICK',
@@ -185,6 +212,12 @@ export const PRESETS: Record<string, AbilitySchema> = {
       type: 'LINEAR',
       speed: 1400,
       maxRange: 900,
+    },
+    visuals: {
+      color: '#ffaa44',
+      size: 8,
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'SPARKS',
     },
     triggers: [
       {

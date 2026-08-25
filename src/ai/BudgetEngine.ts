@@ -2,9 +2,14 @@ import type { PassiveModifierPayload, SkillCategory } from '../types/cards';
 import type {
   AbilitySchema,
   ActionPayload,
+  EmitterConfig,
+  EmitterDistribution,
+  ImpactVfx,
   TrajectoryConfig,
   TrajectoryType,
+  TrailType,
   TriggerNode,
+  VisualDescriptor,
 } from '../types/schema';
 import { validateAbilitySchema } from '../types/schema';
 
@@ -27,8 +32,48 @@ const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
   DISCONTINUOUS_BLINK: 1.6,
 };
 
-const MAX_DEPTH = 2;
+const MAX_DEPTH = 3;
 const MODIFY_STAT_COST = 5.0;
+
+const TRAJECTORY_TYPES = new Set([
+  'LINEAR',
+  'RETURN_TO_SOURCE',
+  'ORBIT_ANCHOR',
+  'HOMING_SLERP',
+  'DISCONTINUOUS_BLINK',
+]);
+
+const EMITTER_DISTRIBUTIONS = new Set([
+  'FAN',
+  'RADIAL',
+  'RANDOM_CONE',
+  'PARALLEL',
+]);
+
+const TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS']);
+const IMPACT_VFX_TYPES = new Set(['SPARKS', 'SHOCKWAVE', 'VORTEX_SWIRL']);
+const FIELD_TYPES = new Set([
+  'RADIAL_IMPULSE',
+  'VORTEX_TANGENT',
+  'FRICTION_OVERRIDE',
+  'MASS_ATTRACTOR',
+]);
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function ensureFiniteNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
+    return Number(value);
+  }
+  return fallback;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
 
 function getTrajectoryWeight(traj?: TrajectoryConfig): number {
   if (!traj) return 1.0;
@@ -52,9 +97,12 @@ function scoreAction(action: ActionPayload, depth: number): number {
       return (action.distance / 50) * 4.0;
     case 'MODIFY_STAT':
       return MODIFY_STAT_COST;
-    case 'SPAWN_CHILD_PROJECTILE': {
-      if (depth >= MAX_DEPTH) return getTrajectoryWeight(action.trajectory) * 10;
-      let childScore = getTrajectoryWeight(action.trajectory) * 5;
+    case 'SPAWN_PROJECTILE': {
+      const count = action.emitter?.count ?? 1;
+      if (depth >= MAX_DEPTH) {
+        return getTrajectoryWeight(action.projectileTrajectory) * 10 * count;
+      }
+      let childScore = getTrajectoryWeight(action.projectileTrajectory) * 5 * count;
       if (action.triggers) {
         for (const node of action.triggers) {
           childScore += scoreTriggerNode(node, depth + 1);
@@ -87,13 +135,337 @@ export function scoreAbilitySchema(schema: AbilitySchema): number {
   return getTrajectoryWeight(schema.trajectory) * actionSum;
 }
 
+function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
+  const obj = isObject(raw) ? raw : {};
+  const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'LINEAR';
+  const type = (TRAJECTORY_TYPES.has(typeRaw) ? typeRaw : 'LINEAR') as TrajectoryType;
+
+  const config: TrajectoryConfig = {
+    type,
+    speed: clamp(ensureFiniteNumber(obj.speed, 400), 150, 1600),
+    maxRange: clamp(ensureFiniteNumber(obj.maxRange, 500), 50, 1200),
+  };
+
+  if (obj.turnAccel !== undefined) {
+    config.turnAccel = ensureFiniteNumber(obj.turnAccel, 800);
+  }
+  if (obj.piercing !== undefined) {
+    config.piercing = clamp(ensureFiniteNumber(obj.piercing, 0), 0, 4);
+  }
+  if (obj.orbitRadius !== undefined) {
+    config.orbitRadius = ensureFiniteNumber(obj.orbitRadius, 80);
+  }
+  if (obj.orbitSpeed !== undefined) {
+    config.orbitSpeed = ensureFiniteNumber(obj.orbitSpeed, 3);
+  }
+  if (obj.blinkDistance !== undefined) {
+    config.blinkDistance = ensureFiniteNumber(obj.blinkDistance, 60);
+  }
+
+  return config;
+}
+
+function sanitizeEmitter(raw: unknown, countHint = 1): EmitterConfig {
+  const obj = isObject(raw) ? raw : {};
+  const count = clamp(Math.round(ensureFiniteNumber(obj.count, countHint)), 1, 12);
+  const spreadMissing = obj.spreadDeg === undefined || obj.spreadDeg === null;
+  const spreadDeg = clamp(
+    ensureFiniteNumber(obj.spreadDeg, count > 1 ? 30 : 0),
+    0,
+    360,
+  );
+  const distRaw =
+    typeof obj.distribution === 'string' ? obj.distribution.toUpperCase() : 'FAN';
+  const distribution = (
+    EMITTER_DISTRIBUTIONS.has(distRaw) ? distRaw : 'FAN'
+  ) as EmitterDistribution;
+
+  const emitter: EmitterConfig = {
+    count,
+    spreadDeg: spreadMissing && count > 1 ? 30 : spreadDeg,
+    distribution,
+  };
+
+  if (obj.aimOffsetDeg !== undefined) {
+    emitter.aimOffsetDeg = ensureFiniteNumber(obj.aimOffsetDeg, 0);
+  }
+  if (obj.inheritVelocityRatio !== undefined) {
+    emitter.inheritVelocityRatio = clamp(
+      ensureFiniteNumber(obj.inheritVelocityRatio, 0),
+      0,
+      1,
+    );
+  }
+
+  return emitter;
+}
+
+function sanitizeVisuals(raw: unknown): VisualDescriptor {
+  const obj = isObject(raw) ? raw : {};
+  const trailRaw =
+    typeof obj.trailType === 'string' ? obj.trailType.toUpperCase() : 'NONE';
+  const impactRaw =
+    typeof obj.impactVfx === 'string' ? obj.impactVfx.toUpperCase() : 'SPARKS';
+
+  return {
+    color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
+    size: clamp(ensureFiniteNumber(obj.size, 8), 1, 32),
+    trailType: (TRAIL_TYPES.has(trailRaw) ? trailRaw : 'NONE') as TrailType,
+    impactVfx: (IMPACT_VFX_TYPES.has(impactRaw) ? impactRaw : 'SPARKS') as ImpactVfx,
+  };
+}
+
+function sanitizeAction(raw: unknown): ActionPayload | null {
+  if (!isObject(raw)) return null;
+
+  let type = typeof raw.type === 'string' ? raw.type.toUpperCase() : '';
+
+  // Legacy migration
+  if (type === 'SPAWN_CHILD_PROJECTILE') {
+    type = 'SPAWN_PROJECTILE';
+  }
+
+  switch (type) {
+    case 'ADD_INSTABILITY':
+      return {
+        type: 'ADD_INSTABILITY',
+        amount: ensureFiniteNumber(raw.amount ?? raw.instability, 20),
+      };
+
+    case 'SPAWN_PROJECTILE': {
+      const trajRaw =
+        raw.projectileTrajectory !== undefined
+          ? raw.projectileTrajectory
+          : raw.trajectory;
+      const action: Extract<ActionPayload, { type: 'SPAWN_PROJECTILE' }> = {
+        type: 'SPAWN_PROJECTILE',
+        projectileTrajectory: sanitizeTrajectory(trajRaw),
+        emitter: sanitizeEmitter(raw.emitter, 1),
+      };
+
+      // Preserve aimOffsetDeg from legacy single-shot child spawn
+      if (
+        action.emitter &&
+        raw.aimOffsetDeg !== undefined &&
+        action.emitter.aimOffsetDeg === undefined
+      ) {
+        action.emitter.aimOffsetDeg = ensureFiniteNumber(raw.aimOffsetDeg, 0);
+      }
+
+      if (Array.isArray(raw.triggers)) {
+        action.triggers = raw.triggers
+          .map(sanitizeTriggerNode)
+          .filter((n): n is TriggerNode => n !== null);
+      }
+      if (raw.visuals !== undefined) {
+        action.visuals = sanitizeVisuals(raw.visuals);
+      }
+      return action;
+    }
+
+    case 'TELEPORT': {
+      const action: Extract<ActionPayload, { type: 'TELEPORT' }> = {
+        type: 'TELEPORT',
+        distance: ensureFiniteNumber(raw.distance, 100),
+      };
+      if (isObject(raw.direction)) {
+        action.direction = {
+          x: ensureFiniteNumber(raw.direction.x, 0),
+          y: ensureFiniteNumber(raw.direction.y, 0),
+        };
+      }
+      return action;
+    }
+
+    case 'APPLY_IMPULSE': {
+      const action: Extract<ActionPayload, { type: 'APPLY_IMPULSE' }> = {
+        type: 'APPLY_IMPULSE',
+        baseForce: ensureFiniteNumber(raw.baseForce ?? raw.force, 400),
+      };
+      if (isObject(raw.direction)) {
+        action.direction = {
+          x: ensureFiniteNumber(raw.direction.x, 0),
+          y: ensureFiniteNumber(raw.direction.y, 0),
+        };
+      }
+      return action;
+    }
+
+    case 'SPAWN_FIELD': {
+      const fieldObj = isObject(raw.field) ? raw.field : {};
+      const fieldTypeRaw =
+        typeof fieldObj.fieldType === 'string'
+          ? fieldObj.fieldType.toUpperCase()
+          : 'RADIAL_IMPULSE';
+      const fieldType = FIELD_TYPES.has(fieldTypeRaw)
+        ? fieldTypeRaw
+        : 'RADIAL_IMPULSE';
+      return {
+        type: 'SPAWN_FIELD' as const,
+        field: {
+          fieldType: fieldType as
+            | 'RADIAL_IMPULSE'
+            | 'VORTEX_TANGENT'
+            | 'FRICTION_OVERRIDE'
+            | 'MASS_ATTRACTOR',
+          radius: clamp(ensureFiniteNumber(fieldObj.radius, 80), 10, 200),
+          strength: ensureFiniteNumber(fieldObj.strength, 500),
+          durationMs: clamp(
+            ensureFiniteNumber(fieldObj.durationMs ?? fieldObj.duration, 2000),
+            100,
+            5000,
+          ),
+          ...(fieldObj.frictionValue !== undefined
+            ? { frictionValue: ensureFiniteNumber(fieldObj.frictionValue, 0.02) }
+            : {}),
+        },
+      };
+    }
+
+    case 'MODIFY_STAT': {
+      const statMap: Record<string, 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct'> = {
+        mass: 'mass',
+        lineardrag: 'linearDrag',
+        linear_drag: 'linearDrag',
+        movespeed: 'moveSpeed',
+        move_speed: 'moveSpeed',
+        instabilitypct: 'instabilityPct',
+        instability: 'instabilityPct',
+      };
+      const statRaw = typeof raw.stat === 'string' ? raw.stat.toLowerCase().replace(/_/g, '') : 'mass';
+      const modeRaw = typeof raw.mode === 'string' ? raw.mode.toLowerCase() : 'add';
+      const mode = (['add', 'set', 'multiply'].includes(modeRaw)
+        ? modeRaw
+        : 'add') as 'add' | 'set' | 'multiply';
+      return {
+        type: 'MODIFY_STAT',
+        stat: statMap[statRaw] ?? 'mass',
+        value: ensureFiniteNumber(raw.value, 1),
+        mode,
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
+  if (!isObject(raw)) return null;
+
+  let trigger = typeof raw.trigger === 'string' ? raw.trigger.toUpperCase() : '';
+  if (!trigger && typeof raw.on === 'string') {
+    trigger = raw.on.toUpperCase();
+  }
+
+  const triggerAliases: Record<string, string> = {
+    ON_IMPACT: 'ON_HIT',
+    ON_COLLISION: 'ON_HIT',
+    ON_CONTACT: 'ON_HIT',
+    ON_DESTROY: 'ON_EXPIRY',
+    ON_DEATH: 'ON_EXPIRY',
+    ON_SPAWN: 'ON_CAST',
+  };
+  trigger = triggerAliases[trigger] ?? trigger;
+
+  const validTriggers = new Set([
+    'ON_CAST',
+    'ON_TICK',
+    'ON_HIT',
+    'ON_EXPIRY',
+    'ON_RETURN',
+    'ON_HAZARD_CONTACT',
+  ]);
+  if (!validTriggers.has(trigger)) return null;
+
+  let actionsRaw: unknown[] = [];
+  if (Array.isArray(raw.actions)) {
+    actionsRaw = raw.actions;
+  } else if (Array.isArray(raw.effects)) {
+    actionsRaw = raw.effects;
+  } else if (raw.actions && typeof raw.actions === 'object') {
+    actionsRaw = [raw.actions];
+  }
+
+  const actions = actionsRaw
+    .map(sanitizeAction)
+    .filter((a): a is ActionPayload => a !== null);
+
+  const node: TriggerNode = {
+    trigger: trigger as TriggerNode['trigger'],
+    actions,
+  };
+
+  if (Array.isArray(raw.children)) {
+    node.children = raw.children
+      .map(sanitizeTriggerNode)
+      .filter((n): n is TriggerNode => n !== null);
+  }
+
+  return node;
+}
+
+export function sanitizeAbilitySchema(
+  raw: unknown,
+  _category: SkillCategory = 'SECONDARY',
+): AbilitySchema {
+  const obj = isObject(raw) ? { ...raw } : {};
+
+  const id = typeof obj.id === 'string' && obj.id ? obj.id : 'sanitized_ability';
+  const name = typeof obj.name === 'string' && obj.name ? obj.name : 'Sanitized Ability';
+  const cooldownMs = ensureFiniteNumber(obj.cooldownMs, 800);
+  const recoilKick = ensureFiniteNumber(obj.recoilKick, 50);
+
+  let triggers: TriggerNode[] = [];
+  if (Array.isArray(obj.triggers)) {
+    triggers = obj.triggers
+      .map(sanitizeTriggerNode)
+      .filter((n): n is TriggerNode => n !== null);
+  }
+
+  const schema: AbilitySchema = {
+    id,
+    name,
+    cooldownMs,
+    recoilKick,
+    triggers,
+  };
+
+  if (obj.trajectory !== undefined) {
+    schema.trajectory = sanitizeTrajectory(obj.trajectory);
+  }
+
+  schema.visuals = sanitizeVisuals(obj.visuals);
+
+  if (isObject(obj.metadata)) {
+    schema.metadata = obj.metadata as Record<string, unknown>;
+  }
+
+  const validated = validateAbilitySchema(schema);
+  return validated ?? {
+    id,
+    name,
+    cooldownMs,
+    recoilKick,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+    triggers: [],
+    visuals: sanitizeVisuals(undefined),
+  };
+}
+
 function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
   const s = structuredClone(schema);
 
   if (s.trajectory) {
-    if (s.trajectory.speed !== undefined) s.trajectory.speed = Math.min(1600, s.trajectory.speed);
-    if (s.trajectory.maxRange !== undefined) s.trajectory.maxRange = Math.min(1200, s.trajectory.maxRange);
-    if (s.trajectory.piercing !== undefined) s.trajectory.piercing = Math.min(4, s.trajectory.piercing);
+    if (s.trajectory.speed !== undefined) {
+      s.trajectory.speed = clamp(s.trajectory.speed, 150, 1600);
+    }
+    if (s.trajectory.maxRange !== undefined) {
+      s.trajectory.maxRange = Math.min(1200, s.trajectory.maxRange);
+    }
+    if (s.trajectory.piercing !== undefined) {
+      s.trajectory.piercing = Math.min(4, s.trajectory.piercing);
+    }
   }
 
   const clampTriggers = (nodes: TriggerNode[]): void => {
@@ -103,8 +475,21 @@ function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
           action.field.radius = Math.min(200, action.field.radius);
           action.field.durationMs = Math.min(5000, action.field.durationMs);
         }
-        if (action.type === 'SPAWN_CHILD_PROJECTILE' && action.triggers) {
-          clampTriggers(action.triggers);
+        if (action.type === 'SPAWN_PROJECTILE') {
+          if (action.emitter) {
+            action.emitter.count = clamp(action.emitter.count, 1, 12);
+            action.emitter.spreadDeg = clamp(action.emitter.spreadDeg, 0, 360);
+          }
+          if (action.projectileTrajectory.speed !== undefined) {
+            action.projectileTrajectory.speed = clamp(
+              action.projectileTrajectory.speed,
+              150,
+              1600,
+            );
+          }
+          if (action.triggers) {
+            clampTriggers(action.triggers);
+          }
         }
       }
       if (node.children) clampTriggers(node.children);
@@ -123,6 +508,12 @@ function minimalFallbackSchema(): AbilitySchema {
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
     triggers: [],
+    visuals: {
+      color: '#00e5ff',
+      size: 8,
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+    },
   };
 }
 
@@ -131,8 +522,9 @@ export function balanceAbilitySchema(
   category: SkillCategory = 'SECONDARY',
 ): AbilitySchema {
   const budget = CATEGORY_BUDGETS[category];
+  const sanitized = sanitizeAbilitySchema(schema, category);
   const originalRecoil = schema.recoilKick;
-  const clamped = clampSchemaValues(schema);
+  const clamped = clampSchemaValues(sanitized);
   const totalPower = scoreAbilitySchema(clamped);
 
   clamped.cooldownMs = Math.max(
