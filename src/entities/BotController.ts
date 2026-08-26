@@ -19,6 +19,10 @@ const KITE_DIST = 180;
 const EDGE_REPEL_DIST = 120;
 const DODGE_RADIUS = 200;
 const AIM_TOLERANCE_DEG = 15;
+const TURN_RATE_RAD_PER_SEC = Math.PI * 1.5;
+const GCD_MIN_SEC = 0.3;
+const GCD_RANDOM_SEC = 0.25;
+const AIM_PROJECTION_DIST = 200;
 const OFFENSIVE_SLOTS = [0, 1, 2, 3];
 const MOBILITY_SLOT = 4;
 
@@ -31,6 +35,19 @@ function angleDiff(a: number, b: number): number {
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return Math.abs(d);
+}
+
+function signedAngleDiff(from: number, to: number): number {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function rotateTowards(current: number, target: number, maxStep: number): number {
+  const delta = signedAngleDiff(current, target);
+  if (Math.abs(delta) <= maxStep) return target;
+  return current + Math.sign(delta) * maxStep;
 }
 
 function hasImpulseAction(ability: AbilitySchema | null | undefined): boolean {
@@ -57,7 +74,12 @@ export class BotController {
   enabled = true;
   difficulty = 1.0;
 
-  constructor(private bot: Player) {}
+  private globalCastTimer = 0;
+  private currentFacingAngle: number;
+
+  constructor(private bot: Player) {
+    this.currentFacingAngle = bot.facingAngle;
+  }
 
   update(
     dt: number,
@@ -66,8 +88,11 @@ export class BotController {
     arena: ArenaShrink,
     interpreter: Interpreter,
   ): void {
-    void dt;
     if (!this.enabled || this.bot.isDead || target.isDead) return;
+
+    if (this.globalCastTimer > 0) {
+      this.globalCastTimer = Math.max(0, this.globalCastTimer - dt);
+    }
 
     const diff = this.difficulty;
     const toTarget = target.pos.sub(this.bot.pos);
@@ -128,15 +153,19 @@ export class BotController {
     const projSpeed = this.bot.getAbility(0)?.trajectory?.speed ?? 400;
     const tFlight = dist / projSpeed;
     const intercept = target.pos.add(target.vel.scale(tFlight));
-    this.bot.aimTarget = intercept;
-    this.bot.facingAngle = Math.atan2(
+    const aimAngle = Math.atan2(
       intercept.y - this.bot.pos.y,
       intercept.x - this.bot.pos.x,
     );
 
-    const aimAngle = Math.atan2(
-      intercept.y - this.bot.pos.y,
-      intercept.x - this.bot.pos.x,
+    this.currentFacingAngle = rotateTowards(
+      this.currentFacingAngle,
+      aimAngle,
+      TURN_RATE_RAD_PER_SEC * dt,
+    );
+    this.bot.facingAngle = this.currentFacingAngle;
+    this.bot.aimTarget = this.bot.pos.add(
+      Vector2D.fromAngle(this.currentFacingAngle, AIM_PROJECTION_DIST),
     );
 
     const outsideHex = !isInsideHex(
@@ -145,20 +174,28 @@ export class BotController {
       arena.currentRadius,
     );
 
-    if (
-      (this.bot.instabilityPct > 80 ||
-        this.bot.tags.has('in_lava') ||
-        outsideHex) &&
-      this.bot.isSlotReady(MOBILITY_SLOT)
-    ) {
-      this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world);
-    } else if (
-      angleDiff(this.bot.facingAngle, aimAngle) < (AIM_TOLERANCE_DEG * Math.PI) / 180
-    ) {
-      for (const slotIndex of OFFENSIVE_SLOTS) {
-        if (this.bot.isSlotReady(slotIndex)) {
-          this.tryCastSlot(this.bot, slotIndex, interpreter, world);
-          break;
+    if (this.globalCastTimer <= 0) {
+      if (
+        (this.bot.instabilityPct > 80 ||
+          this.bot.tags.has('in_lava') ||
+          outsideHex) &&
+        this.bot.isSlotReady(MOBILITY_SLOT)
+      ) {
+        if (this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world)) {
+          this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
+        }
+      } else if (
+        angleDiff(this.currentFacingAngle, aimAngle) <
+        (AIM_TOLERANCE_DEG * Math.PI) / 180
+      ) {
+        const slots = [...OFFENSIVE_SLOTS].sort(() => Math.random() - 0.5);
+        for (const slotIndex of slots) {
+          if (this.bot.isSlotReady(slotIndex)) {
+            if (this.tryCastSlot(this.bot, slotIndex, interpreter, world)) {
+              this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
+              break;
+            }
+          }
         }
       }
     }
@@ -226,12 +263,12 @@ export class BotController {
     slotIndex: number,
     interpreter: Interpreter,
     world: PhysicsWorld,
-  ): void {
+  ): boolean {
     const ability = bot.getAbility(slotIndex);
-    if (!ability || !bot.isSlotReady(slotIndex)) return;
+    if (!ability || !bot.isSlotReady(slotIndex)) return false;
 
     const aimDir = bot.aimTarget.sub(bot.pos);
-    if (aimDir.magSq() < 0.01) return;
+    if (aimDir.magSq() < 0.01) return false;
 
     const heading = aimDir.normalize();
     interpreter.executeAbility(
@@ -245,5 +282,6 @@ export class BotController {
       world,
     );
     bot.triggerSlotCooldown(slotIndex);
+    return true;
   }
 }
