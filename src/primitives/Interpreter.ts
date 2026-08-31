@@ -14,11 +14,7 @@ import type { ParticleSystem } from '../render/ParticleSystem';
 import type {
   AbilitySchema,
   ActionPayload,
-  ActionTarget,
-  ComparisonOperator,
-  ConditionNode,
   EmitterConfig,
-  ImpulseDirectionMode,
   TrajectoryConfig,
   TriggerNode,
   TriggerType,
@@ -26,71 +22,21 @@ import type {
 } from '../types/schema';
 import type { TriggerContext, ExecutionOverrides } from '../types/triggerContext';
 import { updateTrajectory } from './Trajectories';
+import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH } from './interpreter/constants';
+import { evaluateConditions } from './interpreter/conditions';
+import {
+  buildTriggerMap,
+  getActionPriority,
+  safeNormalize,
+  secondaryColor,
+  trailColor,
+} from './interpreter/helpers';
+import {
+  resolveActionTarget,
+  resolveRelationalDirection,
+} from './interpreter/targeting';
 
-const MAX_DEPTH = 3;
-
-const DEFAULT_EMITTER: EmitterConfig = {
-  count: 1,
-  spreadDeg: 0,
-  distribution: 'FAN',
-};
-
-const DEFAULT_VISUALS: VisualDescriptor = {
-  color: '#00e5ff',
-  size: 8,
-  projectileStyle: 'DISC',
-  trailType: 'NONE',
-  impactVfx: 'SPARKS',
-};
-
-// Degenerate-case fallback (e.g. caster and target at the same point) so relational
-// direction math never divides by zero / produces NaN velocities.
-const FALLBACK_DIR = new Vector2D(0, 1);
-
-function getActionPriority(type: ActionPayload['type']): number {
-  if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT') return 1;
-  if (type === 'APPLY_IMPULSE') return 2;
-  return 3;
-}
-
-function safeNormalize(v: Vector2D, fallback: Vector2D = FALLBACK_DIR): Vector2D {
-  return v.magSq() > 0 ? v.normalize() : fallback;
-}
-
-export function buildTriggerMap(triggers: TriggerNode[]): Map<string, TriggerNode[]> {
-  const map = new Map<string, TriggerNode[]>();
-  for (const node of triggers) {
-    const existing = map.get(node.trigger) ?? [];
-    existing.push(node);
-    map.set(node.trigger, existing);
-  }
-  return map;
-}
-
-function trailColor(visuals: VisualDescriptor | null | undefined): string | null {
-  if (!visuals || visuals.trailType === 'NONE') return null;
-  switch (visuals.trailType) {
-    case 'SMOKE':
-      return visuals.vfx?.secondaryColor ?? '#8899aa';
-    case 'ICE_GLOW':
-    case 'FROST_CRYSTALS':
-      return visuals.vfx?.secondaryColor ?? '#88ddff';
-    case 'MAGMA_SPARKS':
-    case 'EMBER_SPIRAL':
-      return visuals.vfx?.secondaryColor ?? '#ff6622';
-    case 'NEON_RIBBON':
-    case 'VOID_TENDRIL':
-    case 'PLASMA_ARC':
-    case 'DUST_PUFF':
-      return visuals.color;
-    default:
-      return visuals.color;
-  }
-}
-
-function secondaryColor(visuals: VisualDescriptor | null | undefined, fallback: string): string {
-  return visuals?.vfx?.secondaryColor ?? visuals?.color ?? fallback;
-}
+export { buildTriggerMap } from './interpreter/helpers';
 
 export class Interpreter {
   particles: ParticleSystem | null = null;
@@ -250,66 +196,6 @@ export class Interpreter {
     }
   }
 
-  /** Resolves which entity an action should act on: the struck target, the caster, or the acting projectile itself. */
-  private resolveActionTarget(
-    mode: ActionTarget | undefined,
-    ctx: TriggerContext,
-  ): Entity | null {
-    switch (mode) {
-      case 'CASTER':
-        return ctx.caster;
-      case 'SELF':
-        return ctx.sourceEntity ?? ctx.caster;
-      case 'TARGET':
-      default:
-        return ctx.targetEntity ?? ctx.caster;
-    }
-  }
-
-  /** Unit direction used by ALONG_TRAJECTORY / PERPENDICULAR_TRAJECTORY: the acting projectile's velocity, falling back to cast heading. */
-  private resolveTrajectoryDirection(ctx: TriggerContext): Vector2D {
-    if (ctx.sourceEntity && ctx.sourceEntity.vel.magSq() > 0) {
-      return safeNormalize(ctx.sourceEntity.vel);
-    }
-    if (ctx.heading.magSq() > 0) {
-      return safeNormalize(ctx.heading);
-    }
-    return FALLBACK_DIR;
-  }
-
-  /** Computes a dynamic physics direction (pull toward caster, along trajectory, etc.) instead of a static world vector. */
-  private resolveRelationalDirection(
-    mode: ImpulseDirectionMode | undefined,
-    ctx: TriggerContext,
-    target: Entity,
-    customFallback?: { x: number; y: number },
-  ): Vector2D {
-    // Legacy payloads set only `direction` with no `directionMode` — honor it as CUSTOM.
-    if ((mode === 'CUSTOM' || mode === undefined) && customFallback) {
-      return safeNormalize(new Vector2D(customFallback.x, customFallback.y));
-    }
-
-    switch (mode) {
-      case 'TOWARDS_CASTER':
-        if (!ctx.caster || ctx.caster.id === target.id) return FALLBACK_DIR;
-        return safeNormalize(ctx.caster.pos.sub(target.pos));
-      case 'TOWARDS_ORIGIN':
-        return safeNormalize(ctx.origin.sub(target.pos));
-      case 'AWAY_FROM_ORIGIN':
-        return safeNormalize(target.pos.sub(ctx.origin));
-      case 'ALONG_TRAJECTORY':
-        return this.resolveTrajectoryDirection(ctx);
-      case 'PERPENDICULAR_TRAJECTORY': {
-        const v = this.resolveTrajectoryDirection(ctx);
-        return safeNormalize(new Vector2D(-v.y, v.x));
-      }
-      default:
-        // Legacy default: outward collision normal, else away from the cast origin.
-        if (ctx.normal && ctx.normal.magSq() > 0) return ctx.normal;
-        return safeNormalize(target.pos.sub(ctx.origin));
-    }
-  }
-
   private dispatchAction(
     action: ActionPayload,
     ctx: TriggerContext,
@@ -319,15 +205,15 @@ export class Interpreter {
 
     switch (action.type) {
       case 'ADD_INSTABILITY': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t) break;
         t.instabilityPct = Math.min(500, t.instabilityPct + action.amount * scale);
         break;
       }
       case 'APPLY_IMPULSE': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t) break;
-        const dir = this.resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
+        const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
         world.applyKnockback(t, dir, action.baseForce * scale);
         this.particles?.burstSparks(ctx.origin, 8, this.activeCastVisuals?.color ?? '#ffaa44');
         break;
@@ -367,12 +253,12 @@ export class Interpreter {
         let anchorB: Vector2D | undefined;
 
         if (constraint.type === 'SURFACE_PIN') {
-          bodyA = this.resolveActionTarget(action.target ?? 'TARGET', ctx);
+          bodyA = resolveActionTarget(action.target ?? 'TARGET', ctx);
           if (!bodyA || bodyA.isDead) break;
           anchorB = bodyA.pos.clone();
         } else {
-          bodyA = this.resolveActionTarget(action.source ?? 'SELF', ctx);
-          bodyB = this.resolveActionTarget(action.target ?? 'TARGET', ctx) ?? undefined;
+          bodyA = resolveActionTarget(action.source ?? 'SELF', ctx);
+          bodyB = resolveActionTarget(action.target ?? 'TARGET', ctx) ?? undefined;
           if (!bodyA || bodyA.isDead || !bodyB || bodyB.isDead) break;
           if (bodyA.id === bodyB.id) break;
         }
@@ -397,7 +283,7 @@ export class Interpreter {
         break;
       }
       case 'TELEPORT': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t) break;
         let dir: Vector2D;
         if (action.direction) {
@@ -427,7 +313,7 @@ export class Interpreter {
         if (action.inheritVelocity && sourceEntity && sourceEntity.vel.magSq() > 0) {
           aimDirOverride = safeNormalize(sourceEntity.vel);
         } else if (action.target) {
-          const t = this.resolveActionTarget(action.target, ctx);
+          const t = resolveActionTarget(action.target, ctx);
           if (t) {
             const dir = t.pos.sub(spawnOrigin);
             if (dir.magSq() > 0) aimDirOverride = dir.normalize();
@@ -444,13 +330,13 @@ export class Interpreter {
         break;
       }
       case 'MODIFY_STAT': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t) break;
         this.applyModifyStat(t, action.stat, action.value * scale, action.mode);
         break;
       }
       case 'APPLY_STASIS': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t) break;
         t.stasisRemainingMs = Math.max(t.stasisRemainingMs, action.durationMs);
         t.forceAccumulatorScale = action.forceAccumulatorScale ?? 1.0;
@@ -458,14 +344,14 @@ export class Interpreter {
         break;
       }
       case 'RELEASE_STASIS': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         if (!t || t.stasisRemainingMs <= 0) break;
         t.stasisRemainingMs = 0;
         t.dischargeStasis();
         break;
       }
       case 'REFLECT_PROJECTILES': {
-        const t = this.resolveActionTarget(action.target ?? 'SELF', ctx);
+        const t = resolveActionTarget(action.target ?? 'SELF', ctx);
         if (!t) break;
 
         if (t instanceof Projectile) {
@@ -489,7 +375,7 @@ export class Interpreter {
         break;
       }
       case 'SPAWN_OBSTACLE': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         const pos = (t ?? ctx.caster).pos.clone();
         const obstacleConfig = { ...action.obstacle };
         if (obstacleConfig.shape === 'BOX' && obstacleConfig.angle === undefined) {
@@ -502,27 +388,27 @@ export class Interpreter {
         break;
       }
       case 'MUTATE_TERRAIN': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         const pos = (t ?? ctx.caster).pos.clone();
         world.addTerrainPatch(pos, action.mutation);
         break;
       }
       case 'MORPH_ENTITY': {
-        const t = this.resolveActionTarget(action.target ?? 'CASTER', ctx);
+        const t = resolveActionTarget(action.target ?? 'CASTER', ctx);
         if (!t) break;
         t.activeMorph = action.morph;
         t.morphRemainingMs = action.morph.durationMs;
         break;
       }
       case 'APPLY_STEALTH': {
-        const t = this.resolveActionTarget(action.target ?? 'CASTER', ctx);
+        const t = resolveActionTarget(action.target ?? 'CASTER', ctx);
         if (!t) break;
         t.stealthRemainingMs = action.durationMs;
         t.stealthRevealOnCast = action.revealOnCast ?? true;
         break;
       }
       case 'SPAWN_ACTOR': {
-        const t = this.resolveActionTarget(action.target, ctx);
+        const t = resolveActionTarget(action.target, ctx);
         const pos = t ? t.pos.clone() : ctx.origin.clone();
         const summon = new Summon(pos, action.actor, ctx.caster.id);
         world.addSummon(summon);
@@ -574,74 +460,6 @@ export class Interpreter {
     }
   }
 
-  private compareNumeric(
-    current: number,
-    op: ComparisonOperator,
-    threshold: number,
-  ): boolean {
-    switch (op) {
-      case 'LT':
-        return current < threshold;
-      case 'GT':
-        return current > threshold;
-      case 'EQ':
-        return current === threshold;
-      case 'LTE':
-        return current <= threshold;
-      case 'GTE':
-        return current >= threshold;
-    }
-  }
-
-  private evaluateCondition(
-    cond: ConditionNode,
-    ctx: TriggerContext,
-    world: PhysicsWorld,
-  ): boolean {
-    if (cond.query === 'COMBO_STEP') {
-      return this.compareNumeric(
-        ctx.comboStep ?? 0,
-        cond.comparison ?? 'EQ',
-        Number(cond.value),
-      );
-    }
-
-    const t = this.resolveActionTarget(cond.target ?? 'TARGET', ctx);
-    if (!t || t.isDead) return false;
-
-    switch (cond.query) {
-      case 'STAT_THRESHOLD': {
-        const current = cond.stat === 'health' ? t.health : t.instabilityPct;
-        return this.compareNumeric(
-          current,
-          cond.comparison ?? 'LT',
-          Number(cond.value),
-        );
-      }
-      case 'TAG_CHECK':
-        return t.tags.has(String(cond.value));
-      case 'PROXIMITY_COUNT': {
-        const r = cond.radius ?? 100;
-        const count = world
-          .getEntitiesInRadius(t.pos, r)
-          .filter((e) => e.id !== t.id).length;
-        return this.compareNumeric(count, cond.comparison ?? 'GTE', Number(cond.value));
-      }
-      case 'SURFACE_TYPE': {
-        const surface = world.getSurfaceTypeAt(t.pos);
-        return surface.toUpperCase() === String(cond.value).toUpperCase();
-      }
-    }
-  }
-
-  private evaluateConditions(
-    conditions: ConditionNode[],
-    ctx: TriggerContext,
-    world: PhysicsWorld,
-  ): boolean {
-    return conditions.every((c) => this.evaluateCondition(c, ctx, world));
-  }
-
   private dispatchTriggerNode(
     node: TriggerNode,
     ctx: TriggerContext,
@@ -649,7 +467,7 @@ export class Interpreter {
   ): void {
     let passed = true;
     if (node.conditions && node.conditions.length > 0) {
-      passed = this.evaluateConditions(node.conditions, ctx, world);
+      passed = evaluateConditions(node.conditions, ctx, world);
     }
 
     const actionsToRun = passed ? node.actions : (node.ifFalseActions ?? []);

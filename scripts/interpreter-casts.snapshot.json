@@ -1,0 +1,50 @@
+{
+  "Kinetic Railgun": {
+    "projectiles": 1,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  },
+  "Void Singularity": {
+    "projectiles": 1,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  },
+  "Ice Barrier": {
+    "projectiles": 0,
+    "zones": 0,
+    "obstacles": 1,
+    "summons": 0
+  },
+  "Auto Turret": {
+    "projectiles": 0,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 1
+  },
+  "Ghost Walk": {
+    "projectiles": 0,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  },
+  "Iron Colossus": {
+    "projectiles": 0,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  },
+  "Cluster MIRV": {
+    "projectiles": 1,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  },
+  "Recursive Fractal": {
+    "projectiles": 1,
+    "zones": 0,
+    "obstacles": 0,
+    "summons": 0
+  }
+}

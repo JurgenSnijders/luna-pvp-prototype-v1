@@ -8,7 +8,8 @@
     "build": "tsc && node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "test:schemas": "tsx scripts/test-schemas.ts",
-    "test:offline": "tsx scripts/test-offline.ts"
+    "test:offline": "tsx scripts/test-offline.ts",
+    "test:interpreter": "tsx scripts/test-interpreter.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
