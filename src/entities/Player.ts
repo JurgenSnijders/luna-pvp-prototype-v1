@@ -185,9 +185,14 @@ export class Player extends Entity {
     this.slotCastFlags = [false, false, false, false, false];
   }
 
+  takeDamage(amount: number): void {
+    this.health = Math.max(0, this.health - amount);
+  }
+
   resetCombatState(): void {
     this.isDead = false;
     this.instabilityPct = 0;
+    this.health = this.maxHealth;
     this.vel = Vector2D.zero();
     this.accel = Vector2D.zero();
     this.cooldownTimersMs = [0, 0, 0, 0, 0];

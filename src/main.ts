@@ -183,6 +183,7 @@ function respawnCombatants(): void {
     dummy.prevPos = pos.clone();
     dummy.vel = Vector2D.zero();
     dummy.instabilityPct = 0;
+    dummy.health = dummy.maxHealth;
   }
   world.setCombatantRadius(world.getCombatantRadius());
 }

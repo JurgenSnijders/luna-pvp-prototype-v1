@@ -7,7 +7,7 @@ import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 
 export const MAX_ENTITIES = 256;
-const LAVA_INSTABILITY_PER_SEC = 18;
+export const LAVA_DAMAGE_PER_SEC = 25;
 const LAVA_DRAG = 0.15;
 const COLLISION_RESTITUTION = 0.3;
 
@@ -333,10 +333,7 @@ export class PhysicsWorld {
       entity.tags.delete('in_lava');
     } else {
       entity.tags.add('in_lava');
-      entity.instabilityPct = Math.min(
-        500,
-        entity.instabilityPct + LAVA_INSTABILITY_PER_SEC * dt,
-      );
+      entity.health = Math.max(0, entity.health - LAVA_DAMAGE_PER_SEC * dt);
       entity.linearDrag = LAVA_DRAG;
     }
   }

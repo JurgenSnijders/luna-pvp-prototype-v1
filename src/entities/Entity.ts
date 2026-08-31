@@ -19,6 +19,8 @@ export class Entity {
   isDead: boolean;
   instabilityPct: number;
   knockbackResistance: number;
+  health: number;
+  maxHealth: number;
   tags: Set<string>;
 
   constructor(
@@ -29,6 +31,8 @@ export class Entity {
       radius?: number;
       linearDrag?: number;
       instabilityPct?: number;
+      health?: number;
+      maxHealth?: number;
       tags?: string[];
     } = {},
   ) {
@@ -44,6 +48,8 @@ export class Entity {
     this.isDead = false;
     this.instabilityPct = options.instabilityPct ?? 0;
     this.knockbackResistance = 0;
+    this.maxHealth = options.maxHealth ?? 100;
+    this.health = options.health ?? this.maxHealth;
     this.tags = new Set(options.tags ?? []);
   }
 

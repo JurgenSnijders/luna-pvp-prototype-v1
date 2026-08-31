@@ -57,6 +57,7 @@ interface TelemetryRefs {
   entities: HTMLElement;
   zones: HTMLElement;
   velocity: HTMLElement;
+  combatant: HTMLElement;
   slots: HTMLElement[];
   passives: HTMLElement;
 }
@@ -771,6 +772,7 @@ export class InspectorUI {
       entities: makeRow(),
       zones: makeRow(),
       velocity: makeRow(),
+      combatant: makeRow(),
       slots: ACTION_SLOT_KEYS.map(() => makeRow()),
       passives: makeRow(),
     };
@@ -825,6 +827,10 @@ export class InspectorUI {
     }
     refs.zones.textContent = `Zones: ${liveZones}`;
     refs.velocity.textContent = `Velocity: ${p.vel.mag().toFixed(1)} px/s`;
+
+    const lavaTag = p.tags.has('in_lava') ? ' (in lava)' : '';
+    refs.combatant.textContent =
+      `HP: ${Math.round(p.health)}/${p.maxHealth} | Instability: ${Math.round(p.instabilityPct)}%${lavaTag}`;
 
     for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
       const ability = p.getAbility(i);

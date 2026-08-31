@@ -100,13 +100,13 @@ export class MatchManager {
     hexCenter: Vector2D,
   ): void {
     if (this.mode === 'SANDBOX') {
-      if (player.instabilityPct >= 500) {
+      if (player.health <= 0) {
         player.resetCombatState();
         player.resetPosition(
           hexCenter.add(new Vector2D(-arena.initialRadius * 0.4, 0)),
         );
       }
-      if (bot.instabilityPct >= 500) {
+      if (bot.health <= 0) {
         bot.resetCombatState();
         bot.resetPosition(
           hexCenter.add(new Vector2D(arena.initialRadius * 0.4, 0)),
@@ -206,10 +206,7 @@ export class MatchManager {
   }
 
   private isCombatantEliminated(entity: Player): boolean {
-    return (
-      (entity.tags.has('in_lava') && entity.instabilityPct >= 300) ||
-      entity.instabilityPct >= 500
-    );
+    return entity.health <= 0;
   }
 
   private ensurePlayerInWorld(world: PhysicsWorld, combatant: Player): void {
