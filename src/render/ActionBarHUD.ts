@@ -13,6 +13,7 @@ interface SlotElements {
   badge: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
+  chargeOverlay: HTMLElement;
   gcdOverlay: HTMLElement;
   compileOverlay: HTMLElement;
   countdown: HTMLElement;
@@ -197,6 +198,13 @@ export class ActionBarHUD {
       transition: height 0.05s linear;
     `;
 
+    const chargeOverlay = document.createElement('div');
+    chargeOverlay.style.cssText = `
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none;
+      background: rgba(0, 229, 255, 0.45); pointer-events: none;
+      transition: height 0.05s linear;
+    `;
+
     // Global cooldown sweep: fills from the top and only ever shows once the slot's own
     // cooldown has cleared, so it reads as a shared casting-lockout beat rather than recharge.
     const gcdOverlay = document.createElement('div');
@@ -221,6 +229,7 @@ export class ActionBarHUD {
     root.appendChild(badge);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
+    root.appendChild(chargeOverlay);
     root.appendChild(gcdOverlay);
     root.appendChild(compileOverlay);
     root.appendChild(countdown);
@@ -269,7 +278,7 @@ export class ActionBarHUD {
       this.tooltipEl.style.opacity = '0';
     });
 
-    return { root, badge, label, cooldownOverlay, gcdOverlay, compileOverlay, countdown, accent: accent.color };
+    return { root, badge, label, cooldownOverlay, chargeOverlay, gcdOverlay, compileOverlay, countdown, accent: accent.color };
   }
 
   private updateTooltipPosition(slotIndex: number): void {
@@ -362,6 +371,19 @@ export class ActionBarHUD {
       slot.compileOverlay.style.display = 'none';
       slot.countdown.style.fontSize = '13px';
       slot.cooldownOverlay.style.height = `${ratio * 100}%`;
+
+      const slotInput = player.slotInputs[i];
+      const isCharging =
+        ability?.inputProfile?.mode === 'CHARGE_AND_RELEASE' && slotInput.charging;
+      if (isCharging) {
+        const maxCharge = ability.inputProfile?.maxChargeMs ?? 1000;
+        const chargeRatio = maxCharge > 0 ? slotInput.chargeMs / maxCharge : 0;
+        slot.chargeOverlay.style.display = 'block';
+        slot.chargeOverlay.style.height = `${Math.min(1, chargeRatio) * 100}%`;
+      } else {
+        slot.chargeOverlay.style.display = 'none';
+        slot.chargeOverlay.style.height = '0%';
+      }
 
       // GCD sweep only reads once the slot's own cooldown has cleared — otherwise the
       // per-slot cooldown fill already communicates the lockout.

@@ -12,6 +12,8 @@ import type {
   EmitterDistribution,
   ImpactVfx,
   ImpulseDirectionMode,
+  InputProfile,
+  InputProfileMode,
   ProjectileStyle,
   TrajectoryConfig,
   TrajectoryType,
@@ -85,6 +87,13 @@ const CONDITION_QUERIES = new Set([
   'TAG_CHECK',
   'PROXIMITY_COUNT',
   'SURFACE_TYPE',
+  'COMBO_STEP',
+]);
+const INPUT_PROFILE_MODES = new Set([
+  'INSTANT',
+  'CHARGE_AND_RELEASE',
+  'CHANNELED',
+  'COMBO_CHAIN',
 ]);
 const COMPARISON_OPERATORS = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
 const ACTION_TARGETS = new Set(['TARGET', 'CASTER', 'SELF']);
@@ -251,6 +260,33 @@ function parseComparisonOperator(value: unknown): ComparisonOperator | undefined
   return COMPARISON_OPERATORS.has(upper) ? (upper as ComparisonOperator) : undefined;
 }
 
+function sanitizeInputProfile(raw: unknown): InputProfile {
+  const obj = isObject(raw) ? raw : {};
+  const modeRaw = typeof obj.mode === 'string' ? obj.mode.toUpperCase() : 'INSTANT';
+  const mode = (
+    INPUT_PROFILE_MODES.has(modeRaw) ? modeRaw : 'INSTANT'
+  ) as InputProfileMode;
+
+  const profile: InputProfile = { mode };
+
+  if (mode === 'CHARGE_AND_RELEASE') {
+    const minChargeMs = clamp(ensureFiniteNumber(obj.minChargeMs, 0), 0, 10000);
+    const maxChargeMs = clamp(ensureFiniteNumber(obj.maxChargeMs, 1000), minChargeMs, 10000);
+    profile.minChargeMs = minChargeMs;
+    profile.maxChargeMs = maxChargeMs;
+  }
+
+  if (mode === 'CHANNELED') {
+    profile.channelIntervalMs = clamp(ensureFiniteNumber(obj.channelIntervalMs, 100), 16, 5000);
+  }
+
+  if (mode === 'COMBO_CHAIN') {
+    profile.comboWindowMs = clamp(ensureFiniteNumber(obj.comboWindowMs, 1500), 16, 10000);
+  }
+
+  return profile;
+}
+
 function sanitizeConditionNode(raw: unknown): ConditionNode | null {
   if (!isObject(raw)) return null;
 
@@ -307,6 +343,12 @@ function sanitizeConditionNode(raw: unknown): ConditionNode | null {
       const target = parseActionTarget(raw.target);
       if (target) cond.target = target;
       return cond;
+    }
+    case 'COMBO_STEP': {
+      const comparison = parseComparisonOperator(raw.comparison);
+      const value = ensureFiniteNumber(raw.value, NaN);
+      if (!comparison || !Number.isFinite(value)) return null;
+      return { query, comparison, value };
     }
     default:
       return null;
@@ -729,6 +771,10 @@ export function sanitizeAbilitySchema(
 
   if (isObject(obj.metadata)) {
     schema.metadata = obj.metadata as Record<string, unknown>;
+  }
+
+  if (obj.inputProfile !== undefined) {
+    schema.inputProfile = sanitizeInputProfile(obj.inputProfile);
   }
 
   promoteRootEmitter(schema, obj);

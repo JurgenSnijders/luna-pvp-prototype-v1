@@ -5,6 +5,8 @@ export interface ExecutionOverrides {
   originOverride?: Vector2D;
   aimDirOverride?: Vector2D;
   depth?: number;
+  chargeRatio?: number;
+  comboStep?: number;
 }
 
 export interface TriggerContext {
@@ -15,4 +17,6 @@ export interface TriggerContext {
   sourceEntity?: Entity;
   targetEntity?: Entity;
   depth: number;
+  chargeRatio?: number;
+  comboStep?: number;
 }

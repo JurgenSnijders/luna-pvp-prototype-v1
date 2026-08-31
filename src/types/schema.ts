@@ -40,7 +40,22 @@ export type ConditionQuery =
   | 'STAT_THRESHOLD'
   | 'TAG_CHECK'
   | 'PROXIMITY_COUNT'
-  | 'SURFACE_TYPE';
+  | 'SURFACE_TYPE'
+  | 'COMBO_STEP';
+
+export type InputProfileMode =
+  | 'INSTANT'
+  | 'CHARGE_AND_RELEASE'
+  | 'CHANNELED'
+  | 'COMBO_CHAIN';
+
+export interface InputProfile {
+  mode: InputProfileMode;
+  maxChargeMs?: number;
+  minChargeMs?: number;
+  channelIntervalMs?: number;
+  comboWindowMs?: number;
+}
 
 export type ComparisonOperator = 'LT' | 'GT' | 'EQ' | 'LTE' | 'GTE';
 
@@ -195,6 +210,7 @@ export interface AbilitySchema {
   triggers: TriggerNode[];
   visuals?: VisualDescriptor;
   metadata?: Record<string, unknown>;
+  inputProfile?: InputProfile;
 }
 
 export interface CastChildPayloadAction {
@@ -269,6 +285,14 @@ const CONDITION_QUERIES: ReadonlySet<string> = new Set([
   'TAG_CHECK',
   'PROXIMITY_COUNT',
   'SURFACE_TYPE',
+  'COMBO_STEP',
+]);
+
+const INPUT_PROFILE_MODES: ReadonlySet<string> = new Set([
+  'INSTANT',
+  'CHARGE_AND_RELEASE',
+  'CHANNELED',
+  'COMBO_CHAIN',
 ]);
 
 const COMPARISON_OPERATORS: ReadonlySet<string> = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
@@ -676,9 +700,51 @@ function validateConditionNode(value: unknown): ConditionNode | null {
       cond.value = value.value;
       return cond;
     }
+    case 'COMBO_STEP': {
+      if (!parseComparisonOperator(value.comparison) || !isNumber(value.value)) return null;
+      cond.comparison = parseComparisonOperator(value.comparison);
+      cond.value = value.value;
+      return cond;
+    }
     default:
       return null;
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function validateInputProfile(value: unknown): InputProfile | null {
+  if (!isObject(value)) return null;
+  const modeRaw = isString(value.mode) ? value.mode.toUpperCase() : 'INSTANT';
+  if (!INPUT_PROFILE_MODES.has(modeRaw)) return null;
+
+  const profile: InputProfile = { mode: modeRaw as InputProfileMode };
+
+  if (value.minChargeMs !== undefined) {
+    if (!isNumber(value.minChargeMs) || value.minChargeMs < 0) return null;
+    profile.minChargeMs = value.minChargeMs;
+  }
+  if (value.maxChargeMs !== undefined) {
+    if (!isNumber(value.maxChargeMs) || value.maxChargeMs <= 0) return null;
+    profile.maxChargeMs = value.maxChargeMs;
+  }
+  if (value.channelIntervalMs !== undefined) {
+    if (!isNumber(value.channelIntervalMs) || value.channelIntervalMs < 16) return null;
+    profile.channelIntervalMs = value.channelIntervalMs;
+  }
+  if (value.comboWindowMs !== undefined) {
+    if (!isNumber(value.comboWindowMs) || value.comboWindowMs < 16) return null;
+    profile.comboWindowMs = value.comboWindowMs;
+  }
+
+  const minCharge = profile.minChargeMs ?? 0;
+  const maxCharge = profile.maxChargeMs ?? 1000;
+  profile.minChargeMs = clamp(minCharge, 0, maxCharge);
+  profile.maxChargeMs = Math.max(minCharge, maxCharge);
+
+  return profile;
 }
 
 function validateTriggerNode(value: unknown, depth = 0): TriggerNode | null {
@@ -784,6 +850,12 @@ export function validateAbilitySchema(json: unknown, depth = 0): AbilitySchema |
   if (json.metadata !== undefined) {
     if (!isObject(json.metadata)) return null;
     schema.metadata = json.metadata as Record<string, unknown>;
+  }
+
+  if (json.inputProfile !== undefined) {
+    const inputProfile = validateInputProfile(json.inputProfile);
+    if (!inputProfile) return null;
+    schema.inputProfile = inputProfile;
   }
 
   return schema;

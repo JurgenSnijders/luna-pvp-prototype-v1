@@ -1,5 +1,6 @@
 import { Vector2D } from '../math/Vector2D';
-import type { AbilitySchema } from '../types/schema';
+import type { AbilitySchema, InputProfile } from '../types/schema';
+import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
 import { Entity, generateEntityId } from './Entity';
 
@@ -14,6 +15,38 @@ type AbilitySlotTuple = [
 ];
 type NumberSlotTuple = [number, number, number, number, number];
 type BoolSlotTuple = [boolean, boolean, boolean, boolean, boolean];
+
+export interface SlotInputState {
+  isHeld: boolean;
+  chargeMs: number;
+  channelTimerMs: number;
+  comboStep: number;
+  idleMs: number;
+  channelArmed: boolean;
+  charging: boolean;
+}
+
+export type SlotCastCallback = (
+  slotIndex: number,
+  overrides: ExecutionOverrides,
+  isChannelTick: boolean,
+) => void;
+
+function createDefaultSlotInput(): SlotInputState {
+  return {
+    isHeld: false,
+    chargeMs: 0,
+    channelTimerMs: 0,
+    comboStep: 0,
+    idleMs: 0,
+    channelArmed: false,
+    charging: false,
+  };
+}
+
+function getInputProfile(ability: AbilitySchema): InputProfile {
+  return ability.inputProfile ?? { mode: 'INSTANT' };
+}
 
 export class Player extends Entity {
   /** DevTools-configurable pacing knobs, shared across all Player instances (player + bot). */
@@ -38,6 +71,7 @@ export class Player extends Entity {
   slotCastFlags: BoolSlotTuple;
   /** Phase 2 lazy compilation: true while a slot's AbilitySchema is being synthesized in the background. */
   slotCompiling: BoolSlotTuple;
+  slotInputs: SlotInputState[];
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -62,6 +96,7 @@ export class Player extends Entity {
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
     this.slotCastFlags = [false, false, false, false, false];
     this.slotCompiling = [false, false, false, false, false];
+    this.slotInputs = Array.from({ length: SLOT_COUNT }, () => createDefaultSlotInput());
   }
 
   setAbility(slotIndex: number, ability: AbilitySchema | null): void {
@@ -93,14 +128,122 @@ export class Player extends Entity {
     return this.slotCompiling[slotIndex];
   }
 
-  triggerSlotCooldown(slotIndex: number): void {
+  triggerSlotCooldown(slotIndex: number, ignoreGCD = false): void {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
     const ability = this.abilities[slotIndex];
     if (!ability) return;
     const effective = this.getEffectiveCooldown(ability.cooldownMs);
     this.cooldownTimersMs[slotIndex] = effective;
     this.slotCooldownTotalsMs[slotIndex] = effective;
-    this.globalCooldownTimerMs = Player.globalCooldownDurationMs;
+    if (!ignoreGCD) {
+      this.globalCooldownTimerMs = Player.globalCooldownDurationMs;
+    }
+  }
+
+  setSlotInput(
+    slotIndex: number,
+    isHeld: boolean,
+    onCast: SlotCastCallback,
+  ): void {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
+
+    const slot = this.slotInputs[slotIndex];
+    if (isHeld === slot.isHeld) return;
+
+    const ability = this.abilities[slotIndex];
+    if (!ability || this.slotCompiling[slotIndex]) return;
+
+    slot.isHeld = isHeld;
+    const profile = getInputProfile(ability);
+
+    if (isHeld) {
+      switch (profile.mode) {
+        case 'INSTANT':
+          if (this.isSlotReady(slotIndex)) {
+            onCast(slotIndex, {}, false);
+          }
+          break;
+        case 'COMBO_CHAIN':
+          if (this.isSlotReady(slotIndex) || slot.comboStep > 0) {
+            onCast(slotIndex, { comboStep: slot.comboStep }, false);
+            slot.comboStep++;
+            slot.idleMs = 0;
+          }
+          break;
+        case 'CHARGE_AND_RELEASE':
+          if (this.isSlotReady(slotIndex)) {
+            slot.charging = true;
+            slot.chargeMs = 0;
+          }
+          break;
+        case 'CHANNELED':
+          if (this.isSlotReady(slotIndex)) {
+            slot.channelArmed = true;
+            slot.channelTimerMs = 0;
+          }
+          break;
+      }
+    } else {
+      switch (profile.mode) {
+        case 'CHARGE_AND_RELEASE': {
+          if (slot.charging) {
+            const minCharge = profile.minChargeMs ?? 0;
+            const maxCharge = profile.maxChargeMs ?? 1000;
+            if (slot.chargeMs >= minCharge) {
+              const ratio = Math.min(1, slot.chargeMs / maxCharge);
+              onCast(slotIndex, { chargeRatio: ratio }, false);
+            }
+            slot.chargeMs = 0;
+            slot.charging = false;
+          }
+          break;
+        }
+        case 'CHANNELED':
+          slot.channelTimerMs = 0;
+          slot.channelArmed = false;
+          break;
+      }
+    }
+  }
+
+  updateSlotInputs(dt: number, onCast: SlotCastCallback): void {
+    const dtMs = dt * 1000;
+
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const slot = this.slotInputs[i];
+      const ability = this.abilities[i];
+      if (!ability) continue;
+
+      const profile = getInputProfile(ability);
+
+      if (profile.mode === 'COMBO_CHAIN' && slot.comboStep > 0) {
+        slot.idleMs += dtMs;
+        const windowMs = profile.comboWindowMs ?? 1500;
+        if (slot.idleMs > windowMs) {
+          slot.comboStep = 0;
+          slot.idleMs = 0;
+        }
+      }
+
+      if (slot.isHeld && profile.mode === 'CHARGE_AND_RELEASE' && slot.charging) {
+        slot.chargeMs += dtMs;
+      }
+
+      if (slot.isHeld && profile.mode === 'CHANNELED' && slot.channelArmed) {
+        slot.channelTimerMs += dtMs;
+        const intervalMs = profile.channelIntervalMs ?? 100;
+        if (slot.channelTimerMs >= intervalMs) {
+          onCast(i, {}, true);
+          slot.channelTimerMs = 0;
+        }
+      }
+    }
+  }
+
+  resetSlotInputs(): void {
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      this.slotInputs[i] = createDefaultSlotInput();
+    }
   }
 
   getGlobalCooldownRatio(): number {
@@ -218,6 +361,7 @@ export class Player extends Entity {
     this.slotCompiling = [false, false, false, false, false];
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
+    this.resetSlotInputs();
   }
 
   resetPosition(spawn: Vector2D): void {

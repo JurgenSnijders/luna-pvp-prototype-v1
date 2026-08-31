@@ -105,6 +105,8 @@ export class Interpreter {
       heading,
       origin,
       depth,
+      chargeRatio: overrides?.chargeRatio ?? ctx.chargeRatio,
+      comboStep: overrides?.comboStep ?? ctx.comboStep,
     };
 
     const visuals = schema.visuals ?? DEFAULT_VISUALS;
@@ -295,23 +297,25 @@ export class Interpreter {
     ctx: TriggerContext,
     world: PhysicsWorld,
   ): void {
+    const scale = 1.0 + (ctx.chargeRatio ?? 0);
+
     switch (action.type) {
       case 'ADD_INSTABILITY': {
         const t = this.resolveActionTarget(action.target, ctx);
         if (!t) break;
-        t.instabilityPct = Math.min(500, t.instabilityPct + action.amount);
+        t.instabilityPct = Math.min(500, t.instabilityPct + action.amount * scale);
         break;
       }
       case 'APPLY_IMPULSE': {
         const t = this.resolveActionTarget(action.target, ctx);
         if (!t) break;
         const dir = this.resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
-        world.applyKnockback(t, dir, action.baseForce);
+        world.applyKnockback(t, dir, action.baseForce * scale);
         this.particles?.burstSparks(ctx.origin, 8, '#ffaa44');
         break;
       }
       case 'SPAWN_FIELD': {
-        const field = action.field;
+        const field = { ...action.field, strength: action.field.strength * scale };
         const parent = field.attachToSource ? (ctx.sourceEntity ?? ctx.caster) : null;
 
         // Option A dedup: a parent may only carry one live attached zone per fieldType, so
@@ -424,7 +428,7 @@ export class Interpreter {
       case 'MODIFY_STAT': {
         const t = this.resolveActionTarget(action.target, ctx);
         if (!t) break;
-        this.applyModifyStat(t, action.stat, action.value, action.mode);
+        this.applyModifyStat(t, action.stat, action.value * scale, action.mode);
         break;
       }
     }
@@ -490,6 +494,14 @@ export class Interpreter {
     ctx: TriggerContext,
     world: PhysicsWorld,
   ): boolean {
+    if (cond.query === 'COMBO_STEP') {
+      return this.compareNumeric(
+        ctx.comboStep ?? 0,
+        cond.comparison ?? 'EQ',
+        Number(cond.value),
+      );
+    }
+
     const t = this.resolveActionTarget(cond.target ?? 'TARGET', ctx);
     if (!t || t.isDead) return false;
 

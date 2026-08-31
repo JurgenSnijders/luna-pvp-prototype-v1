@@ -27,6 +27,7 @@ import { MatchHUD } from './render/MatchHUD';
 import { ParticleSystem } from './render/ParticleSystem';
 import { ACTION_SLOT_INDEX, type DraftSelection } from './types/cards';
 import type { AbilitySchema } from './types/schema';
+import type { ExecutionOverrides } from './types/triggerContext';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -214,18 +215,14 @@ function respawnCombatants(): void {
   world.setCombatantRadius(world.getCombatantRadius());
 }
 
-function tryCastSlot(caster: Player, slotIndex: number): void {
+function executePlayerCast(
+  slotIndex: number,
+  overrides: ExecutionOverrides = {},
+  isChannelTick = false,
+): void {
+  const caster = player;
   const ability = caster.getAbility(slotIndex);
   if (!ability) return;
-
-  if (!caster.isSlotReady(slotIndex)) {
-    // Recast bypasses the cooldown gate to let players "remote detonate" or retrigger an
-    // in-flight projectile, but it does not start a new cast or refresh the cooldown.
-    if (ability.triggers.some((t) => t.trigger === 'ON_RECAST')) {
-      interpreter.dispatchRecast(caster.id, ability.name, world);
-    }
-    return;
-  }
 
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
@@ -238,10 +235,34 @@ function tryCastSlot(caster: Player, slotIndex: number): void {
       heading,
       caster,
       depth: 0,
+      chargeRatio: overrides.chargeRatio,
+      comboStep: overrides.comboStep,
     },
     world,
+    overrides,
   );
-  caster.triggerSlotCooldown(slotIndex);
+  caster.triggerSlotCooldown(slotIndex, isChannelTick);
+}
+
+function handleCastInput(slot: number, isDown: boolean): void {
+  if (slot < 0 || slot > 4) return;
+  if (!canCombatInput()) return;
+
+  if (isDown) {
+    const ability = player.getAbility(slot);
+    if (ability && !player.isSlotReady(slot)) {
+      const profile = ability.inputProfile ?? { mode: 'INSTANT' };
+      if (
+        profile.mode === 'INSTANT' &&
+        ability.triggers.some((t) => t.trigger === 'ON_RECAST')
+      ) {
+        interpreter.dispatchRecast(player.id, ability.name, world);
+        return;
+      }
+    }
+  }
+
+  player.setSlotInput(slot, isDown, executePlayerCast);
 }
 
 function applySpatialFields(dt: number): void {
@@ -349,6 +370,7 @@ function syncArenaRadius(dt: number): void {
 function runSimulationStep(dt: number): void {
   syncArenaRadius(dt);
   applyPlayerInput();
+  player.updateSlotInputs(dt, executePlayerCast);
 
   if (botController.enabled) {
     botController.update(dt, player, world, arenaShrink, interpreter);
@@ -522,15 +544,22 @@ function init(): void {
 
     if (!canCombatInput()) return;
 
-    if (e.code === 'KeyQ') tryCastSlot(player, 2);
-    if (e.code === 'KeyE') tryCastSlot(player, 3);
+    if (e.code === 'KeyQ') handleCastInput(2, true);
+    if (e.code === 'KeyE') handleCastInput(3, true);
 
     if (e.key === ' ') {
       e.preventDefault();
-      tryCastSlot(player, 4);
+      handleCastInput(4, true);
     }
   });
-  window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+  window.addEventListener('keyup', (e) => {
+    keys.delete(e.key.toLowerCase());
+    if (!canCombatInput()) return;
+
+    if (e.code === 'KeyQ') handleCastInput(2, false);
+    if (e.code === 'KeyE') handleCastInput(3, false);
+    if (e.key === ' ') handleCastInput(4, false);
+  });
 
   window.addEventListener('mousemove', (e) => {
     if (matchManager.mode === 'SANDBOX' || matchManager.state === 'ROUND_ACTIVE') {
@@ -540,8 +569,13 @@ function init(): void {
 
   canvas.addEventListener('mousedown', (e) => {
     if (!canCombatInput()) return;
-    if (e.button === 0) tryCastSlot(player, 0);
-    if (e.button === 2) tryCastSlot(player, 1);
+    if (e.button === 0) handleCastInput(0, true);
+    if (e.button === 2) handleCastInput(1, true);
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!canCombatInput()) return;
+    if (e.button === 0) handleCastInput(0, false);
+    if (e.button === 2) handleCastInput(1, false);
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
