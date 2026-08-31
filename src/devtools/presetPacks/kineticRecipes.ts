@@ -149,7 +149,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
     triggers: [
       {
         trigger: 'ON_CAST',
-        actions: [{ type: 'REFLECT_PROJECTILES', target: 'CASTER' }],
+        actions: [{ type: 'REFLECT_PROJECTILES', target: 'CASTER', radius: 150 }],
       },
       {
         trigger: 'ON_HIT',

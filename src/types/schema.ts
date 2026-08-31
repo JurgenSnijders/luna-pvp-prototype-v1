@@ -211,6 +211,7 @@ export interface ReleaseStasisAction {
 export interface ReflectProjectilesAction {
   type: 'REFLECT_PROJECTILES';
   target?: ActionTarget;
+  radius?: number;
 }
 
 export interface ObstacleConfig {
@@ -794,6 +795,10 @@ function validateActionPayload(value: unknown, depth = 0): ActionPayload | null 
       const action: ReflectProjectilesAction = { type: 'REFLECT_PROJECTILES' };
       const target = parseActionTarget(value.target);
       if (target) action.target = target;
+      if (value.radius !== undefined) {
+        if (!isNumber(value.radius) || value.radius <= 0) return null;
+        action.radius = value.radius;
+      }
       return action;
     }
 

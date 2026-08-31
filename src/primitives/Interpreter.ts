@@ -450,11 +450,26 @@ export class Interpreter {
       }
       case 'REFLECT_PROJECTILES': {
         const t = this.resolveActionTarget(action.target ?? 'SELF', ctx);
-        if (!(t instanceof Projectile)) break;
-        t.vel = t.vel.scale(-1);
-        t.sourceEntityId = ctx.caster.id;
-        t.isDead = false;
-        t.expiryReason = null;
+        if (!t) break;
+
+        if (t instanceof Projectile) {
+          this.reflectProjectile(t, ctx.caster.id);
+          break;
+        }
+
+        const radius = action.radius ?? 150;
+        const radiusSq = radius * radius;
+        let reflected = 0;
+        for (const proj of world.projectiles) {
+          if (proj.isDead) continue;
+          if (proj.sourceEntityId === ctx.caster.id) continue;
+          if (proj.pos.distSq(t.pos) > radiusSq) continue;
+          this.reflectProjectile(proj, ctx.caster.id);
+          reflected++;
+        }
+        if (reflected > 0) {
+          this.particles?.expandingRing(t.pos, radius, '#88ccff');
+        }
         break;
       }
       case 'SPAWN_OBSTACLE': {
@@ -498,6 +513,13 @@ export class Interpreter {
         break;
       }
     }
+  }
+
+  private reflectProjectile(projectile: Projectile, newOwnerId: string): void {
+    projectile.vel = projectile.vel.scale(-1);
+    projectile.sourceEntityId = newOwnerId;
+    projectile.isDead = false;
+    projectile.expiryReason = null;
   }
 
   private applyModifyStat(
@@ -589,8 +611,10 @@ export class Interpreter {
           .filter((e) => e.id !== t.id).length;
         return this.compareNumeric(count, cond.comparison ?? 'GTE', Number(cond.value));
       }
-      case 'SURFACE_TYPE':
-        return false;
+      case 'SURFACE_TYPE': {
+        const surface = world.getSurfaceTypeAt(t.pos);
+        return surface.toUpperCase() === String(cond.value).toUpperCase();
+      }
     }
   }
 
@@ -817,6 +841,26 @@ export class Interpreter {
           }
           if (distCtx) this.dispatchTriggerNode(distNodes[i], distCtx, world);
         }
+      }
+
+      const hazardNodes = projectile.getTriggers('ON_HAZARD_CONTACT');
+      if (hazardNodes.length > 0) {
+        const nowInHazard = world.getSurfaceTypeAt(projectile.pos) === 'LAVA';
+        if (nowInHazard && !projectile.inHazard) {
+          const hazardCtx = this.buildLifecycleContext(
+            projectile,
+            null,
+            projectile.pos,
+            projectile.depth,
+            world,
+          );
+          if (hazardCtx) {
+            for (const node of hazardNodes) {
+              this.dispatchTriggerNode(node, hazardCtx, world);
+            }
+          }
+        }
+        projectile.inHazard = nowInHazard;
       }
 
       const visuals = projectile.visuals;

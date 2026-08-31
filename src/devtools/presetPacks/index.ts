@@ -125,7 +125,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
   {
     id: 'tier-f',
     label: 'Tier F — Diagnostics',
-    description: 'Stress tests and known-gap probes',
+    description: 'Stress tests and grammar edge-case probes',
     presetNames: [
       'Entity Storm',
       'Field Dedup Ticker',

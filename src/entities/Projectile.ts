@@ -19,6 +19,8 @@ export class Projectile extends Entity {
   tickAccumulatorsMs: Map<number, number>;
   /** Indices (within getTriggers('ON_DISTANCE_TRAVELED')) that have already fired, so each node fires exactly once. */
   firedDistanceTriggers: Set<number>;
+  /** True while the projectile is over a hazard surface; used to fire ON_HAZARD_CONTACT on entry only. */
+  inHazard: boolean;
   aimAngle: number;
   depth: number;
   visuals: VisualDescriptor | null;
@@ -57,6 +59,7 @@ export class Projectile extends Entity {
     this.triggerMap = triggerMap;
     this.tickAccumulatorsMs = new Map();
     this.firedDistanceTriggers = new Set();
+    this.inHazard = false;
     this.aimAngle = aimAngle;
     this.depth = depth;
     this.visuals = visuals;

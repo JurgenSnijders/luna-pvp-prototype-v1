@@ -188,7 +188,7 @@ function scoreAction(action: ActionPayload, depth: number): number {
     case 'RELEASE_STASIS':
       return 2;
     case 'REFLECT_PROJECTILES':
-      return 8;
+      return 8 * ((action.radius ?? 150) / 150);
     case 'SPAWN_OBSTACLE': {
       const o = action.obstacle;
       const area = (o.width * o.height) / 10000;
@@ -761,6 +761,9 @@ function sanitizeAction(
       };
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;
+      if (raw.radius !== undefined) {
+        action.radius = clamp(ensureFiniteNumber(raw.radius, 150), 1, 2000);
+      }
       return action;
     }
 

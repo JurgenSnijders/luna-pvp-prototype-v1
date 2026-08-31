@@ -455,6 +455,13 @@ export class PhysicsWorld {
     return closest?.config.type ?? null;
   }
 
+  /** Resolves effective surface at a point: terrain patch override, then hex containment. */
+  getSurfaceTypeAt(pos: Vector2D): TerrainType {
+    const override = this.getTerrainOverride(pos);
+    if (override) return override;
+    return isInsideHex(pos, this.hexCenter, this.hexRadius) ? 'SAFE' : 'LAVA';
+  }
+
   private toObstacleLocal(worldPos: Vector2D, obstacle: Obstacle): Vector2D {
     const rel = worldPos.sub(obstacle.pos);
     const angle = obstacle.config.angle ?? 0;

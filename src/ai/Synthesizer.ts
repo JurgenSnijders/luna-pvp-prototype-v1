@@ -168,9 +168,9 @@ IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWA
 APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
 NEVER default to bare outward knockback for pull/tether/freeze intents. Always set target + directionMode on APPLY_IMPULSE.
 
-TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT
+TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT (projectile-only — requires root trajectory or SPAWN_PROJECTILE)
 TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, conditions?, actions[], ifFalseActions?, children? }
-CONDITIONS: STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value } | TAG_CHECK | PROXIMITY_COUNT | SURFACE_TYPE | COMBO_STEP
+CONDITIONS: STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value } | TAG_CHECK | PROXIMITY_COUNT | SURFACE_TYPE { value: LAVA|SAFE } | COMBO_STEP
 
 ACTIONS (use relational vectors, not generic knockback):
 ADD_INSTABILITY { amount, target? }
@@ -183,7 +183,7 @@ MODIFY_STAT { stat, value, mode: add|set|multiply, target? }
 TELEPORT { distance, target?, direction? }
 APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
 RELEASE_STASIS { target? }
-REFLECT_PROJECTILES { target? }
+REFLECT_PROJECTILES { target?, radius? }
 SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
 MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
