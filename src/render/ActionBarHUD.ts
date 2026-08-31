@@ -1,7 +1,7 @@
 import type { Player } from '../entities/Player';
-import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../types/cards';
+import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
-import type { AbilitySchema } from '../types/schema';
+import type { AbilitySchema, ActionPayload, TriggerNode } from '../types/schema';
 
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -27,9 +27,104 @@ const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
   SPACE: { color: '#44ff88', bg: 'rgba(68, 255, 136, 0.12)' },
 };
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatEnumLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+// Trigger trees can nest another full trigger tree inside a SPAWN_PROJECTILE action
+// (e.g. the projectile's own ON_EXPIRY behavior), so tooltip summaries must recurse.
+function walkTriggers(
+  nodes: TriggerNode[],
+  visit: (node: TriggerNode, action: ActionPayload) => void,
+): void {
+  for (const node of nodes) {
+    for (const action of node.actions) {
+      visit(node, action);
+      if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+        walkTriggers(action.triggers, visit);
+      }
+    }
+    if (node.children) walkTriggers(node.children, visit);
+  }
+}
+
+function sumInstability(ability: AbilitySchema): number {
+  let total = 0;
+  walkTriggers(ability.triggers, (_node, action) => {
+    if (action.type === 'ADD_INSTABILITY') total += action.amount;
+  });
+  return total;
+}
+
+function summarizeTriggers(ability: AbilitySchema): { triggers: string[]; actions: string[] } {
+  const triggers = new Set<string>();
+  const actions = new Set<string>();
+  walkTriggers(ability.triggers, (node, action) => {
+    triggers.add(node.trigger);
+    actions.add(action.type);
+  });
+  return { triggers: [...triggers], actions: [...actions] };
+}
+
+function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, accentColor: string): string {
+  const category = getCategoryLabel(SLOT_CATEGORY_MAP[slotKey]);
+  const cooldown = ability.cooldownMs >= 1000
+    ? `${(ability.cooldownMs / 1000).toFixed(1)}s`
+    : `${ability.cooldownMs}ms`;
+  const instability = sumInstability(ability);
+  const trajectory = ability.trajectory;
+  const trajectoryType = escapeHtml(trajectory ? formatEnumLabel(trajectory.type) : 'Instant');
+  const speed = trajectory?.speed ?? 0;
+  const range = trajectory?.maxRange ?? 0;
+  const { triggers, actions } = summarizeTriggers(ability);
+  const triggerList = triggers.length > 0 ? escapeHtml(triggers.join(', ')) : '—';
+  const actionList = actions.length > 0 ? escapeHtml(formatEnumLabel(actions.join(', '))) : '—';
+  const visuals = ability.visuals;
+  const swatchColor = visuals?.color ?? '#888';
+  const projectileStyle = visuals ? escapeHtml(formatEnumLabel(visuals.projectileStyle)) : '—';
+
+  return `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
+      <span style="font-weight:700; font-size:13px; color:${accentColor};">${escapeHtml(ability.name)}</span>
+      <span style="font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
+    </div>
+    <div style="font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
+    <div style="display:flex; gap:10px; margin-bottom:8px; font-size:11px;">
+      <div><span style="color:#64748b;">CD</span> ${cooldown}</div>
+      <div><span style="color:#64748b;">Recoil</span> ${ability.recoilKick}px/s</div>
+      <div><span style="color:#64748b;">Instab</span> ${instability}</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
+      <div style="font-size:11px;">${trajectoryType} · ${speed}px/s · ${range}px range</div>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
+      <div style="font-size:11px;">${triggerList}</div>
+      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
+      <div style="font-size:11px;">${actionList}</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
+      <span style="font-size:10px; color:#cbd5e1;">${projectileStyle}</span>
+    </div>
+  `;
+}
+
 export class ActionBarHUD {
   private root: HTMLElement;
   private slots: SlotElements[] = [];
+  private tooltipEl: HTMLDivElement;
+  private activeHoveredSlot: number | null = null;
+  private cachedPlayerRef: Player | null = null;
 
   constructor(private callbacks: ActionBarHUDCallbacks) {
     this.root = document.createElement('div');
@@ -52,6 +147,19 @@ export class ActionBarHUD {
         this.root.appendChild(spacer);
       }
     }
+
+    this.tooltipEl = document.createElement('div');
+    this.tooltipEl.style.cssText = `
+      position: fixed; display: none; pointer-events: none; z-index: 10000;
+      width: 250px; background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px;
+      padding: 10px 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 200, 255, 0.1);
+      backdrop-filter: blur(8px); font-family: system-ui, -apple-system, sans-serif;
+      color: #f8fafc; font-size: 12px; line-height: 1.4; opacity: 0;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    `;
+    document.body.appendChild(this.tooltipEl);
 
     document.body.appendChild(this.root);
   }
@@ -148,10 +256,66 @@ export class ActionBarHUD {
       if (!ability) this.callbacks.onEmptySlotClick(slotIndex);
     });
 
+    root.addEventListener('mouseenter', () => {
+      if (root.dataset.hasAbility !== 'true') return;
+      this.activeHoveredSlot = slotIndex;
+      this.renderTooltip(slotIndex);
+      this.updateTooltipPosition(slotIndex);
+    });
+
+    root.addEventListener('mouseleave', () => {
+      this.activeHoveredSlot = null;
+      this.tooltipEl.style.display = 'none';
+      this.tooltipEl.style.opacity = '0';
+    });
+
     return { root, badge, label, cooldownOverlay, gcdOverlay, compileOverlay, countdown, accent: accent.color };
   }
 
+  private updateTooltipPosition(slotIndex: number): void {
+    const rect = this.slots[slotIndex].root.getBoundingClientRect();
+    const tooltipWidth = 250;
+    const gap = 10;
+    const left = Math.max(10, Math.min(
+      window.innerWidth - tooltipWidth - 10,
+      rect.left + rect.width / 2 - tooltipWidth / 2,
+    ));
+    const top = rect.top - gap;
+    this.tooltipEl.style.left = `${left}px`;
+    this.tooltipEl.style.bottom = `${window.innerHeight - top}px`;
+    this.tooltipEl.style.top = 'auto';
+  }
+
+  private renderTooltip(slotIndex: number): void {
+    const ability = this.cachedPlayerRef?.getAbility(slotIndex) ?? null;
+    const compiling = this.cachedPlayerRef?.isSlotCompiling(slotIndex) ?? false;
+    if (!ability || compiling) {
+      this.tooltipEl.style.display = 'none';
+      this.tooltipEl.style.opacity = '0';
+      return;
+    }
+
+    const key = ACTION_SLOT_KEYS[slotIndex];
+    this.tooltipEl.innerHTML = formatAbilityTooltip(ability, key, this.slots[slotIndex].accent);
+    this.tooltipEl.style.display = 'block';
+    this.tooltipEl.style.opacity = '1';
+  }
+
   update(player: Player): void {
+    this.cachedPlayerRef = player;
+
+    if (this.activeHoveredSlot !== null) {
+      const hovered = this.activeHoveredSlot;
+      const hoveredAbility = player.getAbility(hovered);
+      if (!hoveredAbility || player.isSlotCompiling(hovered)) {
+        this.tooltipEl.style.display = 'none';
+        this.tooltipEl.style.opacity = '0';
+      } else {
+        this.renderTooltip(hovered);
+        this.updateTooltipPosition(hovered);
+      }
+    }
+
     const now = performance.now();
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
