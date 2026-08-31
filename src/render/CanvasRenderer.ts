@@ -63,7 +63,9 @@ export class CanvasRenderer {
       this.drawLavaHeatWaves(ctx, world, width, height);
     }
     this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
+    this.drawTerrainPatches(ctx, world);
     this.drawZones(ctx, world);
+    this.drawObstacles(ctx, world);
     particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
     this.drawConstraints(ctx, world);
@@ -262,6 +264,65 @@ export class CanvasRenderer {
       );
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+  }
+
+  private drawTerrainPatches(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+    const now = performance.now() * 0.001;
+
+    for (const patch of world.terrainPatches) {
+      const { pos, config } = patch;
+      const r = config.radius;
+
+      if (config.type === 'SAFE') {
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.25)';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else {
+        const pulse = (Math.sin(now * 3) + 1) / 2;
+        ctx.fillStyle = `rgba(255, 80, 20, ${0.25 + pulse * 0.15})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255, 120, 40, ${0.15 + pulse * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  private drawObstacles(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+    for (const obstacle of world.obstacles) {
+      if (obstacle.isDead) continue;
+
+      const { pos, config } = obstacle;
+      ctx.fillStyle = '#94a3b8';
+      ctx.strokeStyle = '#64748b';
+      ctx.lineWidth = 2;
+
+      if (config.shape === 'CIRCLE') {
+        const radius = config.width / 2;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        const angle = config.angle ?? 0;
+        const halfW = config.width / 2;
+        const halfH = config.height / 2;
+
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(angle);
+        ctx.fillRect(-halfW, -halfH, config.width, config.height);
+        ctx.strokeRect(-halfW, -halfH, config.width, config.height);
+        ctx.restore();
+      }
     }
   }
 

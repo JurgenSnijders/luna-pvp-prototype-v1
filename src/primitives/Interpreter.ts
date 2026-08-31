@@ -3,6 +3,7 @@ import { Vector2D } from '../math/Vector2D';
 import { MAX_ENTITIES, type PhysicsWorld } from '../engine/PhysicsWorld';
 import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import type { Entity } from '../entities/Entity';
+import { Obstacle } from '../entities/Obstacle';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { ConstraintJoint } from '../entities/ConstraintJoint';
@@ -453,6 +454,25 @@ export class Interpreter {
         t.sourceEntityId = ctx.caster.id;
         t.isDead = false;
         t.expiryReason = null;
+        break;
+      }
+      case 'SPAWN_OBSTACLE': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        const pos = (t ?? ctx.caster).pos.clone();
+        const obstacleConfig = { ...action.obstacle };
+        if (obstacleConfig.shape === 'BOX' && obstacleConfig.angle === undefined) {
+          const aim = t ? t.pos.sub(ctx.caster.pos) : ctx.heading;
+          if (aim.magSq() > 0) {
+            obstacleConfig.angle = Math.atan2(aim.y, aim.x);
+          }
+        }
+        world.addObstacle(new Obstacle(pos, obstacleConfig));
+        break;
+      }
+      case 'MUTATE_TERRAIN': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        const pos = (t ?? ctx.caster).pos.clone();
+        world.addTerrainPatch(pos, action.mutation);
         break;
       }
     }

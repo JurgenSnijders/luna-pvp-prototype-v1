@@ -14,6 +14,10 @@ import type {
   ImpulseDirectionMode,
   InputProfile,
   InputProfileMode,
+  ObstacleConfig,
+  ObstacleShape,
+  TerrainMutationConfig,
+  TerrainType,
   ProjectileStyle,
   TrajectoryConfig,
   TrajectoryType,
@@ -179,6 +183,15 @@ function scoreAction(action: ActionPayload, depth: number): number {
       return 2;
     case 'REFLECT_PROJECTILES':
       return 8;
+    case 'SPAWN_OBSTACLE': {
+      const o = action.obstacle;
+      const area = (o.width * o.height) / 10000;
+      return (o.durationMs / 1000) * 4 + area * 3;
+    }
+    case 'MUTATE_TERRAIN': {
+      const m = action.mutation;
+      return (m.durationMs / 1000) * 3 + m.radius / 50;
+    }
   }
 }
 
@@ -264,6 +277,40 @@ function sanitizeConstraintConfig(raw: unknown): ConstraintConfig {
 function parseComparisonOperator(value: unknown): ComparisonOperator | undefined {
   const upper = typeof value === 'string' ? value.toUpperCase() : '';
   return COMPARISON_OPERATORS.has(upper) ? (upper as ComparisonOperator) : undefined;
+}
+
+function sanitizeObstacleConfig(raw: unknown): ObstacleConfig {
+  const obj = isObject(raw) ? raw : {};
+  const shapeRaw = typeof obj.shape === 'string' ? obj.shape.toUpperCase() : 'BOX';
+  const shape = (['CIRCLE', 'BOX'].includes(shapeRaw) ? shapeRaw : 'BOX') as ObstacleShape;
+
+  const config: ObstacleConfig = {
+    shape,
+    width: clamp(ensureFiniteNumber(obj.width, 40), 8, 400),
+    height: clamp(ensureFiniteNumber(obj.height, 24), 8, 400),
+    durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 15000),
+  };
+
+  if (obj.angle !== undefined) {
+    config.angle = ensureFiniteNumber(obj.angle, 0);
+  }
+  if (obj.isDestructible === true) {
+    config.isDestructible = true;
+    config.maxHealth = clamp(ensureFiniteNumber(obj.maxHealth, 100), 1, 1000);
+  }
+  return config;
+}
+
+function sanitizeTerrainMutationConfig(raw: unknown): TerrainMutationConfig {
+  const obj = isObject(raw) ? raw : {};
+  const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'SAFE';
+  const type = (['SAFE', 'LAVA'].includes(typeRaw) ? typeRaw : 'SAFE') as TerrainType;
+
+  return {
+    type,
+    radius: clamp(ensureFiniteNumber(obj.radius, 60), 20, 500),
+    durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 15000),
+  };
 }
 
 function sanitizeInputProfile(raw: unknown): InputProfile {
@@ -633,6 +680,26 @@ function sanitizeAction(
     case 'REFLECT_PROJECTILES': {
       const action: Extract<ActionPayload, { type: 'REFLECT_PROJECTILES' }> = {
         type: 'REFLECT_PROJECTILES',
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SPAWN_OBSTACLE': {
+      const action: Extract<ActionPayload, { type: 'SPAWN_OBSTACLE' }> = {
+        type: 'SPAWN_OBSTACLE',
+        obstacle: sanitizeObstacleConfig(raw.obstacle),
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'MUTATE_TERRAIN': {
+      const action: Extract<ActionPayload, { type: 'MUTATE_TERRAIN' }> = {
+        type: 'MUTATE_TERRAIN',
+        mutation: sanitizeTerrainMutationConfig(raw.mutation),
       };
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

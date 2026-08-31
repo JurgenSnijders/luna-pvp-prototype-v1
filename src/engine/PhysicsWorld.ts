@@ -3,14 +3,28 @@ import { Vector2D } from '../math/Vector2D';
 import { Dummy } from '../entities/Dummy';
 import { ConstraintJoint } from '../entities/ConstraintJoint';
 import { Entity } from '../entities/Entity';
+import { Obstacle } from '../entities/Obstacle';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
+import type { TerrainMutationConfig, TerrainType } from '../types/schema';
 
 export const MAX_ENTITIES = 256;
 export const LAVA_DAMAGE_PER_SEC = 25;
 const LAVA_DRAG = 0.15;
 const COLLISION_RESTITUTION = 0.3;
+const OBSTACLE_PROJECTILE_DAMAGE = 25;
+
+interface PenetrationResult {
+  normal: Vector2D;
+  depth: number;
+}
+
+export interface TerrainPatch {
+  pos: Vector2D;
+  config: TerrainMutationConfig;
+  remainingDurationMs: number;
+}
 
 /** DevTools-configurable bounds for the persistent hex platform radius. */
 export const MIN_HEX_RADIUS = 150;
@@ -32,6 +46,8 @@ export class PhysicsWorld {
   dummies: Dummy[] = [];
   projectiles: Projectile[] = [];
   zones: SpatialZone[] = [];
+  obstacles: Obstacle[] = [];
+  terrainPatches: TerrainPatch[] = [];
   private constraints: ConstraintJoint[] = [];
 
   hexCenter: Vector2D;
@@ -140,6 +156,30 @@ export class PhysicsWorld {
     this.constraints.push(c);
   }
 
+  addObstacle(obstacle: Obstacle): void {
+    this.obstacles.push(obstacle);
+  }
+
+  addTerrainPatch(pos: Vector2D, config: TerrainMutationConfig): void {
+    this.terrainPatches.push({
+      pos: pos.clone(),
+      config,
+      remainingDurationMs: config.durationMs,
+    });
+  }
+
+  updateObstaclesAndPatches(dt: number): void {
+    for (const obstacle of this.obstacles) {
+      if (!obstacle.isDead) obstacle.update(dt);
+    }
+    this.obstacles = this.obstacles.filter((o) => !o.isDead);
+
+    for (const patch of this.terrainPatches) {
+      patch.remainingDurationMs -= dt * 1000;
+    }
+    this.terrainPatches = this.terrainPatches.filter((p) => p.remainingDurationMs > 0);
+  }
+
   updateConstraints(dt: number): void {
     for (const c of this.constraints) {
       if (!c.isDead) c.update(dt);
@@ -219,6 +259,7 @@ export class PhysicsWorld {
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
 
+    this.updateObstaclesAndPatches(dt);
     this.refreshCombatantsCache();
 
     for (const dummy of this.dummies) {
@@ -246,6 +287,7 @@ export class PhysicsWorld {
     this.updateConstraints(dt);
 
     this.resolveCircleCollisions();
+    this.resolveObstacleCollisions();
     this.resolveHexBoundaries(dt);
     this.resolveProjectileHits();
     this.collectExpirations();
@@ -371,7 +413,161 @@ export class PhysicsWorld {
     }
   }
 
+  private getTerrainOverride(pos: Vector2D): TerrainType | null {
+    let closest: TerrainPatch | null = null;
+    let closestDistSq = Infinity;
+
+    for (const patch of this.terrainPatches) {
+      const dSq = pos.distSq(patch.pos);
+      const radiusSq = patch.config.radius * patch.config.radius;
+      if (dSq <= radiusSq && dSq < closestDistSq) {
+        closest = patch;
+        closestDistSq = dSq;
+      }
+    }
+
+    return closest?.config.type ?? null;
+  }
+
+  private toObstacleLocal(worldPos: Vector2D, obstacle: Obstacle): Vector2D {
+    const rel = worldPos.sub(obstacle.pos);
+    const angle = obstacle.config.angle ?? 0;
+    return rel.rotate(-angle);
+  }
+
+  private circleObstaclePenetration(
+    entity: Entity,
+    obstacle: Obstacle,
+  ): PenetrationResult | null {
+    const radius = obstacle.config.width / 2;
+    const delta = entity.pos.sub(obstacle.pos);
+    const dist = delta.mag();
+    const minDist = entity.radius + radius;
+
+    if (dist >= minDist) return null;
+
+    if (dist > 0.0001) {
+      return { normal: delta.scale(1 / dist), depth: minDist - dist };
+    }
+
+    return { normal: Vector2D.fromAngle(0), depth: minDist };
+  }
+
+  private boxObstaclePenetration(
+    entity: Entity,
+    obstacle: Obstacle,
+  ): PenetrationResult | null {
+    const halfW = obstacle.config.width / 2;
+    const halfH = obstacle.config.height / 2;
+    const local = this.toObstacleLocal(entity.pos, obstacle);
+
+    const closestX = Math.max(-halfW, Math.min(halfW, local.x));
+    const closestY = Math.max(-halfH, Math.min(halfH, local.y));
+    const closest = new Vector2D(closestX, closestY);
+
+    const diff = local.sub(closest);
+    const dist = diff.mag();
+
+    if (dist >= entity.radius) return null;
+
+    let localNormal: Vector2D;
+    let depth: number;
+
+    if (dist > 0.0001) {
+      localNormal = diff.scale(1 / dist);
+      depth = entity.radius - dist;
+    } else {
+      const penLeft = entity.radius + (local.x + halfW);
+      const penRight = entity.radius + (halfW - local.x);
+      const penTop = entity.radius + (local.y + halfH);
+      const penBottom = entity.radius + (halfH - local.y);
+      const minPen = Math.min(penLeft, penRight, penTop, penBottom);
+
+      if (minPen === penLeft) {
+        localNormal = new Vector2D(-1, 0);
+        depth = penLeft;
+      } else if (minPen === penRight) {
+        localNormal = new Vector2D(1, 0);
+        depth = penRight;
+      } else if (minPen === penTop) {
+        localNormal = new Vector2D(0, -1);
+        depth = penTop;
+      } else {
+        localNormal = new Vector2D(0, 1);
+        depth = penBottom;
+      }
+    }
+
+    const angle = obstacle.config.angle ?? 0;
+    const worldNormal = localNormal.rotate(angle);
+    return { normal: worldNormal, depth };
+  }
+
+  private getObstaclePenetration(
+    entity: Entity,
+    obstacle: Obstacle,
+  ): PenetrationResult | null {
+    if (obstacle.config.shape === 'CIRCLE') {
+      return this.circleObstaclePenetration(entity, obstacle);
+    }
+    return this.boxObstaclePenetration(entity, obstacle);
+  }
+
+  private resolveObstacleCollisions(): void {
+    if (this.obstacles.length === 0) return;
+
+    const entities: Entity[] = [];
+    for (const p of this.players) {
+      if (!p.isDead) entities.push(p);
+    }
+    for (const d of this.dummies) {
+      if (!d.isDead) entities.push(d);
+    }
+    for (const proj of this.projectiles) {
+      if (!proj.isDead) entities.push(proj);
+    }
+
+    for (const obstacle of this.obstacles) {
+      if (obstacle.isDead) continue;
+
+      for (const entity of entities) {
+        const penetration = this.getObstaclePenetration(entity, obstacle);
+        if (!penetration) continue;
+
+        if (entity instanceof Projectile) {
+          entity.isDead = true;
+          entity.expiryReason = 'wall';
+          this.pendingWallImpacts.push(entity.pos.clone());
+          if (obstacle.config.isDestructible) {
+            obstacle.takeDamage(OBSTACLE_PROJECTILE_DAMAGE);
+          }
+          continue;
+        }
+
+        if (entity.stasisRemainingMs > 0) continue;
+
+        entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
+      }
+    }
+
+    this.obstacles = this.obstacles.filter((o) => !o.isDead);
+  }
+
   private updateLavaTag(entity: Entity, dt: number): void {
+    const override = this.getTerrainOverride(entity.pos);
+
+    if (override === 'SAFE') {
+      entity.tags.delete('in_lava');
+      return;
+    }
+
+    if (override === 'LAVA') {
+      entity.tags.add('in_lava');
+      entity.health = Math.max(0, entity.health - LAVA_DAMAGE_PER_SEC * dt);
+      entity.linearDrag = LAVA_DRAG;
+      return;
+    }
+
     if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
       entity.tags.delete('in_lava');
     } else {
@@ -477,5 +673,7 @@ export class PhysicsWorld {
     this.projectiles = [];
     this.zones = [];
     this.constraints = [];
+    this.obstacles = [];
+    this.terrainPatches = [];
   }
 }

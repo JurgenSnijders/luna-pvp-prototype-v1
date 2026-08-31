@@ -35,7 +35,12 @@ export type ActionType =
   | 'TELEPORT'
   | 'APPLY_STASIS'
   | 'RELEASE_STASIS'
-  | 'REFLECT_PROJECTILES';
+  | 'REFLECT_PROJECTILES'
+  | 'SPAWN_OBSTACLE'
+  | 'MUTATE_TERRAIN';
+
+export type ObstacleShape = 'CIRCLE' | 'BOX';
+export type TerrainType = 'SAFE' | 'LAVA';
 
 export type ActionTarget = 'TARGET' | 'CASTER' | 'SELF';
 
@@ -195,6 +200,34 @@ export interface ReflectProjectilesAction {
   target?: ActionTarget;
 }
 
+export interface ObstacleConfig {
+  shape: ObstacleShape;
+  width: number;
+  height: number;
+  angle?: number;
+  isDestructible?: boolean;
+  maxHealth?: number;
+  durationMs: number;
+}
+
+export interface TerrainMutationConfig {
+  type: TerrainType;
+  radius: number;
+  durationMs: number;
+}
+
+export interface SpawnObstacleAction {
+  type: 'SPAWN_OBSTACLE';
+  obstacle: ObstacleConfig;
+  target?: ActionTarget;
+}
+
+export interface MutateTerrainAction {
+  type: 'MUTATE_TERRAIN';
+  mutation: TerrainMutationConfig;
+  target?: ActionTarget;
+}
+
 export interface ConstraintConfig {
   type: ConstraintType;
   stiffness?: number;
@@ -253,7 +286,9 @@ export type ActionPayload =
   | TeleportAction
   | ApplyStasisAction
   | ReleaseStasisAction
-  | ReflectProjectilesAction;
+  | ReflectProjectilesAction
+  | SpawnObstacleAction
+  | MutateTerrainAction;
 
 export type { TriggerContext, ExecutionOverrides } from './triggerContext';
 
@@ -302,7 +337,12 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'APPLY_STASIS',
   'RELEASE_STASIS',
   'REFLECT_PROJECTILES',
+  'SPAWN_OBSTACLE',
+  'MUTATE_TERRAIN',
 ]);
+
+const OBSTACLE_SHAPES: ReadonlySet<string> = new Set(['CIRCLE', 'BOX']);
+const TERRAIN_TYPES: ReadonlySet<string> = new Set(['SAFE', 'LAVA']);
 
 const ACTION_TARGETS: ReadonlySet<string> = new Set(['TARGET', 'CASTER', 'SELF']);
 
@@ -695,9 +735,72 @@ function validateActionPayload(value: unknown, depth = 0): ActionPayload | null 
       return action;
     }
 
+    case 'SPAWN_OBSTACLE': {
+      const obstacle = validateObstacleConfig(value.obstacle);
+      if (!obstacle) return null;
+      const action: SpawnObstacleAction = { type: 'SPAWN_OBSTACLE', obstacle };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'MUTATE_TERRAIN': {
+      const mutation = validateTerrainMutationConfig(value.mutation);
+      if (!mutation) return null;
+      const action: MutateTerrainAction = { type: 'MUTATE_TERRAIN', mutation };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
     default:
       return null;
   }
+}
+
+function validateObstacleConfig(value: unknown): ObstacleConfig | null {
+  if (!isObject(value)) return null;
+  const shapeRaw = isString(value.shape) ? value.shape.toUpperCase() : '';
+  if (!OBSTACLE_SHAPES.has(shapeRaw)) return null;
+  if (!isNumber(value.width) || value.width <= 0) return null;
+  if (!isNumber(value.height) || value.height <= 0) return null;
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+
+  const config: ObstacleConfig = {
+    shape: shapeRaw as ObstacleShape,
+    width: value.width,
+    height: value.height,
+    durationMs: value.durationMs,
+  };
+
+  if (value.angle !== undefined) {
+    if (!isNumber(value.angle)) return null;
+    config.angle = value.angle;
+  }
+  if (value.isDestructible !== undefined) {
+    if (typeof value.isDestructible !== 'boolean') return null;
+    config.isDestructible = value.isDestructible;
+  }
+  if (value.maxHealth !== undefined) {
+    if (!isNumber(value.maxHealth) || value.maxHealth <= 0) return null;
+    config.maxHealth = value.maxHealth;
+  }
+
+  return config;
+}
+
+function validateTerrainMutationConfig(value: unknown): TerrainMutationConfig | null {
+  if (!isObject(value)) return null;
+  const typeRaw = isString(value.type) ? value.type.toUpperCase() : '';
+  if (!TERRAIN_TYPES.has(typeRaw)) return null;
+  if (!isNumber(value.radius) || value.radius <= 0) return null;
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+
+  return {
+    type: typeRaw as TerrainType,
+    radius: value.radius,
+    durationMs: value.durationMs,
+  };
 }
 
 function parseComparisonOperator(value: unknown): ComparisonOperator | undefined {
