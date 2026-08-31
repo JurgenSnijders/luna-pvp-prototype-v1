@@ -1,9 +1,11 @@
 import {
   balanceAbilitySchema,
   balancePassiveModifiers,
+  repairAbilitySemantics,
   sanitizeAbilitySchema,
   scoreAbilitySchema,
 } from './BudgetEngine';
+import { KINETIC_RECIPES } from '../devtools/Presets';
 import type {
   CardRarity,
   DraftCard,
@@ -155,25 +157,50 @@ Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 // Phase 2 (lazy compilation): single-ability physics compiler. Unlike FORGE/EVOLUTION,
 // this targets exactly one already-chosen concept and returns the full AbilitySchema.
 const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
-You receive ONE ability concept (name, tagline, description, category) and must output ONE JSON object matching the AbilitySchema definition below.
-Output ONLY the JSON object — NOT an array, NOT wrapped in a "cards" key.
+Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
 
-AbilitySchema fields:
-- id (string), name (string), cooldownMs (number), recoilKick (number)
-- trajectory (optional root trajectory, fires immediately on cast): { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK, speed, maxRange }
-- rootEmitter (optional, alongside trajectory): { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL }
-- triggers: array of { trigger: ON_CAST|ON_TICK|ON_HIT|ON_EXPIRY|ON_RETURN, actions: [...] }
-- visuals (required): { color: hex string, size: number (4-32), projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
+AbilitySchema: { id, name, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance? }
+visuals: { color: hex, size: 4-32, projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
 
-Action types: ADD_INSTABILITY { amount }, APPLY_IMPULSE { baseForce }, SPAWN_FIELD { field: { fieldType: RADIAL_IMPULSE|VORTEX_TANGENT|FRICTION_OVERRIDE|MASS_ATTRACTOR, radius, strength, durationMs } }, SPAWN_PROJECTILE { projectileTrajectory, emitter }, MODIFY_STAT, TELEPORT { distance }
+TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.
+IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWARDS_ORIGIN | ALONG_TRAJECTORY | PERPENDICULAR_TRAJECTORY | CUSTOM
+APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
+NEVER default to bare outward knockback for pull/tether/freeze intents. Always set target + directionMode on APPLY_IMPULSE.
 
-SPAWN PATH (required): the ability MUST spawn something on cast via ONE of:
-1. Root trajectory (fires immediately on cast)
-2. ON_CAST trigger + SPAWN_PROJECTILE action
-3. ON_CAST + SPAWN_FIELD or TELEPORT (utility/mobility only)
-Do NOT put the only projectile on ON_HIT/ON_EXPIRY without a root trajectory — those triggers never fire if nothing is spawned.
+TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT
+TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, conditions?, actions[], ifFalseActions?, children? }
+CONDITIONS: STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value } | TAG_CHECK | PROXIMITY_COUNT | SURFACE_TYPE | COMBO_STEP
 
-Match projectileStyle, trailType, and impactVfx to the concept's tagline/description. Keep the physics kinetic: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.`;
+ACTIONS (use relational vectors, not generic knockback):
+ADD_INSTABILITY { amount, target? }
+APPLY_IMPULSE { baseForce, target?, directionMode? }
+SPAWN_FIELD { field: { fieldType: RADIAL_IMPULSE|VORTEX_TANGENT|FRICTION_OVERRIDE|MASS_ATTRACTOR, radius, strength, durationMs, attachToSource?, frictionValue? } }
+SPAWN_PROJECTILE { projectileTrajectory, emitter?, triggers? }
+SPAWN_CONSTRAINT { constraint: { type: SPRING_TETHER|DISTANCE_ROD|SURFACE_PIN, stiffness?, restLength?, durationMs }, source?, target? }
+CAST_CHILD_PAYLOAD { payload: AbilitySchema, inheritVelocity?, maxRecursionDepth? }
+MODIFY_STAT { stat, value, mode: add|set|multiply, target? }
+TELEPORT { distance, target?, direction? }
+APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
+RELEASE_STASIS { target? }
+REFLECT_PROJECTILES { target? }
+SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
+MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
+MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
+SPAWN_ACTOR { actor: { archetype: TURRET|DECOY, health, durationMs }, target? }
+APPLY_STEALTH { durationMs, revealOnCast?, target? }
+
+SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
+
+SEMANTIC RECIPE BOOK (map user verbs to these patterns):
+Harpoon/Pull: ON_HIT -> APPLY_IMPULSE { baseForce:600, target:"TARGET", directionMode:"TOWARDS_CASTER" } + SPAWN_CONSTRAINT { type:"SPRING_TETHER", source:"CASTER", target:"TARGET", durationMs:2000 }
+Vortex/Black Hole: ON_TICK -> SPAWN_FIELD { fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:90, durationMs:3000 }
+Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursionDepth:1, payload:{ ON_CAST SPAWN_PROJECTILE fan } }
+Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
+Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
+Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
+
+Match visuals to concept. Prefer constraints, fields, stasis, child payloads, and relational impulses over plain ADD_INSTABILITY spam.`;
 
 function balanceCard(card: DraftCard, category: SkillCategory = 'SECONDARY'): DraftCard {
   const balanced = { ...card };
@@ -804,7 +831,7 @@ function repairTriggersField(triggers: unknown): unknown[] {
   return [];
 }
 
-function repairAbilityPayload(payload: unknown): unknown {
+function repairAbilityPayload(payload: unknown, description?: string): unknown {
   if (payload === null || typeof payload !== 'object') return payload;
   const obj = { ...(payload as Record<string, unknown>) };
   stripNullFields(obj);
@@ -824,6 +851,13 @@ function repairAbilityPayload(payload: unknown): unknown {
     (obj.metadata === null || typeof obj.metadata !== 'object' || Array.isArray(obj.metadata))
   ) {
     delete obj.metadata;
+  }
+
+  if (description) {
+    const category = 'SECONDARY' as SkillCategory;
+    const sanitized = sanitizeAbilitySchema(obj, category);
+    const semantic = repairAbilitySemantics(sanitized, description);
+    return semantic;
   }
 
   return obj;
@@ -851,7 +885,10 @@ function repairDraftCard(card: unknown, index = 0): unknown {
     obj.budgetCost = ensureFiniteNumber(obj.budgetCost, 0);
   }
   if (obj.abilityPayload !== undefined) {
-    const repaired = repairAbilityPayload(obj.abilityPayload);
+    const cardTitle = typeof obj.title === 'string' ? obj.title : typeof obj.name === 'string' ? obj.name : '';
+    const cardDesc = typeof obj.description === 'string' ? obj.description : '';
+    const description = `${cardTitle} ${cardDesc}`.trim();
+    const repaired = repairAbilityPayload(obj.abilityPayload, description || undefined);
     const category =
       typeof obj.category === 'string' ? (obj.category as SkillCategory) : 'SECONDARY';
     obj.abilityPayload = sanitizeAbilitySchema(repaired, category);
@@ -1963,6 +2000,64 @@ export function generateOfflineEvolution(
   });
 }
 
+export function resolveKineticRecipe(prompt: string): AbilitySchema | null {
+  const desc = prompt.toLowerCase();
+
+  if (/\b(pull|harpoon|hook)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.harpoon);
+  }
+  if (/\b(cluster|split|mirv)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.cluster);
+  }
+  if (/\b(freeze|stasis|stop)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.stasisTrap);
+  }
+  if (/\b(wall|barrier|block)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.iceWall);
+  }
+  if (/\b(execute|coupe|finisher)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.execute);
+  }
+  if (/\b(vortex|black hole|singularity)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.vortex);
+  }
+
+  return null;
+}
+
+function buildOfflineRecipeForge(
+  prompt: string,
+  category: SkillCategory,
+  baseRecipe: AbilitySchema,
+): DraftCard[] {
+  const common = structuredClone(baseRecipe);
+  common.id = `${common.id}_common`;
+  common.name = common.name;
+
+  const rare = structuredClone(baseRecipe);
+  rare.id = `${rare.id}_rare`;
+  rare.name = `${rare.name} II`;
+  if (rare.trajectory) {
+    rare.trajectory.piercing = Math.min(4, (rare.trajectory.piercing ?? 0) + 1);
+  }
+
+  const epic = structuredClone(baseRecipe);
+  epic.id = `${epic.id}_epic`;
+  epic.name = `${epic.name} Apex`;
+  if (epic.trajectory) {
+    epic.trajectory.speed = Math.round((epic.trajectory.speed ?? 400) * 1.15);
+    epic.trajectory.piercing = Math.min(4, (epic.trajectory.piercing ?? 0) + 2);
+  }
+
+  const descSnippet = prompt.slice(0, 40) || 'kinetic';
+
+  return [
+    makeActiveCard('card_common', common.name, 'Kinetic Recipe', `A ${descSnippet} ability`, 'COMMON', common, category),
+    makeActiveCard('card_rare', rare.name, 'Advanced Variant', `Enhanced ${descSnippet}`, 'RARE', rare, category),
+    makeActiveCard('card_epic', epic.name, 'Apex Variant', `Peak ${descSnippet} expression`, 'EPIC', epic, category),
+  ];
+}
+
 export function generateOfflineDraft(
   prompt: string,
   category: SkillCategory = 'SECONDARY',
@@ -2022,31 +2117,15 @@ export function generateOfflineDraft(
       }],
     };
     passiveMods = [{ stat: 'LINEAR_DRAG', op: 'MULTIPLY', value: 1.1 }];
-  } else if (/\b(vortex|black hole|singularity|pull)\b/.test(p)) {
-    commonSchema = {
-      id: 'off_orbit',
-      name: 'Orbital Shard',
-      cooldownMs: 900,
-      recoilKick: 70,
-      trajectory: { type: 'ORBIT_ANCHOR', orbitRadius: 70, orbitSpeed: 4, maxRange: 800 },
-      visuals: { color: '#ff44aa', size: 18, projectileStyle: 'PULSING_ORB', trailType: 'MAGMA_SPARKS', impactVfx: 'MINI_NUKE' },
-      triggers: [{
-        trigger: 'ON_EXPIRY',
-        actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'MASS_ATTRACTOR', radius: 110, strength: 7000, durationMs: 2500 } }],
-      }],
-    };
-    rareSchema = {
-      id: 'off_vortex',
-      name: 'Void Spiral',
-      cooldownMs: 1100,
-      recoilKick: 90,
-      trajectory: { type: 'LINEAR', speed: 300, maxRange: 400 },
-      visuals: { color: '#aa44ff', size: 20, projectileStyle: 'PULSING_ORB', trailType: 'SMOKE', impactVfx: 'VORTEX_SWIRL' },
-      triggers: [{
-        trigger: 'ON_EXPIRY',
-        actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'VORTEX_TANGENT', radius: 100, strength: -600, durationMs: 2500 } }],
-      }],
-    };
+  } else if (/\b(vortex|black hole|singularity)\b/.test(p)) {
+    commonSchema = structuredClone(KINETIC_RECIPES.vortex);
+    commonSchema.id = 'off_vortex_common';
+    rareSchema = structuredClone(KINETIC_RECIPES.vortex);
+    rareSchema.id = 'off_vortex_rare';
+    rareSchema.name = 'Void Spiral';
+    if (rareSchema.trajectory) {
+      rareSchema.trajectory.speed = Math.round((rareSchema.trajectory.speed ?? 400) * 1.2);
+    }
     passiveMods = [{ stat: 'MASS', op: 'MULTIPLY', value: 1.15 }];
   } else if (/\b(railgun|sniper|heavy|laser)\b/.test(p)) {
     commonSchema = {
@@ -2175,6 +2254,11 @@ export function generateOfflineForge(
   prompt: string,
   category: SkillCategory,
 ): DraftCard[] {
+  const recipe = resolveKineticRecipe(prompt);
+  if (recipe) {
+    return buildOfflineRecipeForge(prompt, category, recipe);
+  }
+
   const draft = generateOfflineDraft(prompt, category);
   // Replace passive with a third active for forge mode
   const base = draft[1].abilityPayload ?? draft[0].abilityPayload!;
@@ -2319,7 +2403,11 @@ function fallbackCompiledSchema(
 ): AbilitySchema {
   let source: AbilitySchema | undefined;
 
-  if (baseAbility) {
+  const promptText = `${card.title} ${card.tagline} ${card.description}`;
+  const recipe = resolveKineticRecipe(promptText);
+  if (recipe) {
+    source = structuredClone(recipe);
+  } else if (baseAbility) {
     const evolved = generateOfflineEvolution(card.description || card.tagline || 'mutation', {
       baseAbility,
       slotKey: CATEGORY_SLOT_MAP[category],
@@ -2383,7 +2471,8 @@ export async function compileAbilityPayload(
   }
 
   const normalized = deepNormalizeLLMValue(parseResult.value);
-  const repaired = repairAbilityPayload(normalized);
+  const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
+  const repaired = repairAbilityPayload(normalized, compileDescription);
   const sanitized = sanitizeAbilitySchema(repaired, category);
 
   if (!validateAbilitySchema(sanitized)) {
