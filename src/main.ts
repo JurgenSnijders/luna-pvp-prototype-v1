@@ -6,7 +6,14 @@ import { SpellLibrary } from './devtools/SpellLibrary';
 import { getGraphicsSettings } from './devtools/graphicsSettings';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
-import { MAX_HEX_RADIUS, MIN_HEX_RADIUS, PhysicsWorld } from './engine/PhysicsWorld';
+import {
+  DEFAULT_COMBATANT_RADIUS,
+  MAX_COMBATANT_RADIUS,
+  MAX_HEX_RADIUS,
+  MIN_COMBATANT_RADIUS,
+  MIN_HEX_RADIUS,
+  PhysicsWorld,
+} from './engine/PhysicsWorld';
 import { BotController } from './entities/BotController';
 import { Player } from './entities/Player';
 import { ArenaShrink } from './game/ArenaShrink';
@@ -57,6 +64,14 @@ function getStoredHexRadius(): number {
   const raw = parseFloat(localStorage.getItem(ARENA_HEX_RADIUS_KEY) ?? '');
   const value = Number.isFinite(raw) ? raw : DEFAULT_ARENA_HEX_RADIUS;
   return Math.max(MIN_HEX_RADIUS, Math.min(MAX_HEX_RADIUS, value));
+}
+
+const COMBATANT_RADIUS_KEY = 'LUNA_COMBATANT_RADIUS';
+
+function getStoredCombatantRadius(): number {
+  const raw = parseFloat(localStorage.getItem(COMBATANT_RADIUS_KEY) ?? '');
+  const value = Number.isFinite(raw) ? raw : DEFAULT_COMBATANT_RADIUS;
+  return Math.max(MIN_COMBATANT_RADIUS, Math.min(MAX_COMBATANT_RADIUS, value));
 }
 
 function getHexCenter(): Vector2D {
@@ -169,6 +184,7 @@ function respawnCombatants(): void {
     dummy.vel = Vector2D.zero();
     dummy.instabilityPct = 0;
   }
+  world.setCombatantRadius(world.getCombatantRadius());
 }
 
 function tryCastSlot(caster: Player, slotIndex: number): void {
@@ -351,6 +367,7 @@ function init(): void {
   bot = new Player(center.clone(), ['bot', 'combatant']);
   world.addPlayer(player);
   world.addPlayer(bot);
+  world.setCombatantRadius(getStoredCombatantRadius());
 
   interpreter = new Interpreter();
   particles = new ParticleSystem();

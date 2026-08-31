@@ -1,7 +1,13 @@
 import type { MatchManager } from '../game/MatchManager';
 import type { ArenaShrink } from '../game/ArenaShrink';
 import type { BotController } from '../entities/BotController';
-import { MAX_HEX_RADIUS, MIN_HEX_RADIUS, type PhysicsWorld } from '../engine/PhysicsWorld';
+import {
+  MAX_COMBATANT_RADIUS,
+  MAX_HEX_RADIUS,
+  MIN_COMBATANT_RADIUS,
+  MIN_HEX_RADIUS,
+  type PhysicsWorld,
+} from '../engine/PhysicsWorld';
 import type { Player } from '../entities/Player';
 import { Dummy } from '../entities/Dummy';
 import { isInsideHex } from '../math/HexMath';
@@ -58,6 +64,7 @@ interface TelemetryRefs {
 const TELEMETRY_UPDATE_INTERVAL_MS = 200;
 const INSPECTOR_COLLAPSED_STORAGE_KEY = 'LUNA_INSPECTOR_COLLAPSED';
 const ARENA_HEX_RADIUS_STORAGE_KEY = 'LUNA_ARENA_HEX_RADIUS';
+const COMBATANT_RADIUS_STORAGE_KEY = 'LUNA_COMBATANT_RADIUS';
 
 export class InspectorUI {
   private fps = 0;
@@ -275,6 +282,19 @@ export class InspectorUI {
         world.setBaseHexRadius(v);
         arenaShrink?.resize(v);
         localStorage.setItem(ARENA_HEX_RADIUS_STORAGE_KEY, String(v));
+      },
+      'px',
+    );
+    this.sliderRow(
+      arenaSection,
+      'Combatant Radius',
+      MIN_COMBATANT_RADIUS,
+      MAX_COMBATANT_RADIUS,
+      1,
+      () => world.getCombatantRadius(),
+      (v) => {
+        world.setCombatantRadius(v);
+        localStorage.setItem(COMBATANT_RADIUS_STORAGE_KEY, String(v));
       },
       'px',
     );

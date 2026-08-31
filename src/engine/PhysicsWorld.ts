@@ -15,6 +15,11 @@ const COLLISION_RESTITUTION = 0.3;
 export const MIN_HEX_RADIUS = 150;
 export const MAX_HEX_RADIUS = 800;
 
+/** DevTools-configurable bounds for combatant (player/bot/dummy) hitbox radius. */
+export const MIN_COMBATANT_RADIUS = 8;
+export const MAX_COMBATANT_RADIUS = 60;
+export const DEFAULT_COMBATANT_RADIUS = 20;
+
 export interface PendingHit {
   projectile: Projectile;
   target: Entity;
@@ -38,6 +43,7 @@ export class PhysicsWorld {
 
   private combatantsCache: Entity[] = [];
   private entityRegistry = new Map<string, Entity>();
+  private combatantRadius: number = DEFAULT_COMBATANT_RADIUS;
 
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
@@ -59,6 +65,18 @@ export class PhysicsWorld {
 
   getBaseHexRadius(): number {
     return this.baseHexRadius;
+  }
+
+  getCombatantRadius(): number {
+    return this.combatantRadius;
+  }
+
+  /** Applies the clamped radius to every live combatant; new spawns pick it up via addPlayer/addDummy. */
+  setCombatantRadius(radius: number): void {
+    this.combatantRadius = Math.max(MIN_COMBATANT_RADIUS, Math.min(MAX_COMBATANT_RADIUS, radius));
+    for (const combatant of this.getCombatants()) {
+      combatant.radius = this.combatantRadius;
+    }
   }
 
   get entityCount(): number {
@@ -85,6 +103,7 @@ export class PhysicsWorld {
 
   addPlayer(player: Player): void {
     if (!this.canAddEntity()) return;
+    player.radius = this.combatantRadius;
     this.players.push(player);
     this.entityRegistry.set(player.id, player);
     this.refreshCombatantsCache();
@@ -92,6 +111,7 @@ export class PhysicsWorld {
 
   addDummy(dummy: Dummy): void {
     if (!this.canAddEntity()) return;
+    dummy.radius = this.combatantRadius;
     this.dummies.push(dummy);
     this.entityRegistry.set(dummy.id, dummy);
     this.refreshCombatantsCache();
