@@ -1,0 +1,74 @@
+import type { SkillCategory } from '../../../types/cards';
+import type { AbilitySchema, TriggerNode } from '../../../types/schema';
+import { validateAbilitySchema } from '../../../types/schema';
+import { ensureFiniteNumber, isObject } from '../helpers';
+import { sanitizeInputProfile, sanitizeResourceCost } from './condition';
+import { hasOnCastEffect, promoteRootEmitter, sanitizeTriggerNode } from './trigger';
+import { sanitizeTrajectory } from './trajectory';
+import { sanitizeVisuals } from './visuals';
+
+export function sanitizeAbilitySchema(
+  raw: unknown,
+  _category: SkillCategory = 'SECONDARY',
+  sanitizeDepth = 0,
+): AbilitySchema {
+  const obj = isObject(raw) ? { ...raw } : {};
+
+  const id = typeof obj.id === 'string' && obj.id ? obj.id : 'sanitized_ability';
+  const name = typeof obj.name === 'string' && obj.name ? obj.name : 'Sanitized Ability';
+  const cooldownMs = ensureFiniteNumber(obj.cooldownMs, 800);
+  const recoilKick = ensureFiniteNumber(obj.recoilKick, 50);
+
+  let triggers: TriggerNode[] = [];
+  if (Array.isArray(obj.triggers)) {
+    triggers = obj.triggers
+      .map((t) => sanitizeTriggerNode(t, sanitizeDepth, _category))
+      .filter((n): n is TriggerNode => n !== null);
+  }
+
+  const schema: AbilitySchema = {
+    id,
+    name,
+    cooldownMs,
+    recoilKick,
+    triggers,
+  };
+
+  if (obj.trajectory !== undefined) {
+    schema.trajectory = sanitizeTrajectory(obj.trajectory);
+  }
+
+  schema.visuals = sanitizeVisuals(obj.visuals);
+
+  if (isObject(obj.metadata)) {
+    schema.metadata = obj.metadata as Record<string, unknown>;
+  }
+
+  if (obj.inputProfile !== undefined) {
+    schema.inputProfile = sanitizeInputProfile(obj.inputProfile);
+  }
+
+  if (obj.resourceCost !== undefined) {
+    const resourceCost = sanitizeResourceCost(obj.resourceCost);
+    if (resourceCost) {
+      schema.resourceCost = resourceCost;
+    }
+  }
+
+  promoteRootEmitter(schema, obj);
+
+  if (!schema.trajectory && !hasOnCastEffect(schema.triggers)) {
+    schema.trajectory = sanitizeTrajectory(obj.trajectory);
+  }
+
+  const validated = validateAbilitySchema(schema);
+  return validated ?? {
+    id,
+    name,
+    cooldownMs,
+    recoilKick,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+    triggers: [],
+    visuals: sanitizeVisuals(undefined),
+  };
+}
