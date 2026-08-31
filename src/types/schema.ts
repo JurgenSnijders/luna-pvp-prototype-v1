@@ -32,7 +32,10 @@ export type ActionType =
   | 'SPAWN_CONSTRAINT'
   | 'CAST_CHILD_PAYLOAD'
   | 'MODIFY_STAT'
-  | 'TELEPORT';
+  | 'TELEPORT'
+  | 'APPLY_STASIS'
+  | 'RELEASE_STASIS'
+  | 'REFLECT_PROJECTILES';
 
 export type ActionTarget = 'TARGET' | 'CASTER' | 'SELF';
 
@@ -175,6 +178,23 @@ export interface TeleportAction {
   target?: ActionTarget;
 }
 
+export interface ApplyStasisAction {
+  type: 'APPLY_STASIS';
+  durationMs: number;
+  forceAccumulatorScale?: number;
+  target?: ActionTarget;
+}
+
+export interface ReleaseStasisAction {
+  type: 'RELEASE_STASIS';
+  target?: ActionTarget;
+}
+
+export interface ReflectProjectilesAction {
+  type: 'REFLECT_PROJECTILES';
+  target?: ActionTarget;
+}
+
 export interface ConstraintConfig {
   type: ConstraintType;
   stiffness?: number;
@@ -230,7 +250,10 @@ export type ActionPayload =
   | SpawnConstraintAction
   | CastChildPayloadAction
   | ModifyStatAction
-  | TeleportAction;
+  | TeleportAction
+  | ApplyStasisAction
+  | ReleaseStasisAction
+  | ReflectProjectilesAction;
 
 export type { TriggerContext, ExecutionOverrides } from './triggerContext';
 
@@ -276,6 +299,9 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'CAST_CHILD_PAYLOAD',
   'MODIFY_STAT',
   'TELEPORT',
+  'APPLY_STASIS',
+  'RELEASE_STASIS',
+  'REFLECT_PROJECTILES',
 ]);
 
 const ACTION_TARGETS: ReadonlySet<string> = new Set(['TARGET', 'CASTER', 'SELF']);
@@ -638,6 +664,32 @@ function validateActionPayload(value: unknown, depth = 0): ActionPayload | null 
         if (!isNumber(value.maxRecursionDepth)) return null;
         action.maxRecursionDepth = Math.max(1, Math.min(3, value.maxRecursionDepth));
       }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STASIS': {
+      if (!isNumber(value.durationMs)) return null;
+      const action: ApplyStasisAction = { type: 'APPLY_STASIS', durationMs: value.durationMs };
+      if (value.forceAccumulatorScale !== undefined) {
+        if (!isNumber(value.forceAccumulatorScale)) return null;
+        action.forceAccumulatorScale = value.forceAccumulatorScale;
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'RELEASE_STASIS': {
+      const action: ReleaseStasisAction = { type: 'RELEASE_STASIS' };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'REFLECT_PROJECTILES': {
+      const action: ReflectProjectilesAction = { type: 'REFLECT_PROJECTILES' };
       const target = parseActionTarget(value.target);
       if (target) action.target = target;
       return action;

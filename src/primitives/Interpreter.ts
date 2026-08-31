@@ -431,6 +431,30 @@ export class Interpreter {
         this.applyModifyStat(t, action.stat, action.value * scale, action.mode);
         break;
       }
+      case 'APPLY_STASIS': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t) break;
+        t.stasisRemainingMs = Math.max(t.stasisRemainingMs, action.durationMs);
+        t.forceAccumulatorScale = action.forceAccumulatorScale ?? 1.0;
+        t.vel = Vector2D.zero();
+        break;
+      }
+      case 'RELEASE_STASIS': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t || t.stasisRemainingMs <= 0) break;
+        t.stasisRemainingMs = 0;
+        t.dischargeStasis();
+        break;
+      }
+      case 'REFLECT_PROJECTILES': {
+        const t = this.resolveActionTarget(action.target ?? 'SELF', ctx);
+        if (!(t instanceof Projectile)) break;
+        t.vel = t.vel.scale(-1);
+        t.sourceEntityId = ctx.caster.id;
+        t.isDead = false;
+        t.expiryReason = null;
+        break;
+      }
     }
   }
 

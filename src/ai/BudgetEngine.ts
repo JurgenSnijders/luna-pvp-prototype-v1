@@ -173,6 +173,12 @@ function scoreAction(action: ActionPayload, depth: number): number {
       if (depth >= MAX_DEPTH) return 10;
       return scoreAbilitySchema(action.payload, depth + 1) * 1.5;
     }
+    case 'APPLY_STASIS':
+      return (action.durationMs / 1000) * 6;
+    case 'RELEASE_STASIS':
+      return 2;
+    case 'REFLECT_PROJECTILES':
+      return 8;
   }
 }
 
@@ -598,6 +604,35 @@ function sanitizeAction(
         stat: statMap[statRaw] ?? 'mass',
         value: ensureFiniteNumber(raw.value, 1),
         mode,
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STASIS': {
+      const action: Extract<ActionPayload, { type: 'APPLY_STASIS' }> = {
+        type: 'APPLY_STASIS',
+        durationMs: clamp(ensureFiniteNumber(raw.durationMs, 2000), 100, 10000),
+        forceAccumulatorScale: clamp(ensureFiniteNumber(raw.forceAccumulatorScale, 1), 0.1, 3),
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'RELEASE_STASIS': {
+      const action: Extract<ActionPayload, { type: 'RELEASE_STASIS' }> = {
+        type: 'RELEASE_STASIS',
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'REFLECT_PROJECTILES': {
+      const action: Extract<ActionPayload, { type: 'REFLECT_PROJECTILES' }> = {
+        type: 'REFLECT_PROJECTILES',
       };
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

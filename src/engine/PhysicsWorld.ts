@@ -166,6 +166,12 @@ export class PhysicsWorld {
     const instabilityScale = 1 + (target.instabilityPct / 100) * 1.5;
     const resistance = Math.min(0.75, target.knockbackResistance ?? 0);
     const impulse = dir.scale((baseForce / target.mass) * instabilityScale * (1 - resistance));
+    if (target.stasisRemainingMs > 0) {
+      target.stashedMomentum = target.stashedMomentum.add(
+        impulse.scale(target.forceAccumulatorScale),
+      );
+      return;
+    }
     target.vel = target.vel.add(impulse);
   }
 
@@ -257,6 +263,10 @@ export class PhysicsWorld {
   }
 
   private resolveCirclePair(a: Entity, b: Entity): void {
+    const aStasis = a.stasisRemainingMs > 0;
+    const bStasis = b.stasisRemainingMs > 0;
+    if (aStasis && bStasis) return;
+
     const delta = b.pos.sub(a.pos);
     const dist = delta.mag();
     const minDist = a.radius + b.radius;
@@ -269,8 +279,12 @@ export class PhysicsWorld {
     const aRatio = b.mass / totalMass;
     const bRatio = a.mass / totalMass;
 
-    a.pos = a.pos.sub(normal.scale(overlap * aRatio));
-    b.pos = b.pos.add(normal.scale(overlap * bRatio));
+    if (!aStasis) {
+      a.pos = a.pos.sub(normal.scale(overlap * aRatio));
+    }
+    if (!bStasis) {
+      b.pos = b.pos.add(normal.scale(overlap * bRatio));
+    }
 
     const relativeVel = b.vel.sub(a.vel);
     const velAlongNormal = relativeVel.dot(normal);
@@ -281,8 +295,12 @@ export class PhysicsWorld {
       (-(1 + COLLISION_RESTITUTION) * velAlongNormal) / (1 / a.mass + 1 / b.mass);
     const impulse = normal.scale(impulseMag);
 
-    a.vel = a.vel.sub(impulse.scale(1 / a.mass));
-    b.vel = b.vel.add(impulse.scale(1 / b.mass));
+    if (!aStasis) {
+      a.vel = a.vel.sub(impulse.scale(1 / a.mass));
+    }
+    if (!bStasis) {
+      b.vel = b.vel.add(impulse.scale(1 / b.mass));
+    }
   }
 
   private resolveHexBoundaries(dt: number): void {

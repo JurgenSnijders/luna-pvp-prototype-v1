@@ -22,6 +22,9 @@ export class Entity {
   health: number;
   maxHealth: number;
   tags: Set<string>;
+  stasisRemainingMs: number;
+  stashedMomentum: Vector2D;
+  forceAccumulatorScale: number;
 
   constructor(
     id: string,
@@ -51,9 +54,40 @@ export class Entity {
     this.maxHealth = options.maxHealth ?? 100;
     this.health = options.health ?? this.maxHealth;
     this.tags = new Set(options.tags ?? []);
+    this.stasisRemainingMs = 0;
+    this.stashedMomentum = Vector2D.zero();
+    this.forceAccumulatorScale = 1.0;
+  }
+
+  isInStasis(): boolean {
+    return this.stasisRemainingMs > 0;
+  }
+
+  dischargeStasis(): void {
+    if (this.stashedMomentum.magSq() > 0) {
+      this.vel = this.stashedMomentum.clone();
+    }
+    this.stashedMomentum = Vector2D.zero();
+    this.forceAccumulatorScale = 1.0;
+  }
+
+  resetStasis(): void {
+    this.stasisRemainingMs = 0;
+    this.stashedMomentum = Vector2D.zero();
+    this.forceAccumulatorScale = 1.0;
   }
 
   integrate(dt: number): void {
+    if (this.stasisRemainingMs > 0) {
+      this.stasisRemainingMs = Math.max(0, this.stasisRemainingMs - dt * 1000);
+      this.vel.set(0, 0);
+      this.accel.set(0, 0);
+      if (this.stasisRemainingMs <= 0) {
+        this.dischargeStasis();
+      }
+      return;
+    }
+
     this.prevPos.copyFrom(this.pos);
     this.vel.addScaledMut(this.accel, dt);
     this.vel.scaleMut(Math.max(0, 1 - this.linearDrag * dt));

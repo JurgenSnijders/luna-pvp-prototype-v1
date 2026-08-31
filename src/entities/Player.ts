@@ -362,6 +362,7 @@ export class Player extends Entity {
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
     this.resetSlotInputs();
+    this.resetStasis();
   }
 
   resetPosition(spawn: Vector2D): void {

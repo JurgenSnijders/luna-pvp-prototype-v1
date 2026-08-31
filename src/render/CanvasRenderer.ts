@@ -339,6 +339,8 @@ export class CanvasRenderer {
       ctx.moveTo(pos.x, pos.y);
       ctx.lineTo(aimEnd.x, aimEnd.y);
       ctx.stroke();
+
+      this.drawStasisOverlay(ctx, player, pos);
     }
 
     for (const dummy of world.dummies) {
@@ -348,6 +350,49 @@ export class CanvasRenderer {
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, dummy.radius, 0, Math.PI * 2);
       ctx.fill();
+
+      this.drawStasisOverlay(ctx, dummy, pos);
+    }
+  }
+
+  private drawStasisOverlay(
+    ctx: CanvasRenderingContext2D,
+    entity: Entity,
+    pos: Vector2D,
+  ): void {
+    if (entity.stasisRemainingMs > 0) {
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, entity.radius + 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (entity.stashedMomentum.magSq() > 0) {
+      const dir = entity.stashedMomentum.normalize();
+      const length = Math.min(entity.radius * 2.5, entity.stashedMomentum.mag() * 0.15);
+      const tip = pos.add(dir.scale(length));
+      ctx.strokeStyle = '#ff2222';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+
+      const headLen = 6;
+      const angle = Math.atan2(dir.y, dir.x);
+      ctx.beginPath();
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(
+        tip.x - headLen * Math.cos(angle - Math.PI / 6),
+        tip.y - headLen * Math.sin(angle - Math.PI / 6),
+      );
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(
+        tip.x - headLen * Math.cos(angle + Math.PI / 6),
+        tip.y - headLen * Math.sin(angle + Math.PI / 6),
+      );
+      ctx.stroke();
     }
   }
 
