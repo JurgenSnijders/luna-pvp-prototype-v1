@@ -7,7 +7,6 @@ import {
 } from '../ai/Synthesizer';
 import type {
   ActionSlotKey,
-  CardRarity,
   DraftCard,
   DraftSelection,
   EvolutionContext,
@@ -23,173 +22,35 @@ import {
   SLOT_CATEGORY_MAP,
 } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
+import {
+  extractMechanicBadges,
+  extractMechanicBadgesFromAbility,
+  renderBadge,
+} from './mechanicBadges';
+import {
+  buildCurrentPrefetchKey,
+  formatDuration,
+  invalidatePrefetch,
+  startPrefetch,
+  type PrefetchCacheEntry,
+  type WorkshopMode,
+} from './synthesisPrefetch';
+import {
+  RARITY_COLORS,
+  SLOT_ACCENT,
+  SUGGEST_CHIPS,
+  btnStyle,
+  btnStyleRarity,
+  chipStyle,
+  hexToRgba,
+  injectStyles,
+  renderPowerBar,
+} from './workshopStyles';
 
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
   onEquip: (selection: DraftSelection) => void;
   onOpenChange: (open: boolean) => void;
-}
-
-type WorkshopMode = 'FORGE_NEW' | 'EVOLVE_EXISTING' | 'PASSIVE_UPGRADES';
-type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
-
-const RARITY_COLORS: Record<CardRarity, string> = {
-  COMMON: '#888888',
-  RARE: '#00ccff',
-  EPIC: '#aa44ff',
-  CHAOTIC: '#ff8800',
-};
-
-const RARITY_BTN: Record<CardRarity, { border: string; bg: string }> = {
-  COMMON: { border: '#64748b', bg: 'rgba(100,116,139,0.25)' },
-  RARE: { border: '#00ccff', bg: 'rgba(0,200,255,0.22)' },
-  EPIC: { border: '#aa44ff', bg: 'rgba(170,68,255,0.22)' },
-  CHAOTIC: { border: '#ff8800', bg: 'rgba(255,136,0,0.22)' },
-};
-
-const SLOT_ACCENT: Record<ActionSlotKey, string> = {
-  LMB: '#00ccff',
-  RMB: '#00ccff',
-  Q: '#f0c040',
-  E: '#aa44ff',
-  SPACE: '#34d399',
-};
-
-const BADGE_COLORS: Record<BadgeKind, { bg: string; text: string }> = {
-  trajectory: { bg: 'rgba(0,200,255,0.15)', text: '#6ee7ff' },
-  field: { bg: 'rgba(170,68,255,0.15)', text: '#d8b4fe' },
-  trigger: { bg: 'rgba(245,158,11,0.15)', text: '#fcd34d' },
-  cast: { bg: 'rgba(52,211,153,0.15)', text: '#6ee7b7' },
-};
-
-const TRAJECTORY_LABELS = new Set([
-  'LINEAR',
-  'RETURN TO SOURCE',
-  'ORBIT ANCHOR',
-  'HOMING SLERP',
-  'DISCONTINUOUS BLINK',
-]);
-
-const FIELD_LABELS = new Set([
-  'RADIAL IMPULSE',
-  'VORTEX TANGENT',
-  'FRICTION OVERRIDE',
-  'MASS ATTRACTOR',
-]);
-
-const POWER_MAX = 300;
-const PASSIVE_POWER_MAX = 45;
-const STYLE_ID = 'luna-workshop-styles';
-
-const SUGGEST_CHIPS = [
-  '+ Bouncing',
-  '+ Black Hole on Hit',
-  '+ Ice Slipstream',
-  '+ Cluster Bomblets',
-];
-
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function classifyBadge(label: string): BadgeKind {
-  const clean = label.replace(/^\[|\]$/g, '').trim().toUpperCase();
-  if (TRAJECTORY_LABELS.has(clean)) return 'trajectory';
-  if (FIELD_LABELS.has(clean)) return 'field';
-  return 'trigger';
-}
-
-function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
-  const resolved = kind ?? classifyBadge(label);
-  const colors = BADGE_COLORS[resolved];
-  const span = document.createElement('span');
-  span.textContent = label;
-  span.style.cssText = `
-    font-size:9px;padding:2px 6px;border-radius:4px;
-    background:${colors.bg};color:${colors.text};white-space:nowrap;
-  `;
-  return span;
-}
-
-function extractMechanicBadgesFromAbility(s: AbilitySchema): { label: string; kind: BadgeKind }[] {
-  const badges: { label: string; kind: BadgeKind }[] = [];
-  const seen = new Set<string>();
-
-  const pushBadge = (label: string, kind: BadgeKind): void => {
-    if (seen.has(label)) return;
-    seen.add(label);
-    badges.push({ label, kind });
-  };
-
-  if (s.trajectory) {
-    pushBadge(`[${s.trajectory.type.replace(/_/g, ' ')}]`, 'trajectory');
-  }
-
-  if (s.inputProfile?.mode && s.inputProfile.mode !== 'INSTANT') {
-    pushBadge(`[${s.inputProfile.mode.replace(/_/g, ' ')}]`, 'cast');
-  }
-  if (s.resourceCost?.type) {
-    pushBadge(`[${s.resourceCost.type.replace(/_/g, ' ')}]`, 'cast');
-  }
-
-  const actionBadges: Partial<Record<string, string>> = {
-    SPAWN_FIELD: '',
-    TELEPORT: '[TELEPORT]',
-    APPLY_IMPULSE: '[IMPULSE]',
-    SPAWN_PROJECTILE: '[EMITTER]',
-    APPLY_STASIS: '[STASIS]',
-    RELEASE_STASIS: '[RELEASE STASIS]',
-    MORPH_ENTITY: '[MORPH]',
-    APPLY_STEALTH: '[STEALTH]',
-    SPAWN_ACTOR: '[ACTOR]',
-    SPAWN_OBSTACLE: '[OBSTACLE]',
-    MUTATE_TERRAIN: '[TERRAIN]',
-    SPAWN_CONSTRAINT: '[CONSTRAINT]',
-    REFLECT_PROJECTILES: '[REFLECT]',
-    CAST_CHILD_PAYLOAD: '[CHILD PAYLOAD]',
-  };
-
-  const collectActions = (nodes: AbilitySchema['triggers']): void => {
-    for (const node of nodes) {
-      for (const action of node.actions) {
-        if (action.type === 'SPAWN_FIELD') {
-          pushBadge(`[${action.field.fieldType.replace(/_/g, ' ')}]`, 'field');
-        } else {
-          const label = actionBadges[action.type];
-          if (label) pushBadge(label, 'trigger');
-        }
-      }
-      if (node.ifFalseActions) {
-        for (const action of node.ifFalseActions) {
-          const label = actionBadges[action.type];
-          if (label) pushBadge(label, 'trigger');
-        }
-      }
-      if (node.children) collectActions(node.children);
-    }
-  };
-
-  collectActions(s.triggers);
-  return badges;
-}
-
-function extractMechanicBadges(card: DraftCard): { label: string; kind: BadgeKind }[] {
-  if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
-    return extractMechanicBadgesFromAbility(card.abilityPayload);
-  }
-
-  if (card.type === 'PASSIVE_UPGRADE' && card.passivePayload) {
-    return card.passivePayload.map((mod) => {
-      const sign = mod.op === 'MULTIPLY' ? `${Math.round((mod.value - 1) * 100)}%` : `+${mod.value}`;
-      return { label: `[${mod.stat} ${sign}]`, kind: 'trigger' as const };
-    });
-  }
-
-  return [];
 }
 
 export class DraftModal {
@@ -215,13 +76,7 @@ export class DraftModal {
   private timerIntervalId: number | null = null;
   private lastDurationMs: number | null = null;
 
-  private prefetchCache: {
-    key: string;
-    promise: Promise<DraftCard[]>;
-    cards?: DraftCard[];
-    abortController: AbortController;
-    startedAt: number;
-  } | null = null;
+  private prefetchCache: PrefetchCacheEntry | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
@@ -229,7 +84,7 @@ export class DraftModal {
   private presetSlot: ActionSlotKey | null = null;
 
   constructor(private callbacks: DraftModalCallbacks) {
-    this.injectStyles();
+    injectStyles();
 
     this.overlay = document.createElement('div');
     this.overlay.style.cssText = `
@@ -276,7 +131,7 @@ export class DraftModal {
 
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
-    closeBtn.style.cssText = this.btnStyle();
+    closeBtn.style.cssText = btnStyle();
     closeBtn.onclick = () => this.close();
     header.appendChild(title);
     header.appendChild(this.apiStatusPill);
@@ -332,7 +187,7 @@ export class DraftModal {
 
     this.synthesizeBtn = document.createElement('button');
     this.synthesizeBtn.textContent = 'Synthesize';
-    this.synthesizeBtn.style.cssText = this.btnStyle(true);
+    this.synthesizeBtn.style.cssText = btnStyle(true);
     this.synthesizeBtn.onclick = () => void this.synthesize();
 
     promptRow.appendChild(this.promptInput);
@@ -344,7 +199,7 @@ export class DraftModal {
     for (const chip of SUGGEST_CHIPS) {
       const btn = document.createElement('button');
       btn.textContent = chip;
-      btn.style.cssText = this.chipStyle();
+      btn.style.cssText = chipStyle();
       btn.onclick = () => {
         this.invalidatePrefetch();
         const cur = this.promptInput.value.trim();
@@ -384,79 +239,6 @@ export class DraftModal {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.open_) this.close();
     });
-  }
-
-  private injectStyles(): void {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      @keyframes evolvePulse {
-        0%, 100% { box-shadow: 0 0 0 1px rgba(0,200,255,0.5), 0 0 12px rgba(0,200,255,0.25); }
-        50% { box-shadow: 0 0 0 2px rgba(0,200,255,0.9), 0 0 20px rgba(0,200,255,0.45); }
-      }
-      .evolve-source { animation: evolvePulse 1.6s ease-in-out infinite; }
-    `;
-    document.head.appendChild(style);
-  }
-
-  private btnStyle(primary = false): string {
-    return `
-      padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
-      border:1px solid ${primary ? '#00ccff' : 'rgba(255,255,255,0.15)'};
-      background:${primary ? 'rgba(0,200,255,0.2)' : 'rgba(255,255,255,0.05)'};
-      color:#e0e0e8;
-    `;
-  }
-
-  private btnStyleRarity(rarity: CardRarity): string {
-    const theme = RARITY_BTN[rarity];
-    return `
-      padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
-      border:1px solid ${theme.border};background:${theme.bg};color:#e0e0e8;
-    `;
-  }
-
-  private chipStyle(active = false): string {
-    return `
-      padding:3px 9px;border-radius:999px;cursor:pointer;font-size:11px;
-      border:1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.14)'};
-      background:${active ? 'rgba(0,200,255,0.22)' : 'rgba(255,255,255,0.04)'};
-      color:${active ? '#dff' : '#bbb'};
-    `;
-  }
-
-  private renderPowerBar(
-    cost: number,
-    rarity: CardRarity,
-    isPassive = false,
-  ): HTMLElement {
-    const max = isPassive ? PASSIVE_POWER_MAX : POWER_MAX;
-    const pct = Math.min(100, Math.round((cost / max) * 100));
-    const color = RARITY_COLORS[rarity];
-
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'margin-bottom:10px;';
-
-    const label = document.createElement('div');
-    label.textContent = `⚡ Power: ${Math.round(cost)}`;
-    label.style.cssText = 'font-size:11px;color:#ccc;margin-bottom:4px;';
-
-    const track = document.createElement('div');
-    track.style.cssText =
-      'height:4px;border-radius:2px;background:rgba(255,255,255,0.08);overflow:hidden;';
-
-    const fill = document.createElement('div');
-    fill.style.cssText = `
-      height:100%;width:${pct}%;border-radius:2px;
-      background:${color};box-shadow:0 0 6px ${color}66;
-      transition:width 0.2s ease;
-    `;
-
-    track.appendChild(fill);
-    wrap.appendChild(label);
-    wrap.appendChild(track);
-    return wrap;
   }
 
   isOpen(): boolean {
@@ -600,10 +382,6 @@ export class DraftModal {
     }
   }
 
-  private formatDuration(ms: number): string {
-    return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
-  }
-
   private renderLoadoutOverview(): void {
     this.loadoutBar.innerHTML = '';
     const loadout = this.callbacks.getLoadout();
@@ -647,7 +425,7 @@ export class DraftModal {
       evolveBtn.textContent = 'Evolve';
       evolveBtn.disabled = !ability;
       evolveBtn.style.cssText =
-        this.btnStyle(true) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
+        btnStyle(true) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
       if (!ability) evolveBtn.style.opacity = '0.4';
       evolveBtn.onclick = () => {
         if (!ability) return;
@@ -668,7 +446,7 @@ export class DraftModal {
       const replaceBtn = document.createElement('button');
       replaceBtn.textContent = 'Replace';
       replaceBtn.style.cssText =
-        this.btnStyle(false) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
+        btnStyle(false) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
       replaceBtn.onclick = () => {
         this.invalidatePrefetch();
         this.presetSlot = key;
@@ -733,7 +511,7 @@ export class DraftModal {
     for (const m of modes) {
       const btn = document.createElement('button');
       btn.textContent = m.label;
-      btn.style.cssText = this.chipStyle(this.mode === m.id);
+      btn.style.cssText = chipStyle(this.mode === m.id);
       btn.onclick = () => this.setMode(m.id);
       this.modeRow.appendChild(btn);
     }
@@ -744,7 +522,7 @@ export class DraftModal {
       for (const cat of SKILL_CATEGORIES) {
         const btn = document.createElement('button');
         btn.textContent = getCategoryLabel(cat);
-        btn.style.cssText = this.chipStyle(this.selectedCategory === cat);
+        btn.style.cssText = chipStyle(this.selectedCategory === cat);
         btn.onclick = () => {
           this.invalidatePrefetch();
           this.selectedCategory = cat;
@@ -775,7 +553,7 @@ export class DraftModal {
 
       const change = document.createElement('button');
       change.textContent = 'Change Base';
-      change.style.cssText = this.btnStyle(false) + 'font-size:10px;padding:4px 8px;flex-shrink:0;';
+      change.style.cssText = btnStyle(false) + 'font-size:10px;padding:4px 8px;flex-shrink:0;';
       change.onclick = () => {
         this.invalidatePrefetch();
         this.evolutionContext = null;
@@ -824,77 +602,20 @@ export class DraftModal {
       : this.selectedCategory;
   }
 
-  private buildPrefetchKey(
-    mode: WorkshopMode,
-    category: SkillCategory,
-    promptText: string,
-    evolutionBaseId?: string,
-  ): string {
-    return `${mode}|${category}|${promptText}|evolve:${evolutionBaseId ?? ''}`;
+  private invalidatePrefetch(): void {
+    this.prefetchCache = invalidatePrefetch(this.prefetchCache);
   }
 
-  private buildCurrentPrefetchKey(): string {
-    return this.buildPrefetchKey(
+  private startPrefetch(): void {
+    this.prefetchCache = startPrefetch(
+      this.prefetchCache,
+      this.intermissionMode,
       this.mode,
       this.resolveSynthesisCategory(),
       this.resolveEffectivePrompt(),
-      this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext?.baseAbility.id : undefined,
+      this.evolutionContext,
+      () => this.callbacks.getLoadout(),
     );
-  }
-
-  private canPrefetch(): boolean {
-    if (this.intermissionMode) return false;
-    if (!getAiSettings().apiKey.trim()) return false;
-    if (this.mode === 'EVOLVE_EXISTING' && !this.evolutionContext) return false;
-    return true;
-  }
-
-  private invalidatePrefetch(): void {
-    if (!this.prefetchCache) return;
-    this.prefetchCache.abortController.abort();
-    this.prefetchCache.promise.catch(() => {});
-    this.prefetchCache = null;
-  }
-
-  /**
-   * Speculatively dispatches the Stage 1 metadata request for the current mode/category/prompt
-   * so `synthesize()` can consume an already-resolved (or in-flight) result with near-zero
-   * perceived latency. No-ops if a matching prefetch is already running.
-   */
-  private startPrefetch(): void {
-    if (!this.canPrefetch()) return;
-
-    const mode = this.mode;
-    const category = this.resolveSynthesisCategory();
-    const prompt = this.resolveEffectivePrompt();
-    const evolutionBaseId =
-      mode === 'EVOLVE_EXISTING' ? this.evolutionContext?.baseAbility.id : undefined;
-    const key = this.buildPrefetchKey(mode, category, prompt, evolutionBaseId);
-
-    if (this.prefetchCache?.key === key) return;
-    this.invalidatePrefetch();
-
-    const abortController = new AbortController();
-    const loadout = this.callbacks.getLoadout();
-    const promise = synthesizeAbility(
-      prompt,
-      category,
-      loadout,
-      mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
-      mode === 'PASSIVE_UPGRADES',
-      { signal: abortController.signal },
-    );
-
-    this.prefetchCache = { key, promise, abortController, startedAt: performance.now() };
-
-    promise
-      .then((cards) => {
-        if (this.prefetchCache?.key === key) this.prefetchCache.cards = cards;
-      })
-      .catch(() => {
-        // Aborted (modal closed / context changed) or failed — synthesize() will fall
-        // through to a fresh request on the next cache-miss instead of surfacing this.
-      });
   }
 
   private async synthesize(): Promise<void> {
@@ -910,7 +631,12 @@ export class DraftModal {
 
     const prompt = this.resolveEffectivePrompt();
     const category = this.resolveSynthesisCategory();
-    const key = this.buildCurrentPrefetchKey();
+    const key = buildCurrentPrefetchKey(
+      this.mode,
+      category,
+      prompt,
+      this.evolutionContext,
+    );
     const cachedEntry = this.prefetchCache?.key === key ? this.prefetchCache : null;
     if (cachedEntry) {
       // Claim the entry now so it can never be replayed on a later click, regardless
@@ -974,7 +700,7 @@ export class DraftModal {
       const duration = Math.round(performance.now() - this.synthesisStartTime);
       this.lastDurationMs = duration;
       if (this.open_) {
-        this.latencyBadgeEl.textContent = `⏱ ${this.formatDuration(duration)}`;
+        this.latencyBadgeEl.textContent = `⏱ ${formatDuration(duration)}`;
         this.latencyBadgeEl.style.display = 'inline-block';
       }
       this.loadingEl.style.display = 'none';
@@ -1037,7 +763,7 @@ export class DraftModal {
       }
 
       el.appendChild(
-        this.renderPowerBar(
+        renderPowerBar(
           card.budgetCost,
           card.rarity,
           card.type === 'PASSIVE_UPGRADE',
@@ -1065,7 +791,7 @@ export class DraftModal {
         if (targetSlot && !this.intermissionMode) {
           const equipBtn = document.createElement('button');
           equipBtn.textContent = `Equip to ${targetSlot}`;
-          equipBtn.style.cssText = this.btnStyleRarity(card.rarity) + 'width:100%;';
+          equipBtn.style.cssText = btnStyleRarity(card.rarity) + 'width:100%;';
           equipBtn.onclick = () => this.equip(card, targetSlot);
           footer.appendChild(equipBtn);
         } else {
@@ -1075,7 +801,7 @@ export class DraftModal {
             const slotBtn = document.createElement('button');
             slotBtn.textContent = `[${key}]`;
             slotBtn.style.cssText =
-              this.btnStyleRarity(card.rarity) + 'flex:1;min-width:44px;padding:6px 8px;';
+              btnStyleRarity(card.rarity) + 'flex:1;min-width:44px;padding:6px 8px;';
             slotBtn.onclick = () => this.equip(card, key);
             btnContainer.appendChild(slotBtn);
           }
@@ -1084,7 +810,7 @@ export class DraftModal {
       } else {
         const passiveBtn = document.createElement('button');
         passiveBtn.textContent = 'Equip Passive';
-        passiveBtn.style.cssText = this.btnStyleRarity(card.rarity) + 'width:100%;';
+        passiveBtn.style.cssText = btnStyleRarity(card.rarity) + 'width:100%;';
         passiveBtn.onclick = () => this.equip(card, 'PASSIVE');
         footer.appendChild(passiveBtn);
       }
