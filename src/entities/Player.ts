@@ -172,6 +172,9 @@ export class Player extends Entity {
           break;
         case 'CHARGE_AND_RELEASE':
           if (this.isSlotReady(slotIndex)) {
+            if (this.isStealthed() && this.stealthRevealOnCast) {
+              this.breakStealth();
+            }
             slot.charging = true;
             slot.chargeMs = 0;
           }
@@ -322,7 +325,8 @@ export class Player extends Entity {
     }
 
     const moveDir = this.inputMove.magSq() > 0 ? this.inputMove.normalize() : Vector2D.zero();
-    const targetVel = moveDir.scale(this.moveSpeed);
+    const speedMultiplier = this.activeMorph?.speedMultiplier ?? 1;
+    const targetVel = moveDir.scale(this.moveSpeed * speedMultiplier);
     const velDiff = targetVel.sub(this.vel);
     const accelMag = this.baseAcceleration * dt;
     const accel =
@@ -363,6 +367,7 @@ export class Player extends Entity {
     this.clearCastInputs();
     this.resetSlotInputs();
     this.resetStasis();
+    this.resetMorphStealth();
   }
 
   resetPosition(spawn: Vector2D): void {

@@ -7,6 +7,7 @@ import { Obstacle } from '../entities/Obstacle';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
+import { Summon } from '../entities/Summon';
 import type { TerrainMutationConfig, TerrainType } from '../types/schema';
 
 export const MAX_ENTITIES = 256;
@@ -44,6 +45,7 @@ export interface PendingHit {
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
+  summons: Summon[] = [];
   projectiles: Projectile[] = [];
   zones: SpatialZone[] = [];
   obstacles: Obstacle[] = [];
@@ -105,6 +107,7 @@ export class PhysicsWorld {
     let count = 0;
     for (const e of this.players) if (!e.isDead) count++;
     for (const e of this.dummies) if (!e.isDead) count++;
+    for (const e of this.summons) if (!e.isDead) count++;
     for (const e of this.projectiles) if (!e.isDead) count++;
     for (const e of this.zones) if (!e.isDead) count++;
     return count;
@@ -133,6 +136,14 @@ export class PhysicsWorld {
     this.dummies.push(dummy);
     this.entityRegistry.set(dummy.id, dummy);
     this.refreshCombatantsCache();
+  }
+
+  addSummon(summon: Summon): boolean {
+    if (!this.canAddEntity()) return false;
+    this.summons.push(summon);
+    this.entityRegistry.set(summon.id, summon);
+    this.refreshCombatantsCache();
+    return true;
   }
 
   addProjectile(projectile: Projectile): boolean {
@@ -195,6 +206,9 @@ export class PhysicsWorld {
     for (const d of this.dummies) {
       if (!d.isDead) this.combatantsCache.push(d);
     }
+    for (const s of this.summons) {
+      if (!s.isDead) this.combatantsCache.push(s);
+    }
   }
 
   getCombatants(): Entity[] {
@@ -205,7 +219,9 @@ export class PhysicsWorld {
     const dir = direction.magSq() > 0 ? direction.normalize() : Vector2D.zero();
     const instabilityScale = 1 + (target.instabilityPct / 100) * 1.5;
     const resistance = Math.min(0.75, target.knockbackResistance ?? 0);
-    const impulse = dir.scale((baseForce / target.mass) * instabilityScale * (1 - resistance));
+    const impulse = dir.scale(
+      (baseForce / target.effectiveMass) * instabilityScale * (1 - resistance),
+    );
     if (target.stasisRemainingMs > 0) {
       target.stashedMomentum = target.stashedMomentum.add(
         impulse.scale(target.forceAccumulatorScale),
@@ -221,12 +237,17 @@ export class PhysicsWorld {
 
     for (const entity of this.players) {
       if (entity.isDead) continue;
-      const reach = radius + entity.radius;
+      const reach = radius + entity.effectiveRadius;
       if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
     }
     for (const entity of this.dummies) {
       if (entity.isDead) continue;
-      const reach = radius + entity.radius;
+      const reach = radius + entity.effectiveRadius;
+      if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
+    }
+    for (const entity of this.summons) {
+      if (entity.isDead) continue;
+      const reach = radius + entity.effectiveRadius;
       if (entity.pos.distSq(center) <= reach * reach) results.push(entity);
     }
     for (const entity of this.projectiles) {
@@ -278,6 +299,10 @@ export class PhysicsWorld {
       entity.update(dt);
       if (!entity.tags.has('kinematic')) entity.integrate(dt);
     }
+    for (const summon of this.summons) {
+      if (summon.isDead) continue;
+      summon.update(dt, this);
+    }
     for (const entity of this.projectiles) {
       if (entity.isDead) continue;
       entity.update(dt);
@@ -311,15 +336,15 @@ export class PhysicsWorld {
 
     const delta = b.pos.sub(a.pos);
     const dist = delta.mag();
-    const minDist = a.radius + b.radius;
+    const minDist = a.effectiveRadius + b.effectiveRadius;
 
     if (dist >= minDist || dist === 0) return;
 
     const normal = delta.scale(1 / dist);
     const overlap = minDist - dist;
-    const totalMass = a.mass + b.mass;
-    const aRatio = b.mass / totalMass;
-    const bRatio = a.mass / totalMass;
+    const totalMass = a.effectiveMass + b.effectiveMass;
+    const aRatio = b.effectiveMass / totalMass;
+    const bRatio = a.effectiveMass / totalMass;
 
     if (!aStasis) {
       a.pos = a.pos.sub(normal.scale(overlap * aRatio));
@@ -334,14 +359,15 @@ export class PhysicsWorld {
     if (velAlongNormal > 0) return;
 
     const impulseMag =
-      (-(1 + COLLISION_RESTITUTION) * velAlongNormal) / (1 / a.mass + 1 / b.mass);
+      (-(1 + COLLISION_RESTITUTION) * velAlongNormal) /
+      (1 / a.effectiveMass + 1 / b.effectiveMass);
     const impulse = normal.scale(impulseMag);
 
     if (!aStasis) {
-      a.vel = a.vel.sub(impulse.scale(1 / a.mass));
+      a.vel = a.vel.sub(impulse.scale(1 / a.effectiveMass));
     }
     if (!bStasis) {
-      b.vel = b.vel.add(impulse.scale(1 / b.mass));
+      b.vel = b.vel.add(impulse.scale(1 / b.effectiveMass));
     }
   }
 
@@ -374,7 +400,7 @@ export class PhysicsWorld {
 
   private clampToViewport(entity: Entity): void {
     const { width, height } = this.viewportBounds;
-    const r = entity.radius;
+    const r = entity.effectiveRadius;
     const minX = r;
     const maxX = Math.max(minX, width - r);
     const minY = r;
@@ -442,7 +468,8 @@ export class PhysicsWorld {
     const radius = obstacle.config.width / 2;
     const delta = entity.pos.sub(obstacle.pos);
     const dist = delta.mag();
-    const minDist = entity.radius + radius;
+    const entityRadius = entity.effectiveRadius;
+    const minDist = entityRadius + radius;
 
     if (dist >= minDist) return null;
 
@@ -467,20 +494,21 @@ export class PhysicsWorld {
 
     const diff = local.sub(closest);
     const dist = diff.mag();
+    const entityRadius = entity.effectiveRadius;
 
-    if (dist >= entity.radius) return null;
+    if (dist >= entityRadius) return null;
 
     let localNormal: Vector2D;
     let depth: number;
 
     if (dist > 0.0001) {
       localNormal = diff.scale(1 / dist);
-      depth = entity.radius - dist;
+      depth = entityRadius - dist;
     } else {
-      const penLeft = entity.radius + (local.x + halfW);
-      const penRight = entity.radius + (halfW - local.x);
-      const penTop = entity.radius + (local.y + halfH);
-      const penBottom = entity.radius + (halfH - local.y);
+      const penLeft = entityRadius + (local.x + halfW);
+      const penRight = entityRadius + (halfW - local.x);
+      const penTop = entityRadius + (local.y + halfH);
+      const penBottom = entityRadius + (halfH - local.y);
       const minPen = Math.min(penLeft, penRight, penTop, penBottom);
 
       if (minPen === penLeft) {
@@ -522,6 +550,9 @@ export class PhysicsWorld {
     }
     for (const d of this.dummies) {
       if (!d.isDead) entities.push(d);
+    }
+    for (const s of this.summons) {
+      if (!s.isDead) entities.push(s);
     }
     for (const proj of this.projectiles) {
       if (!proj.isDead) entities.push(proj);
@@ -585,8 +616,9 @@ export class PhysicsWorld {
 
       for (const target of combatants) {
         if (target.id === projectile.sourceEntityId) continue;
+        if (target.isStealthed()) continue;
 
-        const minDist = projectile.radius + target.radius;
+        const minDist = projectile.radius + target.effectiveRadius;
         const minDistSq = minDist * minDist;
         if (projectile.pos.distSq(target.pos) > minDistSq) continue;
 
@@ -631,6 +663,20 @@ export class PhysicsWorld {
     }
 
     write = 0;
+    for (let read = 0; read < this.summons.length; read++) {
+      if (!this.summons[read].isDead) {
+        this.summons[write++] = this.summons[read];
+      } else {
+        this.entityRegistry.delete(this.summons[read].id);
+        pruned = true;
+      }
+    }
+    if (write < this.summons.length) {
+      this.summons.length = write;
+      pruned = true;
+    }
+
+    write = 0;
     for (let read = 0; read < this.projectiles.length; read++) {
       if (!this.projectiles[read].isDead) {
         this.projectiles[write++] = this.projectiles[read];
@@ -670,10 +716,14 @@ export class PhysicsWorld {
     for (const zone of this.zones) {
       this.entityRegistry.delete(zone.id);
     }
+    for (const summon of this.summons) {
+      this.entityRegistry.delete(summon.id);
+    }
     this.projectiles = [];
     this.zones = [];
     this.constraints = [];
     this.obstacles = [];
     this.terrainPatches = [];
+    this.summons = [];
   }
 }

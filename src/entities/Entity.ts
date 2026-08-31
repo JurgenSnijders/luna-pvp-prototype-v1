@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import type { MorphConfig } from '../types/schema';
 
 let nextEntityId = 1;
 
@@ -25,6 +26,10 @@ export class Entity {
   stasisRemainingMs: number;
   stashedMomentum: Vector2D;
   forceAccumulatorScale: number;
+  activeMorph: MorphConfig | null;
+  morphRemainingMs: number;
+  stealthRemainingMs: number;
+  stealthRevealOnCast: boolean;
 
   constructor(
     id: string,
@@ -57,6 +62,33 @@ export class Entity {
     this.stasisRemainingMs = 0;
     this.stashedMomentum = Vector2D.zero();
     this.forceAccumulatorScale = 1.0;
+    this.activeMorph = null;
+    this.morphRemainingMs = 0;
+    this.stealthRemainingMs = 0;
+    this.stealthRevealOnCast = true;
+  }
+
+  get effectiveRadius(): number {
+    return this.activeMorph?.radius ?? this.radius;
+  }
+
+  get effectiveMass(): number {
+    return this.activeMorph?.mass ?? this.mass;
+  }
+
+  isStealthed(): boolean {
+    return this.stealthRemainingMs > 0;
+  }
+
+  breakStealth(): void {
+    this.stealthRemainingMs = 0;
+  }
+
+  resetMorphStealth(): void {
+    this.activeMorph = null;
+    this.morphRemainingMs = 0;
+    this.stealthRemainingMs = 0;
+    this.stealthRevealOnCast = true;
   }
 
   isInStasis(): boolean {
@@ -78,6 +110,16 @@ export class Entity {
   }
 
   integrate(dt: number): void {
+    if (this.morphRemainingMs > 0) {
+      this.morphRemainingMs = Math.max(0, this.morphRemainingMs - dt * 1000);
+      if (this.morphRemainingMs <= 0) {
+        this.activeMorph = null;
+      }
+    }
+    if (this.stealthRemainingMs > 0) {
+      this.stealthRemainingMs = Math.max(0, this.stealthRemainingMs - dt * 1000);
+    }
+
     if (this.stasisRemainingMs > 0) {
       this.stasisRemainingMs = Math.max(0, this.stasisRemainingMs - dt * 1000);
       this.vel.set(0, 0);

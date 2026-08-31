@@ -146,6 +146,7 @@ function updateHomingSlerp(
 
   for (const target of combatants) {
     if (target.id === proj.sourceEntityId) continue;
+    if (target.isStealthed()) continue;
     const distSq = proj.pos.distSq(target.pos);
     if (distSq < nearestDistSq) {
       nearestDistSq = distSq;

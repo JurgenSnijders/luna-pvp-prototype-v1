@@ -8,6 +8,7 @@ import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { ConstraintJoint } from '../entities/ConstraintJoint';
 import { SpatialZone } from '../entities/SpatialZone';
+import { Summon } from '../entities/Summon';
 import type { ParticleSystem } from '../render/ParticleSystem';
 import type {
   AbilitySchema,
@@ -473,6 +474,27 @@ export class Interpreter {
         const t = this.resolveActionTarget(action.target, ctx);
         const pos = (t ?? ctx.caster).pos.clone();
         world.addTerrainPatch(pos, action.mutation);
+        break;
+      }
+      case 'MORPH_ENTITY': {
+        const t = this.resolveActionTarget(action.target ?? 'CASTER', ctx);
+        if (!t) break;
+        t.activeMorph = action.morph;
+        t.morphRemainingMs = action.morph.durationMs;
+        break;
+      }
+      case 'APPLY_STEALTH': {
+        const t = this.resolveActionTarget(action.target ?? 'CASTER', ctx);
+        if (!t) break;
+        t.stealthRemainingMs = action.durationMs;
+        t.stealthRevealOnCast = action.revealOnCast ?? true;
+        break;
+      }
+      case 'SPAWN_ACTOR': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        const pos = t ? t.pos.clone() : ctx.origin.clone();
+        const summon = new Summon(pos, action.actor, ctx.caster.id);
+        world.addSummon(summon);
         break;
       }
     }

@@ -227,6 +227,10 @@ function executePlayerCast(
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;
 
+  if (caster.isStealthed() && caster.stealthRevealOnCast) {
+    caster.breakStealth();
+  }
+
   const heading = aimDir.normalize();
   interpreter.executeAbility(
     ability,

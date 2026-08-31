@@ -18,6 +18,9 @@ import type {
   ObstacleShape,
   TerrainMutationConfig,
   TerrainType,
+  MorphConfig,
+  ActorConfig,
+  ActorArchetype,
   ProjectileStyle,
   TrajectoryConfig,
   TrajectoryType,
@@ -192,6 +195,21 @@ function scoreAction(action: ActionPayload, depth: number): number {
       const m = action.mutation;
       return (m.durationMs / 1000) * 3 + m.radius / 50;
     }
+    case 'MORPH_ENTITY': {
+      const morph = action.morph;
+      return (
+        (morph.durationMs / 1000) * 4 +
+        (morph.mass ?? 0) / 200 +
+        (morph.radius ?? 0) / 20
+      );
+    }
+    case 'APPLY_STEALTH':
+      return (action.durationMs / 1000) * 5;
+    case 'SPAWN_ACTOR': {
+      const actor = action.actor;
+      const turretBonus = actor.archetype === 'TURRET' ? 4 : 0;
+      return (actor.durationMs / 1000) * 6 + actor.health / 50 + turretBonus;
+    }
   }
 }
 
@@ -310,6 +328,39 @@ function sanitizeTerrainMutationConfig(raw: unknown): TerrainMutationConfig {
     type,
     radius: clamp(ensureFiniteNumber(obj.radius, 60), 20, 500),
     durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 15000),
+  };
+}
+
+function sanitizeMorphConfig(raw: unknown): MorphConfig {
+  const obj = isObject(raw) ? raw : {};
+  const config: MorphConfig = {
+    durationMs: clamp(ensureFiniteNumber(obj.durationMs, 3000), 100, 15000),
+  };
+
+  if (obj.radius !== undefined) {
+    config.radius = clamp(ensureFiniteNumber(obj.radius, 20), 10, 60);
+  }
+  if (obj.mass !== undefined) {
+    config.mass = clamp(ensureFiniteNumber(obj.mass, 100), 1, 2000);
+  }
+  if (obj.speedMultiplier !== undefined) {
+    config.speedMultiplier = clamp(ensureFiniteNumber(obj.speedMultiplier, 1), 0.25, 3);
+  }
+
+  return config;
+}
+
+function sanitizeActorConfig(raw: unknown): ActorConfig {
+  const obj = isObject(raw) ? raw : {};
+  const archetypeRaw = typeof obj.archetype === 'string' ? obj.archetype.toUpperCase() : 'DECOY';
+  const archetype = (
+    ['TURRET', 'DECOY'].includes(archetypeRaw) ? archetypeRaw : 'DECOY'
+  ) as ActorArchetype;
+
+  return {
+    archetype,
+    health: clamp(ensureFiniteNumber(obj.health, 50), 1, 500),
+    durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 30000),
   };
 }
 
@@ -701,6 +752,39 @@ function sanitizeAction(
         type: 'MUTATE_TERRAIN',
         mutation: sanitizeTerrainMutationConfig(raw.mutation),
       };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'MORPH_ENTITY': {
+      const action: Extract<ActionPayload, { type: 'MORPH_ENTITY' }> = {
+        type: 'MORPH_ENTITY',
+        morph: sanitizeMorphConfig(raw.morph),
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SPAWN_ACTOR': {
+      const action: Extract<ActionPayload, { type: 'SPAWN_ACTOR' }> = {
+        type: 'SPAWN_ACTOR',
+        actor: sanitizeActorConfig(raw.actor),
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STEALTH': {
+      const action: Extract<ActionPayload, { type: 'APPLY_STEALTH' }> = {
+        type: 'APPLY_STEALTH',
+        durationMs: clamp(ensureFiniteNumber(raw.durationMs, 3000), 100, 15000),
+      };
+      if (typeof raw.revealOnCast === 'boolean') {
+        action.revealOnCast = raw.revealOnCast;
+      }
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;
       return action;

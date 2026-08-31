@@ -37,7 +37,10 @@ export type ActionType =
   | 'RELEASE_STASIS'
   | 'REFLECT_PROJECTILES'
   | 'SPAWN_OBSTACLE'
-  | 'MUTATE_TERRAIN';
+  | 'MUTATE_TERRAIN'
+  | 'MORPH_ENTITY'
+  | 'SPAWN_ACTOR'
+  | 'APPLY_STEALTH';
 
 export type ObstacleShape = 'CIRCLE' | 'BOX';
 export type TerrainType = 'SAFE' | 'LAVA';
@@ -228,6 +231,40 @@ export interface MutateTerrainAction {
   target?: ActionTarget;
 }
 
+export interface MorphConfig {
+  radius?: number;
+  mass?: number;
+  speedMultiplier?: number;
+  durationMs: number;
+}
+
+export type ActorArchetype = 'TURRET' | 'DECOY';
+
+export interface ActorConfig {
+  archetype: ActorArchetype;
+  health: number;
+  durationMs: number;
+}
+
+export interface MorphEntityAction {
+  type: 'MORPH_ENTITY';
+  morph: MorphConfig;
+  target?: ActionTarget;
+}
+
+export interface SpawnActorAction {
+  type: 'SPAWN_ACTOR';
+  actor: ActorConfig;
+  target?: ActionTarget;
+}
+
+export interface ApplyStealthAction {
+  type: 'APPLY_STEALTH';
+  durationMs: number;
+  revealOnCast?: boolean;
+  target?: ActionTarget;
+}
+
 export interface ConstraintConfig {
   type: ConstraintType;
   stiffness?: number;
@@ -288,7 +325,10 @@ export type ActionPayload =
   | ReleaseStasisAction
   | ReflectProjectilesAction
   | SpawnObstacleAction
-  | MutateTerrainAction;
+  | MutateTerrainAction
+  | MorphEntityAction
+  | SpawnActorAction
+  | ApplyStealthAction;
 
 export type { TriggerContext, ExecutionOverrides } from './triggerContext';
 
@@ -339,10 +379,14 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'REFLECT_PROJECTILES',
   'SPAWN_OBSTACLE',
   'MUTATE_TERRAIN',
+  'MORPH_ENTITY',
+  'SPAWN_ACTOR',
+  'APPLY_STEALTH',
 ]);
 
 const OBSTACLE_SHAPES: ReadonlySet<string> = new Set(['CIRCLE', 'BOX']);
 const TERRAIN_TYPES: ReadonlySet<string> = new Set(['SAFE', 'LAVA']);
+const ACTOR_ARCHETYPES: ReadonlySet<string> = new Set(['TURRET', 'DECOY']);
 
 const ACTION_TARGETS: ReadonlySet<string> = new Set(['TARGET', 'CASTER', 'SELF']);
 
@@ -753,6 +797,39 @@ function validateActionPayload(value: unknown, depth = 0): ActionPayload | null 
       return action;
     }
 
+    case 'MORPH_ENTITY': {
+      const morph = validateMorphConfig(value.morph);
+      if (!morph) return null;
+      const action: MorphEntityAction = { type: 'MORPH_ENTITY', morph };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SPAWN_ACTOR': {
+      const actor = validateActorConfig(value.actor);
+      if (!actor) return null;
+      const action: SpawnActorAction = { type: 'SPAWN_ACTOR', actor };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STEALTH': {
+      if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+      const action: ApplyStealthAction = {
+        type: 'APPLY_STEALTH',
+        durationMs: value.durationMs,
+      };
+      if (value.revealOnCast !== undefined) {
+        if (typeof value.revealOnCast !== 'boolean') return null;
+        action.revealOnCast = value.revealOnCast;
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
     default:
       return null;
   }
@@ -799,6 +876,42 @@ function validateTerrainMutationConfig(value: unknown): TerrainMutationConfig | 
   return {
     type: typeRaw as TerrainType,
     radius: value.radius,
+    durationMs: value.durationMs,
+  };
+}
+
+function validateMorphConfig(value: unknown): MorphConfig | null {
+  if (!isObject(value)) return null;
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+
+  const config: MorphConfig = { durationMs: value.durationMs };
+
+  if (value.radius !== undefined) {
+    if (!isNumber(value.radius) || value.radius <= 0) return null;
+    config.radius = value.radius;
+  }
+  if (value.mass !== undefined) {
+    if (!isNumber(value.mass) || value.mass <= 0) return null;
+    config.mass = value.mass;
+  }
+  if (value.speedMultiplier !== undefined) {
+    if (!isNumber(value.speedMultiplier) || value.speedMultiplier <= 0) return null;
+    config.speedMultiplier = value.speedMultiplier;
+  }
+
+  return config;
+}
+
+function validateActorConfig(value: unknown): ActorConfig | null {
+  if (!isObject(value)) return null;
+  const archetypeRaw = isString(value.archetype) ? value.archetype.toUpperCase() : '';
+  if (!ACTOR_ARCHETYPES.has(archetypeRaw)) return null;
+  if (!isNumber(value.health) || value.health <= 0) return null;
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+
+  return {
+    archetype: archetypeRaw as ActorArchetype,
+    health: value.health,
     durationMs: value.durationMs,
   };
 }

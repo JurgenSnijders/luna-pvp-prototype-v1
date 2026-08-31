@@ -68,6 +68,7 @@ export class CanvasRenderer {
     this.drawObstacles(ctx, world);
     particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
+    this.drawSummons(ctx, world, alpha);
     this.drawConstraints(ctx, world);
     this.drawProjectiles(ctx, world, alpha);
     this.drawOverheadHUD(ctx, world, alpha);
@@ -388,31 +389,79 @@ export class CanvasRenderer {
       if (player.isDead) continue;
       const pos = this.lerpPos(player, alpha);
       const isBot = player.tags.has('bot');
-      ctx.fillStyle = isBot ? '#ff8844' : '#00ccff';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, player.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      const aimEnd = pos.add(Vector2D.fromAngle(player.facingAngle, player.radius + 14));
-      ctx.strokeStyle = isBot ? '#ffbb88' : '#88eeff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-      ctx.lineTo(aimEnd.x, aimEnd.y);
-      ctx.stroke();
-
-      this.drawStasisOverlay(ctx, player, pos);
+      const baseColor = isBot ? '#ff8844' : '#00ccff';
+      this.drawCombatantBody(ctx, player, pos, baseColor, isBot ? '#ffbb88' : '#88eeff');
     }
 
     for (const dummy of world.dummies) {
       if (dummy.isDead) continue;
       const pos = this.lerpPos(dummy, alpha);
-      ctx.fillStyle = '#ff8844';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, dummy.radius, 0, Math.PI * 2);
-      ctx.fill();
+      this.drawCombatantBody(ctx, dummy, pos, '#ff8844');
+    }
+  }
 
-      this.drawStasisOverlay(ctx, dummy, pos);
+  private drawCombatantBody(
+    ctx: CanvasRenderingContext2D,
+    entity: Entity,
+    pos: Vector2D,
+    fillColor: string,
+    aimColor?: string,
+  ): void {
+    const prevAlpha = ctx.globalAlpha;
+    if (entity.isStealthed()) {
+      ctx.globalAlpha = 0.3;
+    }
+
+    const radius = entity.effectiveRadius;
+    const drawColor = entity.activeMorph ? '#555555' : fillColor;
+
+    ctx.fillStyle = drawColor;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (entity.activeMorph) {
+      ctx.strokeStyle = 'rgba(180, 180, 180, 0.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius + 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (aimColor && 'facingAngle' in entity) {
+      const facing = (entity as { facingAngle: number }).facingAngle;
+      const aimEnd = pos.add(Vector2D.fromAngle(facing, radius + 14));
+      ctx.strokeStyle = aimColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(aimEnd.x, aimEnd.y);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = prevAlpha;
+    this.drawStasisOverlay(ctx, entity, pos);
+  }
+
+  private drawSummons(
+    ctx: CanvasRenderingContext2D,
+    world: PhysicsWorld,
+    alpha: number,
+  ): void {
+    for (const summon of world.summons) {
+      if (summon.isDead) continue;
+      const pos = this.lerpPos(summon, alpha);
+      const half = summon.radius;
+
+      if (summon.config.archetype === 'TURRET') {
+        ctx.fillStyle = '#88aa44';
+        ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
+      } else {
+        ctx.fillStyle = '#aa6688';
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -425,13 +474,16 @@ export class CanvasRenderer {
       ctx.strokeStyle = '#FFD700';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, entity.radius + 3, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 3, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     if (entity.stashedMomentum.magSq() > 0) {
       const dir = entity.stashedMomentum.normalize();
-      const length = Math.min(entity.radius * 2.5, entity.stashedMomentum.mag() * 0.15);
+      const length = Math.min(
+        entity.effectiveRadius * 2.5,
+        entity.stashedMomentum.mag() * 0.15,
+      );
       const tip = pos.add(dir.scale(length));
       ctx.strokeStyle = '#ff2222';
       ctx.lineWidth = 2;
@@ -801,7 +853,9 @@ export class CanvasRenderer {
     world: PhysicsWorld,
     alpha: number,
   ): void {
-    const entities = [...world.players, ...world.dummies].filter((e) => !e.isDead);
+    const entities = [...world.players, ...world.dummies, ...world.summons].filter(
+      (e) => !e.isDead && !e.isStealthed(),
+    );
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
 
@@ -812,7 +866,7 @@ export class CanvasRenderer {
     for (const entity of entities) {
       const pos = this.lerpPos(entity, alpha);
       const barX = pos.x - barWidth / 2;
-      const barY = pos.y - entity.radius - 14;
+      const barY = pos.y - entity.effectiveRadius - 14;
 
       ctx.beginPath();
       ctx.roundRect(barX, barY, barWidth, barHeight, 2);
@@ -834,7 +888,7 @@ export class CanvasRenderer {
       const pct = entity.instabilityPct;
       ctx.fillStyle = this.instabilityColor(pct);
       ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
-      ctx.fillText(`${Math.round(pct)}%`, pos.x, pos.y - entity.radius - 4);
+      ctx.fillText(`${Math.round(pct)}%`, pos.x, pos.y - entity.effectiveRadius - 4);
       ctx.globalAlpha = 1;
     }
   }
