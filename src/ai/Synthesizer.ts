@@ -1096,10 +1096,28 @@ async function postNativeGemini(
   systemPrompt: string,
   userPrompt: string,
   settings: AiSettings,
-  options: { timeoutMs: number; maxOutputTokens: number; logTag: string },
+  options: {
+    timeoutMs: number;
+    maxOutputTokens: number;
+    logTag: string;
+    signal?: AbortSignal;
+  },
 ): Promise<NativeGeminiResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, options.timeoutMs);
+
+  // Compose the caller's signal (e.g. modal-close teardown) with the internal
+  // timeout controller — either one aborts the underlying fetch.
+  const externalSignal = options.signal;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort);
+  }
 
   try {
     // Native Gemini host is a hard architectural constraint — settings.baseUrl is
@@ -1148,7 +1166,10 @@ async function postNativeGemini(
     return { ok: true, text: content, error: null };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      return { ok: false, text: '', error: `Request timed out (${options.timeoutMs}ms)` };
+      if (timedOut) {
+        return { ok: false, text: '', error: `Request timed out (${options.timeoutMs}ms)` };
+      }
+      return { ok: false, text: '', error: 'Request aborted' };
     }
     if (err instanceof Error) {
       return { ok: false, text: '', error: err.message };
@@ -1156,6 +1177,7 @@ async function postNativeGemini(
     return { ok: false, text: '', error: 'Unknown API error' };
   } finally {
     clearTimeout(timeout);
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -1164,6 +1186,7 @@ async function callLLM(
   userPrompt: string,
   settings: AiSettings,
   category: SkillCategory,
+  signal?: AbortSignal,
 ): Promise<DraftCard[] | null> {
   lastCallSucceeded = false;
   lastApiError = null;
@@ -1172,6 +1195,7 @@ async function callLLM(
     timeoutMs: 8000,
     maxOutputTokens: 1024,
     logTag: '[draft]',
+    signal,
   });
 
   if (!result.ok) {
@@ -1206,6 +1230,7 @@ async function fetchLLMForge(
   category: SkillCategory,
   loadout: PlayerLoadout,
   settings: AiSettings,
+  signal?: AbortSignal,
 ): Promise<DraftCard[] | null> {
   const slot = CATEGORY_SLOT_MAP[category];
   const userPrompt = `Player prompt: "${prompt}"
@@ -1214,7 +1239,7 @@ ${loadoutSummary(loadout)}
 
 Generate 3 thematic ability concepts for this category.`;
 
-  return callLLM(FORGE_SYSTEM_PROMPT, userPrompt, settings, category);
+  return callLLM(FORGE_SYSTEM_PROMPT, userPrompt, settings, category, signal);
 }
 
 async function fetchLLMEvolution(
@@ -1222,6 +1247,7 @@ async function fetchLLMEvolution(
   context: EvolutionContext,
   loadout: PlayerLoadout,
   settings: AiSettings,
+  signal?: AbortSignal,
 ): Promise<DraftCard[] | null> {
   const userPrompt = `Base Ability Name: "${context.baseAbility.name}"
 
@@ -1232,20 +1258,21 @@ ${loadoutSummary(loadout)}
 
 Generate 3 distinct evolved ability concepts that preserve the base name's identity while applying the mutation.`;
 
-  return callLLM(EVOLUTION_SYSTEM_PROMPT, userPrompt, settings, context.category);
+  return callLLM(EVOLUTION_SYSTEM_PROMPT, userPrompt, settings, context.category, signal);
 }
 
 async function fetchLLMPassive(
   prompt: string,
   loadout: PlayerLoadout,
   settings: AiSettings,
+  signal?: AbortSignal,
 ): Promise<DraftCard[] | null> {
   const userPrompt = `Player prompt: "${prompt}"
 ${loadoutSummary(loadout)}
 
 Generate 3 thematic PASSIVE_UPGRADE draft cards.`;
 
-  return callLLM(PASSIVE_SYSTEM_PROMPT, userPrompt, settings, 'SECONDARY');
+  return callLLM(PASSIVE_SYSTEM_PROMPT, userPrompt, settings, 'SECONDARY', signal);
 }
 
 function makeActiveCard(
@@ -2220,18 +2247,20 @@ export async function synthesizeAbility(
   loadout: PlayerLoadout,
   evolution?: EvolutionContext,
   passiveOnly = false,
+  options?: { signal?: AbortSignal },
 ): Promise<DraftCard[]> {
   const settings = getAiSettings();
+  const signal = options?.signal;
 
   if (settings.apiKey.trim()) {
     let online: DraftCard[] | null = null;
 
     if (passiveOnly) {
-      online = await fetchLLMPassive(prompt, loadout, settings);
+      online = await fetchLLMPassive(prompt, loadout, settings, signal);
     } else if (evolution) {
-      online = await fetchLLMEvolution(prompt, evolution, loadout, settings);
+      online = await fetchLLMEvolution(prompt, evolution, loadout, settings, signal);
     } else {
-      online = await fetchLLMForge(prompt, category, loadout, settings);
+      online = await fetchLLMForge(prompt, category, loadout, settings, signal);
     }
 
     if (online) {

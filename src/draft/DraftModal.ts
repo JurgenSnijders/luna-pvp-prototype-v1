@@ -177,6 +177,14 @@ export class DraftModal {
   private timerIntervalId: number | null = null;
   private lastDurationMs: number | null = null;
 
+  private prefetchCache: {
+    key: string;
+    promise: Promise<DraftCard[]>;
+    cards?: DraftCard[];
+    abortController: AbortController;
+    startedAt: number;
+  } | null = null;
+
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
   private evolutionContext: EvolutionContext | null = null;
@@ -280,6 +288,9 @@ export class DraftModal {
       e.stopPropagation();
       if (e.key === 'Enter') void this.synthesize();
     });
+    this.promptInput.addEventListener('input', () => {
+      this.invalidatePrefetch();
+    });
 
     this.synthesizeBtn = document.createElement('button');
     this.synthesizeBtn.textContent = 'Synthesize';
@@ -297,6 +308,7 @@ export class DraftModal {
       btn.textContent = chip;
       btn.style.cssText = this.chipStyle();
       btn.onclick = () => {
+        this.invalidatePrefetch();
         const cur = this.promptInput.value.trim();
         this.promptInput.value = cur
           ? `${cur} ${chip.replace(/^\+\s*/, '')}`
@@ -429,9 +441,11 @@ export class DraftModal {
     this.callbacks.onOpenChange(true);
     this.refreshUI();
     this.promptInput.focus();
+    this.startPrefetch();
   }
 
   close(): void {
+    this.invalidatePrefetch();
     this.clearSynthesisTimer();
     this.open_ = false;
     this.overlay.style.opacity = '0';
@@ -465,6 +479,7 @@ export class DraftModal {
   }
 
   private setMode(mode: WorkshopMode): void {
+    this.invalidatePrefetch();
     this.mode = mode;
     if (mode === 'FORGE_NEW' && !this.presetSlot) {
       this.evolutionContext = null;
@@ -487,6 +502,7 @@ export class DraftModal {
       }
     }
     this.refreshUI();
+    this.startPrefetch();
   }
 
   private refreshUI(): void {
@@ -597,6 +613,7 @@ export class DraftModal {
       if (!ability) evolveBtn.style.opacity = '0.4';
       evolveBtn.onclick = () => {
         if (!ability) return;
+        this.invalidatePrefetch();
         this.evolutionContext = {
           baseAbility: structuredClone(ability),
           slotKey: key,
@@ -607,6 +624,7 @@ export class DraftModal {
         this.mode = 'EVOLVE_EXISTING';
         this.refreshUI();
         this.promptInput.focus();
+        this.startPrefetch();
       };
 
       const replaceBtn = document.createElement('button');
@@ -614,12 +632,14 @@ export class DraftModal {
       replaceBtn.style.cssText =
         this.btnStyle(false) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
       replaceBtn.onclick = () => {
+        this.invalidatePrefetch();
         this.presetSlot = key;
         this.selectedCategory = category;
         this.evolutionContext = null;
         this.mode = 'FORGE_NEW';
         this.refreshUI();
         this.promptInput.focus();
+        this.startPrefetch();
       };
 
       actions.appendChild(evolveBtn);
@@ -688,9 +708,11 @@ export class DraftModal {
         btn.textContent = getCategoryLabel(cat);
         btn.style.cssText = this.chipStyle(this.selectedCategory === cat);
         btn.onclick = () => {
+          this.invalidatePrefetch();
           this.selectedCategory = cat;
           this.presetSlot = CATEGORY_SLOT_MAP[cat];
           this.refreshUI();
+          this.startPrefetch();
         };
         this.categoryRow.appendChild(btn);
       }
@@ -717,6 +739,7 @@ export class DraftModal {
       change.textContent = 'Change Base';
       change.style.cssText = this.btnStyle(false) + 'font-size:10px;padding:4px 8px;flex-shrink:0;';
       change.onclick = () => {
+        this.invalidatePrefetch();
         this.evolutionContext = null;
         this.refreshUI();
       };
@@ -746,6 +769,96 @@ export class DraftModal {
     }
   }
 
+  private resolveEffectivePrompt(): string {
+    return (
+      this.promptInput.value.trim() ||
+      (this.mode === 'PASSIVE_UPGRADES'
+        ? 'kinetic conditioning'
+        : this.mode === 'EVOLVE_EXISTING'
+          ? 'cluster bomblets on impact'
+          : 'kinetic combat ability')
+    );
+  }
+
+  private resolveSynthesisCategory(): SkillCategory {
+    return this.mode === 'EVOLVE_EXISTING' && this.evolutionContext
+      ? this.evolutionContext.category
+      : this.selectedCategory;
+  }
+
+  private buildPrefetchKey(
+    mode: WorkshopMode,
+    category: SkillCategory,
+    promptText: string,
+    evolutionBaseId?: string,
+  ): string {
+    return `${mode}|${category}|${promptText}|evolve:${evolutionBaseId ?? ''}`;
+  }
+
+  private buildCurrentPrefetchKey(): string {
+    return this.buildPrefetchKey(
+      this.mode,
+      this.resolveSynthesisCategory(),
+      this.resolveEffectivePrompt(),
+      this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext?.baseAbility.id : undefined,
+    );
+  }
+
+  private canPrefetch(): boolean {
+    if (this.intermissionMode) return false;
+    if (!getAiSettings().apiKey.trim()) return false;
+    if (this.mode === 'EVOLVE_EXISTING' && !this.evolutionContext) return false;
+    return true;
+  }
+
+  private invalidatePrefetch(): void {
+    if (!this.prefetchCache) return;
+    this.prefetchCache.abortController.abort();
+    this.prefetchCache.promise.catch(() => {});
+    this.prefetchCache = null;
+  }
+
+  /**
+   * Speculatively dispatches the Stage 1 metadata request for the current mode/category/prompt
+   * so `synthesize()` can consume an already-resolved (or in-flight) result with near-zero
+   * perceived latency. No-ops if a matching prefetch is already running.
+   */
+  private startPrefetch(): void {
+    if (!this.canPrefetch()) return;
+
+    const mode = this.mode;
+    const category = this.resolveSynthesisCategory();
+    const prompt = this.resolveEffectivePrompt();
+    const evolutionBaseId =
+      mode === 'EVOLVE_EXISTING' ? this.evolutionContext?.baseAbility.id : undefined;
+    const key = this.buildPrefetchKey(mode, category, prompt, evolutionBaseId);
+
+    if (this.prefetchCache?.key === key) return;
+    this.invalidatePrefetch();
+
+    const abortController = new AbortController();
+    const loadout = this.callbacks.getLoadout();
+    const promise = synthesizeAbility(
+      prompt,
+      category,
+      loadout,
+      mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
+      mode === 'PASSIVE_UPGRADES',
+      { signal: abortController.signal },
+    );
+
+    this.prefetchCache = { key, promise, abortController, startedAt: performance.now() };
+
+    promise
+      .then((cards) => {
+        if (this.prefetchCache?.key === key) this.prefetchCache.cards = cards;
+      })
+      .catch(() => {
+        // Aborted (modal closed / context changed) or failed — synthesize() will fall
+        // through to a fresh request on the next cache-miss instead of surfacing this.
+      });
+  }
+
   private async synthesize(): Promise<void> {
     if (this.mode === 'EVOLVE_EXISTING' && !this.evolutionContext) {
       this.loadingEl.style.display = 'block';
@@ -757,20 +870,28 @@ export class DraftModal {
       return;
     }
 
-    const prompt =
-      this.promptInput.value.trim() ||
-      (this.mode === 'PASSIVE_UPGRADES'
-        ? 'kinetic conditioning'
-        : this.mode === 'EVOLVE_EXISTING'
-          ? 'cluster bomblets on impact'
-          : 'kinetic combat ability');
+    const prompt = this.resolveEffectivePrompt();
+    const category = this.resolveSynthesisCategory();
+    const key = this.buildCurrentPrefetchKey();
+    const cachedEntry = this.prefetchCache?.key === key ? this.prefetchCache : null;
+    if (cachedEntry) {
+      // Claim the entry now so it can never be replayed on a later click, regardless
+      // of whether the consumption below succeeds or throws.
+      this.prefetchCache = null;
+    } else {
+      this.invalidatePrefetch();
+    }
 
     this.clearSynthesisWarning();
     this.loadingEl.style.display = 'block';
     this.loadingEl.textContent = 'Synthesizing...';
     this.cardsContainer.innerHTML = '';
 
-    this.synthesisStartTime = performance.now();
+    // In-flight hits measure total wait since the prefetch was dispatched (it may have
+    // started while the user was still reading the modal); everything else — fresh
+    // requests and already-resolved cache hits — starts the stopwatch now.
+    this.synthesisStartTime =
+      cachedEntry && !cachedEntry.cards ? cachedEntry.startedAt : performance.now();
     this.latencyBadgeEl.style.display = 'none';
     this.synthesizeBtn.disabled = true;
     this.clearSynthesisTimer(false);
@@ -780,19 +901,20 @@ export class DraftModal {
     }, 50);
 
     try {
-      const loadout = this.callbacks.getLoadout();
-      const category =
-        this.mode === 'EVOLVE_EXISTING' && this.evolutionContext
-          ? this.evolutionContext.category
-          : this.selectedCategory;
-
-      this.cards = await synthesizeAbility(
-        prompt,
-        category,
-        loadout,
-        this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
-        this.mode === 'PASSIVE_UPGRADES',
-      );
+      if (cachedEntry?.cards) {
+        this.cards = cachedEntry.cards;
+      } else if (cachedEntry) {
+        this.cards = await cachedEntry.promise;
+      } else {
+        const loadout = this.callbacks.getLoadout();
+        this.cards = await synthesizeAbility(
+          prompt,
+          category,
+          loadout,
+          this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
+          this.mode === 'PASSIVE_UPGRADES',
+        );
+      }
 
       const meta = getLastSynthesisMeta();
       if (meta.source === 'heuristic' && meta.error) {
