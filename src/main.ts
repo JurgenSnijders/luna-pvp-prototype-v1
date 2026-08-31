@@ -6,7 +6,7 @@ import { SpellLibrary } from './devtools/SpellLibrary';
 import { getGraphicsSettings } from './devtools/graphicsSettings';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
-import { PhysicsWorld } from './engine/PhysicsWorld';
+import { MAX_HEX_RADIUS, MIN_HEX_RADIUS, PhysicsWorld } from './engine/PhysicsWorld';
 import { BotController } from './entities/BotController';
 import { Player } from './entities/Player';
 import { ArenaShrink } from './game/ArenaShrink';
@@ -50,8 +50,13 @@ const debugOptions: DebugOptions = {
   showIds: false,
 };
 
-function getHexRadius(): number {
-  return Math.min(window.innerWidth, window.innerHeight) * 0.35;
+const ARENA_HEX_RADIUS_KEY = 'LUNA_ARENA_HEX_RADIUS';
+const DEFAULT_ARENA_HEX_RADIUS = 340;
+
+function getStoredHexRadius(): number {
+  const raw = parseFloat(localStorage.getItem(ARENA_HEX_RADIUS_KEY) ?? '');
+  const value = Number.isFinite(raw) ? raw : DEFAULT_ARENA_HEX_RADIUS;
+  return Math.max(MIN_HEX_RADIUS, Math.min(MAX_HEX_RADIUS, value));
 }
 
 function getHexCenter(): Vector2D {
@@ -65,7 +70,8 @@ function resize(): void {
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  arenaShrink?.resize(getHexRadius());
+  world?.setViewportBounds(window.innerWidth, window.innerHeight);
+  arenaShrink?.resize(getStoredHexRadius());
 }
 
 function assignDefaultLoadout(target: Player): void {
@@ -337,8 +343,10 @@ function init(): void {
   window.addEventListener('resize', resize);
 
   const center = getHexCenter();
-  const hexRadius = getHexRadius();
+  const hexRadius = getStoredHexRadius();
   world = new PhysicsWorld(center, hexRadius);
+  world.setViewportBounds(window.innerWidth, window.innerHeight);
+  world.setBaseHexRadius(hexRadius);
   player = new Player(center.clone());
   bot = new Player(center.clone(), ['bot', 'combatant']);
   world.addPlayer(player);
@@ -361,12 +369,12 @@ function init(): void {
   matchHUD = new MatchHUD({
     onStartMatch: () => {
       if (matchManager.mode !== 'MATCH') return;
-      arenaShrink.resize(getHexRadius());
+      arenaShrink.resize(getStoredHexRadius());
       matchManager.startMatch();
     },
     onPlayAgain: () => {
       if (matchManager.mode !== 'MATCH') return;
-      arenaShrink.resize(getHexRadius());
+      arenaShrink.resize(getStoredHexRadius());
       matchManager.startMatch();
     },
   });
@@ -427,7 +435,7 @@ function init(): void {
       arenaShrink,
       onRestartMatch: () => {
         if (matchManager.mode !== 'MATCH') return;
-        arenaShrink.resize(getHexRadius());
+        arenaShrink.resize(getStoredHexRadius());
         matchManager.startMatch();
       },
       onRespawnCombatants: respawnCombatants,

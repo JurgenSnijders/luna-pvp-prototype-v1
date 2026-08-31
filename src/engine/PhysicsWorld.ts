@@ -1,7 +1,4 @@
-import {
-  getOuterWallRadius,
-  isInsideHex,
-} from '../math/HexMath';
+import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import { Dummy } from '../entities/Dummy';
 import { Entity } from '../entities/Entity';
@@ -12,8 +9,11 @@ import { SpatialZone } from '../entities/SpatialZone';
 export const MAX_ENTITIES = 256;
 const LAVA_INSTABILITY_PER_SEC = 18;
 const LAVA_DRAG = 0.15;
-const WALL_RESTITUTION = 0.45;
 const COLLISION_RESTITUTION = 0.3;
+
+/** DevTools-configurable bounds for the persistent hex platform radius. */
+export const MIN_HEX_RADIUS = 150;
+export const MAX_HEX_RADIUS = 800;
 
 export interface PendingHit {
   projectile: Projectile;
@@ -29,6 +29,8 @@ export class PhysicsWorld {
 
   hexCenter: Vector2D;
   hexRadius: number;
+  baseHexRadius: number;
+  viewportBounds: { width: number; height: number } = { width: 0, height: 0 };
 
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
@@ -40,6 +42,23 @@ export class PhysicsWorld {
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
     this.hexRadius = hexRadius;
+    this.baseHexRadius = hexRadius;
+  }
+
+  /** Updates the hard screen-edge collision perimeter (called on init and window resize). */
+  setViewportBounds(width: number, height: number): void {
+    this.viewportBounds = { width, height };
+  }
+
+  /** Sets the configured (non-shrinking) arena size, clamped to DevTools slider bounds. */
+  setBaseHexRadius(radius: number): void {
+    const clamped = Math.max(MIN_HEX_RADIUS, Math.min(MAX_HEX_RADIUS, radius));
+    this.baseHexRadius = clamped;
+    this.hexRadius = clamped;
+  }
+
+  getBaseHexRadius(): number {
+    return this.baseHexRadius;
   }
 
   get entityCount(): number {
@@ -222,51 +241,74 @@ export class PhysicsWorld {
   }
 
   private resolveHexBoundaries(dt: number): void {
-    const outerWallRadius = getOuterWallRadius(this.hexRadius);
+    this.resolveViewportBoundaries();
 
     for (const entity of this.players) {
-      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+      if (!entity.isDead) this.updateLavaTag(entity, dt);
     }
     for (const entity of this.dummies) {
-      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+      if (!entity.isDead) this.updateLavaTag(entity, dt);
     }
     for (const entity of this.projectiles) {
-      if (!entity.isDead) this.resolveHexBoundaryForEntity(entity, dt, outerWallRadius);
+      if (!entity.isDead) this.updateLavaTag(entity, dt);
     }
   }
 
-  private resolveHexBoundaryForEntity(
-    entity: Entity,
-    dt: number,
-    outerWallRadius: number,
-  ): void {
-    const delta = entity.pos.sub(this.hexCenter);
-    const dist = delta.mag();
-    const boundRadius = outerWallRadius - entity.radius;
-
-    if (dist > boundRadius && dist > 0.0001) {
-      const normal = delta.scale(1 / dist);
-      const velDotNormal = entity.vel.dot(normal);
-      entity.pos = this.hexCenter.add(normal.scale(boundRadius));
-      entity.vel = entity.vel.sub(
-        normal.scale((1 + WALL_RESTITUTION) * velDotNormal),
-      );
-
-      if (velDotNormal > 0) {
-        this.pendingWallImpacts.push(
-          this.hexCenter.add(normal.scale(outerWallRadius)),
-        );
-      }
-
-      if (entity.tags.has('projectile')) {
-        const proj = entity as Projectile;
-        if (proj.pierceRemaining <= 0) {
-          proj.isDead = true;
-          proj.expiryReason = 'hit';
-        }
-      }
+  /** Hard screen-edge perimeter: combatants are clamped in place, projectiles die on exit. */
+  private resolveViewportBoundaries(): void {
+    for (const entity of this.players) {
+      if (!entity.isDead) this.clampToViewport(entity);
     }
+    for (const entity of this.dummies) {
+      if (!entity.isDead) this.clampToViewport(entity);
+    }
+    for (const entity of this.projectiles) {
+      if (!entity.isDead) this.resolveProjectileViewport(entity);
+    }
+  }
 
+  private clampToViewport(entity: Entity): void {
+    const { width, height } = this.viewportBounds;
+    const r = entity.radius;
+    const minX = r;
+    const maxX = Math.max(minX, width - r);
+    const minY = r;
+    const maxY = Math.max(minY, height - r);
+
+    const clampedX = Math.max(minX, Math.min(maxX, entity.pos.x));
+    const clampedY = Math.max(minY, Math.min(maxY, entity.pos.y));
+    const hitX = clampedX !== entity.pos.x;
+    const hitY = clampedY !== entity.pos.y;
+
+    if (hitX) {
+      entity.pos.x = clampedX;
+      entity.vel.x = 0;
+    }
+    if (hitY) {
+      entity.pos.y = clampedY;
+      entity.vel.y = 0;
+    }
+    if (hitX || hitY) {
+      this.pendingWallImpacts.push(entity.pos.clone());
+    }
+  }
+
+  /** Screen edges are a hard kill zone for projectiles rather than a bounce surface. */
+  private resolveProjectileViewport(proj: Projectile): void {
+    const { width, height } = this.viewportBounds;
+    const r = proj.radius;
+    if (
+      proj.pos.x < -r ||
+      proj.pos.x > width + r ||
+      proj.pos.y < -r ||
+      proj.pos.y > height + r
+    ) {
+      proj.isDead = true;
+      proj.expiryReason = 'hit';
+    }
+  }
+
+  private updateLavaTag(entity: Entity, dt: number): void {
     if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
       entity.tags.delete('in_lava');
     } else {

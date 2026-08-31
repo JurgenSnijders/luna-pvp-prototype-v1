@@ -1,4 +1,4 @@
-import { getClosestEdgeNormal, getHexVertices, getOuterWallRadius } from '../math/HexMath';
+import { getClosestEdgeNormal, getHexVertices } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Entity } from '../entities/Entity';
@@ -62,7 +62,6 @@ export class CanvasRenderer {
     if (getGraphicsSettings().lavaHeatWaves) {
       this.drawLavaHeatWaves(ctx, world, width, height);
     }
-    this.drawOuterBarrier(ctx, world);
     this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
     this.drawZones(ctx, world);
     particles.draw(ctx);
@@ -186,54 +185,6 @@ export class CanvasRenderer {
       ctx.fillStyle = `rgba(255, 140, 40, ${spotAlpha})`;
       ctx.beginPath();
       ctx.arc(spot.x, spot.y, 6 + Math.sin(now + i) * 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  private drawOuterBarrier(
-    ctx: CanvasRenderingContext2D,
-    world: PhysicsWorld,
-  ): void {
-    const outerR = getOuterWallRadius(world.hexRadius);
-    const { hexCenter: center } = world;
-    const now = performance.now() * 0.001;
-    const pulse = 0.45 + 0.25 * Math.sin(now * 3);
-
-    ctx.fillStyle = 'rgba(255, 120, 0, 0.06)';
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, outerR, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Layered strokes emulate the old shadowBlur glow without a blur pass.
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, outerR, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255, 136, 0, ${0.35 * pulse})`;
-    ctx.lineWidth = 9;
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(255, 170, 0, ${pulse})`;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    ctx.setLineDash([12, 18]);
-    ctx.lineDashOffset = -now * 20;
-    ctx.strokeStyle = `rgba(255, 200, 80, ${0.25 + pulse * 0.3})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, outerR - 2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
-
-    for (let i = 0; i < 6; i++) {
-      const angle = (Math.PI / 180) * (60 * i);
-      const node = center.add(Vector2D.fromAngle(angle, outerR));
-      ctx.fillStyle = 'rgba(255, 200, 0, 0.35)';
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffcc00';
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -708,13 +659,11 @@ export class CanvasRenderer {
     ].filter((e) => !e.isDead);
 
     if (debug.showRadii) {
-      const outerR = getOuterWallRadius(world.hexRadius);
+      const { width: vw, height: vh } = world.viewportBounds;
       ctx.strokeStyle = 'rgba(255, 170, 0, 0.35)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
-      ctx.beginPath();
-      ctx.arc(world.hexCenter.x, world.hexCenter.y, outerR, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeRect(0, 0, vw, vh);
       ctx.setLineDash([]);
 
       const hexVerts = getHexVertices(world.hexCenter, world.hexRadius);

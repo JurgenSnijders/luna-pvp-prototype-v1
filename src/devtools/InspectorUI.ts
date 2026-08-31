@@ -1,7 +1,7 @@
 import type { MatchManager } from '../game/MatchManager';
 import type { ArenaShrink } from '../game/ArenaShrink';
 import type { BotController } from '../entities/BotController';
-import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { MAX_HEX_RADIUS, MIN_HEX_RADIUS, type PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Player } from '../entities/Player';
 import { Dummy } from '../entities/Dummy';
 import { isInsideHex } from '../math/HexMath';
@@ -56,6 +56,8 @@ interface TelemetryRefs {
 }
 
 const TELEMETRY_UPDATE_INTERVAL_MS = 200;
+const INSPECTOR_COLLAPSED_STORAGE_KEY = 'LUNA_INSPECTOR_COLLAPSED';
+const ARENA_HEX_RADIUS_STORAGE_KEY = 'LUNA_ARENA_HEX_RADIUS';
 
 export class InspectorUI {
   private fps = 0;
@@ -66,6 +68,12 @@ export class InspectorUI {
   private telemetryRefs: TelemetryRefs | null = null;
   private jsonTextarea!: HTMLTextAreaElement;
   private errorBanner!: HTMLElement;
+  private isCollapsed: boolean =
+    localStorage.getItem(INSPECTOR_COLLAPSED_STORAGE_KEY) === 'true';
+  private container!: HTMLDivElement;
+  private headerEl!: HTMLDivElement;
+  private bodyEl!: HTMLDivElement;
+  private toggleBtn!: HTMLButtonElement;
 
   constructor(
     private root: HTMLElement,
@@ -76,14 +84,12 @@ export class InspectorUI {
 
   private build(): void {
     this.root.innerHTML = '';
-    const panel = document.createElement('div');
-    panel.style.cssText = `
+    this.container = document.createElement('div');
+    this.container.style.cssText = `
       pointer-events: auto;
-      width: 320px;
       max-height: 100vh;
       overflow-y: auto;
       margin: 12px;
-      padding: 16px;
       background: rgba(10, 10, 20, 0.85);
       backdrop-filter: blur(12px);
       border: 1px solid rgba(255,255,255,0.1);
@@ -92,6 +98,25 @@ export class InspectorUI {
       font-size: 13px;
       color: #e0e0e8;
     `;
+
+    this.headerEl = document.createElement('div');
+    this.headerEl.style.cssText =
+      'display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;user-select:none;';
+    this.headerEl.onclick = () => this.toggleCollapse();
+
+    const title = document.createElement('span');
+    title.textContent = 'DEVTOOLS';
+    title.style.cssText =
+      'font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.05em;';
+
+    this.toggleBtn = document.createElement('button');
+    this.toggleBtn.type = 'button';
+    this.toggleBtn.style.cssText = this.buttonStyle(false) + 'padding:2px 8px;line-height:1;';
+
+    this.headerEl.appendChild(title);
+    this.headerEl.appendChild(this.toggleBtn);
+
+    this.bodyEl = document.createElement('div');
 
     const tabs = ['Stats', 'Presets', 'JSON', 'Graphics', 'Harness'];
     const tabBar = document.createElement('div');
@@ -134,13 +159,54 @@ export class InspectorUI {
     this.telemetryEl.style.cssText =
       'margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:11px;color:#888;';
 
-    panel.appendChild(tabBar);
-    panel.appendChild(content);
-    panel.appendChild(this.telemetryEl);
-    this.root.appendChild(panel);
+    this.bodyEl.appendChild(tabBar);
+    this.bodyEl.appendChild(content);
+    this.bodyEl.appendChild(this.telemetryEl);
+
+    this.container.appendChild(this.headerEl);
+    this.container.appendChild(this.bodyEl);
 
     this.buildStatsTab(content);
     tabBar.querySelector('button')!.style.cssText = this.buttonStyle(true);
+
+    this.toggleCollapse(this.isCollapsed);
+
+    this.root.appendChild(this.container);
+
+    window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
+  }
+
+  private toggleCollapse(forceState?: boolean): void {
+    this.isCollapsed = forceState !== undefined ? forceState : !this.isCollapsed;
+    localStorage.setItem(INSPECTOR_COLLAPSED_STORAGE_KEY, String(this.isCollapsed));
+
+    this.bodyEl.style.display = this.isCollapsed ? 'none' : 'block';
+    this.toggleBtn.textContent = this.isCollapsed ? '+' : '−';
+    this.headerEl.style.marginBottom = this.isCollapsed ? '0' : '8px';
+
+    this.container.style.width = this.isCollapsed ? 'auto' : '320px';
+    this.container.style.padding = this.isCollapsed ? '6px 10px' : '16px';
+    this.container.style.cursor = this.isCollapsed ? 'pointer' : 'default';
+    this.container.style.maxHeight = this.isCollapsed ? 'none' : '100vh';
+    this.container.style.overflowY = this.isCollapsed ? 'visible' : 'auto';
+  }
+
+  private handleGlobalKeydown(e: KeyboardEvent): void {
+    if (e.key !== 'F1' && e.key !== '\\') return;
+
+    const active = document.activeElement;
+    const tag = active?.tagName;
+    if (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      (active instanceof HTMLElement && active.isContentEditable)
+    ) {
+      return;
+    }
+
+    if (e.key === 'F1') e.preventDefault();
+    this.toggleCollapse();
   }
 
   private buttonStyle(active: boolean): string {
@@ -163,6 +229,7 @@ export class InspectorUI {
     step: number,
     get: () => number,
     set: (v: number) => void,
+    unit = '',
   ): void {
     const row = document.createElement('div');
     row.style.marginBottom = '10px';
@@ -179,7 +246,7 @@ export class InspectorUI {
     const update = () => {
       const v = parseFloat(input.value);
       set(v);
-      lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}`;
+      lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}${unit}`;
     };
     input.oninput = update;
     update();
@@ -189,6 +256,30 @@ export class InspectorUI {
   }
 
   private buildStatsTab(parent: HTMLElement): void {
+    const { world, arenaShrink } = this.ctx;
+    const arenaSection = document.createElement('div');
+    arenaSection.style.cssText =
+      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+    const arenaTitle = document.createElement('div');
+    arenaTitle.textContent = 'Arena';
+    arenaTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+    arenaSection.appendChild(arenaTitle);
+    this.sliderRow(
+      arenaSection,
+      'Arena Hex Radius',
+      MIN_HEX_RADIUS,
+      MAX_HEX_RADIUS,
+      10,
+      () => world.getBaseHexRadius(),
+      (v) => {
+        world.setBaseHexRadius(v);
+        arenaShrink?.resize(v);
+        localStorage.setItem(ARENA_HEX_RADIUS_STORAGE_KEY, String(v));
+      },
+      'px',
+    );
+    parent.appendChild(arenaSection);
+
     const p = this.ctx.player;
     this.sliderRow(parent, 'Move Speed', 50, 600, 10, () => p.moveSpeed, (v) => {
       p.moveSpeed = v;
@@ -682,6 +773,8 @@ export class InspectorUI {
       this.frameCount = 0;
       this.lastFpsTime = now;
     }
+
+    if (this.isCollapsed) return;
 
     // DOM writes are throttled; only the FPS counter above runs per frame.
     if (now - this.lastTelemetryDomUpdate < TELEMETRY_UPDATE_INTERVAL_MS) return;
