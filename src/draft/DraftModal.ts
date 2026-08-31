@@ -167,9 +167,15 @@ export class DraftModal {
   private chipsRow: HTMLElement;
   private cardsContainer: HTMLElement;
   private loadingEl: HTMLElement;
+  private synthesizeBtn!: HTMLButtonElement;
+  private latencyBadgeEl!: HTMLElement;
   private open_ = false;
   private cards: DraftCard[] = [];
   private intermissionMode = false;
+
+  private synthesisStartTime = 0;
+  private timerIntervalId: number | null = null;
+  private lastDurationMs: number | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
@@ -215,12 +221,20 @@ export class DraftModal {
       white-space:nowrap;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;
     `;
 
+    this.latencyBadgeEl = document.createElement('span');
+    this.latencyBadgeEl.style.cssText = `
+      font-size:11px;font-family:monospace;color:#94a3b8;background:rgba(255,255,255,0.05);
+      padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);
+      display:none;flex-shrink:0;margin-right:8px;
+    `;
+
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
     closeBtn.style.cssText = this.btnStyle();
     closeBtn.onclick = () => this.close();
     header.appendChild(title);
     header.appendChild(this.apiStatusPill);
+    header.appendChild(this.latencyBadgeEl);
     header.appendChild(closeBtn);
 
     this.apiWarningBanner = document.createElement('div');
@@ -267,13 +281,13 @@ export class DraftModal {
       if (e.key === 'Enter') void this.synthesize();
     });
 
-    const synthBtn = document.createElement('button');
-    synthBtn.textContent = 'Synthesize';
-    synthBtn.style.cssText = this.btnStyle(true);
-    synthBtn.onclick = () => void this.synthesize();
+    this.synthesizeBtn = document.createElement('button');
+    this.synthesizeBtn.textContent = 'Synthesize';
+    this.synthesizeBtn.style.cssText = this.btnStyle(true);
+    this.synthesizeBtn.onclick = () => void this.synthesize();
 
     promptRow.appendChild(this.promptInput);
-    promptRow.appendChild(synthBtn);
+    promptRow.appendChild(this.synthesizeBtn);
 
     this.chipsRow = document.createElement('div');
     this.chipsRow.style.cssText =
@@ -418,6 +432,7 @@ export class DraftModal {
   }
 
   close(): void {
+    this.clearSynthesisTimer();
     this.open_ = false;
     this.overlay.style.opacity = '0';
     this.panel.style.transform = 'scale(0.97)';
@@ -518,6 +533,21 @@ export class DraftModal {
   private clearSynthesisWarning(): void {
     this.apiWarningBanner.style.display = 'none';
     this.apiWarningBanner.textContent = '';
+  }
+
+  private clearSynthesisTimer(resetButton = true): void {
+    if (this.timerIntervalId !== null) {
+      clearInterval(this.timerIntervalId);
+      this.timerIntervalId = null;
+    }
+    if (resetButton) {
+      this.synthesizeBtn.textContent = 'Synthesize';
+      this.synthesizeBtn.disabled = false;
+    }
+  }
+
+  private formatDuration(ms: number): string {
+    return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
   }
 
   private renderLoadoutOverview(): void {
@@ -740,7 +770,17 @@ export class DraftModal {
     this.loadingEl.textContent = 'Synthesizing...';
     this.cardsContainer.innerHTML = '';
 
+    this.synthesisStartTime = performance.now();
+    this.latencyBadgeEl.style.display = 'none';
+    this.synthesizeBtn.disabled = true;
+    this.clearSynthesisTimer(false);
+    this.timerIntervalId = window.setInterval(() => {
+      const elapsedSec = ((performance.now() - this.synthesisStartTime) / 1000).toFixed(1);
+      this.synthesizeBtn.textContent = `Synthesizing... (${elapsedSec}s)`;
+    }, 50);
+
     try {
+      await new Promise((r) => setTimeout(r, 2000)); // TEMP-VERIFICATION-DELAY
       const loadout = this.callbacks.getLoadout();
       const category =
         this.mode === 'EVOLVE_EXISTING' && this.evolutionContext
@@ -771,6 +811,13 @@ export class DraftModal {
       this.renderApiStatusPill();
       this.renderResultCards();
     } finally {
+      this.clearSynthesisTimer();
+      const duration = Math.round(performance.now() - this.synthesisStartTime);
+      this.lastDurationMs = duration;
+      if (this.open_) {
+        this.latencyBadgeEl.textContent = `⏱ ${this.formatDuration(duration)}`;
+        this.latencyBadgeEl.style.display = 'inline-block';
+      }
       this.loadingEl.style.display = 'none';
     }
   }
