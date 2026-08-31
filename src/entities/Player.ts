@@ -30,6 +30,8 @@ export class Player extends Entity {
   inputMove: Vector2D;
   aimTarget: Vector2D;
   slotCastFlags: BoolSlotTuple;
+  /** Phase 2 lazy compilation: true while a slot's AbilitySchema is being synthesized in the background. */
+  slotCompiling: BoolSlotTuple;
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -52,6 +54,7 @@ export class Player extends Entity {
     this.inputMove = Vector2D.zero();
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
     this.slotCastFlags = [false, false, false, false, false];
+    this.slotCompiling = [false, false, false, false, false];
   }
 
   setAbility(slotIndex: number, ability: AbilitySchema | null): void {
@@ -68,7 +71,18 @@ export class Player extends Entity {
 
   isSlotReady(slotIndex: number): boolean {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    if (this.slotCompiling[slotIndex]) return false;
     return this.abilities[slotIndex] !== null && this.cooldownTimersMs[slotIndex] <= 0;
+  }
+
+  setSlotCompiling(slotIndex: number, compiling: boolean): void {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
+    this.slotCompiling[slotIndex] = compiling;
+  }
+
+  isSlotCompiling(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    return this.slotCompiling[slotIndex];
   }
 
   triggerSlotCooldown(slotIndex: number): void {
@@ -178,6 +192,7 @@ export class Player extends Entity {
     this.accel = Vector2D.zero();
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
+    this.slotCompiling = [false, false, false, false, false];
     this.clearCastInputs();
   }
 

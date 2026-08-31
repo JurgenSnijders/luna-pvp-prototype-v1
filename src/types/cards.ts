@@ -147,30 +147,37 @@ export function validatePassiveModifier(val: unknown): PassiveModifierPayload | 
 
 export function validateDraftCard(val: unknown): DraftCard | null {
   if (!isObject(val)) return null;
-  if (!isString(val.id) || !isString(val.title) || !isString(val.tagline)) return null;
+
+  // Stage 1 (metadata-only) responses use "name" instead of "title".
+  const title = isString(val.title) ? val.title : isString(val.name) ? val.name : null;
+  if (!isString(val.id) || !title || !isString(val.tagline)) return null;
   if (!isString(val.description)) return null;
-  if (!isString(val.rarity) || !RARITIES.has(val.rarity)) return null;
-  if (!isString(val.type) || !CARD_TYPES.has(val.type)) return null;
-  if (!isNumber(val.budgetCost)) return null;
+
+  // rarity/type/budgetCost are optional for lightweight metadata cards — default them
+  // instead of rejecting, since physics/scoring data may not exist yet (Stage 1 draft).
+  const rarity: CardRarity =
+    isString(val.rarity) && RARITIES.has(val.rarity) ? (val.rarity as CardRarity) : 'COMMON';
+  const type: CardType =
+    isString(val.type) && CARD_TYPES.has(val.type) ? (val.type as CardType) : 'ACTIVE_ABILITY';
+  const budgetCost = isNumber(val.budgetCost) ? val.budgetCost : 0;
 
   const card: DraftCard = {
     id: val.id,
-    title: val.title,
+    title,
     tagline: val.tagline,
     description: val.description,
-    rarity: val.rarity as CardRarity,
-    type: val.type as CardType,
-    budgetCost: val.budgetCost,
+    rarity,
+    type,
+    budgetCost,
   };
 
-  if (val.type === 'ACTIVE_ABILITY') {
-    if (val.abilityPayload === undefined) return null;
+  if (type === 'ACTIVE_ABILITY' && val.abilityPayload !== undefined) {
     const ability = validateAbilitySchema(val.abilityPayload);
     if (!ability) return null;
     card.abilityPayload = ability;
   }
 
-  if (val.type === 'PASSIVE_UPGRADE') {
+  if (type === 'PASSIVE_UPGRADE') {
     if (!Array.isArray(val.passivePayload)) return null;
     const passives: PassiveModifierPayload[] = [];
     for (const p of val.passivePayload) {

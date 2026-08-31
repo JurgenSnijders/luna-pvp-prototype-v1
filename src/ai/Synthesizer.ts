@@ -24,11 +24,15 @@ export const STORAGE_KEY_API = 'LUNA_AI_API_KEY';
 export const STORAGE_KEY_BASE_URL = 'LUNA_AI_BASE_URL';
 export const STORAGE_KEY_MODEL = 'LUNA_AI_MODEL';
 
-export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 const LEGACY_MODELS = new Set(['gpt-4o-mini', 'gemini-2.0-flash']);
-const LEGACY_BASE_URL = 'https://api.openai.com/v1';
+// Old OpenAI-compatible endpoints — migrated to the native Gemini endpoint below.
+const LEGACY_BASE_URLS = new Set([
+  'https://api.openai.com/v1',
+  'https://generativelanguage.googleapis.com/v1beta/openai',
+]);
 
 export interface AiSettings {
   apiKey: string;
@@ -72,7 +76,7 @@ export function getAiSettings(): AiSettings {
       : storedModel;
 
   const baseUrl =
-    !storedBaseUrl || normalizedBaseUrl === LEGACY_BASE_URL
+    !storedBaseUrl || LEGACY_BASE_URLS.has(normalizedBaseUrl)
       ? DEFAULT_BASE_URL
       : storedBaseUrl;
 
@@ -89,39 +93,20 @@ export function setAiSettings(settings: AiSettings): void {
   localStorage.setItem(STORAGE_KEY_MODEL, settings.model);
 }
 
-const SCHEMA_REFERENCE = `AbilitySchema trajectories (use ONLY these): LINEAR, RETURN_TO_SOURCE, ORBIT_ANCHOR, HOMING_SLERP, DISCONTINUOUS_BLINK
-Field types: RADIAL_IMPULSE, VORTEX_TANGENT, FRICTION_OVERRIDE, MASS_ATTRACTOR
-Triggers: ON_CAST, ON_TICK, ON_HIT, ON_EXPIRY, ON_RETURN
-Actions: ADD_INSTABILITY, APPLY_IMPULSE, SPAWN_FIELD, SPAWN_PROJECTILE (with projectileTrajectory + optional emitter { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL, aimOffsetDeg }), TELEPORT, MODIFY_STAT
-Emitter distributions: FAN, RADIAL, RANDOM_CONE, PARALLEL
-Visuals REQUIRED on abilityPayload: { color: hex string, size: number (4-32), projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
-Style guidance: BEAM for lasers/railguns (thin size 4-8, NEON_RIBBON trail); SHURIKEN for spinning blades; CHAOS_LIGHTNING for erratic electric; PULSING_ORB for gravity/void bombs (size 16-32); DISC for default bolts. Match size to style. Use ICE_BURST for frost impacts, MINI_NUKE for detonations.
+const FORGE_SYSTEM_PROMPT = `You are a concept ideation engine for a 2D physics kinetic arena game.
+You generate lightweight METADATA ONLY for 3 ability concepts — never physics, triggers, or schema data (that is generated in a later stage).
+Output ONLY valid JSON with this exact shape: { "cards": [ Card, Card, Card ] }
 
-SPAWN PATH (required): every ACTIVE ability MUST spawn something on cast via ONE of:
-1. Root trajectory: abilityPayload.trajectory { type, speed, maxRange } — Interpreter fires this projectile immediately
-2. ON_CAST + SPAWN_PROJECTILE { projectileTrajectory, emitter }
-3. ON_CAST + SPAWN_FIELD or TELEPORT (utility/mobility only)
-Do NOT put the only projectile on ON_HIT/ON_EXPIRY without a root trajectory — those triggers never fire if nothing is spawned.
-Optional root emitter alongside trajectory: emitter { count, spreadDeg, distribution }.
-SPAWN_CHILD_PROJECTILE is invalid — use SPAWN_PROJECTILE.
+Each Card must contain ONLY these fields:
+- id (string, short slug)
+- name (string, ability name)
+- tagline (short string, 2-4 words)
+- description (concise string, 1 sentence, under 80 characters)
+- category (string, the requested SkillCategory)
 
-Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
-Passive ops: ADD, MULTIPLY`;
+Do NOT include abilityPayload, triggers, trajectory, visuals, rarity, budgetCost, or any other field.
 
-const FORGE_SYSTEM_PROMPT = `You are a 2D physics ability synthesizer for a top-down kinetic arena game.
-Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
-
-Each DraftCard must have:
-- id, title, tagline, description (strings)
-- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
-- type: "ACTIVE_ABILITY" (all 3 cards must be ACTIVE_ABILITY for forge mode)
-- category: the requested SkillCategory
-- budgetCost: number
-- abilityPayload: AbilitySchema with id, name, cooldownMs, recoilKick, visuals, trajectory (or ON_CAST SPAWN_PROJECTILE), triggers[]
-
-${SCHEMA_REFERENCE}
-
-Category design constraints:
+Category design flavor:
 - PRIMARY: rapid-fire skillshots, low payload, short cooldown pacing
 - SECONDARY: medium area/skillshot pressure
 - UTILITY: crowd control, zones, friction patches, vortices
@@ -129,33 +114,26 @@ Category design constraints:
 - MOBILITY: displacement, teleports, dashes, escapes — prioritize movement over damage
 
 Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.
-Pick projectileStyle from the player prompt (not always DISC) — lasers get BEAM, blades get SHURIKEN, lightning gets CHAOS_LIGHTNING, gravity bombs get PULSING_ORB.
-Return exactly 3 distinct ACTIVE_ABILITY cards tuned for the requested category.`;
+Return exactly 3 distinct ability concepts tuned for the requested category.`;
 
-const EVOLUTION_SYSTEM_PROMPT = `You are an ability evolver for a 2D physics kinetic arena game.
-You receive a base AbilitySchema JSON and a player mutation prompt.
-Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
+const EVOLUTION_SYSTEM_PROMPT = `You are a concept ideation engine evolving an existing ability for a 2D physics kinetic arena game.
+You receive a base ability name and a player mutation request.
+You generate lightweight METADATA ONLY for 3 evolved concepts — never physics, triggers, or schema data (that is generated in a later stage).
+Output ONLY valid JSON with this exact shape: { "cards": [ Card, Card, Card ] }
 
-Each DraftCard must have:
-- id, title, tagline, description (strings)
-- rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
-- type: "ACTIVE_ABILITY"
-- category: the provided SkillCategory
-- evolutionDiff: string[] summarizing mutations (e.g. "+ SPAWN_PROJECTILE FAN×3", "Trajectory → HOMING_SLERP")
-- budgetCost: number
-- abilityPayload: mutated AbilitySchema
+Each Card must contain ONLY these fields:
+- id (string, short slug)
+- name (string, evolved ability name — preserve the base name's stem/identity)
+- tagline (short string, 2-4 words)
+- description (concise string, 1 sentence, under 80 characters, describing the mutation)
+- category (string, the provided SkillCategory)
 
-${SCHEMA_REFERENCE}
+Do NOT include abilityPayload, evolutionDiff, triggers, trajectory, rarity, budgetCost, or any other field.
 
 Rules:
-- Preserve the core identity of the base spell (name stem, primary trajectory when possible)
-- Layer on the requested mutations distinctly across the 3 variants
-- Variant A: cluster / multi-payload (SPAWN_PROJECTILE with emitter count>1 or pierce)
-- Variant B: spatial field / trap (SPAWN_FIELD on ON_HIT or ON_EXPIRY)
-- Variant C: kinematic / motion augment (RETURN_TO_SOURCE, HOMING_SLERP, TELEPORT, or recoil dash)
-- Evolve projectileStyle when the mutation implies a visual change (e.g. laser → BEAM, explode → PULSING_ORB + MINI_NUKE)
-- Do NOT invent invalid action or trajectory types
-- Return exactly 3 ACTIVE_ABILITY evolution variants`;
+- Preserve the core identity of the base spell (name stem) across all 3 variants
+- Layer the requested mutation distinctly across the 3 variants (e.g. cluster/multi-payload, spatial field/trap, kinematic/motion augment)
+Return exactly 3 distinct evolved ability concepts.`;
 
 const PASSIVE_SYSTEM_PROMPT = `You are a passive upgrade synthesizer for a 2D physics kinetic arena game.
 Output ONLY valid JSON with this exact shape: { "cards": [ DraftCard, DraftCard, DraftCard ] }
@@ -167,10 +145,35 @@ Each DraftCard must have:
 - budgetCost: number
 - passivePayload: array of { stat, op, value }
 
+Keep description fields concise (1 sentence, under 80 characters). Prioritize valid JSON schema over prose.
+
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
 Passive ops: ADD, MULTIPLY
 
 Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
+
+// Phase 2 (lazy compilation): single-ability physics compiler. Unlike FORGE/EVOLUTION,
+// this targets exactly one already-chosen concept and returns the full AbilitySchema.
+const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
+You receive ONE ability concept (name, tagline, description, category) and must output ONE JSON object matching the AbilitySchema definition below.
+Output ONLY the JSON object — NOT an array, NOT wrapped in a "cards" key.
+
+AbilitySchema fields:
+- id (string), name (string), cooldownMs (number), recoilKick (number)
+- trajectory (optional root trajectory, fires immediately on cast): { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK, speed, maxRange }
+- rootEmitter (optional, alongside trajectory): { count, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL }
+- triggers: array of { trigger: ON_CAST|ON_TICK|ON_HIT|ON_EXPIRY|ON_RETURN, actions: [...] }
+- visuals (required): { color: hex string, size: number (4-32), projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
+
+Action types: ADD_INSTABILITY { amount }, APPLY_IMPULSE { baseForce }, SPAWN_FIELD { field: { fieldType: RADIAL_IMPULSE|VORTEX_TANGENT|FRICTION_OVERRIDE|MASS_ATTRACTOR, radius, strength, durationMs } }, SPAWN_PROJECTILE { projectileTrajectory, emitter }, MODIFY_STAT, TELEPORT { distance }
+
+SPAWN PATH (required): the ability MUST spawn something on cast via ONE of:
+1. Root trajectory (fires immediately on cast)
+2. ON_CAST trigger + SPAWN_PROJECTILE action
+3. ON_CAST + SPAWN_FIELD or TELEPORT (utility/mobility only)
+Do NOT put the only projectile on ON_HIT/ON_EXPIRY without a root trajectory — those triggers never fire if nothing is spawned.
+
+Match projectileStyle, trailType, and impactVfx to the concept's tagline/description. Keep the physics kinetic: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.`;
 
 function balanceCard(card: DraftCard, category: SkillCategory = 'SECONDARY'): DraftCard {
   const balanced = { ...card };
@@ -243,23 +246,31 @@ function diagnoseDraftCardsValidation(val: unknown): string[] {
     }
     const c = raw as Record<string, unknown>;
     if (typeof c.id !== 'string') reasons.push(`card[${i}]:missing_id`);
-    if (typeof c.title !== 'string') reasons.push(`card[${i}]:missing_title`);
+    // Stage 1 metadata cards use "name" instead of "title" — either satisfies the check.
+    if (typeof c.title !== 'string' && typeof c.name !== 'string') {
+      reasons.push(`card[${i}]:missing_title`);
+    }
     if (typeof c.tagline !== 'string') reasons.push(`card[${i}]:missing_tagline`);
     if (typeof c.description !== 'string') reasons.push(`card[${i}]:missing_description`);
-    if (typeof c.rarity !== 'string' || !rarities.has(c.rarity)) {
+    // rarity/type/budgetCost are optional now (defaulted by validateDraftCard) — only
+    // flag them when present-but-invalid, not merely absent.
+    if (c.rarity !== undefined && (typeof c.rarity !== 'string' || !rarities.has(c.rarity))) {
       reasons.push(`card[${i}]:invalid_rarity=${String(c.rarity)}`);
     }
-    if (typeof c.type !== 'string' || !cardTypes.has(c.type)) {
+    if (c.type !== undefined && (typeof c.type !== 'string' || !cardTypes.has(c.type))) {
       reasons.push(`card[${i}]:invalid_type=${String(c.type)}`);
     }
-    if (typeof c.budgetCost !== 'number' || !Number.isFinite(c.budgetCost)) {
+    if (
+      c.budgetCost !== undefined &&
+      (typeof c.budgetCost !== 'number' || !Number.isFinite(c.budgetCost))
+    ) {
       reasons.push(`card[${i}]:invalid_budgetCost=${String(c.budgetCost)}`);
     }
 
-    if (c.type === 'ACTIVE_ABILITY') {
-      if (c.abilityPayload === undefined) {
-        reasons.push(`card[${i}]:missing_abilityPayload`);
-      } else if (!validateAbilitySchema(c.abilityPayload)) {
+    // abilityPayload is optional for metadata-only forge/evolve cards — only diagnose
+    // it when present but malformed, not merely absent.
+    if (c.type === 'ACTIVE_ABILITY' && c.abilityPayload !== undefined) {
+      if (!validateAbilitySchema(c.abilityPayload)) {
         const payload = c.abilityPayload as Record<string, unknown>;
         reasons.push(
           `card[${i}]:abilityPayload_invalid keys=${Object.keys(payload ?? {}).join(',')}`,
@@ -818,7 +829,10 @@ function repairAbilityPayload(payload: unknown): unknown {
   return obj;
 }
 
-function repairDraftCard(card: unknown): unknown {
+const METADATA_RARITY_CYCLE: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
+const VALID_CARD_RARITIES = new Set(['COMMON', 'RARE', 'EPIC', 'CHAOTIC']);
+
+function repairDraftCard(card: unknown, index = 0): unknown {
   if (card === null || typeof card !== 'object') return card;
   const obj = { ...(card as Record<string, unknown>) };
   if (typeof obj.type === 'string') {
@@ -827,8 +841,14 @@ function repairDraftCard(card: unknown): unknown {
   if (typeof obj.rarity === 'string') {
     obj.rarity = obj.rarity.toUpperCase();
   }
+  if (typeof obj.rarity !== 'string' || !VALID_CARD_RARITIES.has(obj.rarity)) {
+    // Metadata-only cards from the token-diet prompts omit rarity — cycle for visual variety
+    // instead of collapsing all 3 drafts to the same default.
+    obj.rarity = METADATA_RARITY_CYCLE[index % METADATA_RARITY_CYCLE.length];
+  }
   if (typeof obj.budgetCost !== 'number' || !Number.isFinite(obj.budgetCost)) {
-    obj.budgetCost = ensureFiniteNumber(obj.budgetCost, 100);
+    // No physics payload yet to score — 0 signals "unscored" rather than implying a real budget.
+    obj.budgetCost = ensureFiniteNumber(obj.budgetCost, 0);
   }
   if (obj.abilityPayload !== undefined) {
     const repaired = repairAbilityPayload(obj.abilityPayload);
@@ -902,11 +922,11 @@ function normalizeLLMResponse(parsed: unknown): unknown {
   const root = coerced as Record<string, unknown>;
 
   if (Array.isArray(root.cards)) {
-    root.cards = root.cards.map(repairDraftCard);
+    root.cards = root.cards.map((c, i) => repairDraftCard(c, i));
     return root;
   }
   if (Array.isArray(coerced)) {
-    return coerced.map(repairDraftCard);
+    return coerced.map((c, i) => repairDraftCard(c, i));
   }
 
   return coerced;
@@ -1061,6 +1081,84 @@ function tryParseLLMJson(content: string): { ok: true; value: unknown } | { ok: 
   return { ok: false, error: `${lastError}${jsonErrorContext(lastCandidate, lastError)}` };
 }
 
+interface NativeGeminiResult {
+  ok: boolean;
+  text: string;
+  error: string | null;
+}
+
+/**
+ * Shared native-Gemini `generateContent` transport used by both the 3-card draft path
+ * (`callLLM`) and the single-card compiler (`compileAbilityPayload`). Callers own their own
+ * JSON parsing/validation — this only handles the fetch, timeout, and raw text extraction.
+ */
+async function postNativeGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AiSettings,
+  options: { timeoutMs: number; maxOutputTokens: number; logTag: string },
+): Promise<NativeGeminiResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+
+  try {
+    // Native Gemini host is a hard architectural constraint — settings.baseUrl is
+    // intentionally ignored here (it only drives legacy/inspector display concerns).
+    const model = settings.model.trim() || DEFAULT_MODEL;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    const apiStartTime = performance.now();
+    console.log(`[Synthesizer] ${options.logTag} Initiating Gemini API request...`);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': settings.apiKey.trim(),
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: options.maxOutputTokens,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    const ttfb = performance.now() - apiStartTime;
+    console.log(`[Synthesizer] ${options.logTag} Time To First Byte (TTFB): ${ttfb.toFixed(1)}ms`);
+
+    if (!response.ok) {
+      const body = (await response.text()).slice(0, 180);
+      return { ok: false, text: '', error: `HTTP ${response.status}: ${body || response.statusText}` };
+    }
+
+    const data = await response.json();
+
+    const totalTime = performance.now() - apiStartTime;
+    console.log(`[Synthesizer] ${options.logTag} Total API Latency: ${totalTime.toFixed(1)}ms`);
+
+    let content = coerceMessageContent(data.candidates?.[0]?.content?.parts);
+    if (!content) {
+      return { ok: false, text: '', error: 'Invalid LLM response: empty content' };
+    }
+    content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    return { ok: true, text: content, error: null };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return { ok: false, text: '', error: `Request timed out (${options.timeoutMs}ms)` };
+    }
+    if (err instanceof Error) {
+      return { ok: false, text: '', error: err.message };
+    }
+    return { ok: false, text: '', error: 'Unknown API error' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function callLLM(
   systemPrompt: string,
   userPrompt: string,
@@ -1070,105 +1168,37 @@ async function callLLM(
   lastCallSucceeded = false;
   lastApiError = null;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const result = await postNativeGemini(systemPrompt, userPrompt, settings, {
+    timeoutMs: 8000,
+    maxOutputTokens: 1024,
+    logTag: '[draft]',
+  });
 
-  try {
-    const cleanBaseUrl = settings.baseUrl.replace(/\/+$/, '');
-    const endpoint = `${cleanBaseUrl}/chat/completions`;
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${settings.apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model: settings.model.trim() || DEFAULT_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: 8192,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const body = (await response.text()).slice(0, 180);
-      lastApiError = `HTTP ${response.status}: ${body || response.statusText}`;
-      return null;
-    }
-
-    const data = await response.json();
-    let content = coerceMessageContent(data.choices?.[0]?.message?.content);
-    if (!content) {
-      const altContent = coerceMessageContent(data.candidates?.[0]?.content?.parts);
-      if (altContent) content = altContent;
-    }
-    if (!content) {
-      lastApiError = 'Invalid LLM response: empty content';
-      return null;
-    }
-    content = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-
-    const parseResult = tryParseLLMJson(content);
-    if (!parseResult.ok) {
-      lastApiError = `Invalid LLM response: JSON parse failed (${parseResult.error})`;
-      return null;
-    }
-    const parsed = parseResult.value;
-
-    const normalized = normalizeLLMResponse(parsed);
-    let validated = validateDraftCards(normalized);
-    if (!validated) {
-      const diagnosis = diagnoseDraftCardsValidation(parsed);
-      const normalizedDiagnosis = diagnoseDraftCardsValidation(normalized);
-      const failureSummary = summarizeValidationFailure(diagnosis, normalizedDiagnosis);
-      lastApiError = `Invalid LLM response: card validation failed (${failureSummary})`;
-      return null;
-    }
-
-    lastCallSucceeded = true;
-    lastApiError = null;
-    return balanceCards(validated, category);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      lastApiError = 'Request timed out (8s)';
-    } else if (err instanceof Error) {
-      lastApiError = err.message;
-    } else {
-      lastApiError = 'Unknown API error';
-    }
+  if (!result.ok) {
+    lastApiError = result.error;
     return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function sanitizeAbilityForLLM(schema: AbilitySchema): AbilitySchema {
-  const raw: AbilitySchema = {
-    id: schema.id,
-    name: schema.name,
-    cooldownMs: schema.cooldownMs,
-    recoilKick: schema.recoilKick,
-    triggers: structuredClone(schema.triggers),
-  };
-  if (schema.trajectory) {
-    raw.trajectory = structuredClone(schema.trajectory);
   }
 
-  const validated = validateAbilitySchema(raw);
-  if (validated) return validated;
+  const parseResult = tryParseLLMJson(result.text);
+  if (!parseResult.ok) {
+    lastApiError = `Invalid LLM response: JSON parse failed (${parseResult.error})`;
+    return null;
+  }
+  const parsed = parseResult.value;
 
-  return {
-    id: schema.id,
-    name: schema.name,
-    cooldownMs: schema.cooldownMs,
-    recoilKick: schema.recoilKick,
-    triggers: [],
-  };
+  const normalized = normalizeLLMResponse(parsed);
+  const validated = validateDraftCards(normalized);
+  if (!validated) {
+    const diagnosis = diagnoseDraftCardsValidation(parsed);
+    const normalizedDiagnosis = diagnoseDraftCardsValidation(normalized);
+    const failureSummary = summarizeValidationFailure(diagnosis, normalizedDiagnosis);
+    lastApiError = `Invalid LLM response: card validation failed (${failureSummary})`;
+    return null;
+  }
+
+  lastCallSucceeded = true;
+  lastApiError = null;
+  return balanceCards(validated, category);
 }
 
 async function fetchLLMForge(
@@ -1182,7 +1212,7 @@ async function fetchLLMForge(
 Target category: ${category} (${getCategoryLabel(category)}) → slot ${slot}
 ${loadoutSummary(loadout)}
 
-Generate 3 thematic ACTIVE_ABILITY draft cards for this category.`;
+Generate 3 thematic ability concepts for this category.`;
 
   return callLLM(FORGE_SYSTEM_PROMPT, userPrompt, settings, category);
 }
@@ -1193,16 +1223,14 @@ async function fetchLLMEvolution(
   loadout: PlayerLoadout,
   settings: AiSettings,
 ): Promise<DraftCard[] | null> {
-  const sanitized = sanitizeAbilityForLLM(context.baseAbility);
-  const userPrompt = `Base Ability:
-${JSON.stringify(sanitized, null, 2)}
+  const userPrompt = `Base Ability Name: "${context.baseAbility.name}"
 
 User Mutation Request: ${prompt}
 
 Category: ${context.category} (${getCategoryLabel(context.category)}) → slot ${context.slotKey}
 ${loadoutSummary(loadout)}
 
-Generate 3 distinct evolved ACTIVE_ABILITY variants that preserve core identity while applying the mutation.`;
+Generate 3 distinct evolved ability concepts that preserve the base name's identity while applying the mutation.`;
 
   return callLLM(EVOLUTION_SYSTEM_PROMPT, userPrompt, settings, context.category);
 }
@@ -2228,4 +2256,111 @@ export async function synthesizeCards(
   loadout: PlayerLoadout,
 ): Promise<DraftCard[]> {
   return synthesizeAbility(prompt, 'SECONDARY', loadout);
+}
+
+function buildCompileUserPrompt(
+  card: DraftCard,
+  baseAbility: AbilitySchema | undefined,
+  category: SkillCategory,
+): string {
+  const lines = [
+    'Ability Concept:',
+    `- name: "${card.title}"`,
+    `- tagline: "${card.tagline}"`,
+    `- description: "${card.description}"`,
+    `- category: ${category}`,
+  ];
+  if (baseAbility) {
+    lines.push(`- evolving from base ability named: "${baseAbility.name}"`);
+  }
+  lines.push('', 'Output the single AbilitySchema JSON object for this concept.');
+  return lines.join('\n');
+}
+
+/**
+ * Offline heuristic used when no API key is configured, the compile request fails/times
+ * out, or the parsed response fails validation. Reuses the existing forge/evolution
+ * generators (never a bare default) so a lazily-compiled slot is never left unplayable —
+ * only the id/name are overwritten to match the chosen card.
+ */
+function fallbackCompiledSchema(
+  card: DraftCard,
+  baseAbility: AbilitySchema | undefined,
+  category: SkillCategory,
+): AbilitySchema {
+  let source: AbilitySchema | undefined;
+
+  if (baseAbility) {
+    const evolved = generateOfflineEvolution(card.description || card.tagline || 'mutation', {
+      baseAbility,
+      slotKey: CATEGORY_SLOT_MAP[category],
+      category,
+    });
+    source = evolved[0]?.abilityPayload;
+  } else {
+    const forged = generateOfflineForge(
+      `${card.title} ${card.tagline} ${card.description}`,
+      category,
+    );
+    source = forged[0]?.abilityPayload ?? forged[1]?.abilityPayload;
+  }
+
+  const compiled = source ? structuredClone(source) : sanitizeAbilitySchema({}, category);
+  compiled.id = card.id || compiled.id;
+  compiled.name = card.title || compiled.name;
+  return sanitizeAbilitySchema(compiled, category);
+}
+
+/**
+ * Phase 2 lazy compilation: compiles the full physics `AbilitySchema` for exactly ONE
+ * already-chosen card. Deliberately does NOT route through `callLLM` (which always expects
+ * and validates 3 `DraftCard`s) — this is a separate native-Gemini call with its own prompt,
+ * a tighter 5s timeout, and a smaller/targeted parse+repair path for a single schema object.
+ * Always fulfills with a playable schema; network/parse/validation failures fall back to an
+ * offline heuristic so the calling slot can never stay stuck "compiling" forever.
+ */
+export async function compileAbilityPayload(
+  card: DraftCard,
+  baseAbility?: AbilitySchema,
+): Promise<AbilitySchema> {
+  const category = card.category ?? 'SECONDARY';
+
+  // Offline heuristic / pre-compiled cards already carry a full payload — skip the network.
+  if (card.abilityPayload) {
+    return structuredClone(card.abilityPayload);
+  }
+
+  const settings = getAiSettings();
+  if (!settings.apiKey.trim()) {
+    return fallbackCompiledSchema(card, baseAbility, category);
+  }
+
+  const userPrompt = buildCompileUserPrompt(card, baseAbility, category);
+  const result = await postNativeGemini(COMPILER_SYSTEM_PROMPT, userPrompt, settings, {
+    timeoutMs: 5000,
+    maxOutputTokens: 2048,
+    logTag: '[compile]',
+  });
+
+  if (!result.ok) {
+    console.warn(`[Synthesizer] compileAbilityPayload fallback (${result.error})`);
+    return fallbackCompiledSchema(card, baseAbility, category);
+  }
+
+  const parseResult = tryParseLLMJson(result.text);
+  if (!parseResult.ok) {
+    console.warn(`[Synthesizer] compileAbilityPayload parse failed (${parseResult.error})`);
+    return fallbackCompiledSchema(card, baseAbility, category);
+  }
+
+  const normalized = deepNormalizeLLMValue(parseResult.value);
+  const repaired = repairAbilityPayload(normalized);
+  const sanitized = sanitizeAbilitySchema(repaired, category);
+
+  if (!validateAbilitySchema(sanitized)) {
+    console.warn('[Synthesizer] compileAbilityPayload validation failed, using fallback');
+    return fallbackCompiledSchema(card, baseAbility, category);
+  }
+
+  return sanitized;
 }

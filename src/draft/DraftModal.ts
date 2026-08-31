@@ -780,7 +780,6 @@ export class DraftModal {
     }, 50);
 
     try {
-      await new Promise((r) => setTimeout(r, 2000)); // TEMP-VERIFICATION-DELAY
       const loadout = this.callbacks.getLoadout();
       const category =
         this.mode === 'EVOLVE_EXISTING' && this.evolutionContext

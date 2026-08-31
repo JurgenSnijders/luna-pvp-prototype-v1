@@ -13,6 +13,7 @@ interface SlotElements {
   badge: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
+  compileOverlay: HTMLElement;
   countdown: HTMLElement;
   accent: string;
 }
@@ -87,6 +88,11 @@ export class ActionBarHUD {
       transition: height 0.05s linear;
     `;
 
+    const compileOverlay = document.createElement('div');
+    compileOverlay.style.cssText = `
+      position: absolute; inset: 0; display: none; pointer-events: none;
+    `;
+
     const countdown = document.createElement('div');
     countdown.style.cssText = `
       position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
@@ -97,6 +103,7 @@ export class ActionBarHUD {
     root.appendChild(badge);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
+    root.appendChild(compileOverlay);
     root.appendChild(countdown);
 
     root.addEventListener('dragover', (e) => {
@@ -130,16 +137,18 @@ export class ActionBarHUD {
       if (!ability) this.callbacks.onEmptySlotClick(slotIndex);
     });
 
-    return { root, badge, label, cooldownOverlay, countdown, accent: accent.color };
+    return { root, badge, label, cooldownOverlay, compileOverlay, countdown, accent: accent.color };
   }
 
   update(player: Player): void {
+    const now = performance.now();
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       const ability = player.getAbility(i);
       const ratio = player.getSlotCooldownRatio(i);
       const remaining = player.getSlotCooldownRemainingMs(i);
       const ready = player.isSlotReady(i);
+      const compiling = player.isSlotCompiling(i);
       const accent = slot.accent;
 
       if (ability) {
@@ -157,6 +166,25 @@ export class ActionBarHUD {
         slot.root.style.borderStyle = 'dashed';
       }
 
+      if (compiling) {
+        // Background synthesis in flight — suppress the real cooldown fill/ready-glow and
+        // show an animated pulse instead so the player can see the slot isn't just idle.
+        slot.cooldownOverlay.style.height = '0%';
+
+        const pulse = (Math.sin(now / 200) + 1) / 2; // 0..1
+        slot.compileOverlay.style.display = 'block';
+        slot.compileOverlay.style.background = `rgba(255, 191, 0, ${0.2 + pulse * 0.3})`;
+        slot.root.style.borderColor = `rgba(255, 191, 0, ${0.55 + pulse * 0.45})`;
+        slot.root.style.boxShadow = `0 0 ${8 + pulse * 8}px rgba(255, 191, 0, ${0.35 + pulse * 0.35})`;
+
+        slot.countdown.style.display = 'flex';
+        slot.countdown.style.fontSize = '8px';
+        slot.countdown.textContent = 'COMPILING…';
+        continue;
+      }
+
+      slot.compileOverlay.style.display = 'none';
+      slot.countdown.style.fontSize = '13px';
       slot.cooldownOverlay.style.height = `${ratio * 100}%`;
 
       if (remaining > 0) {

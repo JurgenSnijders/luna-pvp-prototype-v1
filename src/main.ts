@@ -1,5 +1,5 @@
-import { generateOfflineDraft } from './ai/Synthesizer';
-import { sanitizeAbilitySchema } from './ai/BudgetEngine';
+import { compileAbilityPayload, generateOfflineDraft } from './ai/Synthesizer';
+import { balanceAbilitySchema, sanitizeAbilitySchema } from './ai/BudgetEngine';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
 import { SpellLibrary } from './devtools/SpellLibrary';
@@ -19,6 +19,7 @@ import { CanvasRenderer, type DebugOptions } from './render/CanvasRenderer';
 import { MatchHUD } from './render/MatchHUD';
 import { ParticleSystem } from './render/ParticleSystem';
 import { ACTION_SLOT_INDEX, type DraftSelection } from './types/cards';
+import type { AbilitySchema } from './types/schema';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -75,6 +76,15 @@ function assignDefaultLoadout(target: Player): void {
   target.setAbility(4, structuredClone(PRESETS['Phase Nova']));
 }
 
+// Phase 2 lazy compilation: per-slot generation counter (module-level, not per-target — the
+// bot draft path always carries a full abilityPayload today, so it never reaches the async
+// branch below). A newer equip on the same slot bumps this, so a slower in-flight compile
+// that resolves later is detected as stale and discarded instead of clobbering the new pick.
+const compileGen: number[] = [0, 0, 0, 0, 0];
+// Applied instead of the ability's real cooldown right after a lazy compile resolves, so the
+// slot has a brief, deliberate "arming" beat rather than snapping instantly to ready.
+const COMPILE_READY_DELAY_MS = 500;
+
 function applyDraftSelection(target: Player, selection: DraftSelection): void {
   const { card, slot } = selection;
 
@@ -85,19 +95,48 @@ function applyDraftSelection(target: Player, selection: DraftSelection): void {
     return;
   }
 
-  if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
-    const ability = sanitizeAbilitySchema(
-      structuredClone(card.abilityPayload),
-      card.category ?? 'SECONDARY',
-    );
-    const slotIndex = ACTION_SLOT_INDEX[slot as keyof typeof ACTION_SLOT_INDEX];
-    if (slotIndex !== undefined) {
-      target.setAbility(slotIndex, ability);
-      if (target === player) {
-        spellLibrary.addSpell(ability);
-      }
+  if (card.type !== 'ACTIVE_ABILITY') return;
+
+  const slotIndex = ACTION_SLOT_INDEX[slot as keyof typeof ACTION_SLOT_INDEX];
+  if (slotIndex === undefined) return;
+  const category = card.category ?? 'SECONDARY';
+
+  if (card.abilityPayload) {
+    const ability = sanitizeAbilitySchema(structuredClone(card.abilityPayload), category);
+    target.setAbility(slotIndex, ability);
+    if (target === player) {
+      spellLibrary.addSpell(ability);
     }
+    return;
   }
+
+  // Token-diet metadata card (no abilityPayload yet): mark the slot compiling, close the
+  // modal instantly (already done by DraftModal.equip), and synthesize the physics schema
+  // in the background so the player can keep moving/casting other slots meanwhile.
+  target.setSlotCompiling(slotIndex, true);
+  const gen = ++compileGen[slotIndex];
+  const baseAbility = target.getAbility(slotIndex) ?? undefined;
+
+  const resolveCompiled = (schema: AbilitySchema): void => {
+    if (compileGen[slotIndex] !== gen) return; // superseded by a newer equip on this slot
+    const ability = balanceAbilitySchema(sanitizeAbilitySchema(schema, category), category);
+    target.setAbility(slotIndex, ability);
+    target.setSlotCompiling(slotIndex, false);
+    target.cooldownTimersMs[slotIndex] = COMPILE_READY_DELAY_MS;
+    target.slotCooldownTotalsMs[slotIndex] = COMPILE_READY_DELAY_MS;
+    if (target === player) {
+      spellLibrary.addSpell(ability);
+    }
+  };
+
+  compileAbilityPayload(card, baseAbility)
+    .then(resolveCompiled)
+    .catch(() => {
+      // compileAbilityPayload already falls back internally and should never reject — this
+      // only guards against the compiling flag getting stuck if it somehow does.
+      if (compileGen[slotIndex] !== gen) return;
+      resolveCompiled(sanitizeAbilitySchema(structuredClone(baseAbility ?? {}), category));
+    });
 }
 
 function resetArena(): void {
