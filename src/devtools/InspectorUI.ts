@@ -28,7 +28,7 @@ import {
   saveGraphicsSettings,
   type GraphicsSettings,
 } from './graphicsSettings';
-import { PRESETS, PRESET_NAMES } from './Presets';
+import { PRESETS, PRESET_GROUPS } from './Presets';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 
@@ -383,11 +383,16 @@ export class InspectorUI {
     const select = document.createElement('select');
     select.style.cssText =
       'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
-    for (const name of PRESET_NAMES) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      select.appendChild(opt);
+    for (const group of PRESET_GROUPS) {
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = group.label;
+      for (const name of group.presetNames) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        optgroup.appendChild(opt);
+      }
+      select.appendChild(optgroup);
     }
 
     const btnRow = document.createElement('div');
