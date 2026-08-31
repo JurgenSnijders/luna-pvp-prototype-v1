@@ -1,54 +1,23 @@
 import type { MatchManager } from '../game/MatchManager';
 import type { ArenaShrink } from '../game/ArenaShrink';
 import type { BotController } from '../entities/BotController';
-import {
-  MAX_COMBATANT_RADIUS,
-  MAX_HEX_RADIUS,
-  MIN_COMBATANT_RADIUS,
-  MIN_HEX_RADIUS,
-  type PhysicsWorld,
-} from '../engine/PhysicsWorld';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { Player } from '../entities/Player';
-import { Dummy } from '../entities/Dummy';
-import { isInsideHex } from '../math/HexMath';
-import { Vector2D } from '../math/Vector2D';
 import type { Interpreter } from '../primitives/Interpreter';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
-import {
-  DEFAULT_BASE_URL,
-  DEFAULT_MODEL,
-  getAiSettings,
-  setAiSettings,
-  synthesizeCards,
-  type AiSettings,
-} from '../ai/Synthesizer';
-import {
-  DEFAULT_GRAPHICS_SETTINGS,
-  applyTierPreset,
-  getEffectiveTier,
-  getGraphicsSettings,
-  saveGraphicsSettings,
-  type GraphicsSettings,
-  type QualityTier,
-} from './graphicsSettings';
-import { perfMonitor } from './PerfMonitor';
-import { setForcedBackend } from '../render/backends/createParticleBackend';
-import { PRESETS, PRESET_GROUPS } from './Presets';
 import { ACTION_SLOT_KEYS } from '../types/cards';
-import { validateAbilitySchema } from '../types/schema';
+import { INSPECTOR_COLLAPSED_STORAGE_KEY } from '../game/settings';
+import { buttonStyle } from './inspector/domHelpers';
+import { buildGraphicsTab } from './inspector/graphicsTab';
+import { buildHarnessTab } from './inspector/harnessTab';
+import { buildJsonTab, type JsonTabRefs } from './inspector/jsonTab';
+import { buildPresetsTab } from './inspector/presetsTab';
+import { buildStatsTab } from './inspector/statsTab';
 import {
-  ARENA_HEX_RADIUS_KEY,
-  COMBATANT_RADIUS_KEY,
-  COOLDOWN_SCALE_KEY,
-  GLOBAL_COOLDOWN_MS_KEY,
-  INSPECTOR_COLLAPSED_STORAGE_KEY,
-  MAX_COOLDOWN_SCALE,
-  MAX_GLOBAL_COOLDOWN_MS,
-  MIN_COOLDOWN_SCALE,
-  MIN_GLOBAL_COOLDOWN_MS,
-  getStoredCooldownScale,
-  getStoredGlobalCooldownMs,
-} from '../game/settings';
+  TELEMETRY_UPDATE_INTERVAL_MS,
+  buildTelemetryDom,
+  type TelemetryRefs,
+} from './inspector/telemetry';
 
 export interface InspectorContext {
   player: Player;
@@ -66,22 +35,6 @@ export interface InspectorContext {
   onRespawnCombatants?: () => void;
 }
 
-interface TelemetryRefs {
-  mode: HTMLElement;
-  match: HTMLElement;
-  score: HTMLElement;
-  round: HTMLElement;
-  fps: HTMLElement;
-  entities: HTMLElement;
-  zones: HTMLElement;
-  velocity: HTMLElement;
-  combatant: HTMLElement;
-  slots: HTMLElement[];
-  passives: HTMLElement;
-}
-
-const TELEMETRY_UPDATE_INTERVAL_MS = 200;
-
 export class InspectorUI {
   private fps = 0;
   private frameCount = 0;
@@ -89,8 +42,7 @@ export class InspectorUI {
   private lastTelemetryDomUpdate = 0;
   private telemetryEl!: HTMLElement;
   private telemetryRefs: TelemetryRefs | null = null;
-  private jsonTextarea!: HTMLTextAreaElement;
-  private errorBanner!: HTMLElement;
+  private jsonTabRefs: JsonTabRefs | null = null;
   private isCollapsed: boolean =
     localStorage.getItem(INSPECTOR_COLLAPSED_STORAGE_KEY) === 'true';
   private container!: HTMLDivElement;
@@ -134,7 +86,7 @@ export class InspectorUI {
 
     this.toggleBtn = document.createElement('button');
     this.toggleBtn.type = 'button';
-    this.toggleBtn.style.cssText = this.buttonStyle(false) + 'padding:2px 8px;line-height:1;';
+    this.toggleBtn.style.cssText = buttonStyle(false) + 'padding:2px 8px;line-height:1;';
 
     this.headerEl.appendChild(title);
     this.headerEl.appendChild(this.toggleBtn);
@@ -149,28 +101,28 @@ export class InspectorUI {
     for (const tab of tabs) {
       const btn = document.createElement('button');
       btn.textContent = tab;
-      btn.style.cssText = this.buttonStyle(false);
+      btn.style.cssText = buttonStyle(false);
       btn.onclick = () => {
         content.innerHTML = '';
         switch (tab) {
           case 'Stats':
-            this.buildStatsTab(content);
+            buildStatsTab(content, this.ctx);
             break;
           case 'Presets':
-            this.buildPresetsTab(content);
+            buildPresetsTab(content, this.ctx, this.jsonTabRefs?.jsonTextarea);
             break;
           case 'JSON':
-            this.buildJsonTab(content);
+            this.jsonTabRefs = buildJsonTab(content, this.ctx);
             break;
           case 'Graphics':
-            this.buildGraphicsTab(content);
+            buildGraphicsTab(content);
             break;
           case 'Harness':
-            this.buildHarnessTab(content);
+            buildHarnessTab(content, this.ctx);
             break;
         }
         for (const b of tabBar.querySelectorAll('button')) {
-          (b as HTMLButtonElement).style.cssText = this.buttonStyle(
+          (b as HTMLButtonElement).style.cssText = buttonStyle(
             b.textContent === tab,
           );
         }
@@ -189,8 +141,8 @@ export class InspectorUI {
     this.container.appendChild(this.headerEl);
     this.container.appendChild(this.bodyEl);
 
-    this.buildStatsTab(content);
-    tabBar.querySelector('button')!.style.cssText = this.buttonStyle(true);
+    buildStatsTab(content, this.ctx);
+    tabBar.querySelector('button')!.style.cssText = buttonStyle(true);
 
     this.toggleCollapse(this.isCollapsed);
 
@@ -232,686 +184,6 @@ export class InspectorUI {
     this.toggleCollapse();
   }
 
-  private buttonStyle(active: boolean): string {
-    return `
-      padding: 6px 10px;
-      border: 1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.15)'};
-      background: ${active ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)'};
-      color: #e0e0e8;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-    `;
-  }
-
-  private sliderRow(
-    parent: HTMLElement,
-    label: string,
-    min: number,
-    max: number,
-    step: number,
-    get: () => number,
-    set: (v: number) => void,
-    unit = '',
-  ): void {
-    const row = document.createElement('div');
-    row.style.marginBottom = '10px';
-    const lbl = document.createElement('label');
-    lbl.style.display = 'block';
-    lbl.style.marginBottom = '4px';
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(get());
-    input.style.width = '100%';
-    const update = () => {
-      const v = parseFloat(input.value);
-      set(v);
-      lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}${unit}`;
-    };
-    input.oninput = update;
-    update();
-    row.appendChild(lbl);
-    row.appendChild(input);
-    parent.appendChild(row);
-  }
-
-  private buildStatsTab(parent: HTMLElement): void {
-    const { world, arenaShrink } = this.ctx;
-    const arenaSection = document.createElement('div');
-    arenaSection.style.cssText =
-      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const arenaTitle = document.createElement('div');
-    arenaTitle.textContent = 'Arena';
-    arenaTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    arenaSection.appendChild(arenaTitle);
-    this.sliderRow(
-      arenaSection,
-      'Arena Hex Radius',
-      MIN_HEX_RADIUS,
-      MAX_HEX_RADIUS,
-      10,
-      () => world.getBaseHexRadius(),
-      (v) => {
-        world.setBaseHexRadius(v);
-        arenaShrink?.resize(v);
-        localStorage.setItem(ARENA_HEX_RADIUS_KEY, String(v));
-      },
-      'px',
-    );
-    this.sliderRow(
-      arenaSection,
-      'Combatant Radius',
-      MIN_COMBATANT_RADIUS,
-      MAX_COMBATANT_RADIUS,
-      1,
-      () => world.getCombatantRadius(),
-      (v) => {
-        world.setCombatantRadius(v);
-        localStorage.setItem(COMBATANT_RADIUS_KEY, String(v));
-      },
-      'px',
-    );
-    parent.appendChild(arenaSection);
-
-    const pacingSection = document.createElement('div');
-    pacingSection.style.cssText =
-      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const pacingTitle = document.createElement('div');
-    pacingTitle.textContent = 'Combat Pacing';
-    pacingTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    pacingSection.appendChild(pacingTitle);
-
-    Player.globalCooldownScale = getStoredCooldownScale();
-    Player.globalCooldownDurationMs = getStoredGlobalCooldownMs();
-
-    this.sliderRow(
-      pacingSection,
-      'Cooldown Scale',
-      MIN_COOLDOWN_SCALE,
-      MAX_COOLDOWN_SCALE,
-      0.1,
-      () => Player.globalCooldownScale,
-      (v) => {
-        Player.globalCooldownScale = v;
-        localStorage.setItem(COOLDOWN_SCALE_KEY, String(v));
-      },
-      'x',
-    );
-    this.sliderRow(
-      pacingSection,
-      'Global Cooldown',
-      MIN_GLOBAL_COOLDOWN_MS,
-      MAX_GLOBAL_COOLDOWN_MS,
-      50,
-      () => Player.globalCooldownDurationMs,
-      (v) => {
-        Player.globalCooldownDurationMs = v;
-        localStorage.setItem(GLOBAL_COOLDOWN_MS_KEY, String(v));
-      },
-      'ms',
-    );
-    parent.appendChild(pacingSection);
-
-    const p = this.ctx.player;
-    this.sliderRow(parent, 'Move Speed', 50, 600, 10, () => p.moveSpeed, (v) => {
-      p.moveSpeed = v;
-    });
-    this.sliderRow(parent, 'Acceleration', 200, 3000, 50, () => p.baseAcceleration, (v) => {
-      p.baseAcceleration = v;
-    });
-    this.sliderRow(parent, 'Linear Drag', 0, 10, 0.1, () => p.baseLinearDrag, (v) => {
-      p.baseLinearDrag = v;
-      p.linearDrag = v;
-    });
-    this.sliderRow(parent, 'Mass', 0.1, 5, 0.1, () => p.mass, (v) => {
-      p.mass = v;
-    });
-    this.sliderRow(parent, 'Instability %', 0, 400, 1, () => p.instabilityPct, (v) => {
-      p.instabilityPct = v;
-    });
-  }
-
-  private buildPresetsTab(parent: HTMLElement): void {
-    const select = document.createElement('select');
-    select.style.cssText =
-      'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
-    for (const group of PRESET_GROUPS) {
-      const optgroup = document.createElement('optgroup');
-      optgroup.label = group.label;
-      for (const name of group.presetNames) {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        optgroup.appendChild(opt);
-      }
-      select.appendChild(optgroup);
-    }
-
-    const btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
-
-    for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
-      const key = ACTION_SLOT_KEYS[i];
-      const loadBtn = document.createElement('button');
-      loadBtn.textContent = `Load to ${key}`;
-      loadBtn.style.cssText = this.buttonStyle(false) + 'flex:1;min-width:70px;';
-      loadBtn.onclick = () => {
-        const preset = PRESETS[select.value];
-        if (preset) {
-          this.ctx.player.setAbility(i, structuredClone(preset));
-          if (this.jsonTextarea) {
-            this.jsonTextarea.value = JSON.stringify(preset, null, 2);
-          }
-        }
-      };
-      btnRow.appendChild(loadBtn);
-    }
-
-    parent.appendChild(select);
-    parent.appendChild(btnRow);
-  }
-
-  private buildJsonTab(parent: HTMLElement): void {
-    this.errorBanner = document.createElement('div');
-    this.errorBanner.style.cssText =
-      'display:none;padding:8px;margin-bottom:8px;background:rgba(255,50,50,0.2);border-radius:6px;color:#ff6666;font-size:12px;';
-
-    this.jsonTextarea = document.createElement('textarea');
-    this.jsonTextarea.style.cssText = `
-      width: 100%;
-      height: 200px;
-      font-family: monospace;
-      font-size: 11px;
-      background: #0a0a14;
-      color: #ccc;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
-      padding: 8px;
-      resize: vertical;
-      box-sizing: border-box;
-    `;
-    if (this.ctx.player.getAbility(0)) {
-      this.jsonTextarea.value = JSON.stringify(this.ctx.player.getAbility(0), null, 2);
-    }
-
-    const slotSelect = document.createElement('select');
-    slotSelect.style.cssText =
-      'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
-    for (const key of ACTION_SLOT_KEYS) {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = `Target Slot: ${key}`;
-      slotSelect.appendChild(opt);
-    }
-
-    const applyBtn = document.createElement('button');
-    applyBtn.textContent = 'Apply Schema';
-    applyBtn.style.cssText = this.buttonStyle(false) + 'margin-top:8px;width:100%;';
-    applyBtn.onclick = () => {
-      try {
-        const parsed = JSON.parse(this.jsonTextarea.value);
-        const validated = validateAbilitySchema(parsed);
-        if (!validated) {
-          this.showError('Invalid ability schema structure.');
-          return;
-        }
-        const slotIndex = ACTION_SLOT_KEYS.indexOf(slotSelect.value as (typeof ACTION_SLOT_KEYS)[number]);
-        if (slotIndex >= 0) {
-          this.ctx.player.setAbility(slotIndex, validated);
-        }
-        this.showError('');
-      } catch {
-        this.showError('Invalid JSON syntax.');
-      }
-    };
-
-    parent.appendChild(this.errorBanner);
-    parent.appendChild(slotSelect);
-    parent.appendChild(this.jsonTextarea);
-    parent.appendChild(applyBtn);
-  }
-
-  private showError(msg: string): void {
-    if (!msg) {
-      this.errorBanner.style.display = 'none';
-      return;
-    }
-    this.errorBanner.textContent = msg;
-    this.errorBanner.style.display = 'block';
-  }
-
-  private buildGraphicsTab(parent: HTMLElement): void {
-    const section = document.createElement('div');
-    section.style.cssText =
-      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const title = document.createElement('div');
-    title.textContent = 'Graphics & Performance';
-    title.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    section.appendChild(title);
-
-    const settings = getGraphicsSettings();
-    const checkboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
-
-    const perfBox = document.createElement('pre');
-    perfBox.style.cssText =
-      'font-size:10px;line-height:1.35;background:rgba(0,0,0,0.35);padding:8px;border-radius:6px;margin-bottom:8px;white-space:pre-wrap;';
-    const refreshPerf = (): void => {
-      const snap = perfMonitor.getSnapshot();
-      const caps = perfMonitor.getCapabilities();
-      perfBox.textContent = [
-        perfMonitor.formatOverlayText(),
-        '',
-        caps
-          ? `WebGL2: ${caps.webgl2Available ? 'yes' : 'no'}  DPR: ${caps.dpr}  maxTex: ${caps.maxTextureSize}`
-          : 'Capabilities not probed',
-        caps ? `GPU: ${caps.renderer}` : '',
-        `Tier: ${getEffectiveTier()}  (F3 toggles overlay)`,
-      ]
-        .filter(Boolean)
-        .join('\n');
-    };
-    refreshPerf();
-    setInterval(refreshPerf, 500);
-    section.appendChild(perfBox);
-
-    const caps = perfMonitor.getCapabilities();
-    if (caps) {
-      const capLine = document.createElement('div');
-      capLine.style.cssText = 'font-size:10px;opacity:0.75;margin-bottom:8px;';
-      capLine.textContent = `Extensions: ${caps.extensions.length}`;
-      section.appendChild(capLine);
-    }
-
-    const addToggle = (key: keyof GraphicsSettings, label: string): void => {
-      if (typeof settings[key] === 'boolean') {
-        const row = document.createElement('label');
-        row.style.cssText =
-          'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:8px;';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = settings[key] as boolean;
-        checkbox.onchange = () => {
-          const current = getGraphicsSettings();
-          saveGraphicsSettings({ ...current, [key]: checkbox.checked });
-        };
-        checkboxes[key] = checkbox;
-        row.appendChild(checkbox);
-        row.appendChild(document.createTextNode(label));
-        section.appendChild(row);
-      }
-    };
-
-    addToggle('lavaHeatWaves', 'Lava Heat Waves');
-    addToggle('ambientEmbers', 'Ambient Lava Embers');
-    addToggle('particleTrails', 'Projectile Particle Trails');
-    addToggle('bloomEnabled', 'Bloom Post-Processing');
-    addToggle('refractionEnabled', 'Refraction (ULTRA)');
-
-    const tierRow = document.createElement('div');
-    tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;';
-    const tiers: QualityTier[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'AUTO'];
-    for (const tier of tiers) {
-      const btn = document.createElement('button');
-      btn.textContent = tier;
-      btn.style.cssText = this.buttonStyle(getEffectiveTier() === tier || settings.tier === tier);
-      btn.onclick = () => {
-        if (tier === 'AUTO') {
-          saveGraphicsSettings({ ...getGraphicsSettings(), tier: 'AUTO', manualTierOverride: false });
-        } else {
-          applyTierPreset(tier);
-        }
-        refreshPerf();
-      };
-      tierRow.appendChild(btn);
-    }
-    section.appendChild(tierRow);
-
-    const syncCheckboxes = (s: GraphicsSettings): void => {
-      for (const key of Object.keys(checkboxes) as (keyof GraphicsSettings)[]) {
-        const box = checkboxes[key];
-        if (box) box.checked = s[key] as boolean;
-      }
-    };
-
-    const presetRow = document.createElement('div');
-    presetRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
-
-    const recordBaselineBtn = document.createElement('button');
-    recordBaselineBtn.textContent = 'Record Baseline p95';
-    recordBaselineBtn.style.cssText = this.buttonStyle(false);
-    recordBaselineBtn.onclick = () => {
-      perfMonitor.baselineP95Ms = perfMonitor.getSnapshot().frameMsP95;
-      refreshPerf();
-    };
-
-    const loseCtxBtn = document.createElement('button');
-    loseCtxBtn.textContent = 'Force GL Context Loss';
-    loseCtxBtn.style.cssText = this.buttonStyle(false);
-    loseCtxBtn.onclick = () => {
-      const glCtx = (window as unknown as { __lunaGlCtx?: { forceContextLoss: () => void } }).__lunaGlCtx;
-      glCtx?.forceContextLoss();
-    };
-
-    const canvas2dBtn = document.createElement('button');
-    canvas2dBtn.textContent = 'Canvas2D Fallback';
-    canvas2dBtn.style.cssText = this.buttonStyle(false);
-    canvas2dBtn.onclick = () => {
-      setForcedBackend('canvas2d');
-      location.reload();
-    };
-
-    presetRow.appendChild(recordBaselineBtn);
-    presetRow.appendChild(loseCtxBtn);
-    presetRow.appendChild(canvas2dBtn);
-    section.appendChild(presetRow);
-
-    const highQualityBtn = document.createElement('button');
-    highQualityBtn.textContent = 'Reset Toggles (High)';
-    highQualityBtn.style.cssText = this.buttonStyle(false) + 'margin-top:6px;width:100%;';
-    highQualityBtn.onclick = () => {
-      const next: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
-      saveGraphicsSettings(next);
-      syncCheckboxes(next);
-    };
-    section.appendChild(highQualityBtn);
-
-    parent.appendChild(section);
-  }
-
-  private buildHarnessTab(parent: HTMLElement): void {
-    const aiSection = document.createElement('div');
-    aiSection.style.cssText = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const aiTitle = document.createElement('div');
-    aiTitle.textContent = 'AI Synthesizer Settings';
-    aiTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    aiSection.appendChild(aiTitle);
-
-    const settings = getAiSettings();
-
-    const apiKeyInput = document.createElement('input');
-    apiKeyInput.type = 'password';
-    apiKeyInput.placeholder = 'Gemini API Key (Google AI Studio)';
-    apiKeyInput.value = settings.apiKey;
-    apiKeyInput.style.cssText = this.inputStyle();
-
-    const baseUrlInput = document.createElement('input');
-    baseUrlInput.type = 'text';
-    baseUrlInput.placeholder = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-    baseUrlInput.value = settings.baseUrl || DEFAULT_BASE_URL;
-    baseUrlInput.style.cssText = this.inputStyle();
-
-    const modelInput = document.createElement('input');
-    modelInput.type = 'text';
-    modelInput.placeholder = 'gemini-3.5-flash-lite';
-    modelInput.value = settings.model || DEFAULT_MODEL;
-    modelInput.style.cssText = this.inputStyle();
-
-    const saveSettings = (): void => {
-      const s: AiSettings = {
-        apiKey: apiKeyInput.value,
-        baseUrl: baseUrlInput.value || DEFAULT_BASE_URL,
-        model: modelInput.value || DEFAULT_MODEL,
-      };
-      setAiSettings(s);
-    };
-
-    apiKeyInput.onchange = saveSettings;
-    baseUrlInput.onchange = saveSettings;
-    modelInput.onchange = saveSettings;
-
-    aiSection.appendChild(apiKeyInput);
-    aiSection.appendChild(baseUrlInput);
-    aiSection.appendChild(modelInput);
-
-    const openDraftBtn = document.createElement('button');
-    openDraftBtn.textContent = 'Open Draft Synthesizer';
-    openDraftBtn.style.cssText = this.buttonStyle(true) + 'width:100%;margin-top:8px;margin-bottom:6px;';
-    openDraftBtn.onclick = () => this.ctx.openDraftModal();
-    aiSection.appendChild(openDraftBtn);
-
-    const testBtn = document.createElement('button');
-    testBtn.textContent = 'Test Synthesizer';
-    testBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
-    testBtn.onclick = async () => {
-      saveSettings();
-      const p = this.ctx.player;
-      const cards = await synthesizeCards('test kinetic vortex', {
-        abilities: [...p.abilities],
-        passives: p.passives,
-      });
-      alert(`Synthesized ${cards.length} cards: ${cards.map((c) => c.title).join(', ')}`);
-    };
-    aiSection.appendChild(testBtn);
-
-    parent.appendChild(aiSection);
-
-    if (this.ctx.matchManager) {
-      const modeSection = document.createElement('div');
-      modeSection.style.cssText =
-        'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-      const modeTitle = document.createElement('div');
-      modeTitle.textContent = 'Game Mode';
-      modeTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-      modeSection.appendChild(modeTitle);
-
-      const modeRow = document.createElement('div');
-      modeRow.style.cssText = 'display:flex;gap:6px;margin-bottom:8px;';
-
-      const matchModeBtn = document.createElement('button');
-      matchModeBtn.textContent = 'Match Mode';
-      const sandboxModeBtn = document.createElement('button');
-      sandboxModeBtn.textContent = 'Sandbox Mode';
-
-      const syncModeButtons = (): void => {
-        const isMatch = this.ctx.matchManager!.mode === 'MATCH';
-        matchModeBtn.style.cssText =
-          this.buttonStyle(isMatch) + 'flex:1;';
-        sandboxModeBtn.style.cssText =
-          this.buttonStyle(!isMatch) + 'flex:1;';
-        if (matchOnlyControls) {
-          matchOnlyControls.style.display = isMatch ? 'block' : 'none';
-        }
-        if (shrinkCheckbox) {
-          shrinkCheckbox.checked = this.ctx.arenaShrink?.enabled ?? false;
-        }
-        if (aiCheckbox && this.ctx.botController) {
-          aiCheckbox.checked = this.ctx.botController.enabled;
-        }
-      };
-
-      matchModeBtn.onclick = () => {
-        this.ctx.matchManager!.setMode('MATCH');
-        syncModeButtons();
-      };
-      sandboxModeBtn.onclick = () => {
-        this.ctx.matchManager!.setMode('SANDBOX');
-        syncModeButtons();
-      };
-
-      modeRow.appendChild(matchModeBtn);
-      modeRow.appendChild(sandboxModeBtn);
-      modeSection.appendChild(modeRow);
-
-      let shrinkCheckbox: HTMLInputElement | null = null;
-      if (this.ctx.arenaShrink) {
-        const shrinkRow = document.createElement('label');
-        shrinkRow.style.cssText =
-          'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:8px;';
-        shrinkCheckbox = document.createElement('input');
-        shrinkCheckbox.type = 'checkbox';
-        shrinkCheckbox.checked = this.ctx.arenaShrink.enabled;
-        shrinkCheckbox.onchange = () => {
-          const arena = this.ctx.arenaShrink!;
-          arena.enabled = shrinkCheckbox!.checked;
-          if (!arena.enabled) arena.reset();
-        };
-        shrinkRow.appendChild(shrinkCheckbox);
-        shrinkRow.appendChild(document.createTextNode('Enable Arena Shrink'));
-        modeSection.appendChild(shrinkRow);
-      }
-
-      const respawnBtn = document.createElement('button');
-      respawnBtn.textContent = 'Respawn All Combatants';
-      respawnBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
-      respawnBtn.onclick = () => this.ctx.onRespawnCombatants?.();
-      modeSection.appendChild(respawnBtn);
-
-      parent.appendChild(modeSection);
-
-      const matchSection = document.createElement('div');
-      matchSection.style.cssText =
-        'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-      const matchTitle = document.createElement('div');
-      matchTitle.textContent = 'Match Controls';
-      matchTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-      matchSection.appendChild(matchTitle);
-
-      const matchOnlyControls = document.createElement('div');
-
-      const forceWinBtn = document.createElement('button');
-      forceWinBtn.textContent = 'Force Win Round';
-      forceWinBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
-      forceWinBtn.onclick = () => this.ctx.matchManager!.forceRoundResult('player');
-      matchOnlyControls.appendChild(forceWinBtn);
-
-      const forceLoseBtn = document.createElement('button');
-      forceLoseBtn.textContent = 'Force Lose Round';
-      forceLoseBtn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
-      forceLoseBtn.onclick = () => this.ctx.matchManager!.forceRoundResult('bot');
-      matchOnlyControls.appendChild(forceLoseBtn);
-
-      const restartBtn = document.createElement('button');
-      restartBtn.textContent = 'Restart Match';
-      restartBtn.style.cssText = this.buttonStyle(true) + 'width:100%;margin-bottom:6px;';
-      restartBtn.onclick = () => this.ctx.onRestartMatch?.();
-      matchOnlyControls.appendChild(restartBtn);
-
-      matchSection.appendChild(matchOnlyControls);
-
-      let aiCheckbox: HTMLInputElement | null = null;
-      if (this.ctx.botController) {
-        const aiToggleRow = document.createElement('label');
-        aiToggleRow.style.cssText =
-          'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-top:4px;';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = this.ctx.botController.enabled;
-        checkbox.onchange = () => {
-          this.ctx.botController!.enabled = checkbox.checked;
-        };
-        aiCheckbox = checkbox;
-        aiToggleRow.appendChild(checkbox);
-        aiToggleRow.appendChild(document.createTextNode('Bot AI Enabled'));
-        matchSection.appendChild(aiToggleRow);
-      }
-
-      parent.appendChild(matchSection);
-      syncModeButtons();
-    }
-
-    const buttons: Array<{ label: string; action: () => void }> = [
-      {
-        label: 'Spawn Dummy',
-        action: () => {
-          const pos = this.randomHexPosition();
-          this.ctx.world.addDummy(new Dummy(pos));
-        },
-      },
-      {
-        label: 'Spawn AI Chaser',
-        action: () => {
-          const pos = this.randomHexPosition();
-          const dummy = new Dummy(pos);
-          dummy.isAiActive = true;
-          this.ctx.world.addDummy(dummy);
-        },
-      },
-      {
-        label: 'Reset Arena',
-        action: () => this.ctx.onReset(),
-      },
-      {
-        label: 'Toggle Debug',
-        action: () => {
-          const opts = this.ctx.getDebugOptions();
-          this.ctx.setDebugOptions({
-            ...opts,
-            showVectors: !opts.showVectors,
-            showRadii: !opts.showRadii,
-          });
-        },
-      },
-      {
-        label: 'Clear Entities',
-        action: () => this.ctx.world.clearProjectilesAndZones(),
-      },
-    ];
-
-    for (const { label, action } of buttons) {
-      const btn = document.createElement('button');
-      btn.textContent = label;
-      btn.style.cssText = this.buttonStyle(false) + 'width:100%;margin-bottom:6px;';
-      btn.onclick = action;
-      parent.appendChild(btn);
-    }
-  }
-
-  private inputStyle(): string {
-    return `
-      width:100%;padding:8px;margin-bottom:6px;box-sizing:border-box;
-      background:#0a0a14;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px;font-size:12px;
-    `;
-  }
-
-  private randomHexPosition(): Vector2D {
-    const { world } = this.ctx;
-    for (let i = 0; i < 50; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * world.hexRadius * 0.7;
-      const pos = world.hexCenter.add(Vector2D.fromAngle(angle, dist));
-      if (isInsideHex(pos, world.hexCenter, world.hexRadius)) {
-        return pos;
-      }
-    }
-    return world.hexCenter.clone();
-  }
-
-  private buildTelemetryDom(): TelemetryRefs {
-    this.telemetryEl.textContent = '';
-    const makeRow = (): HTMLElement => {
-      const row = document.createElement('div');
-      this.telemetryEl.appendChild(row);
-      return row;
-    };
-
-    const refs: TelemetryRefs = {
-      mode: makeRow(),
-      match: makeRow(),
-      score: makeRow(),
-      round: makeRow(),
-      fps: makeRow(),
-      entities: makeRow(),
-      zones: makeRow(),
-      velocity: makeRow(),
-      combatant: makeRow(),
-      slots: ACTION_SLOT_KEYS.map(() => makeRow()),
-      passives: makeRow(),
-    };
-
-    if (!this.ctx.matchManager) {
-      refs.mode.style.display = 'none';
-      refs.match.style.display = 'none';
-      refs.score.style.display = 'none';
-      refs.round.style.display = 'none';
-    }
-
-    return refs;
-  }
-
   updateTelemetry(): void {
     this.frameCount++;
     const now = performance.now();
@@ -928,7 +200,7 @@ export class InspectorUI {
     this.lastTelemetryDomUpdate = now;
 
     if (!this.telemetryRefs) {
-      this.telemetryRefs = this.buildTelemetryDom();
+      this.telemetryRefs = buildTelemetryDom(this.telemetryEl, this.ctx);
     }
     const refs = this.telemetryRefs;
 
