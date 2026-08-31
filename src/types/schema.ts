@@ -30,6 +30,7 @@ export type ActionType =
   | 'SPAWN_FIELD'
   | 'SPAWN_PROJECTILE'
   | 'SPAWN_CONSTRAINT'
+  | 'CAST_CHILD_PAYLOAD'
   | 'MODIFY_STAT'
   | 'TELEPORT';
 
@@ -174,15 +175,6 @@ export interface SpawnConstraintAction {
   target?: ActionTarget;
 }
 
-export type ActionPayload =
-  | AddInstabilityAction
-  | ApplyImpulseAction
-  | SpawnFieldAction
-  | SpawnProjectileAction
-  | SpawnConstraintAction
-  | ModifyStatAction
-  | TeleportAction;
-
 export interface TriggerNode {
   trigger: TriggerType;
   tickIntervalMs?: number;
@@ -205,7 +197,26 @@ export interface AbilitySchema {
   metadata?: Record<string, unknown>;
 }
 
-export type { TriggerContext } from './triggerContext';
+export interface CastChildPayloadAction {
+  type: 'CAST_CHILD_PAYLOAD';
+  payload: AbilitySchema;
+  inheritVelocity?: boolean;
+  inheritInstability?: boolean;
+  maxRecursionDepth?: number;
+  target?: ActionTarget;
+}
+
+export type ActionPayload =
+  | AddInstabilityAction
+  | ApplyImpulseAction
+  | SpawnFieldAction
+  | SpawnProjectileAction
+  | SpawnConstraintAction
+  | CastChildPayloadAction
+  | ModifyStatAction
+  | TeleportAction;
+
+export type { TriggerContext, ExecutionOverrides } from './triggerContext';
 
 const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'LINEAR',
@@ -246,6 +257,7 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'SPAWN_FIELD',
   'SPAWN_PROJECTILE',
   'SPAWN_CONSTRAINT',
+  'CAST_CHILD_PAYLOAD',
   'MODIFY_STAT',
   'TELEPORT',
 ]);
@@ -300,6 +312,8 @@ const IMPACT_VFX_TYPES: ReadonlySet<string> = new Set([
   'VORTEX_SWIRL',
   'MINI_NUKE',
 ]);
+
+const MAX_VALIDATION_DEPTH = 3;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -473,7 +487,7 @@ function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
   };
 }
 
-function validateActionPayload(value: unknown): ActionPayload | null {
+function validateActionPayload(value: unknown, depth = 0): ActionPayload | null {
   if (!isObject(value) || !isString(value.type)) return null;
   if (!ACTION_TYPES.has(value.type)) return null;
 
@@ -526,7 +540,7 @@ function validateActionPayload(value: unknown): ActionPayload | null {
         if (!Array.isArray(value.triggers)) return null;
         const triggers: TriggerNode[] = [];
         for (const t of value.triggers) {
-          const node = validateTriggerNode(t);
+          const node = validateTriggerNode(t, depth);
           if (!node) return null;
           triggers.push(node);
         }
@@ -580,6 +594,26 @@ function validateActionPayload(value: unknown): ActionPayload | null {
       const action: SpawnConstraintAction = { type: 'SPAWN_CONSTRAINT', constraint };
       const source = parseActionTarget(value.source);
       if (source) action.source = source;
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'CAST_CHILD_PAYLOAD': {
+      if (depth >= MAX_VALIDATION_DEPTH) return null;
+      const payload = validateAbilitySchema(value.payload, depth + 1);
+      if (!payload) return null;
+      const action: CastChildPayloadAction = { type: 'CAST_CHILD_PAYLOAD', payload };
+      if (typeof value.inheritVelocity === 'boolean') {
+        action.inheritVelocity = value.inheritVelocity;
+      }
+      if (typeof value.inheritInstability === 'boolean') {
+        action.inheritInstability = value.inheritInstability;
+      }
+      if (value.maxRecursionDepth !== undefined) {
+        if (!isNumber(value.maxRecursionDepth)) return null;
+        action.maxRecursionDepth = Math.max(1, Math.min(3, value.maxRecursionDepth));
+      }
       const target = parseActionTarget(value.target);
       if (target) action.target = target;
       return action;
@@ -647,14 +681,14 @@ function validateConditionNode(value: unknown): ConditionNode | null {
   }
 }
 
-function validateTriggerNode(value: unknown): TriggerNode | null {
+function validateTriggerNode(value: unknown, depth = 0): TriggerNode | null {
   if (!isObject(value)) return null;
   if (!isString(value.trigger) || !TRIGGER_TYPES.has(value.trigger)) return null;
   if (!Array.isArray(value.actions)) return null;
 
   const actions: ActionPayload[] = [];
   for (const action of value.actions) {
-    const validated = validateActionPayload(action);
+    const validated = validateActionPayload(action, depth);
     if (!validated) return null;
     actions.push(validated);
   }
@@ -693,7 +727,7 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
     if (!Array.isArray(value.ifFalseActions)) return null;
     const ifFalseActions: ActionPayload[] = [];
     for (const action of value.ifFalseActions) {
-      const validated = validateActionPayload(action);
+      const validated = validateActionPayload(action, depth);
       if (!validated) return null;
       ifFalseActions.push(validated);
     }
@@ -704,7 +738,7 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
     if (!Array.isArray(value.children)) return null;
     const children: TriggerNode[] = [];
     for (const child of value.children) {
-      const validated = validateTriggerNode(child);
+      const validated = validateTriggerNode(child, depth);
       if (!validated) return null;
       children.push(validated);
     }
@@ -714,7 +748,7 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
   return node;
 }
 
-export function validateAbilitySchema(json: unknown): AbilitySchema | null {
+export function validateAbilitySchema(json: unknown, depth = 0): AbilitySchema | null {
   if (!isObject(json)) return null;
   if (!isString(json.id) || !isString(json.name)) return null;
   if (!isNumber(json.cooldownMs) || !isNumber(json.recoilKick)) return null;
@@ -722,7 +756,7 @@ export function validateAbilitySchema(json: unknown): AbilitySchema | null {
 
   const triggers: TriggerNode[] = [];
   for (const trigger of json.triggers) {
-    const validated = validateTriggerNode(trigger);
+    const validated = validateTriggerNode(trigger, depth);
     if (!validated) return null;
     triggers.push(validated);
   }

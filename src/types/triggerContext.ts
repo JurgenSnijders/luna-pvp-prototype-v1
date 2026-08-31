@@ -1,6 +1,12 @@
 import type { Vector2D } from '../math/Vector2D';
 import type { Entity } from '../entities/Entity';
 
+export interface ExecutionOverrides {
+  originOverride?: Vector2D;
+  aimDirOverride?: Vector2D;
+  depth?: number;
+}
+
 export interface TriggerContext {
   origin: Vector2D;
   heading: Vector2D;

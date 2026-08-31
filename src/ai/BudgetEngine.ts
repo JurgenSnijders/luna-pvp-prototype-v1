@@ -160,6 +160,10 @@ function scoreAction(action: ActionPayload, depth: number): number {
     }
     case 'SPAWN_CONSTRAINT':
       return (action.constraint.durationMs / 1000) * 8;
+    case 'CAST_CHILD_PAYLOAD': {
+      if (depth >= MAX_DEPTH) return 10;
+      return scoreAbilitySchema(action.payload, depth + 1) * 1.5;
+    }
   }
 }
 
@@ -183,10 +187,10 @@ function scoreTriggerNode(node: TriggerNode, depth: number): number {
   return total;
 }
 
-export function scoreAbilitySchema(schema: AbilitySchema): number {
+export function scoreAbilitySchema(schema: AbilitySchema, depth = 0): number {
   let actionSum = 0;
   for (const node of schema.triggers) {
-    actionSum += scoreTriggerNode(node, 0);
+    actionSum += scoreTriggerNode(node, depth);
   }
   if (actionSum === 0) actionSum = 10;
   return getTrajectoryWeight(schema.trajectory) * actionSum;
@@ -364,7 +368,11 @@ function sanitizeVisuals(raw: unknown): VisualDescriptor {
   };
 }
 
-function sanitizeAction(raw: unknown): ActionPayload | null {
+function sanitizeAction(
+  raw: unknown,
+  depth = 0,
+  category: SkillCategory = 'SECONDARY',
+): ActionPayload | null {
   if (!isObject(raw)) return null;
 
   let type = typeof raw.type === 'string' ? raw.type.toUpperCase() : '';
@@ -407,7 +415,7 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
 
       if (Array.isArray(raw.triggers)) {
         action.triggers = raw.triggers
-          .map(sanitizeTriggerNode)
+          .map((t) => sanitizeTriggerNode(t, depth, category))
           .filter((n): n is TriggerNode => n !== null);
       }
       if (raw.visuals !== undefined) {
@@ -510,6 +518,24 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
       return action;
     }
 
+    case 'CAST_CHILD_PAYLOAD': {
+      if (depth >= MAX_DEPTH) return null;
+      const action: Extract<ActionPayload, { type: 'CAST_CHILD_PAYLOAD' }> = {
+        type: 'CAST_CHILD_PAYLOAD',
+        payload: sanitizeAbilitySchema(raw.payload, category, depth + 1),
+      };
+      if (typeof raw.inheritVelocity === 'boolean') {
+        action.inheritVelocity = raw.inheritVelocity;
+      }
+      if (typeof raw.inheritInstability === 'boolean') {
+        action.inheritInstability = raw.inheritInstability;
+      }
+      action.maxRecursionDepth = clamp(ensureFiniteNumber(raw.maxRecursionDepth, 1), 1, 3);
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
     case 'MODIFY_STAT': {
       const statMap: Record<string, 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct'> = {
         mass: 'mass',
@@ -541,7 +567,11 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
   }
 }
 
-function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
+function sanitizeTriggerNode(
+  raw: unknown,
+  depth = 0,
+  category: SkillCategory = 'SECONDARY',
+): TriggerNode | null {
   if (!isObject(raw)) return null;
 
   let trigger = typeof raw.trigger === 'string' ? raw.trigger.toUpperCase() : '';
@@ -584,7 +614,7 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
   }
 
   const actions = actionsRaw
-    .map(sanitizeAction)
+    .map((a) => sanitizeAction(a, depth, category))
     .filter((a): a is ActionPayload => a !== null);
 
   const node: TriggerNode = {
@@ -613,14 +643,14 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
 
   if (Array.isArray(raw.ifFalseActions)) {
     const ifFalseActions = raw.ifFalseActions
-      .map(sanitizeAction)
+      .map((a) => sanitizeAction(a, depth, category))
       .filter((a): a is ActionPayload => a !== null);
     if (ifFalseActions.length > 0) node.ifFalseActions = ifFalseActions;
   }
 
   if (Array.isArray(raw.children)) {
     node.children = raw.children
-      .map(sanitizeTriggerNode)
+      .map((c) => sanitizeTriggerNode(c, depth, category))
       .filter((n): n is TriggerNode => n !== null);
   }
 
@@ -667,6 +697,7 @@ function promoteRootEmitter(
 export function sanitizeAbilitySchema(
   raw: unknown,
   _category: SkillCategory = 'SECONDARY',
+  sanitizeDepth = 0,
 ): AbilitySchema {
   const obj = isObject(raw) ? { ...raw } : {};
 
@@ -678,7 +709,7 @@ export function sanitizeAbilitySchema(
   let triggers: TriggerNode[] = [];
   if (Array.isArray(obj.triggers)) {
     triggers = obj.triggers
-      .map(sanitizeTriggerNode)
+      .map((t) => sanitizeTriggerNode(t, sanitizeDepth, _category))
       .filter((n): n is TriggerNode => n !== null);
   }
 

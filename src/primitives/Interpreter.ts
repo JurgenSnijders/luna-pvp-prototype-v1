@@ -21,7 +21,7 @@ import type {
   TriggerType,
   VisualDescriptor,
 } from '../types/schema';
-import type { TriggerContext } from '../types/triggerContext';
+import type { TriggerContext, ExecutionOverrides } from '../types/triggerContext';
 import { updateTrajectory } from './Trajectories';
 
 const MAX_DEPTH = 3;
@@ -87,24 +87,32 @@ export class Interpreter {
     schema: AbilitySchema,
     ctx: TriggerContext,
     world: PhysicsWorld,
+    overrides?: ExecutionOverrides,
   ): void {
-    if (ctx.depth > MAX_DEPTH) return;
+    const depth = overrides?.depth ?? ctx.depth;
+    if (depth > MAX_DEPTH) return;
     if (world.getEntityCount() >= MAX_ENTITIES) return;
 
+    const origin = overrides?.originOverride?.clone() ?? ctx.origin.clone();
     const heading =
-      ctx.heading.magSq() > 0 ? ctx.heading.normalize() : Vector2D.fromAngle(0);
+      overrides?.aimDirOverride && overrides.aimDirOverride.magSq() > 0
+        ? safeNormalize(overrides.aimDirOverride)
+        : ctx.heading.magSq() > 0
+          ? ctx.heading.normalize()
+          : Vector2D.fromAngle(0);
     const castCtx: TriggerContext = {
       ...ctx,
       heading,
-      origin: ctx.origin.clone(),
+      origin,
+      depth,
     };
 
     const visuals = schema.visuals ?? DEFAULT_VISUALS;
     this.activeCastVisuals = visuals;
     this.particles?.triggerMuzzleFlash(castCtx.origin, heading, visuals.color);
 
-    if (schema.recoilKick > 0 && ctx.depth === 0) {
-      world.applyKnockback(ctx.caster, heading.scale(-1), schema.recoilKick);
+    if (schema.recoilKick > 0 && depth === 0) {
+      world.applyKnockback(castCtx.caster, heading.scale(-1), schema.recoilKick);
     }
 
     const onCastNodes = schema.triggers.filter((t) => t.trigger === 'ON_CAST');
@@ -114,8 +122,8 @@ export class Interpreter {
 
     if (schema.trajectory) {
       const spawnPos =
-        ctx.depth === 0
-          ? ctx.caster.pos.add(heading.scale(ctx.caster.radius + 12))
+        depth === 0
+          ? castCtx.caster.pos.add(heading.scale(castCtx.caster.radius + 12))
           : castCtx.origin.clone();
       const aimAngle = Math.atan2(heading.y, heading.x);
       const triggerMap = buildTriggerMap(
@@ -124,10 +132,10 @@ export class Interpreter {
       const projectile = new Projectile(
         spawnPos,
         schema.trajectory,
-        ctx.caster.id,
+        castCtx.caster.id,
         aimAngle,
         triggerMap,
-        ctx.depth,
+        depth,
         visuals,
         schema.name,
       );
@@ -383,6 +391,34 @@ export class Interpreter {
         const dest = t.pos.add(dir.scale(action.distance));
         t.pos = clampToHex(dest, world.hexCenter, world.hexRadius);
         this.particles?.burstSparks(t.pos, 12, '#44ffff');
+        break;
+      }
+      case 'CAST_CHILD_PAYLOAD': {
+        const currentDepth = ctx.depth;
+        const maxDepth = Math.min(action.maxRecursionDepth ?? 1, MAX_DEPTH);
+        if (currentDepth >= maxDepth) break;
+
+        const spawnOrigin = (ctx.sourceEntity ?? ctx.caster).pos.clone();
+
+        let aimDirOverride: Vector2D | undefined;
+        const sourceEntity = ctx.sourceEntity;
+        if (action.inheritVelocity && sourceEntity && sourceEntity.vel.magSq() > 0) {
+          aimDirOverride = safeNormalize(sourceEntity.vel);
+        } else if (action.target) {
+          const t = this.resolveActionTarget(action.target, ctx);
+          if (t) {
+            const dir = t.pos.sub(spawnOrigin);
+            if (dir.magSq() > 0) aimDirOverride = dir.normalize();
+          }
+        } else if (ctx.heading.magSq() > 0) {
+          aimDirOverride = ctx.heading.clone();
+        }
+
+        this.executeAbility(action.payload, ctx, world, {
+          originOverride: spawnOrigin,
+          aimDirOverride,
+          depth: currentDepth + 1,
+        });
         break;
       }
       case 'MODIFY_STAT': {
