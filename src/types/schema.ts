@@ -22,11 +22,14 @@ export type TriggerType =
   | 'ON_HIT_WALL'
   | 'ON_DISTANCE_TRAVELED';
 
+export type ConstraintType = 'SPRING_TETHER' | 'DISTANCE_ROD' | 'SURFACE_PIN';
+
 export type ActionType =
   | 'ADD_INSTABILITY'
   | 'APPLY_IMPULSE'
   | 'SPAWN_FIELD'
   | 'SPAWN_PROJECTILE'
+  | 'SPAWN_CONSTRAINT'
   | 'MODIFY_STAT'
   | 'TELEPORT';
 
@@ -139,11 +142,27 @@ export interface TeleportAction {
   target?: ActionTarget;
 }
 
+export interface ConstraintConfig {
+  type: ConstraintType;
+  stiffness?: number;
+  restLength?: number;
+  maxBreakDistance?: number;
+  durationMs: number;
+}
+
+export interface SpawnConstraintAction {
+  type: 'SPAWN_CONSTRAINT';
+  constraint: ConstraintConfig;
+  source?: ActionTarget;
+  target?: ActionTarget;
+}
+
 export type ActionPayload =
   | AddInstabilityAction
   | ApplyImpulseAction
   | SpawnFieldAction
   | SpawnProjectileAction
+  | SpawnConstraintAction
   | ModifyStatAction
   | TeleportAction;
 
@@ -196,11 +215,18 @@ const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_DISTANCE_TRAVELED',
 ]);
 
+const CONSTRAINT_TYPES: ReadonlySet<string> = new Set([
+  'SPRING_TETHER',
+  'DISTANCE_ROD',
+  'SURFACE_PIN',
+]);
+
 const ACTION_TYPES: ReadonlySet<string> = new Set([
   'ADD_INSTABILITY',
   'APPLY_IMPULSE',
   'SPAWN_FIELD',
   'SPAWN_PROJECTILE',
+  'SPAWN_CONSTRAINT',
   'MODIFY_STAT',
   'TELEPORT',
 ]);
@@ -370,6 +396,32 @@ function validateEmitterConfig(value: unknown): EmitterConfig | null {
   return config;
 }
 
+function validateConstraintConfig(value: unknown): ConstraintConfig | null {
+  if (!isObject(value)) return null;
+  if (!isString(value.type) || !CONSTRAINT_TYPES.has(value.type)) return null;
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+
+  const config: ConstraintConfig = {
+    type: value.type as ConstraintType,
+    durationMs: value.durationMs,
+  };
+
+  if (value.stiffness !== undefined) {
+    if (!isNumber(value.stiffness)) return null;
+    config.stiffness = value.stiffness;
+  }
+  if (value.restLength !== undefined) {
+    if (!isNumber(value.restLength)) return null;
+    config.restLength = value.restLength;
+  }
+  if (value.maxBreakDistance !== undefined) {
+    if (!isNumber(value.maxBreakDistance)) return null;
+    config.maxBreakDistance = value.maxBreakDistance;
+  }
+
+  return config;
+}
+
 function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
   if (!isObject(value)) return null;
   if (!isString(value.color) || !isNumber(value.size)) return null;
@@ -489,6 +541,17 @@ function validateActionPayload(value: unknown): ActionPayload | null {
         if (!isNumber(value.direction.x) || !isNumber(value.direction.y)) return null;
         action.direction = { x: value.direction.x, y: value.direction.y };
       }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SPAWN_CONSTRAINT': {
+      const constraint = validateConstraintConfig(value.constraint);
+      if (!constraint) return null;
+      const action: SpawnConstraintAction = { type: 'SPAWN_CONSTRAINT', constraint };
+      const source = parseActionTarget(value.source);
+      if (source) action.source = source;
       const target = parseActionTarget(value.target);
       if (target) action.target = target;
       return action;

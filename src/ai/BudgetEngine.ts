@@ -3,6 +3,8 @@ import type {
   AbilitySchema,
   ActionPayload,
   ActionTarget,
+  ConstraintConfig,
+  ConstraintType,
   EmitterConfig,
   EmitterDistribution,
   ImpactVfx,
@@ -74,6 +76,7 @@ const FIELD_TYPES = new Set([
   'FRICTION_OVERRIDE',
   'MASS_ATTRACTOR',
 ]);
+const CONSTRAINT_TYPES = new Set(['SPRING_TETHER', 'DISTANCE_ROD', 'SURFACE_PIN']);
 const ACTION_TARGETS = new Set(['TARGET', 'CASTER', 'SELF']);
 const IMPULSE_DIRECTION_MODES = new Set([
   'AWAY_FROM_ORIGIN',
@@ -145,6 +148,8 @@ function scoreAction(action: ActionPayload, depth: number): number {
       }
       return childScore;
     }
+    case 'SPAWN_CONSTRAINT':
+      return (action.constraint.durationMs / 1000) * 8;
   }
 }
 
@@ -195,6 +200,26 @@ function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   }
   if (obj.blinkDistance !== undefined) {
     config.blinkDistance = ensureFiniteNumber(obj.blinkDistance, 60);
+  }
+
+  return config;
+}
+
+function sanitizeConstraintConfig(raw: unknown): ConstraintConfig {
+  const obj = isObject(raw) ? raw : {};
+  const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'SPRING_TETHER';
+  const type = (CONSTRAINT_TYPES.has(typeRaw) ? typeRaw : 'SPRING_TETHER') as ConstraintType;
+
+  const defaultRestLength = type === 'DISTANCE_ROD' ? 100 : 0;
+  const config: ConstraintConfig = {
+    type,
+    durationMs: clamp(ensureFiniteNumber(obj.durationMs ?? obj.duration, 2000), 100, 10000),
+    stiffness: clamp(ensureFiniteNumber(obj.stiffness, 100), 1, 2000),
+    restLength: clamp(ensureFiniteNumber(obj.restLength, defaultRestLength), 0, 2000),
+  };
+
+  if (obj.maxBreakDistance !== undefined) {
+    config.maxBreakDistance = clamp(ensureFiniteNumber(obj.maxBreakDistance, 500), 10, 5000);
   }
 
   return config;
@@ -384,6 +409,18 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
             : {}),
         },
       };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SPAWN_CONSTRAINT': {
+      const action: Extract<ActionPayload, { type: 'SPAWN_CONSTRAINT' }> = {
+        type: 'SPAWN_CONSTRAINT',
+        constraint: sanitizeConstraintConfig(raw.constraint),
+      };
+      const source = parseActionTarget(raw.source);
+      if (source) action.source = source;
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;
       return action;

@@ -5,6 +5,7 @@ import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import type { Entity } from '../entities/Entity';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
+import { ConstraintJoint } from '../entities/ConstraintJoint';
 import { SpatialZone } from '../entities/SpatialZone';
 import type { ParticleSystem } from '../render/ParticleSystem';
 import type {
@@ -325,6 +326,26 @@ export class Interpreter {
         }
         world.addZone(zone);
         this.particles?.expandingRing(spawnPos, field.radius, '#aa44ff');
+        break;
+      }
+      case 'SPAWN_CONSTRAINT': {
+        const { constraint } = action;
+        let bodyA: Entity | null;
+        let bodyB: Entity | undefined;
+        let anchorB: Vector2D | undefined;
+
+        if (constraint.type === 'SURFACE_PIN') {
+          bodyA = this.resolveActionTarget(action.target ?? 'TARGET', ctx);
+          if (!bodyA || bodyA.isDead) break;
+          anchorB = bodyA.pos.clone();
+        } else {
+          bodyA = this.resolveActionTarget(action.source ?? 'SELF', ctx);
+          bodyB = this.resolveActionTarget(action.target ?? 'TARGET', ctx) ?? undefined;
+          if (!bodyA || bodyA.isDead || !bodyB || bodyB.isDead) break;
+          if (bodyA.id === bodyB.id) break;
+        }
+
+        world.addConstraint(new ConstraintJoint(constraint, bodyA, bodyB, anchorB));
         break;
       }
       case 'SPAWN_PROJECTILE': {

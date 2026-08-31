@@ -66,6 +66,7 @@ export class CanvasRenderer {
     this.drawZones(ctx, world);
     particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
+    this.drawConstraints(ctx, world);
     this.drawProjectiles(ctx, world, alpha);
     this.drawOverheadHUD(ctx, world, alpha);
 
@@ -262,6 +263,59 @@ export class CanvasRenderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  private drawConstraints(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+    for (const c of world.getConstraints()) {
+      if (c.isDead) continue;
+
+      const p1 = c.bodyA.pos;
+      const p2 = c.bodyB?.pos ?? c.anchorB;
+      if (!p2) continue;
+
+      switch (c.config.type) {
+        case 'SPRING_TETHER':
+          ctx.strokeStyle = 'rgba(0, 255, 150, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          break;
+
+        case 'DISTANCE_ROD':
+          ctx.strokeStyle = 'rgba(200, 200, 200, 0.8)';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+          break;
+
+        case 'SURFACE_PIN': {
+          ctx.strokeStyle = 'rgba(255, 50, 50, 0.8)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+
+          const size = 8;
+          ctx.beginPath();
+          ctx.moveTo(p2.x - size, p2.y - size);
+          ctx.lineTo(p2.x + size, p2.y + size);
+          ctx.moveTo(p2.x + size, p2.y - size);
+          ctx.lineTo(p2.x - size, p2.y + size);
+          ctx.stroke();
+          break;
+        }
+      }
+    }
+    ctx.setLineDash([]);
   }
 
   private drawCombatants(

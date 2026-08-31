@@ -1,6 +1,7 @@
 import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import { Dummy } from '../entities/Dummy';
+import { ConstraintJoint } from '../entities/ConstraintJoint';
 import { Entity } from '../entities/Entity';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -31,6 +32,7 @@ export class PhysicsWorld {
   dummies: Dummy[] = [];
   projectiles: Projectile[] = [];
   zones: SpatialZone[] = [];
+  private constraints: ConstraintJoint[] = [];
 
   hexCenter: Vector2D;
   hexRadius: number;
@@ -130,6 +132,21 @@ export class PhysicsWorld {
     return true;
   }
 
+  getConstraints(): readonly ConstraintJoint[] {
+    return this.constraints;
+  }
+
+  addConstraint(c: ConstraintJoint): void {
+    this.constraints.push(c);
+  }
+
+  updateConstraints(dt: number): void {
+    for (const c of this.constraints) {
+      if (!c.isDead) c.update(dt);
+    }
+    this.constraints = this.constraints.filter((c) => !c.isDead);
+  }
+
   refreshCombatantsCache(): void {
     this.combatantsCache.length = 0;
     for (const p of this.players) {
@@ -219,6 +236,8 @@ export class PhysicsWorld {
       entity.update(dt);
       if (!entity.tags.has('kinematic')) entity.integrate(dt);
     }
+
+    this.updateConstraints(dt);
 
     this.resolveCircleCollisions();
     this.resolveHexBoundaries(dt);
@@ -439,5 +458,6 @@ export class PhysicsWorld {
     }
     this.projectiles = [];
     this.zones = [];
+    this.constraints = [];
   }
 }
