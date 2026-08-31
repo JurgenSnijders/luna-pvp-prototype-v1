@@ -1,8 +1,7 @@
-import type { PassiveModifierPayload, SkillCategory } from '../types/cards';
+﻿import type { PassiveModifierPayload, SkillCategory } from '../types/cards';
 import type {
   AbilitySchema,
   ActionPayload,
-  ActionTarget,
   ApplyImpulseAction,
   ComparisonOperator,
   ConditionNode,
@@ -12,7 +11,6 @@ import type {
   EmitterConfig,
   EmitterDistribution,
   ImpactVfx,
-  ImpulseDirectionMode,
   InputProfile,
   InputProfileMode,
   ResourceCost,
@@ -32,270 +30,31 @@ import type {
   VisualDescriptor,
 } from '../types/schema';
 import { validateAbilitySchema } from '../types/schema';
+import {
+  CATEGORY_BUDGETS,
+  COMPARISON_OPERATORS,
+  CONDITION_QUERIES,
+  CONSTRAINT_TYPES,
+  EMITTER_DISTRIBUTIONS,
+  FIELD_TYPES,
+  IMPACT_VFX_TYPES,
+  INPUT_PROFILE_MODES,
+  MAX_DEPTH,
+  PROJECTILE_STYLES,
+  TRAJECTORY_TYPES,
+  TRAIL_TYPES,
+} from './budget/constants';
+import {
+  clamp,
+  ensureFiniteNumber,
+  isObject,
+  parseActionTarget,
+  parseImpulseDirectionMode,
+} from './budget/helpers';
+import { scoreAbilitySchema } from './budget/score';
 
-export const CATEGORY_BUDGETS: Record<
-  SkillCategory,
-  { targetPower: number; minCdMs: number; baseCdScale: number }
-> = {
-  PRIMARY: { targetPower: 70, minCdMs: 500, baseCdScale: 900 },
-  SECONDARY: { targetPower: 110, minCdMs: 1200, baseCdScale: 1500 },
-  UTILITY: { targetPower: 120, minCdMs: 2500, baseCdScale: 2000 },
-  ULTIMATE: { targetPower: 240, minCdMs: 6000, baseCdScale: 3500 },
-  MOBILITY: { targetPower: 90, minCdMs: 2000, baseCdScale: 1800 },
-};
-
-const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
-  LINEAR: 1.0,
-  RETURN_TO_SOURCE: 1.4,
-  HOMING_SLERP: 1.8,
-  ORBIT_ANCHOR: 1.3,
-  DISCONTINUOUS_BLINK: 1.6,
-};
-
-const MAX_DEPTH = 3;
-const MODIFY_STAT_COST = 5.0;
-
-const TRAJECTORY_TYPES = new Set([
-  'LINEAR',
-  'RETURN_TO_SOURCE',
-  'ORBIT_ANCHOR',
-  'HOMING_SLERP',
-  'DISCONTINUOUS_BLINK',
-]);
-
-const EMITTER_DISTRIBUTIONS = new Set([
-  'FAN',
-  'RADIAL',
-  'RANDOM_CONE',
-  'PARALLEL',
-]);
-
-const PROJECTILE_STYLES = new Set([
-  'DISC',
-  'BEAM',
-  'PULSING_ORB',
-  'SHURIKEN',
-  'CHAOS_LIGHTNING',
-  'PRISM',
-  'RUNE_SIGIL',
-  'PLASMA_TENDRIL',
-  'VOID_RIFT',
-  'CRYSTAL_SHARD',
-]);
-const TRAIL_TYPES = new Set([
-  'NONE',
-  'SMOKE',
-  'ICE_GLOW',
-  'MAGMA_SPARKS',
-  'NEON_RIBBON',
-  'EMBER_SPIRAL',
-  'FROST_CRYSTALS',
-  'VOID_TENDRIL',
-  'PLASMA_ARC',
-  'DUST_PUFF',
-]);
-const IMPACT_VFX_TYPES = new Set([
-  'SPARKS',
-  'SHOCKWAVE',
-  'ICE_BURST',
-  'VORTEX_SWIRL',
-  'MINI_NUKE',
-  'PLASMA_BLOOM',
-  'SHATTER',
-  'IMPLOSION',
-  'LIGHTNING_FORK',
-  'RUNE_FLASH',
-]);
-const FIELD_TYPES = new Set([
-  'RADIAL_IMPULSE',
-  'VORTEX_TANGENT',
-  'FRICTION_OVERRIDE',
-  'MASS_ATTRACTOR',
-]);
-const CONSTRAINT_TYPES = new Set(['SPRING_TETHER', 'DISTANCE_ROD', 'SURFACE_PIN']);
-const CONDITION_QUERIES = new Set([
-  'STAT_THRESHOLD',
-  'TAG_CHECK',
-  'PROXIMITY_COUNT',
-  'SURFACE_TYPE',
-  'COMBO_STEP',
-]);
-const INPUT_PROFILE_MODES = new Set([
-  'INSTANT',
-  'CHARGE_AND_RELEASE',
-  'CHANNELED',
-  'COMBO_CHAIN',
-]);
-const COMPARISON_OPERATORS = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
-const ACTION_TARGETS = new Set(['TARGET', 'CASTER', 'SELF']);
-const IMPULSE_DIRECTION_MODES = new Set([
-  'AWAY_FROM_ORIGIN',
-  'TOWARDS_CASTER',
-  'TOWARDS_ORIGIN',
-  'ALONG_TRAJECTORY',
-  'PERPENDICULAR_TRAJECTORY',
-  'CUSTOM',
-]);
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function ensureFiniteNumber(value: unknown, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
-    return Number(value);
-  }
-  return fallback;
-}
-
-function parseActionTarget(value: unknown): ActionTarget | undefined {
-  const upper = typeof value === 'string' ? value.toUpperCase() : '';
-  return ACTION_TARGETS.has(upper) ? (upper as ActionTarget) : undefined;
-}
-
-function parseImpulseDirectionMode(value: unknown): ImpulseDirectionMode | undefined {
-  const upper = typeof value === 'string' ? value.toUpperCase() : '';
-  return IMPULSE_DIRECTION_MODES.has(upper) ? (upper as ImpulseDirectionMode) : undefined;
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
-}
-
-function getTrajectoryWeight(traj?: TrajectoryConfig): number {
-  if (!traj) return 1.0;
-  const base = TRAJECTORY_WEIGHTS[traj.type] ?? 1.0;
-  const pierce = traj.piercing ?? 0;
-  return base * (1.0 + pierce * 0.25);
-}
-
-function scoreAction(action: ActionPayload, depth: number): number {
-  switch (action.type) {
-    case 'ADD_INSTABILITY':
-      return action.amount * 2.0;
-    case 'APPLY_IMPULSE':
-      return (action.baseForce / 100) * 3.0;
-    case 'SPAWN_FIELD': {
-      const f = action.field;
-      const pullFactor = f.strength > 0 ? 3.0 : 4.5;
-      return (f.radius / 50) * (f.durationMs / 1000) * pullFactor;
-    }
-    case 'TELEPORT':
-      return (action.distance / 50) * 4.0;
-    case 'MODIFY_STAT':
-      return MODIFY_STAT_COST;
-    case 'SPAWN_PROJECTILE': {
-      const count = action.emitter?.count ?? 1;
-      if (depth >= MAX_DEPTH) {
-        return getTrajectoryWeight(action.projectileTrajectory) * 10 * count;
-      }
-      let childScore = getTrajectoryWeight(action.projectileTrajectory) * 5 * count;
-      if (action.triggers) {
-        for (const node of action.triggers) {
-          childScore += scoreTriggerNode(node, depth + 1);
-        }
-      }
-      return childScore;
-    }
-    case 'SPAWN_CONSTRAINT':
-      return (action.constraint.durationMs / 1000) * 8;
-    case 'CAST_CHILD_PAYLOAD': {
-      if (depth >= MAX_DEPTH) return 10;
-      return scoreAbilitySchema(action.payload, depth + 1) * 1.5;
-    }
-    case 'APPLY_STASIS':
-      return (action.durationMs / 1000) * 6;
-    case 'RELEASE_STASIS':
-      return 2;
-    case 'REFLECT_PROJECTILES':
-      return 8 * ((action.radius ?? 150) / 150);
-    case 'SPAWN_OBSTACLE': {
-      const o = action.obstacle;
-      const area = (o.width * o.height) / 10000;
-      return (o.durationMs / 1000) * 4 + area * 3;
-    }
-    case 'MUTATE_TERRAIN': {
-      const m = action.mutation;
-      return (m.durationMs / 1000) * 3 + m.radius / 50;
-    }
-    case 'MORPH_ENTITY': {
-      const morph = action.morph;
-      return (
-        (morph.durationMs / 1000) * 4 +
-        (morph.mass ?? 0) / 200 +
-        (morph.radius ?? 0) / 20
-      );
-    }
-    case 'APPLY_STEALTH':
-      return (action.durationMs / 1000) * 5;
-    case 'SPAWN_ACTOR': {
-      const actor = action.actor;
-      const turretBonus = actor.archetype === 'TURRET' ? 4 : 0;
-      return (actor.durationMs / 1000) * 6 + actor.health / 50 + turretBonus;
-    }
-  }
-}
-
-function scoreTriggerNode(node: TriggerNode, depth: number): number {
-  let trueScore = 0;
-  for (const action of node.actions) {
-    trueScore += scoreAction(action, depth);
-  }
-  let falseScore = 0;
-  if (node.ifFalseActions) {
-    for (const action of node.ifFalseActions) {
-      falseScore += scoreAction(action, depth);
-    }
-  }
-  let total = Math.max(trueScore, falseScore);
-  if (node.children) {
-    for (const child of node.children) {
-      total += scoreTriggerNode(child, depth);
-    }
-  }
-  return total;
-}
-
-function getCastingResourceModifier(schema: AbilitySchema): number {
-  let mod = 1.0;
-
-  switch (schema.inputProfile?.mode) {
-    case 'CHANNELED':
-      mod *= 1.35;
-      break;
-    case 'COMBO_CHAIN':
-      mod *= 1.25;
-      break;
-    case 'CHARGE_AND_RELEASE':
-      mod *= 1.15;
-      break;
-  }
-
-  switch (schema.resourceCost?.type) {
-    case 'HEAT':
-      mod *= 0.85;
-      break;
-    case 'AMMO':
-      mod *= 0.9;
-      break;
-    case 'HEALTH_PCT':
-      mod *= 0.8;
-      break;
-  }
-
-  return clamp(mod, 0.6, 1.8);
-}
-
-export function scoreAbilitySchema(schema: AbilitySchema, depth = 0): number {
-  let actionSum = 0;
-  for (const node of schema.triggers) {
-    actionSum += scoreTriggerNode(node, depth);
-  }
-  if (actionSum === 0) actionSum = 10;
-  return getTrajectoryWeight(schema.trajectory) * actionSum * getCastingResourceModifier(schema);
-}
-
+export { CATEGORY_BUDGETS } from './budget/constants';
+export { scoreAbilitySchema } from './budget/score';
 function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   const obj = isObject(raw) ? raw : {};
   const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'LINEAR';
