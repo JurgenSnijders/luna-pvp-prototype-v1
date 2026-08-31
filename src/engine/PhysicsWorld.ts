@@ -180,6 +180,17 @@ export class PhysicsWorld {
     this.pendingWallImpacts = [];
   }
 
+  /** Syncs attached zone transforms to their parent and ticks zone duration. Runs before
+   * `step()` so attached fields (e.g. a moving gravity well) apply forces from their
+   * current-frame position rather than lagging a frame behind their parent. */
+  updateSpatialZones(dt: number): void {
+    for (const zone of this.zones) {
+      if (zone.isDead) continue;
+      zone.update(dt);
+      if (!zone.tags.has('kinematic')) zone.integrate(dt);
+    }
+  }
+
   step(dt: number): void {
     this.pendingHits = [];
     this.pendingExpirations = [];
@@ -204,11 +215,6 @@ export class PhysicsWorld {
       if (!entity.tags.has('kinematic')) entity.integrate(dt);
     }
     for (const entity of this.projectiles) {
-      if (entity.isDead) continue;
-      entity.update(dt);
-      if (!entity.tags.has('kinematic')) entity.integrate(dt);
-    }
-    for (const entity of this.zones) {
       if (entity.isDead) continue;
       entity.update(dt);
       if (!entity.tags.has('kinematic')) entity.integrate(dt);

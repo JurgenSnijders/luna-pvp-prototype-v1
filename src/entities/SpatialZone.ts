@@ -6,6 +6,9 @@ export class SpatialZone extends Entity {
   config: FieldConfig;
   ownerId: string;
   remainingDurationMs: number;
+  parentRef: Entity | null;
+  offset: Vector2D;
+  detachOnParentDeath: boolean;
 
   constructor(pos: Vector2D, config: FieldConfig, ownerId: string) {
     super(generateEntityId('zone'), pos, {
@@ -17,9 +20,24 @@ export class SpatialZone extends Entity {
     this.config = config;
     this.ownerId = ownerId;
     this.remainingDurationMs = config.durationMs;
+    this.parentRef = null;
+    this.offset = Vector2D.zero();
+    this.detachOnParentDeath = true;
   }
 
   override update(dt: number): void {
+    if (this.parentRef) {
+      if (this.parentRef.isDead) {
+        if (this.detachOnParentDeath) {
+          this.remainingDurationMs = 0;
+        } else {
+          this.parentRef = null;
+        }
+      } else {
+        this.pos.copyFrom(this.parentRef.pos).addMut(this.offset);
+      }
+    }
+
     this.remainingDurationMs -= dt * 1000;
     if (this.remainingDurationMs <= 0) {
       this.isDead = true;

@@ -13,6 +13,8 @@ export class Projectile extends Entity {
   pierceRemaining: number;
   hitEntityIds: Set<string>;
   triggerMap: Map<string, TriggerNode[]>;
+  /** Per-ON_TICK-node elapsed-ms accumulators, keyed by index within getTriggers('ON_TICK'). */
+  tickAccumulatorsMs: Map<number, number>;
   aimAngle: number;
   depth: number;
   visuals: VisualDescriptor | null;
@@ -47,6 +49,7 @@ export class Projectile extends Entity {
     this.pierceRemaining = config.piercing ?? 0;
     this.hitEntityIds = new Set();
     this.triggerMap = triggerMap;
+    this.tickAccumulatorsMs = new Map();
     this.aimAngle = aimAngle;
     this.depth = depth;
     this.visuals = visuals;

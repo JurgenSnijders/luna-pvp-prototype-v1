@@ -299,8 +299,31 @@ export class Interpreter {
         break;
       }
       case 'SPAWN_FIELD': {
-        world.addZone(new SpatialZone(ctx.origin.clone(), action.field, ctx.caster.id));
-        this.particles?.expandingRing(ctx.origin, action.field.radius, '#aa44ff');
+        const field = action.field;
+        const parent = field.attachToSource ? (ctx.sourceEntity ?? ctx.caster) : null;
+
+        // Option A dedup: a parent may only carry one live attached zone per fieldType, so
+        // repeated ON_TICK spawns refresh the existing well instead of stacking pull forces.
+        if (parent) {
+          const existing = world.zones.find(
+            (z) => !z.isDead && z.parentRef === parent && z.config.fieldType === field.fieldType,
+          );
+          if (existing) {
+            existing.remainingDurationMs = Math.max(existing.remainingDurationMs, field.durationMs);
+            break;
+          }
+        }
+
+        const offset = field.offset ? new Vector2D(field.offset.x, field.offset.y) : Vector2D.zero();
+        const spawnPos = parent ? parent.pos.add(offset) : ctx.origin.clone();
+        const zone = new SpatialZone(spawnPos, field, ctx.caster.id);
+        if (parent) {
+          zone.parentRef = parent;
+          zone.offset = offset;
+          zone.detachOnParentDeath = field.detachOnParentDeath ?? true;
+        }
+        world.addZone(zone);
+        this.particles?.expandingRing(spawnPos, field.radius, '#aa44ff');
         break;
       }
       case 'SPAWN_PROJECTILE': {
@@ -456,7 +479,7 @@ export class Interpreter {
     }
   }
 
-  processLifecycleEvents(world: PhysicsWorld): void {
+  processLifecycleEvents(world: PhysicsWorld, dt: number): void {
     for (const hit of world.pendingHits) {
       const color = hit.projectile.visuals?.color ?? '#ff6644';
       const vfx = hit.projectile.visuals?.impactVfx ?? 'SPARKS';
@@ -506,14 +529,30 @@ export class Interpreter {
       if (projectile.isDead) continue;
       const tickNodes = projectile.getTriggers('ON_TICK');
       if (tickNodes.length > 0) {
-        this.dispatchProjectileTriggers(
-          projectile,
-          'ON_TICK',
-          null,
-          world,
-          projectile.pos,
-          projectile.depth,
-        );
+        // Throttled per-node: each ON_TICK node fires independently once its own
+        // tickIntervalMs elapses, instead of every physics frame (~16ms), to prevent
+        // attached-field/entity-count flooding on long-lived projectiles.
+        let ctx: TriggerContext | null | undefined;
+        for (let i = 0; i < tickNodes.length; i++) {
+          const node = tickNodes[i];
+          const interval = Math.max(16, node.tickIntervalMs ?? 100);
+          const elapsed = (projectile.tickAccumulatorsMs.get(i) ?? 0) + dt * 1000;
+          if (elapsed < interval) {
+            projectile.tickAccumulatorsMs.set(i, elapsed);
+            continue;
+          }
+          projectile.tickAccumulatorsMs.set(i, elapsed % interval);
+          if (ctx === undefined) {
+            ctx = this.buildLifecycleContext(
+              projectile,
+              null,
+              projectile.pos,
+              projectile.depth,
+              world,
+            );
+          }
+          if (ctx) this.dispatchTriggerNode(node, ctx, world);
+        }
       }
       const visuals = projectile.visuals;
       const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation

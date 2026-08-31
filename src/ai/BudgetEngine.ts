@@ -350,7 +350,7 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
       const fieldType = FIELD_TYPES.has(fieldTypeRaw)
         ? fieldTypeRaw
         : 'RADIAL_IMPULSE';
-      return {
+      const action: Extract<ActionPayload, { type: 'SPAWN_FIELD' }> = {
         type: 'SPAWN_FIELD' as const,
         field: {
           fieldType: fieldType as
@@ -368,8 +368,25 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
           ...(fieldObj.frictionValue !== undefined
             ? { frictionValue: ensureFiniteNumber(fieldObj.frictionValue, 0.02) }
             : {}),
+          ...(typeof fieldObj.attachToSource === 'boolean'
+            ? { attachToSource: fieldObj.attachToSource }
+            : {}),
+          ...(isObject(fieldObj.offset)
+            ? {
+                offset: {
+                  x: ensureFiniteNumber(fieldObj.offset.x, 0),
+                  y: ensureFiniteNumber(fieldObj.offset.y, 0),
+                },
+              }
+            : {}),
+          ...(typeof fieldObj.detachOnParentDeath === 'boolean'
+            ? { detachOnParentDeath: fieldObj.detachOnParentDeath }
+            : {}),
         },
       };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
     }
 
     case 'MODIFY_STAT': {
@@ -448,6 +465,10 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
     trigger: trigger as TriggerNode['trigger'],
     actions,
   };
+
+  if (trigger === 'ON_TICK' || raw.tickIntervalMs !== undefined) {
+    node.tickIntervalMs = clamp(ensureFiniteNumber(raw.tickIntervalMs, 100), 16, 5000);
+  }
 
   if (Array.isArray(raw.children)) {
     node.children = raw.children

@@ -346,9 +346,10 @@ function runSimulationStep(dt: number): void {
   }
 
   interpreter.updateTrajectories(world, dt);
+  world.updateSpatialZones(dt);
   applySpatialFields(dt);
   world.step(dt);
-  interpreter.processLifecycleEvents(world);
+  interpreter.processLifecycleEvents(world, dt);
 
   for (const impact of world.pendingWallImpacts) {
     particles.burstSparks(impact, 6, '#ffaa44');

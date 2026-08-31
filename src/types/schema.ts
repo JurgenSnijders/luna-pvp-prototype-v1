@@ -72,6 +72,9 @@ export interface FieldConfig {
   strength: number;
   durationMs: number;
   frictionValue?: number;
+  attachToSource?: boolean;
+  offset?: { x: number; y: number };
+  detachOnParentDeath?: boolean;
 }
 
 export interface EmitterConfig {
@@ -107,6 +110,7 @@ export interface ApplyImpulseAction {
 export interface SpawnFieldAction {
   type: 'SPAWN_FIELD';
   field: FieldConfig;
+  target?: ActionTarget;
 }
 
 export interface SpawnProjectileAction {
@@ -142,6 +146,7 @@ export type ActionPayload =
 
 export interface TriggerNode {
   trigger: TriggerType;
+  tickIntervalMs?: number;
   actions: ActionPayload[];
   children?: TriggerNode[];
 }
@@ -312,6 +317,23 @@ function validateFieldConfig(value: unknown): FieldConfig | null {
     config.frictionValue = value.frictionValue;
   }
 
+  if (value.attachToSource !== undefined) {
+    if (typeof value.attachToSource !== 'boolean') return null;
+    config.attachToSource = value.attachToSource;
+  }
+
+  if (value.offset !== undefined) {
+    if (!isObject(value.offset) || !isNumber(value.offset.x) || !isNumber(value.offset.y)) {
+      return null;
+    }
+    config.offset = { x: value.offset.x, y: value.offset.y };
+  }
+
+  if (value.detachOnParentDeath !== undefined) {
+    if (typeof value.detachOnParentDeath !== 'boolean') return null;
+    config.detachOnParentDeath = value.detachOnParentDeath;
+  }
+
   return config;
 }
 
@@ -394,7 +416,10 @@ function validateActionPayload(value: unknown): ActionPayload | null {
     case 'SPAWN_FIELD': {
       const field = validateFieldConfig(value.field);
       if (!field) return null;
-      return { type: 'SPAWN_FIELD', field };
+      const action: SpawnFieldAction = { type: 'SPAWN_FIELD', field };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
     }
 
     case 'SPAWN_PROJECTILE': {
@@ -482,6 +507,11 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
     trigger: value.trigger as TriggerType,
     actions,
   };
+
+  if (value.tickIntervalMs !== undefined) {
+    if (!isNumber(value.tickIntervalMs)) return null;
+    node.tickIntervalMs = value.tickIntervalMs;
+  }
 
   if (value.children !== undefined) {
     if (!Array.isArray(value.children)) return null;
