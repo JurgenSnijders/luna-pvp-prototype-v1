@@ -1,7 +1,8 @@
 import { clampToHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import { MAX_ENTITIES, type PhysicsWorld } from '../engine/PhysicsWorld';
-import { getGraphicsSettings } from '../devtools/graphicsSettings';
+import { getGraphicsSettings, getTierLimits } from '../devtools/graphicsSettings';
+import { screenShake } from '../render/ScreenShake';
 import type { Entity } from '../entities/Entity';
 import { Obstacle } from '../entities/Obstacle';
 import { Player } from '../entities/Player';
@@ -46,6 +47,12 @@ const DEFAULT_VISUALS: VisualDescriptor = {
 // direction math never divides by zero / produces NaN velocities.
 const FALLBACK_DIR = new Vector2D(0, 1);
 
+function getActionPriority(type: ActionPayload['type']): number {
+  if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT') return 1;
+  if (type === 'APPLY_IMPULSE') return 2;
+  return 3;
+}
+
 function safeNormalize(v: Vector2D, fallback: Vector2D = FALLBACK_DIR): Vector2D {
   return v.magSq() > 0 ? v.normalize() : fallback;
 }
@@ -64,16 +71,25 @@ function trailColor(visuals: VisualDescriptor | null | undefined): string | null
   if (!visuals || visuals.trailType === 'NONE') return null;
   switch (visuals.trailType) {
     case 'SMOKE':
-      return '#8899aa';
+      return visuals.vfx?.secondaryColor ?? '#8899aa';
     case 'ICE_GLOW':
-      return '#88ddff';
+    case 'FROST_CRYSTALS':
+      return visuals.vfx?.secondaryColor ?? '#88ddff';
     case 'MAGMA_SPARKS':
-      return '#ff6622';
+    case 'EMBER_SPIRAL':
+      return visuals.vfx?.secondaryColor ?? '#ff6622';
     case 'NEON_RIBBON':
+    case 'VOID_TENDRIL':
+    case 'PLASMA_ARC':
+    case 'DUST_PUFF':
       return visuals.color;
     default:
       return visuals.color;
   }
+}
+
+function secondaryColor(visuals: VisualDescriptor | null | undefined, fallback: string): string {
+  return visuals?.vfx?.secondaryColor ?? visuals?.color ?? fallback;
 }
 
 export class Interpreter {
@@ -313,7 +329,7 @@ export class Interpreter {
         if (!t) break;
         const dir = this.resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
         world.applyKnockback(t, dir, action.baseForce * scale);
-        this.particles?.burstSparks(ctx.origin, 8, '#ffaa44');
+        this.particles?.burstSparks(ctx.origin, 8, this.activeCastVisuals?.color ?? '#ffaa44');
         break;
       }
       case 'SPAWN_FIELD': {
@@ -341,7 +357,7 @@ export class Interpreter {
           zone.detachOnParentDeath = field.detachOnParentDeath ?? true;
         }
         world.addZone(zone);
-        this.particles?.expandingRing(spawnPos, field.radius, '#aa44ff');
+        this.particles?.expandingRing(spawnPos, field.radius, this.activeCastVisuals?.color ?? '#aa44ff');
         break;
       }
       case 'SPAWN_CONSTRAINT': {
@@ -396,7 +412,7 @@ export class Interpreter {
         }
         const dest = t.pos.add(dir.scale(action.distance));
         t.pos = clampToHex(dest, world.hexCenter, world.hexRadius);
-        this.particles?.burstSparks(t.pos, 12, '#44ffff');
+        this.particles?.burstSparks(t.pos, 12, secondaryColor(this.activeCastVisuals, '#44ffff'));
         break;
       }
       case 'CAST_CHILD_PAYLOAD': {
@@ -468,7 +484,7 @@ export class Interpreter {
           reflected++;
         }
         if (reflected > 0) {
-          this.particles?.expandingRing(t.pos, radius, '#88ccff');
+          this.particles?.expandingRing(t.pos, radius, secondaryColor(this.activeCastVisuals, '#88ccff'));
         }
         break;
       }
@@ -637,7 +653,10 @@ export class Interpreter {
     }
 
     const actionsToRun = passed ? node.actions : (node.ifFalseActions ?? []);
-    this.dispatchActions(actionsToRun, ctx, world);
+    const sortedActions = [...actionsToRun].sort(
+      (a, b) => getActionPriority(a.type) - getActionPriority(b.type),
+    );
+    this.dispatchActions(sortedActions, ctx, world);
 
     if (node.children) {
       for (const child of node.children) {
@@ -724,9 +743,14 @@ export class Interpreter {
 
   processLifecycleEvents(world: PhysicsWorld, dt: number): void {
     for (const hit of world.pendingHits) {
-      const color = hit.projectile.visuals?.color ?? '#ff6644';
-      const vfx = hit.projectile.visuals?.impactVfx ?? 'SPARKS';
-      this.particles?.triggerImpactBurst(hit.hitPos, color, vfx);
+      const visuals = hit.projectile.visuals;
+      const color = visuals?.color ?? '#ff6644';
+      const vfx = visuals?.impactVfx ?? 'SPARKS';
+      const sec = secondaryColor(visuals, '#ffffff');
+      const scale = visuals?.vfx?.impactScale ?? 1;
+      this.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
+      const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
+      if (shake > 0) screenShake.trigger(shake * 4, 0.12);
       this.dispatchProjectileTriggers(
         hit.projectile,
         'ON_HIT',
@@ -756,8 +780,11 @@ export class Interpreter {
       if (reason === 'return') continue;
 
       if (reason === 'range' || reason === 'lifetime') {
-        const color = projectile.visuals?.color ?? '#ff4488';
-        this.particles?.triggerImpactBurst(projectile.pos, color, 'SHOCKWAVE');
+        const visuals = projectile.visuals;
+        const color = visuals?.color ?? '#ff4488';
+        const sec = secondaryColor(visuals, '#ffffff');
+        const scale = visuals?.vfx?.impactScale ?? 1;
+        this.particles?.triggerImpactBurst(projectile.pos, color, 'SHOCKWAVE', sec, scale);
         this.dispatchProjectileTriggers(
           projectile,
           'ON_EXPIRY',
@@ -865,16 +892,19 @@ export class Interpreter {
 
       const visuals = projectile.visuals;
       const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation
+      const trailDensity =
+        (visuals?.vfx?.trailDensity ?? 1) * getTierLimits().trailDensity;
+      const trailThreshold = TRAIL_MIN_DIST_SQ / Math.max(0.3, trailDensity);
       if (
         getGraphicsSettings().particleTrails &&
-        projectile.pos.distSq(projectile.lastTrailPos) > TRAIL_MIN_DIST_SQ
+        projectile.pos.distSq(projectile.lastTrailPos) > trailThreshold
       ) {
         if (visuals?.trailType === 'NEON_RIBBON') {
           this.particles?.neonRibbon(projectile.pos, visuals.color);
         } else {
           const color = trailColor(visuals);
-          if (color) {
-            this.particles?.trail(projectile.pos, color);
+          if (color && visuals) {
+            this.particles?.trail(projectile.pos, color, visuals.trailType);
           }
         }
         projectile.lastTrailPos.copyFrom(projectile.pos);

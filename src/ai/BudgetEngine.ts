@@ -76,14 +76,35 @@ const PROJECTILE_STYLES = new Set([
   'PULSING_ORB',
   'SHURIKEN',
   'CHAOS_LIGHTNING',
+  'PRISM',
+  'RUNE_SIGIL',
+  'PLASMA_TENDRIL',
+  'VOID_RIFT',
+  'CRYSTAL_SHARD',
 ]);
-const TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON']);
+const TRAIL_TYPES = new Set([
+  'NONE',
+  'SMOKE',
+  'ICE_GLOW',
+  'MAGMA_SPARKS',
+  'NEON_RIBBON',
+  'EMBER_SPIRAL',
+  'FROST_CRYSTALS',
+  'VOID_TENDRIL',
+  'PLASMA_ARC',
+  'DUST_PUFF',
+]);
 const IMPACT_VFX_TYPES = new Set([
   'SPARKS',
   'SHOCKWAVE',
   'ICE_BURST',
   'VORTEX_SWIRL',
   'MINI_NUKE',
+  'PLASMA_BLOOM',
+  'SHATTER',
+  'IMPLOSION',
+  'LIGHTNING_FORK',
+  'RUNE_FLASH',
 ]);
 const FIELD_TYPES = new Set([
   'RADIAL_IMPULSE',
@@ -236,13 +257,43 @@ function scoreTriggerNode(node: TriggerNode, depth: number): number {
   return total;
 }
 
+function getCastingResourceModifier(schema: AbilitySchema): number {
+  let mod = 1.0;
+
+  switch (schema.inputProfile?.mode) {
+    case 'CHANNELED':
+      mod *= 1.35;
+      break;
+    case 'COMBO_CHAIN':
+      mod *= 1.25;
+      break;
+    case 'CHARGE_AND_RELEASE':
+      mod *= 1.15;
+      break;
+  }
+
+  switch (schema.resourceCost?.type) {
+    case 'HEAT':
+      mod *= 0.85;
+      break;
+    case 'AMMO':
+      mod *= 0.9;
+      break;
+    case 'HEALTH_PCT':
+      mod *= 0.8;
+      break;
+  }
+
+  return clamp(mod, 0.6, 1.8);
+}
+
 export function scoreAbilitySchema(schema: AbilitySchema, depth = 0): number {
   let actionSum = 0;
   for (const node of schema.triggers) {
     actionSum += scoreTriggerNode(node, depth);
   }
   if (actionSum === 0) actionSum = 10;
-  return getTrajectoryWeight(schema.trajectory) * actionSum;
+  return getTrajectoryWeight(schema.trajectory) * actionSum * getCastingResourceModifier(schema);
 }
 
 function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
@@ -532,13 +583,46 @@ function sanitizeVisuals(raw: unknown): VisualDescriptor {
       ? obj.projectileStyle.toUpperCase()
       : 'DISC';
 
-  return {
+  const descriptor: VisualDescriptor = {
     color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
     size: clamp(ensureFiniteNumber(obj.size, 8), 4, 32),
     projectileStyle: (PROJECTILE_STYLES.has(styleRaw) ? styleRaw : 'DISC') as ProjectileStyle,
     trailType: (TRAIL_TYPES.has(trailRaw) ? trailRaw : 'NONE') as TrailType,
     impactVfx: (IMPACT_VFX_TYPES.has(impactRaw) ? impactRaw : 'SPARKS') as ImpactVfx,
   };
+
+  if (isObject(obj.vfx)) {
+    const vfxRaw = obj.vfx;
+    const vfx: VisualDescriptor['vfx'] = {};
+    if (vfxRaw.glowIntensity !== undefined) {
+      vfx.glowIntensity = clamp(ensureFiniteNumber(vfxRaw.glowIntensity, 1), 0, 2);
+    }
+    if (vfxRaw.trailDensity !== undefined) {
+      vfx.trailDensity = clamp(ensureFiniteNumber(vfxRaw.trailDensity, 1), 0, 2);
+    }
+    if (vfxRaw.trailLengthMs !== undefined) {
+      vfx.trailLengthMs = clamp(ensureFiniteNumber(vfxRaw.trailLengthMs, 400), 50, 2000);
+    }
+    if (vfxRaw.impactScale !== undefined) {
+      vfx.impactScale = clamp(ensureFiniteNumber(vfxRaw.impactScale, 1), 0.5, 2);
+    }
+    if (typeof vfxRaw.secondaryColor === 'string' && vfxRaw.secondaryColor.trim()) {
+      vfx.secondaryColor = vfxRaw.secondaryColor;
+    }
+    if (typeof vfxRaw.blendMode === 'string') {
+      const bm = vfxRaw.blendMode.toUpperCase();
+      if (bm === 'NORMAL' || bm === 'ADDITIVE') vfx.blendMode = bm;
+    }
+    if (vfxRaw.shakeIntensity !== undefined) {
+      vfx.shakeIntensity = clamp(ensureFiniteNumber(vfxRaw.shakeIntensity, 1), 0, 2);
+    }
+    if (vfxRaw.distortion !== undefined) {
+      vfx.distortion = clamp(ensureFiniteNumber(vfxRaw.distortion, 0), 0, 1);
+    }
+    if (Object.keys(vfx).length > 0) descriptor.vfx = vfx;
+  }
+
+  return descriptor;
 }
 
 function sanitizeAction(

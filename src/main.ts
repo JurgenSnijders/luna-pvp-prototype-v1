@@ -3,7 +3,10 @@ import { balanceAbilitySchema, sanitizeAbilitySchema } from './ai/BudgetEngine';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
 import { SpellLibrary } from './devtools/SpellLibrary';
-import { getGraphicsSettings } from './devtools/graphicsSettings';
+import { getGraphicsSettings, getEffectiveDprCap } from './devtools/graphicsSettings';
+import { perfMonitor } from './devtools/PerfMonitor';
+import { adaptiveQuality } from './render/AdaptiveQuality';
+import { screenShake } from './render/ScreenShake';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
 import {
@@ -106,7 +109,7 @@ function getHexCenter(): Vector2D {
 }
 
 function resize(): void {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = getEffectiveDprCap();
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
   canvas.style.width = `${window.innerWidth}px`;
@@ -114,6 +117,7 @@ function resize(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   world?.setViewportBounds(window.innerWidth, window.innerHeight);
   arenaShrink?.resize(getStoredHexRadius());
+  particles?.resize(window.innerWidth, window.innerHeight);
 }
 
 function assignDefaultLoadout(target: Player): void {
@@ -372,6 +376,7 @@ function syncArenaRadius(dt: number): void {
 }
 
 function runSimulationStep(dt: number): void {
+  particles.beginFrame(dt);
   syncArenaRadius(dt);
   applyPlayerInput();
   player.updateSlotInputs(dt, executePlayerCast);
@@ -412,6 +417,7 @@ function runSimulationStep(dt: number): void {
     getHexCenter(),
   );
   particles.update(dt);
+  adaptiveQuality.update();
 
   player.clearCastInputs();
   bot.clearCastInputs();
@@ -434,9 +440,14 @@ function init(): void {
   world.setCombatantRadius(getStoredCombatantRadius());
 
   interpreter = new Interpreter();
-  particles = new ParticleSystem();
+  particles = new ParticleSystem(document.body);
+  const glCtx = particles.getGlContext();
+  if (glCtx) {
+    (window as unknown as { __lunaGlCtx?: typeof glCtx }).__lunaGlCtx = glCtx;
+  }
   renderer = new CanvasRenderer(ctx);
   interpreter.setParticleSystem(particles);
+  perfMonitor.probeCapabilities(particles.getGlContext()?.gl ?? null);
 
   assignDefaultLoadout(player);
   assignDefaultLoadout(bot);
@@ -532,6 +543,11 @@ function init(): void {
   );
 
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'F3') {
+      perfMonitor.toggleOverlay();
+      return;
+    }
+
     if (canDraftOpen()) {
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -620,6 +636,9 @@ function init(): void {
       }
     },
     onRender(alpha) {
+      const shake = screenShake.update(1 / 60);
+      ctx.save();
+      ctx.translate(shake.x, shake.y);
       renderer.render(
         world,
         particles,
@@ -630,12 +649,44 @@ function init(): void {
         arenaShrink.getShrinkProgress(),
         arenaShrink.isShrinking,
       );
+      ctx.restore();
+
+      const vfxStats = particles.render(window.innerWidth, window.innerHeight);
+      perfMonitor.setCounters({
+        liveParticles: vfxStats.liveParticles,
+        livePrimitives: vfxStats.livePrimitives,
+        drawCalls: vfxStats.drawCalls,
+        instanceCount: vfxStats.instanceCount,
+        uploadBytes: vfxStats.uploadBytes,
+      });
+
+      if (!particles.isWebGL()) {
+        particles.draw(ctx);
+      }
+
+      if (perfMonitor.isOverlayVisible()) {
+        drawPerfOverlay();
+      }
+
       inspector.updateTelemetry();
       actionBarHUD.update(player);
     },
   });
 
   loop.start();
+}
+
+function drawPerfOverlay(): void {
+  const s = perfMonitor.getSnapshot();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(8, 8, 320, 88);
+  ctx.fillStyle = '#aef';
+  ctx.font = '12px monospace';
+  ctx.fillText(perfMonitor.formatOverlayText(), 16, 24);
+  ctx.fillText(`FPS ${s.fps.toFixed(0)}`, 16, 84);
+  ctx.restore();
 }
 
 init();

@@ -182,4 +182,60 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
       },
     ],
   },
+
+  'VFX Stress Storm': {
+    id: 'test_vfx_stress_storm',
+    name: 'VFX Stress Storm',
+    cooldownMs: 400,
+    recoilKick: 40,
+    visuals: {
+      color: '#ff44aa',
+      size: 7,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'NEON_RIBBON',
+      impactVfx: 'MINI_NUKE',
+      vfx: {
+        glowIntensity: 1.6,
+        trailDensity: 1.4,
+        impactScale: 1.2,
+        secondaryColor: '#ffffff',
+        blendMode: 'ADDITIVE',
+        shakeIntensity: 0.8,
+      },
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: { type: 'LINEAR', speed: 420, maxRange: 700 },
+            emitter: { count: 12, spreadDeg: 360, distribution: 'RADIAL' },
+            visuals: {
+              color: '#ff44aa',
+              size: 7,
+              projectileStyle: 'PULSING_ORB',
+              trailType: 'NEON_RIBBON',
+              impactVfx: 'MINI_NUKE',
+              vfx: {
+                glowIntensity: 1.6,
+                trailDensity: 1.4,
+                impactScale: 1.2,
+                secondaryColor: '#ffffff',
+                blendMode: 'ADDITIVE',
+              },
+            },
+            triggers: [
+              {
+                trigger: 'ON_HIT',
+                actions: [
+                  { type: 'ADD_INSTABILITY', amount: 8, target: 'TARGET' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 };

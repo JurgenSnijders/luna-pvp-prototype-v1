@@ -11,7 +11,12 @@ import { Summon } from '../entities/Summon';
 import type { TerrainMutationConfig, TerrainType } from '../types/schema';
 
 export const MAX_ENTITIES = 256;
+export const BASELINE_INSTABILITY_ON_HIT = 10;
 export const LAVA_DAMAGE_PER_SEC = 25;
+
+export function getInstabilityScale(instabilityPct: number): number {
+  return 1 + (instabilityPct / 100) * 1.5;
+}
 const LAVA_DRAG = 0.15;
 const COLLISION_RESTITUTION = 0.3;
 const OBSTACLE_PROJECTILE_DAMAGE = 25;
@@ -217,7 +222,7 @@ export class PhysicsWorld {
 
   applyKnockback(target: Entity, direction: Vector2D, baseForce: number): void {
     const dir = direction.magSq() > 0 ? direction.normalize() : Vector2D.zero();
-    const instabilityScale = 1 + (target.instabilityPct / 100) * 1.5;
+    const instabilityScale = getInstabilityScale(target.instabilityPct);
     const resistance = Math.min(0.75, target.knockbackResistance ?? 0);
     const impulse = dir.scale(
       (baseForce / target.effectiveMass) * instabilityScale * (1 - resistance),
@@ -630,6 +635,11 @@ export class PhysicsWorld {
         if (projectile.pos.distSq(target.pos) > minDistSq) continue;
 
         if (!projectile.registerHit(target.id)) continue;
+
+        target.instabilityPct = Math.min(
+          500,
+          target.instabilityPct + BASELINE_INSTABILITY_ON_HIT,
+        );
 
         const hitPos = projectile.pos.lerp(target.pos, 0.5);
         this.pendingHits.push({ projectile, target, hitPos });

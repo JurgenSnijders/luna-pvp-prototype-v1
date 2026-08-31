@@ -1,3 +1,5 @@
+import { perfMonitor } from '../devtools/PerfMonitor';
+
 export const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1;
 
@@ -43,21 +45,28 @@ export class Loop {
   private frame = (now: number): void => {
     if (!this.running) return;
 
+    perfMonitor.beginFrame();
+
     if (!this.paused) {
       const frameDt = Math.min((now - this.lastTime) / 1000, MAX_FRAME_DT);
       this.lastTime = now;
       this.accumulator += frameDt;
 
+      perfMonitor.beginSim();
       while (this.accumulator >= FIXED_DT) {
         this.callbacks.onUpdate(FIXED_DT);
         this.accumulator -= FIXED_DT;
       }
+      perfMonitor.endSim();
     } else {
       this.lastTime = now;
     }
 
     const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
+    perfMonitor.beginRender();
     this.callbacks.onRender(alpha);
+    perfMonitor.endRender();
+
     this.rafId = requestAnimationFrame(this.frame);
   };
 }

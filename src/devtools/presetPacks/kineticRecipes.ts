@@ -224,6 +224,214 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
       },
     ],
   },
+
+  chargedShot: {
+    id: 'recipe_charged_shot',
+    name: 'Charged Rail Burst',
+    cooldownMs: 1200,
+    recoilKick: 200,
+    inputProfile: { mode: 'CHARGE_AND_RELEASE', minChargeMs: 200, maxChargeMs: 1200 },
+    trajectory: { type: 'LINEAR', speed: 1200, maxRange: 800 },
+    visuals: {
+      color: '#00ccff',
+      size: 6,
+      projectileStyle: 'BEAM',
+      trailType: 'NEON_RIBBON',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 800,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+          { type: 'ADD_INSTABILITY', amount: 25, target: 'TARGET' },
+        ],
+      },
+    ],
+  },
+
+  heatWeapon: {
+    id: 'recipe_heat_weapon',
+    name: 'Plasma Flamer',
+    cooldownMs: 50,
+    recoilKick: 5,
+    inputProfile: { mode: 'CHANNELED', channelIntervalMs: 100 },
+    resourceCost: {
+      type: 'HEAT',
+      cost: 8,
+      rechargeRate: 20,
+      lockoutDurationMs: 2500,
+    },
+    visuals: {
+      color: '#ff6600',
+      size: 6,
+      projectileStyle: 'DISC',
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'SPARKS',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_FIELD',
+            field: {
+              fieldType: 'RADIAL_IMPULSE',
+              radius: 50,
+              strength: 200,
+              durationMs: 150,
+              attachToSource: true,
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  comboChain: {
+    id: 'recipe_combo_chain',
+    name: 'Stasis Battery Combo',
+    cooldownMs: 800,
+    recoilKick: 0,
+    inputProfile: { mode: 'COMBO_CHAIN', comboWindowMs: 3000 },
+    visuals: {
+      color: '#aaccff',
+      size: 11,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'ICE_GLOW',
+      impactVfx: 'ICE_BURST',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        conditions: [{ query: 'COMBO_STEP', comparison: 'EQ', value: 0 }],
+        actions: [
+          {
+            type: 'APPLY_STASIS',
+            durationMs: 5000,
+            target: 'CASTER',
+            forceAccumulatorScale: 2.0,
+          },
+        ],
+      },
+      {
+        trigger: 'ON_CAST',
+        conditions: [{ query: 'COMBO_STEP', comparison: 'EQ', value: 1 }],
+        actions: [{ type: 'RELEASE_STASIS', target: 'CASTER' }],
+      },
+    ],
+  },
+
+  morphColossus: {
+    id: 'recipe_morph_colossus',
+    name: 'Iron Colossus',
+    cooldownMs: 4000,
+    recoilKick: 0,
+    visuals: {
+      color: '#888899',
+      size: 14,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'SMOKE',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'MORPH_ENTITY',
+            target: 'CASTER',
+            morph: { radius: 32, mass: 200, speedMultiplier: 0.6, durationMs: 6000 },
+          },
+        ],
+      },
+    ],
+  },
+
+  ghostWalk: {
+    id: 'recipe_ghost_walk',
+    name: 'Ghost Walk',
+    cooldownMs: 3000,
+    recoilKick: 0,
+    visuals: {
+      color: '#6688aa',
+      size: 10,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'SMOKE',
+      impactVfx: 'ICE_BURST',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'APPLY_STEALTH',
+            target: 'CASTER',
+            durationMs: 4000,
+            revealOnCast: true,
+          },
+        ],
+      },
+    ],
+  },
+
+  autoTurret: {
+    id: 'recipe_auto_turret',
+    name: 'Auto Turret',
+    cooldownMs: 2500,
+    recoilKick: 20,
+    visuals: {
+      color: '#ffaa00',
+      size: 10,
+      projectileStyle: 'DISC',
+      trailType: 'SMOKE',
+      impactVfx: 'SPARKS',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: { archetype: 'TURRET', health: 80, durationMs: 8000 },
+          },
+        ],
+      },
+    ],
+  },
+
+  lavaPatch: {
+    id: 'recipe_lava_patch',
+    name: 'Lava Patch',
+    cooldownMs: 1500,
+    recoilKick: 40,
+    trajectory: { type: 'LINEAR', speed: 600, maxRange: 500 },
+    visuals: {
+      color: '#ff4400',
+      size: 10,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'MINI_NUKE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'MUTATE_TERRAIN',
+            target: 'TARGET',
+            mutation: { type: 'LAVA', radius: 70, durationMs: 6000 },
+          },
+        ],
+      },
+    ],
+  },
 };
 
 export const KINETIC_RECIPE_PRESETS: Record<string, AbilitySchema> = {
@@ -233,4 +441,11 @@ export const KINETIC_RECIPE_PRESETS: Record<string, AbilitySchema> = {
   'Stasis Freeze Trap': KINETIC_RECIPES.stasisTrap,
   'Ice Barrier': KINETIC_RECIPES.iceWall,
   'Coupe de Grace': KINETIC_RECIPES.execute,
+  'Charged Rail Burst': KINETIC_RECIPES.chargedShot,
+  'Plasma Flamer': KINETIC_RECIPES.heatWeapon,
+  'Stasis Battery Combo': KINETIC_RECIPES.comboChain,
+  'Iron Colossus': KINETIC_RECIPES.morphColossus,
+  'Ghost Walk': KINETIC_RECIPES.ghostWalk,
+  'Auto Turret': KINETIC_RECIPES.autoTurret,
+  'Lava Patch': KINETIC_RECIPES.lavaPatch,
 };

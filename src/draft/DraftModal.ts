@@ -31,7 +31,7 @@ export interface DraftModalCallbacks {
 }
 
 type WorkshopMode = 'FORGE_NEW' | 'EVOLVE_EXISTING' | 'PASSIVE_UPGRADES';
-type BadgeKind = 'trajectory' | 'field' | 'trigger';
+type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
 
 const RARITY_COLORS: Record<CardRarity, string> = {
   COMMON: '#888888',
@@ -59,6 +59,7 @@ const BADGE_COLORS: Record<BadgeKind, { bg: string; text: string }> = {
   trajectory: { bg: 'rgba(0,200,255,0.15)', text: '#6ee7ff' },
   field: { bg: 'rgba(170,68,255,0.15)', text: '#d8b4fe' },
   trigger: { bg: 'rgba(245,158,11,0.15)', text: '#fcd34d' },
+  cast: { bg: 'rgba(52,211,153,0.15)', text: '#6ee7b7' },
 };
 
 const TRAJECTORY_LABELS = new Set([
@@ -116,26 +117,63 @@ function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
 
 function extractMechanicBadgesFromAbility(s: AbilitySchema): { label: string; kind: BadgeKind }[] {
   const badges: { label: string; kind: BadgeKind }[] = [];
+  const seen = new Set<string>();
+
+  const pushBadge = (label: string, kind: BadgeKind): void => {
+    if (seen.has(label)) return;
+    seen.add(label);
+    badges.push({ label, kind });
+  };
+
   if (s.trajectory) {
-    badges.push({
-      label: `[${s.trajectory.type.replace(/_/g, ' ')}]`,
-      kind: 'trajectory',
-    });
+    pushBadge(`[${s.trajectory.type.replace(/_/g, ' ')}]`, 'trajectory');
   }
 
-  for (const node of s.triggers) {
-    for (const action of node.actions) {
-      if (action.type === 'SPAWN_FIELD') {
-        badges.push({
-          label: `[${action.field.fieldType.replace(/_/g, ' ')}]`,
-          kind: 'field',
-        });
-      }
-      if (action.type === 'TELEPORT') badges.push({ label: '[TELEPORT]', kind: 'trigger' });
-      if (action.type === 'APPLY_IMPULSE') badges.push({ label: '[IMPULSE]', kind: 'trigger' });
-      if (action.type === 'SPAWN_PROJECTILE') badges.push({ label: '[EMITTER]', kind: 'trigger' });
-    }
+  if (s.inputProfile?.mode && s.inputProfile.mode !== 'INSTANT') {
+    pushBadge(`[${s.inputProfile.mode.replace(/_/g, ' ')}]`, 'cast');
   }
+  if (s.resourceCost?.type) {
+    pushBadge(`[${s.resourceCost.type.replace(/_/g, ' ')}]`, 'cast');
+  }
+
+  const actionBadges: Partial<Record<string, string>> = {
+    SPAWN_FIELD: '',
+    TELEPORT: '[TELEPORT]',
+    APPLY_IMPULSE: '[IMPULSE]',
+    SPAWN_PROJECTILE: '[EMITTER]',
+    APPLY_STASIS: '[STASIS]',
+    RELEASE_STASIS: '[RELEASE STASIS]',
+    MORPH_ENTITY: '[MORPH]',
+    APPLY_STEALTH: '[STEALTH]',
+    SPAWN_ACTOR: '[ACTOR]',
+    SPAWN_OBSTACLE: '[OBSTACLE]',
+    MUTATE_TERRAIN: '[TERRAIN]',
+    SPAWN_CONSTRAINT: '[CONSTRAINT]',
+    REFLECT_PROJECTILES: '[REFLECT]',
+    CAST_CHILD_PAYLOAD: '[CHILD PAYLOAD]',
+  };
+
+  const collectActions = (nodes: AbilitySchema['triggers']): void => {
+    for (const node of nodes) {
+      for (const action of node.actions) {
+        if (action.type === 'SPAWN_FIELD') {
+          pushBadge(`[${action.field.fieldType.replace(/_/g, ' ')}]`, 'field');
+        } else {
+          const label = actionBadges[action.type];
+          if (label) pushBadge(label, 'trigger');
+        }
+      }
+      if (node.ifFalseActions) {
+        for (const action of node.ifFalseActions) {
+          const label = actionBadges[action.type];
+          if (label) pushBadge(label, 'trigger');
+        }
+      }
+      if (node.children) collectActions(node.children);
+    }
+  };
+
+  collectActions(s.triggers);
   return badges;
 }
 

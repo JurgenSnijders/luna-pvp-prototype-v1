@@ -1,122 +1,70 @@
-import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
+import type { ImpactVfx } from '../types/schema';
+import { createParticleBackend } from './backends/createParticleBackend';
+import { VfxDirector } from './VfxDirector';
 
-const POOL_SIZE = 2048;
-
-interface Particle {
-  pos: Vector2D;
-  vel: Vector2D;
-  life: number;
-  maxLife: number;
-  color: string;
-  size: number;
-  alpha: number;
-  peakAlpha: number;
-  active: boolean;
-}
-
+/** Public facade preserving the legacy ParticleSystem API. */
 export class ParticleSystem {
-  private pool: Particle[] = [];
-  private freeList: number[] = [];
+  private director: VfxDirector;
+  private glContext: ReturnType<typeof createParticleBackend>['glContext'];
+  private useCanvas2d: boolean;
 
-  constructor() {
-    this.freeList = new Array(POOL_SIZE);
-    for (let i = 0; i < POOL_SIZE; i++) {
-      this.freeList[i] = POOL_SIZE - 1 - i;
-      this.pool.push({
-        pos: Vector2D.create(0, 0),
-        vel: Vector2D.create(0, 0),
-        life: 0,
-        maxLife: 1,
-        color: '#ffffff',
-        size: 2,
-        alpha: 1,
-        peakAlpha: 1,
-        active: false,
-      });
+  constructor(parent?: HTMLElement) {
+    const bundle = createParticleBackend(parent ?? document.body);
+    this.director = new VfxDirector(bundle.backend);
+    this.glContext = bundle.glContext;
+    this.useCanvas2d = bundle.backend.name === 'canvas2d';
+  }
+
+  isWebGL(): boolean {
+    return !this.useCanvas2d;
+  }
+
+  getGlContext() {
+    return this.glContext;
+  }
+
+  beginFrame(dt: number): void {
+    this.director.beginFrame(dt);
+  }
+
+  update(dt: number): void {
+    this.director.update(dt);
+  }
+
+  render(width: number, height: number) {
+    this.director.resize(width, height);
+    return this.director.render(width, height);
+  }
+
+  resize(width: number, height: number): void {
+    this.director.resize(width, height);
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
+    if (this.useCanvas2d) {
+      this.director.draw(ctx);
     }
   }
 
-  private spawn(
-    pos: Vector2D,
-    vel: Vector2D,
-    life: number,
-    color: string,
-    size: number,
-    initialAlpha = 1,
-  ): void {
-    if (this.freeList.length === 0) return;
-    const index = this.freeList.pop()!;
-    const slot = this.pool[index];
-    slot.pos.copyFrom(pos);
-    slot.vel.copyFrom(vel);
-    slot.life = life;
-    slot.maxLife = life;
-    slot.color = color;
-    slot.size = size;
-    slot.alpha = initialAlpha;
-    slot.peakAlpha = initialAlpha;
-    slot.active = true;
+  getLiveCount(): number {
+    return this.director.getLiveParticleCount();
   }
 
   burstSparks(pos: Vector2D, count: number, color: string): void {
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-      const speed = 80 + Math.random() * 120;
-      this.spawn(
-        pos,
-        Vector2D.fromAngle(angle, speed),
-        0.3 + Math.random() * 0.3,
-        color,
-        2 + Math.random() * 2,
-      );
-    }
+    this.director.burstSparks(pos, count, color);
   }
 
-  trail(pos: Vector2D, color: string): void {
-    this.spawn(
-      pos,
-      Vector2D.fromAngle(Math.random() * Math.PI * 2, 10),
-      0.4,
-      color,
-      3,
-    );
+  trail(pos: Vector2D, color: string, trailKind = 'DEFAULT'): void {
+    this.director.trail(pos, color, trailKind);
   }
 
   neonRibbon(pos: Vector2D, color: string): void {
-    this.spawn(
-      pos,
-      Vector2D.fromAngle(Math.random() * Math.PI * 2, 6),
-      0.55,
-      color,
-      4.5 + Math.random() * 1.5,
-      0.95,
-    );
-    this.spawn(
-      pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, 2)),
-      Vector2D.fromAngle(Math.random() * Math.PI * 2, 4),
-      0.35,
-      '#ffffff',
-      2,
-      0.7,
-    );
+    this.director.neonRibbon(pos, color);
   }
 
   ember(pos: Vector2D): void {
-    const count = 1 + Math.floor(Math.random() * 2);
-    const colors = ['#ff5500', '#ffaa00'];
-    for (let i = 0; i < count; i++) {
-      this.spawn(
-        pos,
-        new Vector2D(
-          (Math.random() - 0.5) * 30,
-          -10 - Math.random() * 20,
-        ),
-        0.4 + Math.random() * 0.3,
-        colors[Math.floor(Math.random() * colors.length)],
-        2 + Math.random(),
-      );
-    }
+    this.director.ember(pos);
   }
 
   spawnAmbientEmber(
@@ -124,134 +72,30 @@ export class ParticleSystem {
     safeCenter: Vector2D,
     safeRadius: number,
   ): void {
-    const colors = ['#ff6600', '#ffaa22'];
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const x = Math.random() * bounds.width;
-      const y = Math.random() * bounds.height;
-      const pos = new Vector2D(x, y);
-      if (isInsideHex(pos, safeCenter, safeRadius)) continue;
-
-      this.spawn(
-        pos,
-        new Vector2D(
-          (Math.random() - 0.5) * 20,
-          -15 - Math.random() * 25,
-        ),
-        0.8 + Math.random() * 0.8,
-        colors[Math.floor(Math.random() * colors.length)],
-        1.5 + Math.random() * 1.5,
-        0.8,
-      );
-      return;
-    }
+    this.director.spawnAmbientEmber(bounds, safeCenter, safeRadius);
   }
 
   expandingRing(pos: Vector2D, radius: number, color: string): void {
-    const segments = 12;
-    for (let i = 0; i < segments; i++) {
-      const angle = (Math.PI * 2 * i) / segments;
-      const edge = pos.add(Vector2D.fromAngle(angle, radius * 0.5));
-      this.spawn(
-        edge,
-        Vector2D.fromAngle(angle, 30),
-        0.5,
-        color,
-        4,
-      );
-    }
+    this.director.expandingRing(pos, radius, color);
   }
 
   triggerMuzzleFlash(pos: Vector2D, dir: Vector2D, color: string): void {
-    const heading = dir.magSq() > 0 ? dir.normalize() : Vector2D.fromAngle(0);
-    const baseAngle = Math.atan2(heading.y, heading.x);
-    const count = 8;
-    for (let i = 0; i < count; i++) {
-      const t = i / (count - 1);
-      const cone = -0.55 + t * 1.1;
-      const speed = 90 + Math.random() * 140;
-      this.spawn(
-        pos.add(heading.scale(10)),
-        Vector2D.fromAngle(baseAngle + cone, speed),
-        0.18 + Math.random() * 0.2,
-        color,
-        2 + Math.random() * 2.5,
-      );
-    }
+    this.director.triggerMuzzleFlash(pos, dir, color);
   }
 
   triggerImpactBurst(
     pos: Vector2D,
     color: string,
-    vfxType:
-      | 'SPARKS'
-      | 'SHOCKWAVE'
-      | 'ICE_BURST'
-      | 'VORTEX_SWIRL'
-      | 'MINI_NUKE' = 'SPARKS',
+    vfxType: ImpactVfx = 'SPARKS',
+    secondaryColor?: string,
+    scale?: number,
   ): void {
-    switch (vfxType) {
-      case 'SHOCKWAVE':
-        this.expandingRing(pos, 50, color);
-        break;
-      case 'ICE_BURST':
-        this.expandingRing(pos, 55, '#88ddff');
-        this.burstSparks(pos, 12, color);
-        this.burstSparks(pos, 8, '#88ddff');
-        break;
-      case 'MINI_NUKE':
-        this.expandingRing(pos, 50, color);
-        this.expandingRing(pos, 90, color);
-        this.burstSparks(pos, 20, color);
-        this.burstSparks(pos, 10, '#ffffff');
-        break;
-      case 'VORTEX_SWIRL': {
-        const segments = 14;
-        for (let i = 0; i < segments; i++) {
-          const angle = (Math.PI * 2 * i) / segments;
-          const radial = Vector2D.fromAngle(angle, 40);
-          const tangent = new Vector2D(-radial.y, radial.x).normalize().scale(90);
-          this.spawn(
-            pos.add(radial.scale(0.3)),
-            tangent.add(radial.scale(-0.4)),
-            0.45,
-            color,
-            3,
-          );
-        }
-        break;
-      }
-      case 'SPARKS':
-      default:
-        this.burstSparks(pos, 10, color);
-        break;
-    }
-  }
-
-  update(dt: number): void {
-    for (let i = 0; i < this.pool.length; i++) {
-      const p = this.pool[i];
-      if (!p.active) continue;
-      p.life -= dt;
-      if (p.life <= 0) {
-        p.active = false;
-        this.freeList.push(i);
-        continue;
-      }
-      p.pos.addScaledMut(p.vel, dt);
-      p.vel.scaleMut(0.95);
-      p.alpha = p.peakAlpha * (p.life / p.maxLife);
-    }
-  }
-
-  draw(ctx: CanvasRenderingContext2D): void {
-    for (const p of this.pool) {
-      if (!p.active) continue;
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.pos.x, p.pos.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+    this.director.triggerImpactBurst(
+      pos,
+      color,
+      secondaryColor ?? '#ffffff',
+      vfxType,
+      scale,
+    );
   }
 }

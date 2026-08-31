@@ -1,6 +1,7 @@
 import {
   balanceAbilitySchema,
   balancePassiveModifiers,
+  CATEGORY_BUDGETS,
   repairAbilitySemantics,
   sanitizeAbilitySchema,
   scoreAbilitySchema,
@@ -20,7 +21,7 @@ import type {
   TrajectoryConfig,
   TriggerNode,
 } from '../types/schema';
-import { validateAbilitySchema } from '../types/schema';
+import { ACTION_TYPES, TRIGGER_TYPES, validateAbilitySchema } from '../types/schema';
 
 export const STORAGE_KEY_API = 'LUNA_AI_API_KEY';
 export const STORAGE_KEY_BASE_URL = 'LUNA_AI_BASE_URL';
@@ -109,13 +110,13 @@ Each Card must contain ONLY these fields:
 Do NOT include abilityPayload, triggers, trajectory, visuals, rarity, budgetCost, or any other field.
 
 Category design flavor:
-- PRIMARY: rapid-fire skillshots, low payload, short cooldown pacing
-- SECONDARY: medium area/skillshot pressure
-- UTILITY: crowd control, zones, friction patches, vortices
-- ULTIMATE: high-impact screen presence, large fields, long cooldown pacing
-- MOBILITY: displacement, teleports, dashes, escapes — prioritize movement over damage
+- PRIMARY: rapid-fire skillshots, low payload, short cooldown pacing, ammo magazines
+- SECONDARY: medium area/skillshot pressure, charged shots, combo chains
+- UTILITY: crowd control, zones, friction patches, vortices, terrain mutation, obstacles, stasis traps
+- ULTIMATE: high-impact screen presence, large fields, morphs, turrets/decoys, long cooldown pacing
+- MOBILITY: displacement, teleports, dashes, stealth, escapes — prioritize movement over damage
 
-Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports.
+Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports, morphs, stealth, turrets/decoys, terrain mutation, obstacles, stasis, charged/channel/combo casting, heat/ammo/health-cost economies.
 Return exactly 3 distinct ability concepts tuned for the requested category.`;
 
 const EVOLUTION_SYSTEM_PROMPT = `You are a concept ideation engine evolving an existing ability for a 2D physics kinetic arena game.
@@ -134,7 +135,7 @@ Do NOT include abilityPayload, evolutionDiff, triggers, trajectory, rarity, budg
 
 Rules:
 - Preserve the core identity of the base spell (name stem) across all 3 variants
-- Layer the requested mutation distinctly across the 3 variants (e.g. cluster/multi-payload, spatial field/trap, kinematic/motion augment)
+- Layer the requested mutation distinctly across the 3 variants (e.g. cluster/multi-payload, spatial field/trap, kinematic/motion augment, morph/stealth, terrain/obstacle, stasis, charged/channel/combo input, heat/ammo resource)
 Return exactly 3 distinct evolved ability concepts.`;
 
 const PASSIVE_SYSTEM_PROMPT = `You are a passive upgrade synthesizer for a 2D physics kinetic arena game.
@@ -160,8 +161,20 @@ const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-
 Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
 
 AbilitySchema: { id, name, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+inputProfile: { mode: INSTANT|CHARGE_AND_RELEASE|CHANNELED|COMBO_CHAIN, minChargeMs?, maxChargeMs?, channelIntervalMs?, comboWindowMs? }
+  CHARGE_AND_RELEASE: minChargeMs+maxChargeMs — power scales with hold time
+  CHANNELED: channelIntervalMs — re-fires ON_CAST every interval while held
+  COMBO_CHAIN: comboWindowMs — pair with COMBO_STEP conditions to branch per press
+resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, rechargeRate?, lockoutDurationMs? }
+  HEAT: cost per shot, rechargeRate/sec, lockoutDurationMs on overheat — set cooldownMs 0
+  AMMO: cost per shot, maxCapacity magazine, lockoutDurationMs reload time
+  HEALTH_PCT: cost is percent of max health
 trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance? }
-visuals: { color: hex, size: 4-32, projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING, trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON, impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE }
+visuals: { color: hex, size: 4-32, projectileStyle, trailType, impactVfx, vfx?: { glowIntensity?:0-2, trailDensity?:0-2, trailLengthMs?, impactScale?:0.5-2, secondaryColor?:hex, blendMode?:NORMAL|ADDITIVE, shakeIntensity?:0-2, distortion?:0-1 } }
+projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL|PLASMA_TENDRIL|VOID_RIFT|CRYSTAL_SHARD
+trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
+impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE|PLASMA_BLOOM|SHATTER|IMPLOSION|LIGHTNING_FORK|RUNE_FLASH
+secondaryColor should contrast with color. glowIntensity tracks power (0.6 subtle, 1.2 strong, 1.8 ultimate).
 
 TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.
 IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWARDS_ORIGIN | ALONG_TRAJECTORY | PERPENDICULAR_TRAJECTORY | CUSTOM
@@ -169,16 +182,24 @@ APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
 NEVER default to bare outward knockback for pull/tether/freeze intents. Always set target + directionMode on APPLY_IMPULSE.
 
 TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT (projectile-only — requires root trajectory or SPAWN_PROJECTILE)
-TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, conditions?, actions[], ifFalseActions?, children? }
-CONDITIONS: STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value } | TAG_CHECK | PROXIMITY_COUNT | SURFACE_TYPE { value: LAVA|SAFE } | COMBO_STEP
+TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, conditions?, actions[], ifFalseActions?, children? }
+  triggerDistance: required on ON_DISTANCE_TRAVELED (distance in world units before firing)
+  fireOnHitDeath: optional boolean — fire trigger when projectile kills its target on hit
+CONDITIONS:
+  STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value, target? }
+  TAG_CHECK { value: string, target? } — runtime entity tag, e.g. "in_lava"
+  PROXIMITY_COUNT { radius, comparison, value, target? } — nearby entity count
+  COMBO_STEP { comparison, value } — zero-indexed press in a COMBO_CHAIN
+  SURFACE_TYPE { value: LAVA|SAFE, target? } — terrain type under the target position
+SURFACE_TYPE queries terrain at a position; TAG_CHECK value:"in_lava" reads the entity tag set when standing in lava.
 
 ACTIONS (use relational vectors, not generic knockback):
 ADD_INSTABILITY { amount, target? }
 APPLY_IMPULSE { baseForce, target?, directionMode? }
 SPAWN_FIELD { field: { fieldType: RADIAL_IMPULSE|VORTEX_TANGENT|FRICTION_OVERRIDE|MASS_ATTRACTOR, radius, strength, durationMs, attachToSource?, frictionValue? } }
-SPAWN_PROJECTILE { projectileTrajectory, emitter?, triggers? }
+SPAWN_PROJECTILE { projectileTrajectory, emitter?: { count: 1-12, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL }, triggers? }
 SPAWN_CONSTRAINT { constraint: { type: SPRING_TETHER|DISTANCE_ROD|SURFACE_PIN, stiffness?, restLength?, durationMs }, source?, target? }
-CAST_CHILD_PAYLOAD { payload: AbilitySchema, inheritVelocity?, maxRecursionDepth? }
+CAST_CHILD_PAYLOAD { payload: AbilitySchema, inheritVelocity?, inheritInstability?, maxRecursionDepth? }
 MODIFY_STAT { stat, value, mode: add|set|multiply, target? }
 TELEPORT { distance, target?, direction? }
 APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
@@ -199,6 +220,24 @@ Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursi
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
+Charged Shot: inputProfile:{ mode:"CHARGE_AND_RELEASE", minChargeMs:200, maxChargeMs:1200 } + trajectory LINEAR + ON_HIT APPLY_IMPULSE
+Heat Flamer: inputProfile:{ mode:"CHANNELED", channelIntervalMs:100 } + resourceCost:{ type:"HEAT", cost:8, rechargeRate:20, lockoutDurationMs:2500 } + cooldownMs:0 + ON_CAST SPAWN_FIELD radial burst
+Stasis Combo: inputProfile:{ mode:"COMBO_CHAIN", comboWindowMs:3000 } + two ON_CAST nodes with conditions COMBO_STEP EQ 0 (APPLY_STASIS CASTER) and EQ 1 (RELEASE_STASIS CASTER)
+Crowd Breaker: ON_CAST conditions:[{ query:"PROXIMITY_COUNT", target:"CASTER", radius:120, comparison:"GTE", value:2 }] strong field + ifFalseActions weaker field
+Iron Colossus: ON_CAST -> MORPH_ENTITY { target:"CASTER", morph:{ radius:32, mass:200, speedMultiplier:0.6, durationMs:6000 } }
+Tripwire Bomb: trajectory LINEAR + ON_DISTANCE_TRAVELED triggerDistance:300 -> SPAWN_FIELD radial impulse
+
+Set inputProfile and/or resourceCost whenever the concept implies charging, channeling, combos, overheating, magazines, or health cost.
+
+VISUAL RECIPE BOOK (pair archetype to visuals):
+Frost: color #88ddff, secondaryColor #ffffff, projectileStyle CRYSTAL_SHARD, trailType FROST_CRYSTALS, impactVfx ICE_BURST, vfx.glowIntensity 1.0
+Fire: color #ff6622, secondaryColor #ffcc44, trailType EMBER_SPIRAL or MAGMA_SPARKS, impactVfx PLASMA_BLOOM, blendMode ADDITIVE
+Void: color #220044, secondaryColor #cc66ff, projectileStyle VOID_RIFT, trailType VOID_TENDRIL, impactVfx IMPLOSION, glowIntensity 1.4
+Lightning: color #aaffcc, secondaryColor #ffffff, projectileStyle CHAOS_LIGHTNING, trailType PLASMA_ARC, impactVfx LIGHTNING_FORK
+Holy: color #ffdd88, secondaryColor #fff8e0, projectileStyle RUNE_SIGIL, impactVfx RUNE_FLASH, shakeIntensity 0.8
+Toxic: color #66ff44, secondaryColor #ccff99, trailType DUST_PUFF, impactVfx SHATTER
+Kinetic: color #00e5ff, secondaryColor #88eeff, projectileStyle DISC or BEAM, trailType NONE, impactVfx SPARKS
+Arcane: color #aa44ff, secondaryColor #ff88ff, projectileStyle PRISM, trailType NEON_RIBBON, impactVfx VORTEX_SWIRL
 
 Match visuals to concept. Prefer constraints, fields, stasis, child payloads, and relational impulses over plain ADD_INSTABILITY spam.`;
 
@@ -362,13 +401,8 @@ function diagnoseAbilityPayload(payload: unknown, cardIndex: number): string[] {
     return reasons;
   }
 
-  const validTriggers = new Set([
-    'ON_CAST', 'ON_TICK', 'ON_HIT', 'ON_EXPIRY', 'ON_RETURN', 'ON_HAZARD_CONTACT',
-  ]);
-  const validActions = new Set([
-    'ADD_INSTABILITY', 'APPLY_IMPULSE', 'SPAWN_FIELD', 'SPAWN_PROJECTILE',
-    'MODIFY_STAT', 'TELEPORT',
-  ]);
+  const validTriggers = TRIGGER_TYPES;
+  const validActions = ACTION_TYPES;
 
   p.triggers.forEach((raw, ti) => {
     if (raw === null || typeof raw !== 'object') {
@@ -497,6 +531,8 @@ const TRIGGER_ALIASES: Record<string, TriggerNode['trigger']> = {
   ON_DESTROY: 'ON_EXPIRY',
   ON_DEATH: 'ON_EXPIRY',
   ON_SPAWN: 'ON_CAST',
+  ON_DETONATE: 'ON_RECAST',
+  ON_WALL_HIT: 'ON_HIT_WALL',
 };
 
 const ACTION_ALIASES: Record<string, string> = {
@@ -543,14 +579,17 @@ const VALID_TRAJECTORY_TYPES = new Set([
   'DISCONTINUOUS_BLINK',
 ]);
 
-const VALID_TRAIL_TYPES = new Set(['NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON']);
-const VALID_IMPACT_VFX = new Set(['SPARKS', 'SHOCKWAVE', 'ICE_BURST', 'VORTEX_SWIRL', 'MINI_NUKE']);
+const VALID_TRAIL_TYPES = new Set([
+  'NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON',
+  'EMBER_SPIRAL', 'FROST_CRYSTALS', 'VOID_TENDRIL', 'PLASMA_ARC', 'DUST_PUFF',
+]);
+const VALID_IMPACT_VFX = new Set([
+  'SPARKS', 'SHOCKWAVE', 'ICE_BURST', 'VORTEX_SWIRL', 'MINI_NUKE',
+  'PLASMA_BLOOM', 'SHATTER', 'IMPLOSION', 'LIGHTNING_FORK', 'RUNE_FLASH',
+]);
 const VALID_PROJECTILE_STYLES = new Set([
-  'DISC',
-  'BEAM',
-  'PULSING_ORB',
-  'SHURIKEN',
-  'CHAOS_LIGHTNING',
+  'DISC', 'BEAM', 'PULSING_ORB', 'SHURIKEN', 'CHAOS_LIGHTNING',
+  'PRISM', 'RUNE_SIGIL', 'PLASMA_TENDRIL', 'VOID_RIFT', 'CRYSTAL_SHARD',
 ]);
 
 const PROJECTILE_STYLE_ALIASES: Record<string, string> = {
@@ -559,7 +598,6 @@ const PROJECTILE_STYLE_ALIASES: Record<string, string> = {
   RAILGUN: 'BEAM',
   BOLT: 'DISC',
   ORB: 'PULSING_ORB',
-  VOID: 'PULSING_ORB',
   BOMB: 'PULSING_ORB',
   BLADE: 'SHURIKEN',
   STAR: 'SHURIKEN',
@@ -568,6 +606,18 @@ const PROJECTILE_STYLE_ALIASES: Record<string, string> = {
   ELECTRIC: 'CHAOS_LIGHTNING',
   CHAOS: 'CHAOS_LIGHTNING',
   ARC: 'CHAOS_LIGHTNING',
+  CRYSTAL: 'CRYSTAL_SHARD',
+  SHARD: 'CRYSTAL_SHARD',
+  PRISMATIC: 'PRISM',
+  FACET: 'PRISM',
+  RUNE: 'RUNE_SIGIL',
+  SIGIL: 'RUNE_SIGIL',
+  GLYPH: 'RUNE_SIGIL',
+  PLASMA: 'PLASMA_TENDRIL',
+  TENDRIL: 'PLASMA_TENDRIL',
+  VOID: 'VOID_RIFT',
+  RIFT: 'VOID_RIFT',
+  DARK: 'VOID_RIFT',
 };
 
 function normalizeEnumToken(value: string, aliases: Record<string, string>): string {
@@ -659,13 +709,17 @@ function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
     typeof obj.projectileStyle === 'string'
       ? normalizeEnumToken(obj.projectileStyle, PROJECTILE_STYLE_ALIASES)
       : 'DISC';
-  return {
+  const result: Record<string, unknown> = {
     color: typeof obj.color === 'string' && obj.color.trim() ? obj.color : '#00e5ff',
     size: Math.max(4, Math.min(32, ensureFiniteNumber(obj.size, 8))),
     projectileStyle: VALID_PROJECTILE_STYLES.has(styleRaw) ? styleRaw : 'DISC',
     trailType: VALID_TRAIL_TYPES.has(trail) ? trail : 'NONE',
     impactVfx: VALID_IMPACT_VFX.has(impact) ? impact : 'SPARKS',
   };
+  if (obj.vfx !== null && typeof obj.vfx === 'object') {
+    result.vfx = obj.vfx;
+  }
+  return result;
 }
 
 function repairTrajectoryConfig(traj: unknown): unknown {
@@ -779,6 +833,9 @@ function repairActionPayload(action: unknown): unknown {
   if (Array.isArray(obj.triggers)) {
     obj.triggers = obj.triggers.map(repairTriggerNode);
   }
+  if (obj.type === 'CAST_CHILD_PAYLOAD' && obj.payload !== undefined) {
+    obj.payload = repairAbilityPayload(obj.payload);
+  }
 
   return obj;
 }
@@ -806,6 +863,9 @@ function repairTriggerNode(node: unknown): unknown {
     obj.trigger = normalizeTriggerAlias(obj.trigger);
   }
   obj.actions = filterValidActions(obj.actions as unknown[]);
+  if (Array.isArray(obj.ifFalseActions)) {
+    obj.ifFalseActions = filterValidActions(obj.ifFalseActions as unknown[]);
+  }
   if (Array.isArray(obj.children)) {
     obj.children = obj.children.map(repairTriggerNode);
   }
@@ -2021,6 +2081,27 @@ export function resolveKineticRecipe(prompt: string): AbilitySchema | null {
   if (/\b(vortex|black hole|singularity)\b/.test(desc)) {
     return structuredClone(KINETIC_RECIPES.vortex);
   }
+  if (/\b(charge|charged|windup)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.chargedShot);
+  }
+  if (/\b(heat|overheat|laser|flamer|flame)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.heatWeapon);
+  }
+  if (/\b(combo|chain|sequence)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.comboChain);
+  }
+  if (/\b(morph|transform|colossus|giant)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.morphColossus);
+  }
+  if (/\b(stealth|invisible|ghost|shroud)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.ghostWalk);
+  }
+  if (/\b(turret|decoy|summon)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.autoTurret);
+  }
+  if (/\b(lava|terrain|ground)\b/.test(desc)) {
+    return structuredClone(KINETIC_RECIPES.lavaPatch);
+  }
 
   return null;
 }
@@ -2371,20 +2452,35 @@ export async function synthesizeCards(
   return synthesizeAbility(prompt, 'SECONDARY', loadout);
 }
 
+const CATEGORY_COMPILE_HINTS: Record<SkillCategory, string> = {
+  PRIMARY: 'rapid-fire skillshots, low payload, short cooldown pacing, ammo magazines',
+  SECONDARY: 'medium area/skillshot pressure, charged shots, combo chains',
+  UTILITY: 'crowd control, zones, terrain mutation, obstacles, stasis traps',
+  ULTIMATE: 'high-impact screen presence, morphs, turrets/decoys, large fields',
+  MOBILITY: 'displacement, teleports, dashes, stealth — movement over damage',
+};
+
 function buildCompileUserPrompt(
   card: DraftCard,
   baseAbility: AbilitySchema | undefined,
   category: SkillCategory,
 ): string {
+  const budget = CATEGORY_BUDGETS[category];
   const lines = [
     'Ability Concept:',
     `- name: "${card.title}"`,
     `- tagline: "${card.tagline}"`,
     `- description: "${card.description}"`,
     `- category: ${category}`,
+    `- category design: ${CATEGORY_COMPILE_HINTS[category]}`,
+    `- target power budget: ~${budget.targetPower}`,
   ];
   if (baseAbility) {
     lines.push(`- evolving from base ability named: "${baseAbility.name}"`);
+    if (baseAbility.visuals) {
+      lines.push(`- parent visuals: ${JSON.stringify(baseAbility.visuals)}`);
+      lines.push('- mutate parent palette (shift hue/size) rather than rerolling colors');
+    }
   }
   lines.push('', 'Output the single AbilitySchema JSON object for this concept.');
   return lines.join('\n');
@@ -2455,7 +2551,7 @@ export async function compileAbilityPayload(
   const userPrompt = buildCompileUserPrompt(card, baseAbility, category);
   const result = await postNativeGemini(COMPILER_SYSTEM_PROMPT, userPrompt, settings, {
     timeoutMs: 5000,
-    maxOutputTokens: 2048,
+    maxOutputTokens: 3072,
     logTag: '[compile]',
   });
 

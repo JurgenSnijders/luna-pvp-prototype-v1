@@ -47,7 +47,7 @@ export class CanvasRenderer {
 
   render(
     world: PhysicsWorld,
-    particles: ParticleSystem,
+    _particles: ParticleSystem,
     alpha: number,
     debug: DebugOptions,
     width: number,
@@ -66,7 +66,6 @@ export class CanvasRenderer {
     this.drawTerrainPatches(ctx, world);
     this.drawZones(ctx, world);
     this.drawObstacles(ctx, world);
-    particles.draw(ctx);
     this.drawCombatants(ctx, world, alpha);
     this.drawSummons(ctx, world, alpha);
     this.drawConstraints(ctx, world);
@@ -246,20 +245,27 @@ export class CanvasRenderer {
   private drawZones(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
     for (const zone of world.zones) {
       if (zone.isDead) continue;
-      const color = FIELD_COLORS[zone.config.fieldType] ?? 'rgba(255,255,255,0.2)';
-      ctx.fillStyle = color;
+      const base = FIELD_COLORS[zone.config.fieldType] ?? 'rgba(255,255,255,0.2)';
+      const pulse = 0.5 + 0.5 * Math.sin(this.ringRotation * 2);
+      ctx.fillStyle = base;
       ctx.beginPath();
       ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = color.replace('0.25', '0.8').replace('0.3', '0.8');
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 4]);
+      const rimHue =
+        zone.config.fieldType === 'VORTEX_TANGENT'
+          ? `rgba(170, 100, 255, ${0.35 + pulse * 0.25})`
+          : zone.config.fieldType === 'MASS_ATTRACTOR'
+            ? `rgba(120, 140, 255, ${0.35 + pulse * 0.25})`
+            : `rgba(255, 120, 80, ${0.35 + pulse * 0.25})`;
+      ctx.strokeStyle = rimHue;
+      ctx.lineWidth = 2 + pulse;
+      ctx.setLineDash(zone.config.fieldType === 'VORTEX_TANGENT' ? [4, 8] : [6, 4]);
       ctx.beginPath();
       ctx.arc(
         zone.pos.x,
         zone.pos.y,
-        zone.config.radius,
+        zone.config.radius * (0.92 + pulse * 0.04),
         this.ringRotation,
         this.ringRotation + Math.PI * 2,
       );
@@ -274,25 +280,29 @@ export class CanvasRenderer {
     for (const patch of world.terrainPatches) {
       const { pos, config } = patch;
       const r = config.radius;
+      const edgePhase = (now + pos.x * 0.01) % 1;
 
       if (config.type === 'SAFE') {
-        ctx.fillStyle = 'rgba(0, 229, 255, 0.25)';
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.22)';
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.strokeStyle = `rgba(180, 255, 255, ${0.25 + edgePhase * 0.35})`;
         ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r * (0.85 + edgePhase * 0.1), 0, Math.PI * 2);
         ctx.stroke();
       } else {
         const pulse = (Math.sin(now * 3) + 1) / 2;
-        ctx.fillStyle = `rgba(255, 80, 20, ${0.25 + pulse * 0.15})`;
+        ctx.fillStyle = `rgba(255, 80, 20, ${0.22 + pulse * 0.12})`;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = `rgba(255, 120, 40, ${0.15 + pulse * 0.2})`;
+        ctx.strokeStyle = `rgba(255, 140, 60, ${0.2 + edgePhase * 0.4})`;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, r * 0.6, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(pos.x, pos.y, r * (0.7 + edgePhase * 0.15), 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
   }
@@ -302,8 +312,9 @@ export class CanvasRenderer {
       if (obstacle.isDead) continue;
 
       const { pos, config } = obstacle;
+      const spawnPulse = 0.5 + 0.5 * Math.sin(this.ringRotation * 3 + pos.x * 0.02);
       ctx.fillStyle = '#94a3b8';
-      ctx.strokeStyle = '#64748b';
+      ctx.strokeStyle = `rgba(200, 220, 255, ${0.35 + spawnPulse * 0.4})`;
       ctx.lineWidth = 2;
 
       if (config.shape === 'CIRCLE') {
@@ -409,11 +420,12 @@ export class CanvasRenderer {
   ): void {
     const prevAlpha = ctx.globalAlpha;
     if (entity.isStealthed()) {
-      ctx.globalAlpha = 0.3;
+      const shimmer = 0.22 + 0.12 * Math.sin(performance.now() * 0.008);
+      ctx.globalAlpha = shimmer;
     }
 
     const radius = entity.effectiveRadius;
-    const drawColor = entity.activeMorph ? '#555555' : fillColor;
+    const drawColor = entity.activeMorph ? '#6a7a8a' : fillColor;
 
     ctx.fillStyle = drawColor;
     ctx.beginPath();
@@ -421,10 +433,11 @@ export class CanvasRenderer {
     ctx.fill();
 
     if (entity.activeMorph) {
-      ctx.strokeStyle = 'rgba(180, 180, 180, 0.6)';
-      ctx.lineWidth = 2;
+      const morphPulse = 0.5 + 0.5 * Math.sin(this.ringRotation * 4);
+      ctx.strokeStyle = `rgba(160, 200, 255, ${0.35 + morphPulse * 0.45})`;
+      ctx.lineWidth = 2 + morphPulse * 2;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius + 2, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, radius + 3 + morphPulse * 2, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -456,11 +469,16 @@ export class CanvasRenderer {
       if (summon.config.archetype === 'TURRET') {
         ctx.fillStyle = '#88aa44';
         ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
+        ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
+        ctx.strokeRect(pos.x - half - 2, pos.y - half - 2, half * 2 + 4, half * 2 + 4);
       } else {
         ctx.fillStyle = '#aa6688';
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 180, 220, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
       }
     }
   }
@@ -471,11 +489,19 @@ export class CanvasRenderer {
     pos: Vector2D,
   ): void {
     if (entity.stasisRemainingMs > 0) {
-      ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth = 3;
+      const crystal = 0.5 + 0.5 * Math.sin(this.ringRotation * 5);
+      ctx.strokeStyle = `rgba(255, 215, 80, ${0.55 + crystal * 0.4})`;
+      ctx.lineWidth = 2 + crystal * 2;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 3, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 4, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.strokeStyle = `rgba(180, 230, 255, ${0.25 + crystal * 0.35})`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 7, this.ringRotation, this.ringRotation + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     if (entity.stashedMomentum.magSq() > 0) {

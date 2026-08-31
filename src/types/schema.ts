@@ -104,16 +104,49 @@ export type ProjectileStyle =
   | 'BEAM'
   | 'PULSING_ORB'
   | 'SHURIKEN'
-  | 'CHAOS_LIGHTNING';
+  | 'CHAOS_LIGHTNING'
+  | 'PRISM'
+  | 'RUNE_SIGIL'
+  | 'PLASMA_TENDRIL'
+  | 'VOID_RIFT'
+  | 'CRYSTAL_SHARD';
 
-export type TrailType = 'NONE' | 'SMOKE' | 'ICE_GLOW' | 'MAGMA_SPARKS' | 'NEON_RIBBON';
+export type TrailType =
+  | 'NONE'
+  | 'SMOKE'
+  | 'ICE_GLOW'
+  | 'MAGMA_SPARKS'
+  | 'NEON_RIBBON'
+  | 'EMBER_SPIRAL'
+  | 'FROST_CRYSTALS'
+  | 'VOID_TENDRIL'
+  | 'PLASMA_ARC'
+  | 'DUST_PUFF';
 
 export type ImpactVfx =
   | 'SPARKS'
   | 'SHOCKWAVE'
   | 'ICE_BURST'
   | 'VORTEX_SWIRL'
-  | 'MINI_NUKE';
+  | 'MINI_NUKE'
+  | 'PLASMA_BLOOM'
+  | 'SHATTER'
+  | 'IMPLOSION'
+  | 'LIGHTNING_FORK'
+  | 'RUNE_FLASH';
+
+export type VfxBlendMode = 'NORMAL' | 'ADDITIVE';
+
+export interface VfxParams {
+  glowIntensity?: number;
+  trailDensity?: number;
+  trailLengthMs?: number;
+  impactScale?: number;
+  secondaryColor?: string;
+  blendMode?: VfxBlendMode;
+  shakeIntensity?: number;
+  distortion?: number;
+}
 
 export interface TrajectoryConfig {
   type: TrajectoryType;
@@ -151,6 +184,7 @@ export interface VisualDescriptor {
   projectileStyle: ProjectileStyle;
   trailType: TrailType;
   impactVfx: ImpactVfx;
+  vfx?: VfxParams;
 }
 
 export interface AddInstabilityAction {
@@ -359,7 +393,7 @@ const FIELD_TYPES: ReadonlySet<string> = new Set([
   'MASS_ATTRACTOR',
 ]);
 
-const TRIGGER_TYPES: ReadonlySet<string> = new Set([
+export const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_CAST',
   'ON_TICK',
   'ON_HIT',
@@ -377,7 +411,7 @@ const CONSTRAINT_TYPES: ReadonlySet<string> = new Set([
   'SURFACE_PIN',
 ]);
 
-const ACTION_TYPES: ReadonlySet<string> = new Set([
+export const ACTION_TYPES: ReadonlySet<string> = new Set([
   'ADD_INSTABILITY',
   'APPLY_IMPULSE',
   'SPAWN_FIELD',
@@ -448,6 +482,11 @@ const PROJECTILE_STYLES: ReadonlySet<string> = new Set([
   'PULSING_ORB',
   'SHURIKEN',
   'CHAOS_LIGHTNING',
+  'PRISM',
+  'RUNE_SIGIL',
+  'PLASMA_TENDRIL',
+  'VOID_RIFT',
+  'CRYSTAL_SHARD',
 ]);
 
 const TRAIL_TYPES: ReadonlySet<string> = new Set([
@@ -456,6 +495,11 @@ const TRAIL_TYPES: ReadonlySet<string> = new Set([
   'ICE_GLOW',
   'MAGMA_SPARKS',
   'NEON_RIBBON',
+  'EMBER_SPIRAL',
+  'FROST_CRYSTALS',
+  'VOID_TENDRIL',
+  'PLASMA_ARC',
+  'DUST_PUFF',
 ]);
 
 const IMPACT_VFX_TYPES: ReadonlySet<string> = new Set([
@@ -464,7 +508,14 @@ const IMPACT_VFX_TYPES: ReadonlySet<string> = new Set([
   'ICE_BURST',
   'VORTEX_SWIRL',
   'MINI_NUKE',
+  'PLASMA_BLOOM',
+  'SHATTER',
+  'IMPLOSION',
+  'LIGHTNING_FORK',
+  'RUNE_FLASH',
 ]);
+
+const VFX_BLEND_MODES: ReadonlySet<string> = new Set(['NORMAL', 'ADDITIVE']);
 
 const MAX_VALIDATION_DEPTH = 3;
 
@@ -617,6 +668,44 @@ function validateConstraintConfig(value: unknown): ConstraintConfig | null {
   return config;
 }
 
+function validateVfxParams(value: unknown): VfxParams | null {
+  if (!isObject(value)) return null;
+  const params: VfxParams = {};
+  if (value.glowIntensity !== undefined) {
+    if (!isNumber(value.glowIntensity)) return null;
+    params.glowIntensity = value.glowIntensity;
+  }
+  if (value.trailDensity !== undefined) {
+    if (!isNumber(value.trailDensity)) return null;
+    params.trailDensity = value.trailDensity;
+  }
+  if (value.trailLengthMs !== undefined) {
+    if (!isNumber(value.trailLengthMs)) return null;
+    params.trailLengthMs = value.trailLengthMs;
+  }
+  if (value.impactScale !== undefined) {
+    if (!isNumber(value.impactScale)) return null;
+    params.impactScale = value.impactScale;
+  }
+  if (value.secondaryColor !== undefined) {
+    if (!isString(value.secondaryColor)) return null;
+    params.secondaryColor = value.secondaryColor;
+  }
+  if (value.blendMode !== undefined) {
+    if (!isString(value.blendMode) || !VFX_BLEND_MODES.has(value.blendMode)) return null;
+    params.blendMode = value.blendMode as VfxBlendMode;
+  }
+  if (value.shakeIntensity !== undefined) {
+    if (!isNumber(value.shakeIntensity)) return null;
+    params.shakeIntensity = value.shakeIntensity;
+  }
+  if (value.distortion !== undefined) {
+    if (!isNumber(value.distortion)) return null;
+    params.distortion = value.distortion;
+  }
+  return params;
+}
+
 function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
   if (!isObject(value)) return null;
   if (!isString(value.color) || !isNumber(value.size)) return null;
@@ -631,13 +720,21 @@ function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
     projectileStyle = value.projectileStyle as ProjectileStyle;
   }
 
-  return {
+  const descriptor: VisualDescriptor = {
     color: value.color,
     size: value.size,
     projectileStyle,
     trailType: value.trailType as TrailType,
     impactVfx: value.impactVfx as ImpactVfx,
   };
+
+  if (value.vfx !== undefined) {
+    const vfx = validateVfxParams(value.vfx);
+    if (!vfx) return null;
+    descriptor.vfx = vfx;
+  }
+
+  return descriptor;
 }
 
 function validateActionPayload(value: unknown, depth = 0): ActionPayload | null {

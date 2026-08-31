@@ -9,6 +9,7 @@ import { RESOURCE_PRESETS } from './resources';
 import { ADVANCED_PRESETS } from './advanced';
 import { CONDITIONAL_PRESETS } from './conditional';
 import { DIAGNOSTIC_PRESETS } from './diagnostics';
+import { VFX_SHOWCASE_PRESETS } from './vfxShowcase';
 
 export interface PresetGroup {
   id: string;
@@ -41,6 +42,13 @@ export const PRESET_GROUPS: PresetGroup[] = [
       'Stasis Freeze Trap',
       'Ice Barrier',
       'Coupe de Grace',
+      'Charged Rail Burst',
+      'Plasma Flamer',
+      'Stasis Battery Combo',
+      'Iron Colossus',
+      'Ghost Walk',
+      'Auto Turret',
+      'Lava Patch',
     ],
   },
   {
@@ -123,6 +131,12 @@ export const PRESET_GROUPS: PresetGroup[] = [
     ],
   },
   {
+    id: 'vfx-showcase',
+    label: 'VFX Showcase',
+    description: 'New WebGL VFX grammar demonstrations',
+    presetNames: ['Prism Lance', 'Void Rift Bomb', 'Rune Nova', 'Plasma Fork'],
+  },
+  {
     id: 'tier-f',
     label: 'Tier F — Diagnostics',
     description: 'Stress tests and grammar edge-case probes',
@@ -133,6 +147,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       'Hazard Probe',
       'Surface Probe',
       'Reflect Probe',
+      'VFX Stress Storm',
     ],
   },
 ];
@@ -152,6 +167,7 @@ export const PRESETS: Record<string, AbilitySchema> = mergePresets(
   ADVANCED_PRESETS,
   CONDITIONAL_PRESETS,
   DIAGNOSTIC_PRESETS,
+  VFX_SHOWCASE_PRESETS,
 );
 
 export const PRESET_NAMES = Object.keys(PRESETS);
