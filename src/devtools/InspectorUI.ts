@@ -36,6 +36,19 @@ import { setForcedBackend } from '../render/backends/createParticleBackend';
 import { PRESETS, PRESET_GROUPS } from './Presets';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
+import {
+  ARENA_HEX_RADIUS_KEY,
+  COMBATANT_RADIUS_KEY,
+  COOLDOWN_SCALE_KEY,
+  GLOBAL_COOLDOWN_MS_KEY,
+  INSPECTOR_COLLAPSED_STORAGE_KEY,
+  MAX_COOLDOWN_SCALE,
+  MAX_GLOBAL_COOLDOWN_MS,
+  MIN_COOLDOWN_SCALE,
+  MIN_GLOBAL_COOLDOWN_MS,
+  getStoredCooldownScale,
+  getStoredGlobalCooldownMs,
+} from '../game/settings';
 
 export interface InspectorContext {
   player: Player;
@@ -68,17 +81,6 @@ interface TelemetryRefs {
 }
 
 const TELEMETRY_UPDATE_INTERVAL_MS = 200;
-const INSPECTOR_COLLAPSED_STORAGE_KEY = 'LUNA_INSPECTOR_COLLAPSED';
-const ARENA_HEX_RADIUS_STORAGE_KEY = 'LUNA_ARENA_HEX_RADIUS';
-const COMBATANT_RADIUS_STORAGE_KEY = 'LUNA_COMBATANT_RADIUS';
-const COOLDOWN_SCALE_STORAGE_KEY = 'LUNA_COOLDOWN_SCALE';
-const GLOBAL_COOLDOWN_MS_STORAGE_KEY = 'LUNA_GLOBAL_COOLDOWN_MS';
-const DEFAULT_COOLDOWN_SCALE = 1.5;
-const DEFAULT_GLOBAL_COOLDOWN_MS = 350;
-const MIN_COOLDOWN_SCALE = 0.5;
-const MAX_COOLDOWN_SCALE = 3.0;
-const MIN_GLOBAL_COOLDOWN_MS = 0;
-const MAX_GLOBAL_COOLDOWN_MS = 1000;
 
 export class InspectorUI {
   private fps = 0;
@@ -276,18 +278,6 @@ export class InspectorUI {
     parent.appendChild(row);
   }
 
-  private getStoredCooldownScale(): number {
-    const raw = parseFloat(localStorage.getItem(COOLDOWN_SCALE_STORAGE_KEY) ?? '');
-    const value = Number.isFinite(raw) ? raw : DEFAULT_COOLDOWN_SCALE;
-    return Math.max(MIN_COOLDOWN_SCALE, Math.min(MAX_COOLDOWN_SCALE, value));
-  }
-
-  private getStoredGlobalCooldownMs(): number {
-    const raw = parseFloat(localStorage.getItem(GLOBAL_COOLDOWN_MS_STORAGE_KEY) ?? '');
-    const value = Number.isFinite(raw) ? raw : DEFAULT_GLOBAL_COOLDOWN_MS;
-    return Math.max(MIN_GLOBAL_COOLDOWN_MS, Math.min(MAX_GLOBAL_COOLDOWN_MS, value));
-  }
-
   private buildStatsTab(parent: HTMLElement): void {
     const { world, arenaShrink } = this.ctx;
     const arenaSection = document.createElement('div');
@@ -307,7 +297,7 @@ export class InspectorUI {
       (v) => {
         world.setBaseHexRadius(v);
         arenaShrink?.resize(v);
-        localStorage.setItem(ARENA_HEX_RADIUS_STORAGE_KEY, String(v));
+        localStorage.setItem(ARENA_HEX_RADIUS_KEY, String(v));
       },
       'px',
     );
@@ -320,7 +310,7 @@ export class InspectorUI {
       () => world.getCombatantRadius(),
       (v) => {
         world.setCombatantRadius(v);
-        localStorage.setItem(COMBATANT_RADIUS_STORAGE_KEY, String(v));
+        localStorage.setItem(COMBATANT_RADIUS_KEY, String(v));
       },
       'px',
     );
@@ -334,8 +324,8 @@ export class InspectorUI {
     pacingTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
     pacingSection.appendChild(pacingTitle);
 
-    Player.globalCooldownScale = this.getStoredCooldownScale();
-    Player.globalCooldownDurationMs = this.getStoredGlobalCooldownMs();
+    Player.globalCooldownScale = getStoredCooldownScale();
+    Player.globalCooldownDurationMs = getStoredGlobalCooldownMs();
 
     this.sliderRow(
       pacingSection,
@@ -346,7 +336,7 @@ export class InspectorUI {
       () => Player.globalCooldownScale,
       (v) => {
         Player.globalCooldownScale = v;
-        localStorage.setItem(COOLDOWN_SCALE_STORAGE_KEY, String(v));
+        localStorage.setItem(COOLDOWN_SCALE_KEY, String(v));
       },
       'x',
     );
@@ -359,7 +349,7 @@ export class InspectorUI {
       () => Player.globalCooldownDurationMs,
       (v) => {
         Player.globalCooldownDurationMs = v;
-        localStorage.setItem(GLOBAL_COOLDOWN_MS_STORAGE_KEY, String(v));
+        localStorage.setItem(GLOBAL_COOLDOWN_MS_KEY, String(v));
       },
       'ms',
     );

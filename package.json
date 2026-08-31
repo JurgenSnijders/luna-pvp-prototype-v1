@@ -9,7 +9,8 @@
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "test:schemas": "tsx scripts/test-schemas.ts",
     "test:offline": "tsx scripts/test-offline.ts",
-    "test:interpreter": "tsx scripts/test-interpreter.ts"
+    "test:interpreter": "tsx scripts/test-interpreter.ts",
+    "test:settings": "tsx scripts/test-settings.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
