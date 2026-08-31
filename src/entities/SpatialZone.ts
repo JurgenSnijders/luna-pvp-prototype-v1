@@ -1,16 +1,22 @@
-import type { FieldConfig } from '../types/schema';
+import type { FieldConfig, SpellArchetype } from '../types/schema';
 import { Vector2D } from '../math/Vector2D';
 import { Entity, generateEntityId } from './Entity';
 
 export class SpatialZone extends Entity {
   config: FieldConfig;
   ownerId: string;
+  spellArchetype: SpellArchetype;
   remainingDurationMs: number;
   parentRef: Entity | null;
   offset: Vector2D;
   detachOnParentDeath: boolean;
 
-  constructor(pos: Vector2D, config: FieldConfig, ownerId: string) {
+  constructor(
+    pos: Vector2D,
+    config: FieldConfig,
+    ownerId: string,
+    spellArchetype: SpellArchetype = 'KINETIC',
+  ) {
     super(generateEntityId('zone'), pos, {
       mass: Infinity,
       radius: config.radius,
@@ -19,6 +25,7 @@ export class SpatialZone extends Entity {
     });
     this.config = config;
     this.ownerId = ownerId;
+    this.spellArchetype = spellArchetype;
     this.remainingDurationMs = config.durationMs;
     this.parentRef = null;
     this.offset = Vector2D.zero();

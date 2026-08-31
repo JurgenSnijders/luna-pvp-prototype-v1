@@ -1,5 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
-import type { TrajectoryConfig, TriggerNode, VisualDescriptor } from '../types/schema';
+import type { TrajectoryConfig, TriggerNode, VisualDescriptor, SpellArchetype } from '../types/schema';
 import { Entity, generateEntityId } from './Entity';
 
 export type ExpiryReason = 'range' | 'lifetime' | 'return' | 'hit' | 'wall' | null;
@@ -9,6 +9,7 @@ export class Projectile extends Entity {
   sourceEntityId: string;
   /** Name of the root-cast ability that spawned this projectile; empty for emitter-spawned children (root-only recast). */
   abilityName: string;
+  spellArchetype?: SpellArchetype;
   distanceTraveled: number;
   lifetimeMs: number;
   maxLifetimeMs: number;
@@ -41,6 +42,7 @@ export class Projectile extends Entity {
     depth = 0,
     visuals: VisualDescriptor | null = null,
     abilityName = '',
+    spellArchetype?: SpellArchetype,
   ) {
     super(generateEntityId('projectile'), pos, {
       mass: 0.1,
@@ -51,6 +53,7 @@ export class Projectile extends Entity {
     this.config = config;
     this.sourceEntityId = sourceEntityId;
     this.abilityName = abilityName;
+    this.spellArchetype = spellArchetype;
     this.distanceTraveled = 0;
     this.lifetimeMs = 0;
     this.maxLifetimeMs = 5000;

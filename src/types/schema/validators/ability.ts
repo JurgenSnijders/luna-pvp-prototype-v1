@@ -1,4 +1,5 @@
-import type { AbilitySchema, TriggerNode } from '../types';
+import type { AbilitySchema, SpellArchetype, TriggerNode } from '../types';
+import { SPELL_ARCHETYPE_SET } from '../constants';
 import { validateInputProfile, validateResourceCost } from './condition';
 import { isNumber, isObject, isString } from './helpers';
 import { validateTriggerNode } from './trigger';
@@ -53,6 +54,13 @@ export function validateAbilitySchema(json: unknown, depth = 0): AbilitySchema |
     const resourceCost = validateResourceCost(json.resourceCost);
     if (!resourceCost) return null;
     schema.resourceCost = resourceCost;
+  }
+
+  if (json.archetype !== undefined) {
+    const archetypeRaw = isString(json.archetype) ? json.archetype.toUpperCase() : '';
+    if (SPELL_ARCHETYPE_SET.has(archetypeRaw)) {
+      schema.archetype = archetypeRaw as SpellArchetype;
+    }
   }
 
   return schema;

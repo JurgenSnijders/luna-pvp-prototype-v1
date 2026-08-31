@@ -35,6 +35,11 @@ function buildLifecycleContext(
     if (n.magSq() > 0) normal = n.normalize();
   }
 
+  const ability =
+    projectile.spellArchetype !== undefined
+      ? { archetype: projectile.spellArchetype }
+      : undefined;
+
   return {
     origin: origin.clone(),
     heading,
@@ -43,6 +48,7 @@ function buildLifecycleContext(
     sourceEntity: projectile,
     targetEntity: target ?? undefined,
     depth: depthOverride ?? projectile.depth + 1,
+    ability,
   };
 }
 

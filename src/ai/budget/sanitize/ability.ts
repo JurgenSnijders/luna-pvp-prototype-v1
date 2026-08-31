@@ -1,6 +1,6 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { AbilitySchema, TriggerNode } from '../../../types/schema';
-import { validateAbilitySchema } from '../../../types/schema';
+import type { AbilitySchema, SpellArchetype, TriggerNode } from '../../../types/schema';
+import { SPELL_ARCHETYPE_SET, validateAbilitySchema } from '../../../types/schema';
 import { ensureFiniteNumber, isObject } from '../helpers';
 import { sanitizeInputProfile, sanitizeResourceCost } from './condition';
 import { hasOnCastEffect, promoteRootEmitter, sanitizeTriggerNode } from './trigger';
@@ -52,6 +52,13 @@ export function sanitizeAbilitySchema(
     const resourceCost = sanitizeResourceCost(obj.resourceCost);
     if (resourceCost) {
       schema.resourceCost = resourceCost;
+    }
+  }
+
+  if (typeof obj.archetype === 'string') {
+    const archetypeRaw = obj.archetype.toUpperCase();
+    if (SPELL_ARCHETYPE_SET.has(archetypeRaw)) {
+      schema.archetype = archetypeRaw as SpellArchetype;
     }
   }
 

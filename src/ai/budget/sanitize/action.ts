@@ -190,7 +190,10 @@ export function sanitizeAction(
     }
 
     case 'MODIFY_STAT': {
-      const statMap: Record<string, 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct'> = {
+      const statMap: Record<
+        string,
+        'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct' | 'health'
+      > = {
         mass: 'mass',
         lineardrag: 'linearDrag',
         linear_drag: 'linearDrag',
@@ -198,6 +201,7 @@ export function sanitizeAction(
         move_speed: 'moveSpeed',
         instabilitypct: 'instabilityPct',
         instability: 'instabilityPct',
+        health: 'health',
       };
       const statRaw = typeof raw.stat === 'string' ? raw.stat.toLowerCase().replace(/_/g, '') : 'mass';
       const modeRaw = typeof raw.mode === 'string' ? raw.mode.toLowerCase() : 'add';

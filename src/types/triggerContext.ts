@@ -1,5 +1,6 @@
 import type { Vector2D } from '../math/Vector2D';
 import type { Entity } from '../entities/Entity';
+import type { AbilitySchema } from './schema/types';
 
 export interface ExecutionOverrides {
   originOverride?: Vector2D;
@@ -19,4 +20,5 @@ export interface TriggerContext {
   depth: number;
   chargeRatio?: number;
   comboStep?: number;
+  ability?: Partial<AbilitySchema>;
 }

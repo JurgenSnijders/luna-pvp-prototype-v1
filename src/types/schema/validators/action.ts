@@ -111,7 +111,7 @@ export function validateActionPayload(value: unknown, depth = 0): ActionPayload 
     case 'MODIFY_STAT': {
       if (
         !isString(value.stat) ||
-        !['mass', 'linearDrag', 'moveSpeed', 'instabilityPct'].includes(value.stat) ||
+        !['mass', 'linearDrag', 'moveSpeed', 'instabilityPct', 'health'].includes(value.stat) ||
         !isNumber(value.value) ||
         !isString(value.mode) ||
         !['add', 'set', 'multiply'].includes(value.mode)

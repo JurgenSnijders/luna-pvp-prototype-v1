@@ -62,7 +62,18 @@ Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 export const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
 Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
 
-AbilitySchema: { id, name, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+AbilitySchema: { id, name, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+archetype: REQUIRED — assign one of KINETIC, FIRE, FROST, LIGHTNING, VOID, HOLY, TOXIC, ARCANE, MAGNETIC, SONIC, AERO, GRAVITY, EARTH, CHRONO, PLASMA, NATURE, BLOOD, PHASE, CHAOS.
+The engine scales implicit vulnerability and field physics from archetype — do NOT spam ADD_INSTABILITY; rely on archetype + kinetic impact math instead.
+Archetype scaling cheat sheet:
+  KINETIC: high-impact baseline (1.5× impact instability, default knockback archetype)
+  FIRE: low impact spike, massive DoT over time (tickInstabilityScale 2.0)
+  FROST: low impact + slow tick pressure, weak field force
+  VOID: 2.5× field force multiplier — black holes and gravity wells
+  AERO: 2.0× field force, 0.2× impact instability — wind zones over direct hits
+  SONIC: 2.2× impact spike — concussive bursts
+  TOXIC: sustained tick vulnerability, moderate field pressure
+  LIGHTNING: balanced impact and tick scaling
 inputProfile: { mode: INSTANT|CHARGE_AND_RELEASE|CHANNELED|COMBO_CHAIN, minChargeMs?, maxChargeMs?, channelIntervalMs?, comboWindowMs? }
   CHARGE_AND_RELEASE: minChargeMs+maxChargeMs — power scales with hold time
   CHANNELED: channelIntervalMs — re-fires ON_CAST every interval while held
@@ -96,13 +107,13 @@ CONDITIONS:
 SURFACE_TYPE queries terrain at a position; TAG_CHECK value:"in_lava" reads the entity tag set when standing in lava.
 
 ACTIONS (use relational vectors, not generic knockback):
-ADD_INSTABILITY { amount, target? }
+ADD_INSTABILITY { amount, target? } — bonus multiplier only; engine already derives vulnerability from archetype + impact
 APPLY_IMPULSE { baseForce, target?, directionMode? }
 SPAWN_FIELD { field: { fieldType: RADIAL_IMPULSE|VORTEX_TANGENT|FRICTION_OVERRIDE|MASS_ATTRACTOR, radius, strength, durationMs, attachToSource?, frictionValue? } }
 SPAWN_PROJECTILE { projectileTrajectory, emitter?: { count: 1-12, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL }, triggers? }
 SPAWN_CONSTRAINT { constraint: { type: SPRING_TETHER|DISTANCE_ROD|SURFACE_PIN, stiffness?, restLength?, durationMs }, source?, target? }
 CAST_CHILD_PAYLOAD { payload: AbilitySchema, inheritVelocity?, inheritInstability?, maxRecursionDepth? }
-MODIFY_STAT { stat, value, mode: add|set|multiply, target? }
+MODIFY_STAT { stat: mass|linearDrag|moveSpeed|instabilityPct|health, value, mode: add|set|multiply, target? }
 TELEPORT { distance, target?, direction? }
 APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
 RELEASE_STASIS { target? }
@@ -131,7 +142,7 @@ Tripwire Bomb: trajectory LINEAR + ON_DISTANCE_TRAVELED triggerDistance:300 -> S
 
 Set inputProfile and/or resourceCost whenever the concept implies charging, channeling, combos, overheating, magazines, or health cost.
 
-VISUAL RECIPE BOOK (pair archetype to visuals):
+VISUAL RECIPE BOOK (pair archetype to visuals — match archetype field to palette):
 Frost: color #88ddff, secondaryColor #ffffff, projectileStyle CRYSTAL_SHARD, trailType FROST_CRYSTALS, impactVfx ICE_BURST, vfx.glowIntensity 1.0
 Fire: color #ff6622, secondaryColor #ffcc44, trailType EMBER_SPIRAL or MAGMA_SPARKS, impactVfx PLASMA_BLOOM, blendMode ADDITIVE
 Void: color #220044, secondaryColor #cc66ff, projectileStyle VOID_RIFT, trailType VOID_TENDRIL, impactVfx IMPLOSION, glowIntensity 1.4

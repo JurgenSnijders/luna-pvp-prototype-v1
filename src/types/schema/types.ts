@@ -1,3 +1,24 @@
+export type SpellArchetype =
+  | 'KINETIC'
+  | 'FIRE'
+  | 'FROST'
+  | 'LIGHTNING'
+  | 'VOID'
+  | 'HOLY'
+  | 'TOXIC'
+  | 'ARCANE'
+  | 'MAGNETIC'
+  | 'SONIC'
+  | 'AERO'
+  | 'GRAVITY'
+  | 'EARTH'
+  | 'CHRONO'
+  | 'PLASMA'
+  | 'NATURE'
+  | 'BLOOD'
+  | 'PHASE'
+  | 'CHAOS';
+
 export type TrajectoryType =
   | 'LINEAR'
   | 'RETURN_TO_SOURCE'
@@ -217,7 +238,7 @@ export interface SpawnProjectileAction {
 
 export interface ModifyStatAction {
   type: 'MODIFY_STAT';
-  stat: 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct';
+  stat: 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct' | 'health';
   value: number;
   mode: 'add' | 'set' | 'multiply';
   target?: ActionTarget;
@@ -339,6 +360,7 @@ export interface TriggerNode {
 export interface AbilitySchema {
   id: string;
   name: string;
+  archetype?: SpellArchetype;
   cooldownMs: number;
   recoilKick: number;
   trajectory?: TrajectoryConfig;

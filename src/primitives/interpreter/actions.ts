@@ -17,9 +17,13 @@ import type {
 } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import type { Interpreter } from './Interpreter';
-import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH } from './constants';
+import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
 import { buildTriggerMap, safeNormalize, secondaryColor } from './helpers';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
+
+function getArchetypeTuning(ctx: TriggerContext) {
+  return ARCHETYPE_TUNING[ctx.ability?.archetype ?? 'KINETIC'];
+}
 
 export function executeEmitter(
   interp: Interpreter,
@@ -76,6 +80,8 @@ export function executeEmitter(
       triggerMap,
       ctx.depth + 1,
       vfx,
+      '',
+      ctx.ability?.archetype,
     );
 
     if (inherit > 0 && ctx.sourceEntity) {
@@ -112,6 +118,9 @@ export function dispatchAction(
     case 'APPLY_IMPULSE': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
+      const tuning = getArchetypeTuning(ctx);
+      const implicitSpike = (action.baseForce * 0.02) * tuning.impactInstabilityScale * scale;
+      t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
       world.applyKnockback(t, dir, action.baseForce * scale);
       interp.particles?.burstSparks(ctx.origin, 8, interp.activeCastVisuals?.color ?? '#ffaa44');
@@ -135,7 +144,8 @@ export function dispatchAction(
 
       const offset = field.offset ? new Vector2D(field.offset.x, field.offset.y) : Vector2D.zero();
       const spawnPos = parent ? parent.pos.add(offset) : ctx.origin.clone();
-      const zone = new SpatialZone(spawnPos, field, ctx.caster.id);
+      const archetype = ctx.ability?.archetype ?? 'KINETIC';
+      const zone = new SpatialZone(spawnPos, field, ctx.caster.id, archetype);
       if (parent) {
         zone.parentRef = parent;
         zone.offset = offset;
@@ -232,7 +242,13 @@ export function dispatchAction(
     case 'MODIFY_STAT': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
-      applyModifyStat(t, action.stat, action.value * scale, action.mode);
+      const scaledValue = action.value * scale;
+      if (action.stat === 'health' && scaledValue < 0) {
+        const tuning = getArchetypeTuning(ctx);
+        const implicitSpike = Math.abs(scaledValue) * 0.5 * tuning.impactInstabilityScale;
+        t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
+      }
+      applyModifyStat(t, action.stat, scaledValue, action.mode);
       break;
     }
     case 'APPLY_STASIS': {
@@ -326,7 +342,7 @@ export function reflectProjectile(projectile: Projectile, newOwnerId: string): v
 
 export function applyModifyStat(
   entity: Entity,
-  stat: 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct',
+  stat: 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct' | 'health',
   value: number,
   mode: 'add' | 'set' | 'multiply',
 ): void {
@@ -356,6 +372,9 @@ export function applyModifyStat(
       if (entity instanceof Player) {
         entity.moveSpeed = apply(entity.moveSpeed);
       }
+      break;
+    case 'health':
+      entity.health = Math.max(0, apply(entity.health));
       break;
   }
 }

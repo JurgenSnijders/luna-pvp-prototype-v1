@@ -1,3 +1,27 @@
+export const SPELL_ARCHETYPES: readonly string[] = [
+  'KINETIC',
+  'FIRE',
+  'FROST',
+  'LIGHTNING',
+  'VOID',
+  'HOLY',
+  'TOXIC',
+  'ARCANE',
+  'MAGNETIC',
+  'SONIC',
+  'AERO',
+  'GRAVITY',
+  'EARTH',
+  'CHRONO',
+  'PLASMA',
+  'NATURE',
+  'BLOOD',
+  'PHASE',
+  'CHAOS',
+];
+
+export const SPELL_ARCHETYPE_SET: ReadonlySet<string> = new Set(SPELL_ARCHETYPES);
+
 export const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'LINEAR',
   'RETURN_TO_SOURCE',

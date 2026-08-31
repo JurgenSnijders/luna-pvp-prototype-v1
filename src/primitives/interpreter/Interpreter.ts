@@ -42,6 +42,7 @@ export class Interpreter {
       depth,
       chargeRatio: overrides?.chargeRatio ?? ctx.chargeRatio,
       comboStep: overrides?.comboStep ?? ctx.comboStep,
+      ability: schema,
     };
 
     const visuals = schema.visuals ?? DEFAULT_VISUALS;
@@ -75,6 +76,7 @@ export class Interpreter {
         depth,
         visuals,
         schema.name,
+        schema.archetype,
       );
       if (schema.trajectory.type === 'ORBIT_ANCHOR') {
         projectile.maxLifetimeMs = 3000;
