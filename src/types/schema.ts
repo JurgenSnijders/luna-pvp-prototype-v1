@@ -17,7 +17,10 @@ export type TriggerType =
   | 'ON_HIT'
   | 'ON_EXPIRY'
   | 'ON_RETURN'
-  | 'ON_HAZARD_CONTACT';
+  | 'ON_HAZARD_CONTACT'
+  | 'ON_RECAST'
+  | 'ON_HIT_WALL'
+  | 'ON_DISTANCE_TRAVELED';
 
 export type ActionType =
   | 'ADD_INSTABILITY'
@@ -147,6 +150,8 @@ export type ActionPayload =
 export interface TriggerNode {
   trigger: TriggerType;
   tickIntervalMs?: number;
+  triggerDistance?: number;
+  fireOnHitDeath?: boolean;
   actions: ActionPayload[];
   children?: TriggerNode[];
 }
@@ -186,6 +191,9 @@ const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_EXPIRY',
   'ON_RETURN',
   'ON_HAZARD_CONTACT',
+  'ON_RECAST',
+  'ON_HIT_WALL',
+  'ON_DISTANCE_TRAVELED',
 ]);
 
 const ACTION_TYPES: ReadonlySet<string> = new Set([
@@ -511,6 +519,16 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
   if (value.tickIntervalMs !== undefined) {
     if (!isNumber(value.tickIntervalMs)) return null;
     node.tickIntervalMs = value.tickIntervalMs;
+  }
+
+  if (value.triggerDistance !== undefined) {
+    if (!isNumber(value.triggerDistance) || value.triggerDistance <= 0) return null;
+    node.triggerDistance = value.triggerDistance;
+  }
+
+  if (value.fireOnHitDeath !== undefined) {
+    if (typeof value.fireOnHitDeath !== 'boolean') return null;
+    node.fireOnHitDeath = value.fireOnHitDeath;
   }
 
   if (value.children !== undefined) {

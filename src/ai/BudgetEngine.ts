@@ -435,6 +435,8 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
     ON_DESTROY: 'ON_EXPIRY',
     ON_DEATH: 'ON_EXPIRY',
     ON_SPAWN: 'ON_CAST',
+    ON_DETONATE: 'ON_RECAST',
+    ON_WALL_HIT: 'ON_HIT_WALL',
   };
   trigger = triggerAliases[trigger] ?? trigger;
 
@@ -445,6 +447,9 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
     'ON_EXPIRY',
     'ON_RETURN',
     'ON_HAZARD_CONTACT',
+    'ON_RECAST',
+    'ON_HIT_WALL',
+    'ON_DISTANCE_TRAVELED',
   ]);
   if (!validTriggers.has(trigger)) return null;
 
@@ -468,6 +473,14 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
 
   if (trigger === 'ON_TICK' || raw.tickIntervalMs !== undefined) {
     node.tickIntervalMs = clamp(ensureFiniteNumber(raw.tickIntervalMs, 100), 16, 5000);
+  }
+
+  if (trigger === 'ON_DISTANCE_TRAVELED' || raw.triggerDistance !== undefined) {
+    node.triggerDistance = clamp(ensureFiniteNumber(raw.triggerDistance, 100), 1, 5000);
+  }
+
+  if (typeof raw.fireOnHitDeath === 'boolean') {
+    node.fireOnHitDeath = raw.fireOnHitDeath;
   }
 
   if (Array.isArray(raw.children)) {

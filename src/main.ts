@@ -216,7 +216,16 @@ function respawnCombatants(): void {
 
 function tryCastSlot(caster: Player, slotIndex: number): void {
   const ability = caster.getAbility(slotIndex);
-  if (!ability || !caster.isSlotReady(slotIndex)) return;
+  if (!ability) return;
+
+  if (!caster.isSlotReady(slotIndex)) {
+    // Recast bypasses the cooldown gate to let players "remote detonate" or retrigger an
+    // in-flight projectile, but it does not start a new cast or refresh the cooldown.
+    if (ability.triggers.some((t) => t.trigger === 'ON_RECAST')) {
+      interpreter.dispatchRecast(caster.id, ability.name, world);
+    }
+    return;
+  }
 
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return;

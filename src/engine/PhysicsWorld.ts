@@ -330,7 +330,7 @@ export class PhysicsWorld {
       proj.pos.y > height + r
     ) {
       proj.isDead = true;
-      proj.expiryReason = 'hit';
+      proj.expiryReason = 'wall';
     }
   }
 
@@ -374,7 +374,7 @@ export class PhysicsWorld {
 
   private collectExpirations(): void {
     for (const projectile of this.projectiles) {
-      if (projectile.isDead && projectile.expiryReason !== 'hit') {
+      if (projectile.isDead) {
         this.pendingExpirations.push(projectile);
       }
     }

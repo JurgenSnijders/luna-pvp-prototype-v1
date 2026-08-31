@@ -126,6 +126,7 @@ export class Interpreter {
         triggerMap,
         ctx.depth,
         visuals,
+        schema.name,
       );
       if (schema.trajectory.type === 'ORBIT_ANCHOR') {
         projectile.maxLifetimeMs = 3000;
@@ -461,6 +462,7 @@ export class Interpreter {
     world: PhysicsWorld,
     origin: Vector2D,
     depthOverride?: number,
+    filter?: (node: TriggerNode) => boolean,
   ): void {
     const nodes = projectile.getTriggers(triggerType);
     if (nodes.length === 0) return;
@@ -475,7 +477,22 @@ export class Interpreter {
     if (!ctx) return;
 
     for (const node of nodes) {
+      if (filter && !filter(node)) continue;
       this.dispatchTriggerNode(node, ctx, world);
+    }
+  }
+
+  /** Broadcasts ON_RECAST to every live, root-cast projectile the caster owns for this ability
+   * (root-only: emitter-spawned children never carry an abilityName). Used to let players
+   * "remote detonate" or otherwise retrigger in-flight projectiles by pressing the hotkey
+   * again while the ability is on cooldown. */
+  dispatchRecast(casterId: string, abilityName: string, world: PhysicsWorld): void {
+    for (const proj of world.projectiles) {
+      if (proj.isDead) continue;
+      if (proj.sourceEntityId !== casterId) continue;
+      if (proj.abilityName !== abilityName) continue;
+      if (proj.getTriggers('ON_RECAST').length === 0) continue;
+      this.dispatchProjectileTriggers(proj, 'ON_RECAST', null, world, proj.pos, proj.depth);
     }
   }
 
@@ -508,15 +525,37 @@ export class Interpreter {
     this.returnTriggeredProjectiles = [];
 
     for (const projectile of world.pendingExpirations) {
-      if (
-        projectile.expiryReason === 'range' ||
-        projectile.expiryReason === 'lifetime'
-      ) {
+      const reason = projectile.expiryReason;
+      // 'return' is exclusively handled by the ON_RETURN block above.
+      if (reason === 'return') continue;
+
+      if (reason === 'range' || reason === 'lifetime') {
         const color = projectile.visuals?.color ?? '#ff4488';
         this.particles?.triggerImpactBurst(projectile.pos, color, 'SHOCKWAVE');
         this.dispatchProjectileTriggers(
           projectile,
           'ON_EXPIRY',
+          null,
+          world,
+          projectile.pos,
+          projectile.depth + 1,
+        );
+      } else if (reason === 'hit') {
+        // ON_HIT already rendered impact VFX for this death above; only gate whether
+        // "detonate on hit" (ON_EXPIRY) also fires per-node via fireOnHitDeath.
+        this.dispatchProjectileTriggers(
+          projectile,
+          'ON_EXPIRY',
+          null,
+          world,
+          projectile.pos,
+          projectile.depth + 1,
+          (node) => node.fireOnHitDeath !== false,
+        );
+      } else if (reason === 'wall') {
+        this.dispatchProjectileTriggers(
+          projectile,
+          'ON_HIT_WALL',
           null,
           world,
           projectile.pos,
@@ -554,6 +593,30 @@ export class Interpreter {
           if (ctx) this.dispatchTriggerNode(node, ctx, world);
         }
       }
+
+      const distNodes = projectile.getTriggers('ON_DISTANCE_TRAVELED');
+      if (distNodes.length > 0) {
+        // Fired-once per node: distanceTraveled only grows, so once a threshold is crossed
+        // it stays crossed — without the registry this would redispatch every frame.
+        let distCtx: TriggerContext | null | undefined;
+        for (let i = 0; i < distNodes.length; i++) {
+          if (projectile.firedDistanceTriggers.has(i)) continue;
+          const threshold = distNodes[i].triggerDistance ?? 0;
+          if (projectile.distanceTraveled < threshold) continue;
+          projectile.firedDistanceTriggers.add(i);
+          if (distCtx === undefined) {
+            distCtx = this.buildLifecycleContext(
+              projectile,
+              null,
+              projectile.pos,
+              projectile.depth,
+              world,
+            );
+          }
+          if (distCtx) this.dispatchTriggerNode(distNodes[i], distCtx, world);
+        }
+      }
+
       const visuals = projectile.visuals;
       const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation
       if (
