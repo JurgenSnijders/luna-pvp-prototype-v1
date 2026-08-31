@@ -16,7 +16,7 @@ import type {
   VisualDescriptor,
 } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
-import type { Interpreter } from '../Interpreter';
+import type { Interpreter } from './Interpreter';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH } from './constants';
 import { buildTriggerMap, safeNormalize, secondaryColor } from './helpers';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
