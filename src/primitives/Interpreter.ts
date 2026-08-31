@@ -12,6 +12,8 @@ import type {
   AbilitySchema,
   ActionPayload,
   ActionTarget,
+  ComparisonOperator,
+  ConditionNode,
   EmitterConfig,
   ImpulseDirectionMode,
   TrajectoryConfig,
@@ -428,12 +430,77 @@ export class Interpreter {
     }
   }
 
+  private compareNumeric(
+    current: number,
+    op: ComparisonOperator,
+    threshold: number,
+  ): boolean {
+    switch (op) {
+      case 'LT':
+        return current < threshold;
+      case 'GT':
+        return current > threshold;
+      case 'EQ':
+        return current === threshold;
+      case 'LTE':
+        return current <= threshold;
+      case 'GTE':
+        return current >= threshold;
+    }
+  }
+
+  private evaluateCondition(
+    cond: ConditionNode,
+    ctx: TriggerContext,
+    world: PhysicsWorld,
+  ): boolean {
+    const t = this.resolveActionTarget(cond.target ?? 'TARGET', ctx);
+    if (!t || t.isDead) return false;
+
+    switch (cond.query) {
+      case 'STAT_THRESHOLD': {
+        const current = cond.stat === 'health' ? t.health : t.instabilityPct;
+        return this.compareNumeric(
+          current,
+          cond.comparison ?? 'LT',
+          Number(cond.value),
+        );
+      }
+      case 'TAG_CHECK':
+        return t.tags.has(String(cond.value));
+      case 'PROXIMITY_COUNT': {
+        const r = cond.radius ?? 100;
+        const count = world
+          .getEntitiesInRadius(t.pos, r)
+          .filter((e) => e.id !== t.id).length;
+        return this.compareNumeric(count, cond.comparison ?? 'GTE', Number(cond.value));
+      }
+      case 'SURFACE_TYPE':
+        return false;
+    }
+  }
+
+  private evaluateConditions(
+    conditions: ConditionNode[],
+    ctx: TriggerContext,
+    world: PhysicsWorld,
+  ): boolean {
+    return conditions.every((c) => this.evaluateCondition(c, ctx, world));
+  }
+
   private dispatchTriggerNode(
     node: TriggerNode,
     ctx: TriggerContext,
     world: PhysicsWorld,
   ): void {
-    this.dispatchActions(node.actions, ctx, world);
+    let passed = true;
+    if (node.conditions && node.conditions.length > 0) {
+      passed = this.evaluateConditions(node.conditions, ctx, world);
+    }
+
+    const actionsToRun = passed ? node.actions : (node.ifFalseActions ?? []);
+    this.dispatchActions(actionsToRun, ctx, world);
+
     if (node.children) {
       for (const child of node.children) {
         this.dispatchTriggerNode(child, ctx, world);

@@ -3,6 +3,9 @@ import type {
   AbilitySchema,
   ActionPayload,
   ActionTarget,
+  ComparisonOperator,
+  ConditionNode,
+  ConditionQuery,
   ConstraintConfig,
   ConstraintType,
   EmitterConfig,
@@ -77,6 +80,13 @@ const FIELD_TYPES = new Set([
   'MASS_ATTRACTOR',
 ]);
 const CONSTRAINT_TYPES = new Set(['SPRING_TETHER', 'DISTANCE_ROD', 'SURFACE_PIN']);
+const CONDITION_QUERIES = new Set([
+  'STAT_THRESHOLD',
+  'TAG_CHECK',
+  'PROXIMITY_COUNT',
+  'SURFACE_TYPE',
+]);
+const COMPARISON_OPERATORS = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
 const ACTION_TARGETS = new Set(['TARGET', 'CASTER', 'SELF']);
 const IMPULSE_DIRECTION_MODES = new Set([
   'AWAY_FROM_ORIGIN',
@@ -154,10 +164,17 @@ function scoreAction(action: ActionPayload, depth: number): number {
 }
 
 function scoreTriggerNode(node: TriggerNode, depth: number): number {
-  let total = 0;
+  let trueScore = 0;
   for (const action of node.actions) {
-    total += scoreAction(action, depth);
+    trueScore += scoreAction(action, depth);
   }
+  let falseScore = 0;
+  if (node.ifFalseActions) {
+    for (const action of node.ifFalseActions) {
+      falseScore += scoreAction(action, depth);
+    }
+  }
+  let total = Math.max(trueScore, falseScore);
   if (node.children) {
     for (const child of node.children) {
       total += scoreTriggerNode(child, depth);
@@ -223,6 +240,73 @@ function sanitizeConstraintConfig(raw: unknown): ConstraintConfig {
   }
 
   return config;
+}
+
+function parseComparisonOperator(value: unknown): ComparisonOperator | undefined {
+  const upper = typeof value === 'string' ? value.toUpperCase() : '';
+  return COMPARISON_OPERATORS.has(upper) ? (upper as ComparisonOperator) : undefined;
+}
+
+function sanitizeConditionNode(raw: unknown): ConditionNode | null {
+  if (!isObject(raw)) return null;
+
+  const queryAliases: Record<string, string> = {
+    STAT: 'STAT_THRESHOLD',
+    TAG: 'TAG_CHECK',
+    PROXIMITY: 'PROXIMITY_COUNT',
+    SURFACE: 'SURFACE_TYPE',
+  };
+  let queryRaw = typeof raw.query === 'string' ? raw.query.toUpperCase() : '';
+  queryRaw = queryAliases[queryRaw] ?? queryRaw;
+  if (!CONDITION_QUERIES.has(queryRaw)) return null;
+  if (raw.value === undefined || raw.value === null) return null;
+
+  const query = queryRaw as ConditionQuery;
+
+  switch (query) {
+    case 'STAT_THRESHOLD': {
+      const statRaw =
+        typeof raw.stat === 'string' ? raw.stat.toLowerCase().replace(/_/g, '') : 'health';
+      const stat = statRaw === 'instabilitypct' || statRaw === 'instability' ? 'instabilityPct' : 'health';
+      const comparison = parseComparisonOperator(raw.comparison);
+      const value = ensureFiniteNumber(raw.value, NaN);
+      if (!comparison || !Number.isFinite(value)) return null;
+      const cond: ConditionNode = { query, stat, comparison, value };
+      const target = parseActionTarget(raw.target);
+      if (target) cond.target = target;
+      return cond;
+    }
+    case 'TAG_CHECK': {
+      if (typeof raw.value !== 'string') return null;
+      const cond: ConditionNode = { query, value: raw.value };
+      const target = parseActionTarget(raw.target);
+      if (target) cond.target = target;
+      return cond;
+    }
+    case 'PROXIMITY_COUNT': {
+      const comparison = parseComparisonOperator(raw.comparison);
+      const value = ensureFiniteNumber(raw.value, NaN);
+      if (!comparison || !Number.isFinite(value)) return null;
+      const cond: ConditionNode = {
+        query,
+        comparison,
+        value,
+        radius: clamp(ensureFiniteNumber(raw.radius, 100), 1, 2000),
+      };
+      const target = parseActionTarget(raw.target);
+      if (target) cond.target = target;
+      return cond;
+    }
+    case 'SURFACE_TYPE': {
+      if (typeof raw.value !== 'string') return null;
+      const cond: ConditionNode = { query, value: raw.value };
+      const target = parseActionTarget(raw.target);
+      if (target) cond.target = target;
+      return cond;
+    }
+    default:
+      return null;
+  }
 }
 
 function sanitizeEmitter(raw: unknown, countHint = 1): EmitterConfig {
@@ -518,6 +602,20 @@ function sanitizeTriggerNode(raw: unknown): TriggerNode | null {
 
   if (typeof raw.fireOnHitDeath === 'boolean') {
     node.fireOnHitDeath = raw.fireOnHitDeath;
+  }
+
+  if (Array.isArray(raw.conditions)) {
+    const conditions = raw.conditions
+      .map(sanitizeConditionNode)
+      .filter((c): c is ConditionNode => c !== null);
+    if (conditions.length > 0) node.conditions = conditions;
+  }
+
+  if (Array.isArray(raw.ifFalseActions)) {
+    const ifFalseActions = raw.ifFalseActions
+      .map(sanitizeAction)
+      .filter((a): a is ActionPayload => a !== null);
+    if (ifFalseActions.length > 0) node.ifFalseActions = ifFalseActions;
   }
 
   if (Array.isArray(raw.children)) {

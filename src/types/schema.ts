@@ -35,6 +35,23 @@ export type ActionType =
 
 export type ActionTarget = 'TARGET' | 'CASTER' | 'SELF';
 
+export type ConditionQuery =
+  | 'STAT_THRESHOLD'
+  | 'TAG_CHECK'
+  | 'PROXIMITY_COUNT'
+  | 'SURFACE_TYPE';
+
+export type ComparisonOperator = 'LT' | 'GT' | 'EQ' | 'LTE' | 'GTE';
+
+export interface ConditionNode {
+  query: ConditionQuery;
+  target?: ActionTarget;
+  stat?: 'health' | 'instabilityPct';
+  comparison?: ComparisonOperator;
+  value: number | string;
+  radius?: number;
+}
+
 export type ImpulseDirectionMode =
   | 'AWAY_FROM_ORIGIN'
   | 'TOWARDS_CASTER'
@@ -171,7 +188,9 @@ export interface TriggerNode {
   tickIntervalMs?: number;
   triggerDistance?: number;
   fireOnHitDeath?: boolean;
+  conditions?: ConditionNode[];
   actions: ActionPayload[];
+  ifFalseActions?: ActionPayload[];
   children?: TriggerNode[];
 }
 
@@ -232,6 +251,15 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const ACTION_TARGETS: ReadonlySet<string> = new Set(['TARGET', 'CASTER', 'SELF']);
+
+const CONDITION_QUERIES: ReadonlySet<string> = new Set([
+  'STAT_THRESHOLD',
+  'TAG_CHECK',
+  'PROXIMITY_COUNT',
+  'SURFACE_TYPE',
+]);
+
+const COMPARISON_OPERATORS: ReadonlySet<string> = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
 
 const IMPULSE_DIRECTION_MODES: ReadonlySet<string> = new Set([
   'AWAY_FROM_ORIGIN',
@@ -562,6 +590,63 @@ function validateActionPayload(value: unknown): ActionPayload | null {
   }
 }
 
+function parseComparisonOperator(value: unknown): ComparisonOperator | undefined {
+  return isString(value) && COMPARISON_OPERATORS.has(value)
+    ? (value as ComparisonOperator)
+    : undefined;
+}
+
+function validateConditionNode(value: unknown): ConditionNode | null {
+  if (!isObject(value) || !isString(value.query)) return null;
+  if (!CONDITION_QUERIES.has(value.query)) return null;
+  if (value.value === undefined || value.value === null) return null;
+
+  const query = value.query as ConditionQuery;
+  const cond: ConditionNode = { query, value: value.value as number | string };
+
+  const target = parseActionTarget(value.target);
+  if (target) cond.target = target;
+
+  switch (query) {
+    case 'STAT_THRESHOLD': {
+      if (
+        !isString(value.stat) ||
+        !['health', 'instabilityPct'].includes(value.stat) ||
+        !parseComparisonOperator(value.comparison) ||
+        !isNumber(value.value)
+      ) {
+        return null;
+      }
+      cond.stat = value.stat as 'health' | 'instabilityPct';
+      cond.comparison = parseComparisonOperator(value.comparison);
+      cond.value = value.value;
+      return cond;
+    }
+    case 'TAG_CHECK': {
+      if (!isString(value.value)) return null;
+      cond.value = value.value;
+      return cond;
+    }
+    case 'PROXIMITY_COUNT': {
+      if (!parseComparisonOperator(value.comparison) || !isNumber(value.value)) return null;
+      cond.comparison = parseComparisonOperator(value.comparison);
+      cond.value = value.value;
+      if (value.radius !== undefined) {
+        if (!isNumber(value.radius) || value.radius <= 0) return null;
+        cond.radius = value.radius;
+      }
+      return cond;
+    }
+    case 'SURFACE_TYPE': {
+      if (!isString(value.value)) return null;
+      cond.value = value.value;
+      return cond;
+    }
+    default:
+      return null;
+  }
+}
+
 function validateTriggerNode(value: unknown): TriggerNode | null {
   if (!isObject(value)) return null;
   if (!isString(value.trigger) || !TRIGGER_TYPES.has(value.trigger)) return null;
@@ -592,6 +677,27 @@ function validateTriggerNode(value: unknown): TriggerNode | null {
   if (value.fireOnHitDeath !== undefined) {
     if (typeof value.fireOnHitDeath !== 'boolean') return null;
     node.fireOnHitDeath = value.fireOnHitDeath;
+  }
+
+  if (value.conditions !== undefined) {
+    if (!Array.isArray(value.conditions)) return null;
+    const conditions: ConditionNode[] = [];
+    for (const c of value.conditions) {
+      const validated = validateConditionNode(c);
+      if (validated) conditions.push(validated);
+    }
+    if (conditions.length > 0) node.conditions = conditions;
+  }
+
+  if (value.ifFalseActions !== undefined) {
+    if (!Array.isArray(value.ifFalseActions)) return null;
+    const ifFalseActions: ActionPayload[] = [];
+    for (const action of value.ifFalseActions) {
+      const validated = validateActionPayload(action);
+      if (!validated) return null;
+      ifFalseActions.push(validated);
+    }
+    if (ifFalseActions.length > 0) node.ifFalseActions = ifFalseActions;
   }
 
   if (value.children !== undefined) {
