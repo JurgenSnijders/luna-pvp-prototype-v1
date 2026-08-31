@@ -1,0 +1,23 @@
+{
+  "instabilityColors": {
+    "0": "rgb(255,255,255)",
+    "50": "rgb(255,255,128)",
+    "100": "rgb(255,255,0)",
+    "175": "rgb(255,128,0)",
+    "250": "#ff3333",
+    "300": "#ff3333"
+  },
+  "healthBarColors": {
+    "0.1": "#ef4444",
+    "0.3": "#eab308",
+    "0.6": "#22c55e",
+    "0.9": "#22c55e"
+  },
+  "spriteCacheKey": "DISC|#00ccff|12|2",
+  "spawnAtBudget": {
+    "CORE": true,
+    "PRIMARY": true,
+    "SECONDARY": false,
+    "AMBIENT": false
+  }
+}

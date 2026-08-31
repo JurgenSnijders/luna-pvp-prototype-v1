@@ -10,7 +10,8 @@
     "test:schemas": "tsx scripts/test-schemas.ts",
     "test:offline": "tsx scripts/test-offline.ts",
     "test:interpreter": "tsx scripts/test-interpreter.ts",
-    "test:settings": "tsx scripts/test-settings.ts"
+    "test:settings": "tsx scripts/test-settings.ts",
+    "test:render": "tsx scripts/test-render.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
