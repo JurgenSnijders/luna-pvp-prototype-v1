@@ -27,6 +27,16 @@ export type ActionType =
   | 'MODIFY_STAT'
   | 'TELEPORT';
 
+export type ActionTarget = 'TARGET' | 'CASTER' | 'SELF';
+
+export type ImpulseDirectionMode =
+  | 'AWAY_FROM_ORIGIN'
+  | 'TOWARDS_CASTER'
+  | 'TOWARDS_ORIGIN'
+  | 'ALONG_TRAJECTORY'
+  | 'PERPENDICULAR_TRAJECTORY'
+  | 'CUSTOM';
+
 export type EmitterDistribution = 'FAN' | 'RADIAL' | 'RANDOM_CONE' | 'PARALLEL';
 
 export type ProjectileStyle =
@@ -83,12 +93,15 @@ export interface VisualDescriptor {
 export interface AddInstabilityAction {
   type: 'ADD_INSTABILITY';
   amount: number;
+  target?: ActionTarget;
 }
 
 export interface ApplyImpulseAction {
   type: 'APPLY_IMPULSE';
   baseForce: number;
   direction?: { x: number; y: number };
+  target?: ActionTarget;
+  directionMode?: ImpulseDirectionMode;
 }
 
 export interface SpawnFieldAction {
@@ -109,12 +122,14 @@ export interface ModifyStatAction {
   stat: 'mass' | 'linearDrag' | 'moveSpeed' | 'instabilityPct';
   value: number;
   mode: 'add' | 'set' | 'multiply';
+  target?: ActionTarget;
 }
 
 export interface TeleportAction {
   type: 'TELEPORT';
   distance: number;
   direction?: { x: number; y: number };
+  target?: ActionTarget;
 }
 
 export type ActionPayload =
@@ -177,6 +192,17 @@ const ACTION_TYPES: ReadonlySet<string> = new Set([
   'TELEPORT',
 ]);
 
+const ACTION_TARGETS: ReadonlySet<string> = new Set(['TARGET', 'CASTER', 'SELF']);
+
+const IMPULSE_DIRECTION_MODES: ReadonlySet<string> = new Set([
+  'AWAY_FROM_ORIGIN',
+  'TOWARDS_CASTER',
+  'TOWARDS_ORIGIN',
+  'ALONG_TRAJECTORY',
+  'PERPENDICULAR_TRAJECTORY',
+  'CUSTOM',
+]);
+
 const EMITTER_DISTRIBUTIONS: ReadonlySet<string> = new Set([
   'FAN',
   'RADIAL',
@@ -218,6 +244,16 @@ function isNumber(value: unknown): value is number {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function parseActionTarget(value: unknown): ActionTarget | undefined {
+  return isString(value) && ACTION_TARGETS.has(value) ? (value as ActionTarget) : undefined;
+}
+
+function parseImpulseDirectionMode(value: unknown): ImpulseDirectionMode | undefined {
+  return isString(value) && IMPULSE_DIRECTION_MODES.has(value)
+    ? (value as ImpulseDirectionMode)
+    : undefined;
 }
 
 function validateTrajectoryConfig(value: unknown): TrajectoryConfig | null {
@@ -332,22 +368,28 @@ function validateActionPayload(value: unknown): ActionPayload | null {
   if (!ACTION_TYPES.has(value.type)) return null;
 
   switch (value.type) {
-    case 'ADD_INSTABILITY':
+    case 'ADD_INSTABILITY': {
       if (!isNumber(value.amount)) return null;
-      return { type: 'ADD_INSTABILITY', amount: value.amount };
+      const action: AddInstabilityAction = { type: 'ADD_INSTABILITY', amount: value.amount };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
 
-    case 'APPLY_IMPULSE':
+    case 'APPLY_IMPULSE': {
       if (!isNumber(value.baseForce)) return null;
+      const action: ApplyImpulseAction = { type: 'APPLY_IMPULSE', baseForce: value.baseForce };
       if (value.direction !== undefined) {
         if (!isObject(value.direction)) return null;
         if (!isNumber(value.direction.x) || !isNumber(value.direction.y)) return null;
-        return {
-          type: 'APPLY_IMPULSE',
-          baseForce: value.baseForce,
-          direction: { x: value.direction.x, y: value.direction.y },
-        };
+        action.direction = { x: value.direction.x, y: value.direction.y };
       }
-      return { type: 'APPLY_IMPULSE', baseForce: value.baseForce };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      const directionMode = parseImpulseDirectionMode(value.directionMode);
+      if (directionMode) action.directionMode = directionMode;
+      return action;
+    }
 
     case 'SPAWN_FIELD': {
       const field = validateFieldConfig(value.field);
@@ -385,7 +427,7 @@ function validateActionPayload(value: unknown): ActionPayload | null {
       return action;
     }
 
-    case 'MODIFY_STAT':
+    case 'MODIFY_STAT': {
       if (
         !isString(value.stat) ||
         !['mass', 'linearDrag', 'moveSpeed', 'instabilityPct'].includes(value.stat) ||
@@ -395,25 +437,29 @@ function validateActionPayload(value: unknown): ActionPayload | null {
       ) {
         return null;
       }
-      return {
+      const action: ModifyStatAction = {
         type: 'MODIFY_STAT',
         stat: value.stat as ModifyStatAction['stat'],
         value: value.value,
         mode: value.mode as ModifyStatAction['mode'],
       };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
 
-    case 'TELEPORT':
+    case 'TELEPORT': {
       if (!isNumber(value.distance)) return null;
+      const action: TeleportAction = { type: 'TELEPORT', distance: value.distance };
       if (value.direction !== undefined) {
         if (!isObject(value.direction)) return null;
         if (!isNumber(value.direction.x) || !isNumber(value.direction.y)) return null;
-        return {
-          type: 'TELEPORT',
-          distance: value.distance,
-          direction: { x: value.direction.x, y: value.direction.y },
-        };
+        action.direction = { x: value.direction.x, y: value.direction.y };
       }
-      return { type: 'TELEPORT', distance: value.distance };
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
 
     default:
       return null;

@@ -10,7 +10,9 @@ import type { ParticleSystem } from '../render/ParticleSystem';
 import type {
   AbilitySchema,
   ActionPayload,
+  ActionTarget,
   EmitterConfig,
+  ImpulseDirectionMode,
   TrajectoryConfig,
   TriggerNode,
   TriggerType,
@@ -34,6 +36,14 @@ const DEFAULT_VISUALS: VisualDescriptor = {
   trailType: 'NONE',
   impactVfx: 'SPARKS',
 };
+
+// Degenerate-case fallback (e.g. caster and target at the same point) so relational
+// direction math never divides by zero / produces NaN velocities.
+const FALLBACK_DIR = new Vector2D(0, 1);
+
+function safeNormalize(v: Vector2D, fallback: Vector2D = FALLBACK_DIR): Vector2D {
+  return v.magSq() > 0 ? v.normalize() : fallback;
+}
 
 export function buildTriggerMap(triggers: TriggerNode[]): Map<string, TriggerNode[]> {
   const map = new Map<string, TriggerNode[]>();
@@ -208,6 +218,66 @@ export class Interpreter {
     }
   }
 
+  /** Resolves which entity an action should act on: the struck target, the caster, or the acting projectile itself. */
+  private resolveActionTarget(
+    mode: ActionTarget | undefined,
+    ctx: TriggerContext,
+  ): Entity | null {
+    switch (mode) {
+      case 'CASTER':
+        return ctx.caster;
+      case 'SELF':
+        return ctx.sourceEntity ?? ctx.caster;
+      case 'TARGET':
+      default:
+        return ctx.targetEntity ?? ctx.caster;
+    }
+  }
+
+  /** Unit direction used by ALONG_TRAJECTORY / PERPENDICULAR_TRAJECTORY: the acting projectile's velocity, falling back to cast heading. */
+  private resolveTrajectoryDirection(ctx: TriggerContext): Vector2D {
+    if (ctx.sourceEntity && ctx.sourceEntity.vel.magSq() > 0) {
+      return safeNormalize(ctx.sourceEntity.vel);
+    }
+    if (ctx.heading.magSq() > 0) {
+      return safeNormalize(ctx.heading);
+    }
+    return FALLBACK_DIR;
+  }
+
+  /** Computes a dynamic physics direction (pull toward caster, along trajectory, etc.) instead of a static world vector. */
+  private resolveRelationalDirection(
+    mode: ImpulseDirectionMode | undefined,
+    ctx: TriggerContext,
+    target: Entity,
+    customFallback?: { x: number; y: number },
+  ): Vector2D {
+    // Legacy payloads set only `direction` with no `directionMode` — honor it as CUSTOM.
+    if ((mode === 'CUSTOM' || mode === undefined) && customFallback) {
+      return safeNormalize(new Vector2D(customFallback.x, customFallback.y));
+    }
+
+    switch (mode) {
+      case 'TOWARDS_CASTER':
+        if (!ctx.caster || ctx.caster.id === target.id) return FALLBACK_DIR;
+        return safeNormalize(ctx.caster.pos.sub(target.pos));
+      case 'TOWARDS_ORIGIN':
+        return safeNormalize(ctx.origin.sub(target.pos));
+      case 'AWAY_FROM_ORIGIN':
+        return safeNormalize(target.pos.sub(ctx.origin));
+      case 'ALONG_TRAJECTORY':
+        return this.resolveTrajectoryDirection(ctx);
+      case 'PERPENDICULAR_TRAJECTORY': {
+        const v = this.resolveTrajectoryDirection(ctx);
+        return safeNormalize(new Vector2D(-v.y, v.x));
+      }
+      default:
+        // Legacy default: outward collision normal, else away from the cast origin.
+        if (ctx.normal && ctx.normal.magSq() > 0) return ctx.normal;
+        return safeNormalize(target.pos.sub(ctx.origin));
+    }
+  }
+
   private dispatchAction(
     action: ActionPayload,
     ctx: TriggerContext,
@@ -215,20 +285,15 @@ export class Interpreter {
   ): void {
     switch (action.type) {
       case 'ADD_INSTABILITY': {
-        const t = ctx.targetEntity ?? ctx.caster;
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t) break;
         t.instabilityPct = Math.min(500, t.instabilityPct + action.amount);
         break;
       }
       case 'APPLY_IMPULSE': {
-        const t = ctx.targetEntity ?? ctx.caster;
-        let dir: Vector2D;
-        if (action.direction) {
-          dir = new Vector2D(action.direction.x, action.direction.y);
-        } else if (ctx.normal && ctx.normal.magSq() > 0) {
-          dir = ctx.normal;
-        } else {
-          dir = t.pos.sub(ctx.origin);
-        }
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t) break;
+        const dir = this.resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
         world.applyKnockback(t, dir, action.baseForce);
         this.particles?.burstSparks(ctx.origin, 8, '#ffaa44');
         break;
@@ -255,6 +320,8 @@ export class Interpreter {
         break;
       }
       case 'TELEPORT': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t) break;
         let dir: Vector2D;
         if (action.direction) {
           dir = new Vector2D(action.direction.x, action.direction.y).normalize();
@@ -266,14 +333,17 @@ export class Interpreter {
                   ctx.caster instanceof Player ? ctx.caster.facingAngle : 0,
                 );
         }
-        const dest = ctx.caster.pos.add(dir.scale(action.distance));
-        ctx.caster.pos = clampToHex(dest, world.hexCenter, world.hexRadius);
-        this.particles?.burstSparks(ctx.caster.pos, 12, '#44ffff');
+        const dest = t.pos.add(dir.scale(action.distance));
+        t.pos = clampToHex(dest, world.hexCenter, world.hexRadius);
+        this.particles?.burstSparks(t.pos, 12, '#44ffff');
         break;
       }
-      case 'MODIFY_STAT':
-        this.applyModifyStat(ctx.caster, action.stat, action.value, action.mode);
+      case 'MODIFY_STAT': {
+        const t = this.resolveActionTarget(action.target, ctx);
+        if (!t) break;
+        this.applyModifyStat(t, action.stat, action.value, action.mode);
         break;
+      }
     }
   }
 

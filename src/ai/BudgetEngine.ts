@@ -2,9 +2,11 @@ import type { PassiveModifierPayload, SkillCategory } from '../types/cards';
 import type {
   AbilitySchema,
   ActionPayload,
+  ActionTarget,
   EmitterConfig,
   EmitterDistribution,
   ImpactVfx,
+  ImpulseDirectionMode,
   ProjectileStyle,
   TrajectoryConfig,
   TrajectoryType,
@@ -72,6 +74,15 @@ const FIELD_TYPES = new Set([
   'FRICTION_OVERRIDE',
   'MASS_ATTRACTOR',
 ]);
+const ACTION_TARGETS = new Set(['TARGET', 'CASTER', 'SELF']);
+const IMPULSE_DIRECTION_MODES = new Set([
+  'AWAY_FROM_ORIGIN',
+  'TOWARDS_CASTER',
+  'TOWARDS_ORIGIN',
+  'ALONG_TRAJECTORY',
+  'PERPENDICULAR_TRAJECTORY',
+  'CUSTOM',
+]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,6 +94,16 @@ function ensureFiniteNumber(value: unknown, fallback: number): number {
     return Number(value);
   }
   return fallback;
+}
+
+function parseActionTarget(value: unknown): ActionTarget | undefined {
+  const upper = typeof value === 'string' ? value.toUpperCase() : '';
+  return ACTION_TARGETS.has(upper) ? (upper as ActionTarget) : undefined;
+}
+
+function parseImpulseDirectionMode(value: unknown): ImpulseDirectionMode | undefined {
+  const upper = typeof value === 'string' ? value.toUpperCase() : '';
+  return IMPULSE_DIRECTION_MODES.has(upper) ? (upper as ImpulseDirectionMode) : undefined;
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -245,11 +266,15 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
   }
 
   switch (type) {
-    case 'ADD_INSTABILITY':
-      return {
+    case 'ADD_INSTABILITY': {
+      const action: Extract<ActionPayload, { type: 'ADD_INSTABILITY' }> = {
         type: 'ADD_INSTABILITY',
         amount: ensureFiniteNumber(raw.amount ?? raw.instability, 20),
       };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
 
     case 'SPAWN_PROJECTILE': {
       const trajRaw =
@@ -293,6 +318,8 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
           y: ensureFiniteNumber(raw.direction.y, 0),
         };
       }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
       return action;
     }
 
@@ -307,6 +334,10 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
           y: ensureFiniteNumber(raw.direction.y, 0),
         };
       }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      const directionMode = parseImpulseDirectionMode(raw.directionMode);
+      if (directionMode) action.directionMode = directionMode;
       return action;
     }
 
@@ -356,12 +387,15 @@ function sanitizeAction(raw: unknown): ActionPayload | null {
       const mode = (['add', 'set', 'multiply'].includes(modeRaw)
         ? modeRaw
         : 'add') as 'add' | 'set' | 'multiply';
-      return {
+      const action: Extract<ActionPayload, { type: 'MODIFY_STAT' }> = {
         type: 'MODIFY_STAT',
         stat: statMap[statRaw] ?? 'mass',
         value: ensureFiniteNumber(raw.value, 1),
         mode,
       };
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
     }
 
     default:
