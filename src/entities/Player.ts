@@ -16,6 +16,10 @@ type NumberSlotTuple = [number, number, number, number, number];
 type BoolSlotTuple = [boolean, boolean, boolean, boolean, boolean];
 
 export class Player extends Entity {
+  /** DevTools-configurable pacing knobs, shared across all Player instances (player + bot). */
+  static globalCooldownScale = 1.5;
+  static globalCooldownDurationMs = 350;
+
   moveSpeed: number;
   baseMoveSpeed: number;
   baseAcceleration: number;
@@ -26,6 +30,8 @@ export class Player extends Entity {
   slotCooldownTotalsMs: NumberSlotTuple;
   passives: PassiveModifierPayload[];
   cooldownReductionPct: number;
+  /** Mandatory casting lockout shared across all slots, started on every successful cast. */
+  globalCooldownTimerMs: number;
 
   inputMove: Vector2D;
   aimTarget: Vector2D;
@@ -51,6 +57,7 @@ export class Player extends Entity {
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
     this.passives = [];
     this.cooldownReductionPct = 0;
+    this.globalCooldownTimerMs = 0;
     this.inputMove = Vector2D.zero();
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
     this.slotCastFlags = [false, false, false, false, false];
@@ -72,6 +79,7 @@ export class Player extends Entity {
   isSlotReady(slotIndex: number): boolean {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
     if (this.slotCompiling[slotIndex]) return false;
+    if (this.globalCooldownTimerMs > 0) return false;
     return this.abilities[slotIndex] !== null && this.cooldownTimersMs[slotIndex] <= 0;
   }
 
@@ -92,6 +100,12 @@ export class Player extends Entity {
     const effective = this.getEffectiveCooldown(ability.cooldownMs);
     this.cooldownTimersMs[slotIndex] = effective;
     this.slotCooldownTotalsMs[slotIndex] = effective;
+    this.globalCooldownTimerMs = Player.globalCooldownDurationMs;
+  }
+
+  getGlobalCooldownRatio(): number {
+    if (Player.globalCooldownDurationMs <= 0) return 0;
+    return Math.max(0, Math.min(1, this.globalCooldownTimerMs / Player.globalCooldownDurationMs));
   }
 
   getSlotCooldownRatio(slotIndex: number): number {
@@ -150,7 +164,8 @@ export class Player extends Entity {
   }
 
   getEffectiveCooldown(baseMs: number): number {
-    return baseMs * (1 - this.cooldownReductionPct / 100);
+    const scaled = baseMs * Player.globalCooldownScale;
+    return Math.max(100, Math.round(scaled * (1 - this.cooldownReductionPct / 100)));
   }
 
   override update(dt: number): void {
@@ -158,6 +173,9 @@ export class Player extends Entity {
       if (this.cooldownTimersMs[i] > 0) {
         this.cooldownTimersMs[i] = Math.max(0, this.cooldownTimersMs[i] - dt * 1000);
       }
+    }
+    if (this.globalCooldownTimerMs > 0) {
+      this.globalCooldownTimerMs = Math.max(0, this.globalCooldownTimerMs - dt * 1000);
     }
 
     const moveDir = this.inputMove.magSq() > 0 ? this.inputMove.normalize() : Vector2D.zero();
@@ -198,6 +216,7 @@ export class Player extends Entity {
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
     this.slotCompiling = [false, false, false, false, false];
+    this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
   }
 

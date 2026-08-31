@@ -74,6 +74,32 @@ function getStoredCombatantRadius(): number {
   return Math.max(MIN_COMBATANT_RADIUS, Math.min(MAX_COMBATANT_RADIUS, value));
 }
 
+const COOLDOWN_SCALE_KEY = 'LUNA_COOLDOWN_SCALE';
+const GLOBAL_COOLDOWN_MS_KEY = 'LUNA_GLOBAL_COOLDOWN_MS';
+const DEFAULT_COOLDOWN_SCALE = 1.5;
+const DEFAULT_GLOBAL_COOLDOWN_MS = 350;
+const MIN_COOLDOWN_SCALE = 0.5;
+const MAX_COOLDOWN_SCALE = 3.0;
+const MIN_GLOBAL_COOLDOWN_MS = 0;
+const MAX_GLOBAL_COOLDOWN_MS = 1000;
+
+function getStoredCooldownScale(): number {
+  const raw = parseFloat(localStorage.getItem(COOLDOWN_SCALE_KEY) ?? '');
+  const value = Number.isFinite(raw) ? raw : DEFAULT_COOLDOWN_SCALE;
+  return Math.max(MIN_COOLDOWN_SCALE, Math.min(MAX_COOLDOWN_SCALE, value));
+}
+
+function getStoredGlobalCooldownMs(): number {
+  const raw = parseFloat(localStorage.getItem(GLOBAL_COOLDOWN_MS_KEY) ?? '');
+  const value = Number.isFinite(raw) ? raw : DEFAULT_GLOBAL_COOLDOWN_MS;
+  return Math.max(MIN_GLOBAL_COOLDOWN_MS, Math.min(MAX_GLOBAL_COOLDOWN_MS, value));
+}
+
+function applyCooldownPacingSettings(): void {
+  Player.globalCooldownScale = getStoredCooldownScale();
+  Player.globalCooldownDurationMs = getStoredGlobalCooldownMs();
+}
+
 function getHexCenter(): Vector2D {
   return new Vector2D(window.innerWidth / 2, window.innerHeight / 2);
 }
@@ -358,6 +384,7 @@ function runSimulationStep(dt: number): void {
 function init(): void {
   resize();
   window.addEventListener('resize', resize);
+  applyCooldownPacingSettings();
 
   const center = getHexCenter();
   const hexRadius = getStoredHexRadius();

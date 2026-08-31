@@ -8,7 +8,7 @@ import {
   MIN_HEX_RADIUS,
   type PhysicsWorld,
 } from '../engine/PhysicsWorld';
-import type { Player } from '../entities/Player';
+import { Player } from '../entities/Player';
 import { Dummy } from '../entities/Dummy';
 import { isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
@@ -66,6 +66,14 @@ const TELEMETRY_UPDATE_INTERVAL_MS = 200;
 const INSPECTOR_COLLAPSED_STORAGE_KEY = 'LUNA_INSPECTOR_COLLAPSED';
 const ARENA_HEX_RADIUS_STORAGE_KEY = 'LUNA_ARENA_HEX_RADIUS';
 const COMBATANT_RADIUS_STORAGE_KEY = 'LUNA_COMBATANT_RADIUS';
+const COOLDOWN_SCALE_STORAGE_KEY = 'LUNA_COOLDOWN_SCALE';
+const GLOBAL_COOLDOWN_MS_STORAGE_KEY = 'LUNA_GLOBAL_COOLDOWN_MS';
+const DEFAULT_COOLDOWN_SCALE = 1.5;
+const DEFAULT_GLOBAL_COOLDOWN_MS = 350;
+const MIN_COOLDOWN_SCALE = 0.5;
+const MAX_COOLDOWN_SCALE = 3.0;
+const MIN_GLOBAL_COOLDOWN_MS = 0;
+const MAX_GLOBAL_COOLDOWN_MS = 1000;
 
 export class InspectorUI {
   private fps = 0;
@@ -263,6 +271,18 @@ export class InspectorUI {
     parent.appendChild(row);
   }
 
+  private getStoredCooldownScale(): number {
+    const raw = parseFloat(localStorage.getItem(COOLDOWN_SCALE_STORAGE_KEY) ?? '');
+    const value = Number.isFinite(raw) ? raw : DEFAULT_COOLDOWN_SCALE;
+    return Math.max(MIN_COOLDOWN_SCALE, Math.min(MAX_COOLDOWN_SCALE, value));
+  }
+
+  private getStoredGlobalCooldownMs(): number {
+    const raw = parseFloat(localStorage.getItem(GLOBAL_COOLDOWN_MS_STORAGE_KEY) ?? '');
+    const value = Number.isFinite(raw) ? raw : DEFAULT_GLOBAL_COOLDOWN_MS;
+    return Math.max(MIN_GLOBAL_COOLDOWN_MS, Math.min(MAX_GLOBAL_COOLDOWN_MS, value));
+  }
+
   private buildStatsTab(parent: HTMLElement): void {
     const { world, arenaShrink } = this.ctx;
     const arenaSection = document.createElement('div');
@@ -300,6 +320,45 @@ export class InspectorUI {
       'px',
     );
     parent.appendChild(arenaSection);
+
+    const pacingSection = document.createElement('div');
+    pacingSection.style.cssText =
+      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+    const pacingTitle = document.createElement('div');
+    pacingTitle.textContent = 'Combat Pacing';
+    pacingTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+    pacingSection.appendChild(pacingTitle);
+
+    Player.globalCooldownScale = this.getStoredCooldownScale();
+    Player.globalCooldownDurationMs = this.getStoredGlobalCooldownMs();
+
+    this.sliderRow(
+      pacingSection,
+      'Cooldown Scale',
+      MIN_COOLDOWN_SCALE,
+      MAX_COOLDOWN_SCALE,
+      0.1,
+      () => Player.globalCooldownScale,
+      (v) => {
+        Player.globalCooldownScale = v;
+        localStorage.setItem(COOLDOWN_SCALE_STORAGE_KEY, String(v));
+      },
+      'x',
+    );
+    this.sliderRow(
+      pacingSection,
+      'Global Cooldown',
+      MIN_GLOBAL_COOLDOWN_MS,
+      MAX_GLOBAL_COOLDOWN_MS,
+      50,
+      () => Player.globalCooldownDurationMs,
+      (v) => {
+        Player.globalCooldownDurationMs = v;
+        localStorage.setItem(GLOBAL_COOLDOWN_MS_STORAGE_KEY, String(v));
+      },
+      'ms',
+    );
+    parent.appendChild(pacingSection);
 
     const p = this.ctx.player;
     this.sliderRow(parent, 'Move Speed', 50, 600, 10, () => p.moveSpeed, (v) => {

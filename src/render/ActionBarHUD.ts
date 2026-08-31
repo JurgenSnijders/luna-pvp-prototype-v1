@@ -13,6 +13,7 @@ interface SlotElements {
   badge: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
+  gcdOverlay: HTMLElement;
   compileOverlay: HTMLElement;
   countdown: HTMLElement;
   accent: string;
@@ -88,6 +89,15 @@ export class ActionBarHUD {
       transition: height 0.05s linear;
     `;
 
+    // Global cooldown sweep: fills from the top and only ever shows once the slot's own
+    // cooldown has cleared, so it reads as a shared casting-lockout beat rather than recharge.
+    const gcdOverlay = document.createElement('div');
+    gcdOverlay.style.cssText = `
+      position: absolute; top: 0; left: 0; right: 0; height: 0%; display: none;
+      background: rgba(255, 255, 255, 0.16); pointer-events: none;
+      transition: height 0.05s linear;
+    `;
+
     const compileOverlay = document.createElement('div');
     compileOverlay.style.cssText = `
       position: absolute; inset: 0; display: none; pointer-events: none;
@@ -103,6 +113,7 @@ export class ActionBarHUD {
     root.appendChild(badge);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
+    root.appendChild(gcdOverlay);
     root.appendChild(compileOverlay);
     root.appendChild(countdown);
 
@@ -137,7 +148,7 @@ export class ActionBarHUD {
       if (!ability) this.callbacks.onEmptySlotClick(slotIndex);
     });
 
-    return { root, badge, label, cooldownOverlay, compileOverlay, countdown, accent: accent.color };
+    return { root, badge, label, cooldownOverlay, gcdOverlay, compileOverlay, countdown, accent: accent.color };
   }
 
   update(player: Player): void {
@@ -170,6 +181,7 @@ export class ActionBarHUD {
         // Background synthesis in flight — suppress the real cooldown fill/ready-glow and
         // show an animated pulse instead so the player can see the slot isn't just idle.
         slot.cooldownOverlay.style.height = '0%';
+        slot.gcdOverlay.style.display = 'none';
 
         const pulse = (Math.sin(now / 200) + 1) / 2; // 0..1
         slot.compileOverlay.style.display = 'block';
@@ -187,11 +199,26 @@ export class ActionBarHUD {
       slot.countdown.style.fontSize = '13px';
       slot.cooldownOverlay.style.height = `${ratio * 100}%`;
 
+      // GCD sweep only reads once the slot's own cooldown has cleared — otherwise the
+      // per-slot cooldown fill already communicates the lockout.
+      const gcdRatio = player.getGlobalCooldownRatio();
+      const gcdOnly = ability && remaining <= 0 && gcdRatio > 0;
+      slot.gcdOverlay.style.display = gcdOnly ? 'block' : 'none';
+      if (gcdOnly) {
+        slot.gcdOverlay.style.height = `${gcdRatio * 100}%`;
+      }
+
       if (remaining > 0) {
         slot.countdown.style.display = 'flex';
         slot.countdown.textContent = remaining >= 1000
           ? `${(remaining / 1000).toFixed(1)}s`
           : `${Math.ceil(remaining)}ms`;
+      } else if (gcdOnly) {
+        const gcdRemaining = player.globalCooldownTimerMs;
+        slot.countdown.style.display = 'flex';
+        slot.countdown.textContent = gcdRemaining >= 1000
+          ? `${(gcdRemaining / 1000).toFixed(1)}s`
+          : `${Math.ceil(gcdRemaining)}ms`;
       } else {
         slot.countdown.style.display = 'none';
       }
