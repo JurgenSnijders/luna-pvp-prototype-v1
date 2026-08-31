@@ -14,6 +14,8 @@ import type {
   ImpulseDirectionMode,
   InputProfile,
   InputProfileMode,
+  ResourceCost,
+  ResourceType,
   ObstacleConfig,
   ObstacleShape,
   TerrainMutationConfig,
@@ -362,6 +364,30 @@ function sanitizeActorConfig(raw: unknown): ActorConfig {
     health: clamp(ensureFiniteNumber(obj.health, 50), 1, 500),
     durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 30000),
   };
+}
+
+function sanitizeResourceCost(raw: unknown): ResourceCost | null {
+  if (!isObject(raw)) return null;
+
+  const typeRaw = typeof raw.type === 'string' ? raw.type.toUpperCase() : '';
+  if (!['COOLDOWN', 'HEAT', 'AMMO', 'HEALTH_PCT'].includes(typeRaw)) return null;
+
+  const cost: ResourceCost = {
+    type: typeRaw as ResourceType,
+    cost: clamp(ensureFiniteNumber(raw.cost, 1), 1, 100),
+  };
+
+  if (raw.maxCapacity !== undefined) {
+    cost.maxCapacity = clamp(ensureFiniteNumber(raw.maxCapacity, 6), 1, 20);
+  }
+  if (raw.rechargeRate !== undefined) {
+    cost.rechargeRate = clamp(ensureFiniteNumber(raw.rechargeRate, 25), 1, 100);
+  }
+  if (raw.lockoutDurationMs !== undefined) {
+    cost.lockoutDurationMs = clamp(ensureFiniteNumber(raw.lockoutDurationMs, 3000), 200, 10000);
+  }
+
+  return cost;
 }
 
 function sanitizeInputProfile(raw: unknown): InputProfile {
@@ -961,6 +987,13 @@ export function sanitizeAbilitySchema(
 
   if (obj.inputProfile !== undefined) {
     schema.inputProfile = sanitizeInputProfile(obj.inputProfile);
+  }
+
+  if (obj.resourceCost !== undefined) {
+    const resourceCost = sanitizeResourceCost(obj.resourceCost);
+    if (resourceCost) {
+      schema.resourceCost = resourceCost;
+    }
   }
 
   promoteRootEmitter(schema, obj);

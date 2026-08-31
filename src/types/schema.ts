@@ -68,6 +68,16 @@ export interface InputProfile {
   comboWindowMs?: number;
 }
 
+export type ResourceType = 'COOLDOWN' | 'HEAT' | 'AMMO' | 'HEALTH_PCT';
+
+export interface ResourceCost {
+  type: ResourceType;
+  cost: number;
+  maxCapacity?: number;
+  rechargeRate?: number;
+  lockoutDurationMs?: number;
+}
+
 export type ComparisonOperator = 'LT' | 'GT' | 'EQ' | 'LTE' | 'GTE';
 
 export interface ConditionNode {
@@ -301,6 +311,7 @@ export interface AbilitySchema {
   visuals?: VisualDescriptor;
   metadata?: Record<string, unknown>;
   inputProfile?: InputProfile;
+  resourceCost?: ResourceCost;
 }
 
 export interface CastChildPayloadAction {
@@ -403,6 +414,13 @@ const INPUT_PROFILE_MODES: ReadonlySet<string> = new Set([
   'CHARGE_AND_RELEASE',
   'CHANNELED',
   'COMBO_CHAIN',
+]);
+
+const RESOURCE_TYPES: ReadonlySet<string> = new Set([
+  'COOLDOWN',
+  'HEAT',
+  'AMMO',
+  'HEALTH_PCT',
 ]);
 
 const COMPARISON_OPERATORS: ReadonlySet<string> = new Set(['LT', 'GT', 'EQ', 'LTE', 'GTE']);
@@ -1015,6 +1033,45 @@ function validateInputProfile(value: unknown): InputProfile | null {
   return profile;
 }
 
+function validateResourceCost(value: unknown): ResourceCost | null {
+  if (!isObject(value)) return null;
+
+  const allowedKeys = new Set([
+    'type',
+    'cost',
+    'maxCapacity',
+    'rechargeRate',
+    'lockoutDurationMs',
+  ]);
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) return null;
+  }
+
+  const typeRaw = isString(value.type) ? value.type.toUpperCase() : '';
+  if (!RESOURCE_TYPES.has(typeRaw)) return null;
+  if (!isNumber(value.cost) || value.cost <= 0) return null;
+
+  const cost: ResourceCost = {
+    type: typeRaw as ResourceType,
+    cost: value.cost,
+  };
+
+  if (value.maxCapacity !== undefined) {
+    if (!isNumber(value.maxCapacity) || value.maxCapacity <= 0) return null;
+    cost.maxCapacity = value.maxCapacity;
+  }
+  if (value.rechargeRate !== undefined) {
+    if (!isNumber(value.rechargeRate) || value.rechargeRate <= 0) return null;
+    cost.rechargeRate = value.rechargeRate;
+  }
+  if (value.lockoutDurationMs !== undefined) {
+    if (!isNumber(value.lockoutDurationMs) || value.lockoutDurationMs <= 0) return null;
+    cost.lockoutDurationMs = value.lockoutDurationMs;
+  }
+
+  return cost;
+}
+
 function validateTriggerNode(value: unknown, depth = 0): TriggerNode | null {
   if (!isObject(value)) return null;
   if (!isString(value.trigger) || !TRIGGER_TYPES.has(value.trigger)) return null;
@@ -1124,6 +1181,12 @@ export function validateAbilitySchema(json: unknown, depth = 0): AbilitySchema |
     const inputProfile = validateInputProfile(json.inputProfile);
     if (!inputProfile) return null;
     schema.inputProfile = inputProfile;
+  }
+
+  if (json.resourceCost !== undefined) {
+    const resourceCost = validateResourceCost(json.resourceCost);
+    if (!resourceCost) return null;
+    schema.resourceCost = resourceCost;
   }
 
   return schema;

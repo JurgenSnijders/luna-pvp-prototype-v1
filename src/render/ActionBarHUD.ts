@@ -14,8 +14,11 @@ interface SlotElements {
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
   chargeOverlay: HTMLElement;
+  heatOverlay: HTMLElement;
   gcdOverlay: HTMLElement;
   compileOverlay: HTMLElement;
+  resourceBadge: HTMLElement;
+  lockoutOverlay: HTMLElement;
   countdown: HTMLElement;
   accent: string;
 }
@@ -91,6 +94,17 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const visuals = ability.visuals;
   const swatchColor = visuals?.color ?? '#888';
   const projectileStyle = visuals ? escapeHtml(formatEnumLabel(visuals.projectileStyle)) : '—';
+  const resourceCost = ability.resourceCost;
+  const resourceLine = resourceCost
+    ? `<div style="margin-bottom:8px;">
+        <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Resource</div>
+        <div style="font-size:11px;">${escapeHtml(formatEnumLabel(resourceCost.type))} · cost ${resourceCost.cost}${
+          resourceCost.maxCapacity !== undefined ? ` · cap ${resourceCost.maxCapacity}` : ''
+        }${
+          resourceCost.rechargeRate !== undefined ? ` · ${resourceCost.rechargeRate}/s` : ''
+        }</div>
+      </div>`
+    : '';
 
   return `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
@@ -113,6 +127,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
       <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
       <div style="font-size:11px;">${actionList}</div>
     </div>
+    ${resourceLine}
     <div style="display:flex; align-items:center; gap:6px;">
       <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
       <span style="font-size:10px; color:#cbd5e1;">${projectileStyle}</span>
@@ -205,6 +220,14 @@ export class ActionBarHUD {
       transition: height 0.05s linear;
     `;
 
+    const heatOverlay = document.createElement('div');
+    heatOverlay.style.cssText = `
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none;
+      background: linear-gradient(to top, #ff4400, #ff8800);
+      pointer-events: none; opacity: 0.85;
+      transition: height 0.05s linear;
+    `;
+
     // Global cooldown sweep: fills from the top and only ever shows once the slot's own
     // cooldown has cleared, so it reads as a shared casting-lockout beat rather than recharge.
     const gcdOverlay = document.createElement('div');
@@ -219,6 +242,22 @@ export class ActionBarHUD {
       position: absolute; inset: 0; display: none; pointer-events: none;
     `;
 
+    const resourceBadge = document.createElement('div');
+    resourceBadge.style.cssText = `
+      position: absolute; top: 3px; right: 3px; display: none;
+      font-size: 8px; font-weight: 700; color: #e2e8f0;
+      background: rgba(0, 0, 0, 0.55); padding: 1px 4px; border-radius: 4px;
+      pointer-events: none; line-height: 1.2;
+    `;
+
+    const lockoutOverlay = document.createElement('div');
+    lockoutOverlay.style.cssText = `
+      position: absolute; inset: 0; display: none; pointer-events: none;
+      align-items: center; justify-content: center; flex-direction: column;
+      background: rgba(120, 0, 0, 0.55); color: #ffcccc;
+      font-size: 8px; font-weight: 700; text-align: center; line-height: 1.2;
+    `;
+
     const countdown = document.createElement('div');
     countdown.style.cssText = `
       position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
@@ -230,8 +269,11 @@ export class ActionBarHUD {
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
+    root.appendChild(heatOverlay);
     root.appendChild(gcdOverlay);
     root.appendChild(compileOverlay);
+    root.appendChild(resourceBadge);
+    root.appendChild(lockoutOverlay);
     root.appendChild(countdown);
 
     root.addEventListener('dragover', (e) => {
@@ -278,7 +320,7 @@ export class ActionBarHUD {
       this.tooltipEl.style.opacity = '0';
     });
 
-    return { root, badge, label, cooldownOverlay, chargeOverlay, gcdOverlay, compileOverlay, countdown, accent: accent.color };
+    return { root, badge, label, cooldownOverlay, chargeOverlay, heatOverlay, gcdOverlay, compileOverlay, resourceBadge, lockoutOverlay, countdown, accent: accent.color };
   }
 
   private updateTooltipPosition(slotIndex: number): void {
@@ -370,7 +412,48 @@ export class ActionBarHUD {
 
       slot.compileOverlay.style.display = 'none';
       slot.countdown.style.fontSize = '13px';
-      slot.cooldownOverlay.style.height = `${ratio * 100}%`;
+
+      const resourceCost = ability?.resourceCost;
+      const usesResourceCooldown =
+        resourceCost?.type === 'HEAT' || resourceCost?.type === 'AMMO';
+
+      slot.heatOverlay.style.display = 'none';
+      slot.resourceBadge.style.display = 'none';
+      slot.lockoutOverlay.style.display = 'none';
+      slot.lockoutOverlay.style.flexDirection = 'column';
+
+      if (resourceCost?.type === 'HEAT') {
+        const heatRatio = player.getSlotHeatRatio(i);
+        slot.heatOverlay.style.display = 'block';
+        slot.heatOverlay.style.height = `${heatRatio * 100}%`;
+        if (player.isSlotOverheated(i)) {
+          const pulse = (Math.sin(now / 120) + 1) / 2;
+          slot.lockoutOverlay.style.display = 'flex';
+          slot.lockoutOverlay.style.background = `rgba(180, 0, 0, ${0.45 + pulse * 0.35})`;
+          slot.lockoutOverlay.textContent = 'OVERHEAT';
+        }
+      } else if (resourceCost?.type === 'AMMO') {
+        const ammo = player.getSlotAmmoCount(i);
+        const capacity = player.getSlotAmmoCapacity(i);
+        slot.resourceBadge.style.display = 'block';
+        slot.resourceBadge.textContent = `${ammo}/${capacity}`;
+        if (player.isSlotReloading(i)) {
+          const lockoutRatio = player.getSlotLockoutRatio(i);
+          slot.lockoutOverlay.style.display = 'flex';
+          slot.lockoutOverlay.style.background = `rgba(0, 0, 0, ${0.35 + lockoutRatio * 0.35})`;
+          slot.lockoutOverlay.innerHTML = `RELOADING...<br><span style="font-size:7px">${Math.ceil(player.getSlotLockoutRemainingMs(i))}ms</span>`;
+        }
+      } else if (resourceCost?.type === 'HEALTH_PCT') {
+        slot.resourceBadge.style.display = 'block';
+        slot.resourceBadge.style.color = '#ff6b6b';
+        slot.resourceBadge.textContent = `-${resourceCost.cost}% HP`;
+      }
+
+      if (usesResourceCooldown) {
+        slot.cooldownOverlay.style.height = '0%';
+      } else {
+        slot.cooldownOverlay.style.height = `${ratio * 100}%`;
+      }
 
       const slotInput = player.slotInputs[i];
       const isCharging =
@@ -394,7 +477,14 @@ export class ActionBarHUD {
         slot.gcdOverlay.style.height = `${gcdRatio * 100}%`;
       }
 
-      if (remaining > 0) {
+      if (player.isSlotOverheated(i) || player.isSlotReloading(i)) {
+        slot.countdown.style.display = 'flex';
+        slot.countdown.style.fontSize = '8px';
+        const lockoutRemaining = player.getSlotLockoutRemainingMs(i);
+        slot.countdown.textContent = lockoutRemaining >= 1000
+          ? `${(lockoutRemaining / 1000).toFixed(1)}s`
+          : `${Math.ceil(lockoutRemaining)}ms`;
+      } else if (remaining > 0) {
         slot.countdown.style.display = 'flex';
         slot.countdown.textContent = remaining >= 1000
           ? `${(remaining / 1000).toFixed(1)}s`

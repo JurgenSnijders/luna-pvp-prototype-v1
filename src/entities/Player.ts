@@ -26,6 +26,15 @@ export interface SlotInputState {
   charging: boolean;
 }
 
+export interface SlotResourceState {
+  heat: number;
+  isOverheated: boolean;
+  currentAmmo: number;
+  isReloading: boolean;
+  lockoutTimerMs: number;
+  lockoutTotalMs: number;
+}
+
 export type SlotCastCallback = (
   slotIndex: number,
   overrides: ExecutionOverrides,
@@ -41,6 +50,17 @@ function createDefaultSlotInput(): SlotInputState {
     idleMs: 0,
     channelArmed: false,
     charging: false,
+  };
+}
+
+function createDefaultSlotResource(): SlotResourceState {
+  return {
+    heat: 0,
+    isOverheated: false,
+    currentAmmo: 0,
+    isReloading: false,
+    lockoutTimerMs: 0,
+    lockoutTotalMs: 0,
   };
 }
 
@@ -72,6 +92,7 @@ export class Player extends Entity {
   /** Phase 2 lazy compilation: true while a slot's AbilitySchema is being synthesized in the background. */
   slotCompiling: BoolSlotTuple;
   slotInputs: SlotInputState[];
+  slotResources: SlotResourceState[];
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -97,6 +118,20 @@ export class Player extends Entity {
     this.slotCastFlags = [false, false, false, false, false];
     this.slotCompiling = [false, false, false, false, false];
     this.slotInputs = Array.from({ length: SLOT_COUNT }, () => createDefaultSlotInput());
+    this.slotResources = Array.from({ length: SLOT_COUNT }, () => createDefaultSlotResource());
+  }
+
+  initSlotResourceState(slotIndex: number): void {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
+
+    const ability = this.abilities[slotIndex];
+    const res = createDefaultSlotResource();
+
+    if (ability?.resourceCost?.type === 'AMMO') {
+      res.currentAmmo = ability.resourceCost.maxCapacity ?? 6;
+    }
+
+    this.slotResources[slotIndex] = res;
   }
 
   setAbility(slotIndex: number, ability: AbilitySchema | null): void {
@@ -104,6 +139,7 @@ export class Player extends Entity {
     this.abilities[slotIndex] = ability;
     this.cooldownTimersMs[slotIndex] = 0;
     this.slotCooldownTotalsMs[slotIndex] = 0;
+    this.initSlotResourceState(slotIndex);
   }
 
   getAbility(slotIndex: number): AbilitySchema | null {
@@ -114,8 +150,28 @@ export class Player extends Entity {
   isSlotReady(slotIndex: number): boolean {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
     if (this.slotCompiling[slotIndex]) return false;
+
+    const ability = this.abilities[slotIndex];
+    if (!ability) return false;
     if (this.globalCooldownTimerMs > 0) return false;
-    return this.abilities[slotIndex] !== null && this.cooldownTimersMs[slotIndex] <= 0;
+
+    const resourceCost = ability.resourceCost;
+    const res = this.slotResources[slotIndex];
+
+    if (resourceCost?.type === 'HEAT') {
+      return !res.isOverheated;
+    }
+
+    if (resourceCost?.type === 'AMMO') {
+      return !res.isReloading && res.currentAmmo >= resourceCost.cost;
+    }
+
+    if (resourceCost?.type === 'HEALTH_PCT') {
+      const threshold = (this.maxHealth * resourceCost.cost) / 100;
+      return this.health > threshold && this.cooldownTimersMs[slotIndex] <= 0;
+    }
+
+    return this.cooldownTimersMs[slotIndex] <= 0;
   }
 
   setSlotCompiling(slotIndex: number, compiling: boolean): void {
@@ -132,9 +188,40 @@ export class Player extends Entity {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
     const ability = this.abilities[slotIndex];
     if (!ability) return;
-    const effective = this.getEffectiveCooldown(ability.cooldownMs);
-    this.cooldownTimersMs[slotIndex] = effective;
-    this.slotCooldownTotalsMs[slotIndex] = effective;
+
+    const resourceCost = ability.resourceCost;
+    const res = this.slotResources[slotIndex];
+
+    if (resourceCost?.type === 'HEAT') {
+      res.heat += resourceCost.cost;
+      if (res.heat >= 100) {
+        res.heat = 100;
+        res.isOverheated = true;
+        const lockout = resourceCost.lockoutDurationMs ?? 3000;
+        res.lockoutTimerMs = lockout;
+        res.lockoutTotalMs = lockout;
+      }
+    } else if (resourceCost?.type === 'AMMO') {
+      res.currentAmmo -= resourceCost.cost;
+      if (res.currentAmmo <= 0) {
+        res.currentAmmo = 0;
+        res.isReloading = true;
+        const lockout = resourceCost.lockoutDurationMs ?? ability.cooldownMs ?? 2000;
+        res.lockoutTimerMs = lockout;
+        res.lockoutTotalMs = lockout;
+      }
+    } else if (resourceCost?.type === 'HEALTH_PCT') {
+      const healthCost = (this.maxHealth * resourceCost.cost) / 100;
+      this.health = Math.max(0, this.health - healthCost);
+      const effective = this.getEffectiveCooldown(ability.cooldownMs);
+      this.cooldownTimersMs[slotIndex] = effective;
+      this.slotCooldownTotalsMs[slotIndex] = effective;
+    } else {
+      const effective = this.getEffectiveCooldown(ability.cooldownMs);
+      this.cooldownTimersMs[slotIndex] = effective;
+      this.slotCooldownTotalsMs[slotIndex] = effective;
+    }
+
     if (!ignoreGCD) {
       this.globalCooldownTimerMs = Player.globalCooldownDurationMs;
     }
@@ -266,6 +353,44 @@ export class Player extends Entity {
     return Math.max(0, this.cooldownTimersMs[slotIndex]);
   }
 
+  getSlotHeatRatio(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    return Math.max(0, Math.min(1, this.slotResources[slotIndex].heat / 100));
+  }
+
+  getSlotAmmoCount(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    return this.slotResources[slotIndex].currentAmmo;
+  }
+
+  getSlotAmmoCapacity(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    const ability = this.abilities[slotIndex];
+    return ability?.resourceCost?.maxCapacity ?? 6;
+  }
+
+  getSlotLockoutRatio(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    const res = this.slotResources[slotIndex];
+    if (res.lockoutTotalMs <= 0) return 0;
+    return Math.max(0, Math.min(1, res.lockoutTimerMs / res.lockoutTotalMs));
+  }
+
+  isSlotOverheated(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    return this.slotResources[slotIndex].isOverheated;
+  }
+
+  isSlotReloading(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    return this.slotResources[slotIndex].isReloading;
+  }
+
+  getSlotLockoutRemainingMs(slotIndex: number): number {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return 0;
+    return Math.max(0, this.slotResources[slotIndex].lockoutTimerMs);
+  }
+
   applyPassiveModifier(mod: PassiveModifierPayload): void {
     this.passives.push(mod);
 
@@ -324,6 +449,35 @@ export class Player extends Entity {
       this.globalCooldownTimerMs = Math.max(0, this.globalCooldownTimerMs - dt * 1000);
     }
 
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const ability = this.abilities[i];
+      const resourceCost = ability?.resourceCost;
+      if (!resourceCost) continue;
+
+      const res = this.slotResources[i];
+
+      if (resourceCost.type === 'HEAT') {
+        if (res.isOverheated) {
+          res.lockoutTimerMs = Math.max(0, res.lockoutTimerMs - dt * 1000);
+          if (res.lockoutTimerMs <= 0) {
+            res.isOverheated = false;
+            res.heat = 0;
+            res.lockoutTotalMs = 0;
+          }
+        } else {
+          const rate = resourceCost.rechargeRate ?? 25;
+          res.heat = Math.max(0, res.heat - rate * dt);
+        }
+      } else if (resourceCost.type === 'AMMO' && res.isReloading) {
+        res.lockoutTimerMs = Math.max(0, res.lockoutTimerMs - dt * 1000);
+        if (res.lockoutTimerMs <= 0) {
+          res.isReloading = false;
+          res.currentAmmo = resourceCost.maxCapacity ?? 6;
+          res.lockoutTotalMs = 0;
+        }
+      }
+    }
+
     const moveDir = this.inputMove.magSq() > 0 ? this.inputMove.normalize() : Vector2D.zero();
     const speedMultiplier = this.activeMorph?.speedMultiplier ?? 1;
     const targetVel = moveDir.scale(this.moveSpeed * speedMultiplier);
@@ -368,6 +522,9 @@ export class Player extends Entity {
     this.resetSlotInputs();
     this.resetStasis();
     this.resetMorphStealth();
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      this.initSlotResourceState(i);
+    }
   }
 
   resetPosition(spawn: Vector2D): void {
