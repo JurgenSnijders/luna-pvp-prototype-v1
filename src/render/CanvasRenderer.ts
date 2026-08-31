@@ -4,6 +4,7 @@ import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Entity } from '../entities/Entity';
 import type { Projectile } from '../entities/Projectile';
 import type { ProjectileStyle } from '../types/schema';
+import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import type { ParticleSystem } from './ParticleSystem';
 
 export interface DebugOptions {
@@ -58,7 +59,9 @@ export class CanvasRenderer {
     this.ringRotation += 0.02;
 
     this.drawLavaSea(ctx, world, width, height);
-    this.drawLavaHeatWaves(ctx, world, width, height);
+    if (getGraphicsSettings().lavaHeatWaves) {
+      this.drawLavaHeatWaves(ctx, world, width, height);
+    }
     this.drawOuterBarrier(ctx, world);
     this.drawHexPlatform(ctx, world, shrinkProgress, isShrinking);
     this.drawZones(ctx, world);

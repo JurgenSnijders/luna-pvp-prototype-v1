@@ -3,6 +3,7 @@ import { sanitizeAbilitySchema } from './ai/BudgetEngine';
 import { InspectorUI } from './devtools/InspectorUI';
 import { PRESETS } from './devtools/Presets';
 import { SpellLibrary } from './devtools/SpellLibrary';
+import { getGraphicsSettings } from './devtools/graphicsSettings';
 import { DraftModal } from './draft/DraftModal';
 import { Loop } from './engine/Loop';
 import { PhysicsWorld } from './engine/PhysicsWorld';
@@ -269,12 +270,14 @@ function runSimulationStep(dt: number): void {
       particles.ember(entity.pos);
     }
   }
-  for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
-    particles.spawnAmbientEmber(
-      { width: window.innerWidth, height: window.innerHeight },
-      world.hexCenter,
-      world.hexRadius,
-    );
+  if (getGraphicsSettings().ambientEmbers) {
+    for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
+      particles.spawnAmbientEmber(
+        { width: window.innerWidth, height: window.innerHeight },
+        world.hexCenter,
+        world.hexRadius,
+      );
+    }
   }
 
   matchManager.checkRoundEliminations(

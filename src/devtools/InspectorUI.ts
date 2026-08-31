@@ -16,6 +16,12 @@ import {
   synthesizeCards,
   type AiSettings,
 } from '../ai/Synthesizer';
+import {
+  DEFAULT_GRAPHICS_SETTINGS,
+  getGraphicsSettings,
+  saveGraphicsSettings,
+  type GraphicsSettings,
+} from './graphicsSettings';
 import { PRESETS, PRESET_NAMES } from './Presets';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
@@ -87,7 +93,7 @@ export class InspectorUI {
       color: #e0e0e8;
     `;
 
-    const tabs = ['Stats', 'Presets', 'JSON', 'Harness'];
+    const tabs = ['Stats', 'Presets', 'JSON', 'Graphics', 'Harness'];
     const tabBar = document.createElement('div');
     tabBar.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;';
     const content = document.createElement('div');
@@ -107,6 +113,9 @@ export class InspectorUI {
             break;
           case 'JSON':
             this.buildJsonTab(content);
+            break;
+          case 'Graphics':
+            this.buildGraphicsTab(content);
             break;
           case 'Harness':
             this.buildHarnessTab(content);
@@ -301,6 +310,78 @@ export class InspectorUI {
     }
     this.errorBanner.textContent = msg;
     this.errorBanner.style.display = 'block';
+  }
+
+  private buildGraphicsTab(parent: HTMLElement): void {
+    const section = document.createElement('div');
+    section.style.cssText =
+      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+    const title = document.createElement('div');
+    title.textContent = 'Graphics & Performance';
+    title.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+    section.appendChild(title);
+
+    const settings = getGraphicsSettings();
+    const checkboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+
+    const addToggle = (key: keyof GraphicsSettings, label: string): void => {
+      const row = document.createElement('label');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:8px;';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = settings[key];
+      checkbox.onchange = () => {
+        const current = getGraphicsSettings();
+        saveGraphicsSettings({ ...current, [key]: checkbox.checked });
+      };
+      checkboxes[key] = checkbox;
+      row.appendChild(checkbox);
+      row.appendChild(document.createTextNode(label));
+      section.appendChild(row);
+    };
+
+    addToggle('lavaHeatWaves', 'Lava Heat Waves (Procedural Ellipses & Wisps)');
+    addToggle('ambientEmbers', 'Ambient Lava Embers (Continuous Particles)');
+    addToggle('particleTrails', 'Projectile Particle Trails');
+
+    const syncCheckboxes = (s: GraphicsSettings): void => {
+      for (const key of Object.keys(checkboxes) as (keyof GraphicsSettings)[]) {
+        const box = checkboxes[key];
+        if (box) box.checked = s[key];
+      }
+    };
+
+    const presetRow = document.createElement('div');
+    presetRow.style.cssText = 'display:flex;gap:6px;';
+
+    const highQualityBtn = document.createElement('button');
+    highQualityBtn.textContent = 'High Quality';
+    highQualityBtn.style.cssText = this.buttonStyle(false) + 'flex:1;';
+    highQualityBtn.onclick = () => {
+      const next: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
+      saveGraphicsSettings(next);
+      syncCheckboxes(next);
+    };
+
+    const lowFxBtn = document.createElement('button');
+    lowFxBtn.textContent = 'Low FX (Max FPS)';
+    lowFxBtn.style.cssText = this.buttonStyle(false) + 'flex:1;';
+    lowFxBtn.onclick = () => {
+      const next: GraphicsSettings = {
+        ...getGraphicsSettings(),
+        lavaHeatWaves: false,
+        ambientEmbers: false,
+      };
+      saveGraphicsSettings(next);
+      syncCheckboxes(next);
+    };
+
+    presetRow.appendChild(highQualityBtn);
+    presetRow.appendChild(lowFxBtn);
+    section.appendChild(presetRow);
+
+    parent.appendChild(section);
   }
 
   private buildHarnessTab(parent: HTMLElement): void {

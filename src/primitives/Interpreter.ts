@@ -1,6 +1,7 @@
 import { clampToHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import { MAX_ENTITIES, type PhysicsWorld } from '../engine/PhysicsWorld';
+import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import type { Entity } from '../entities/Entity';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -446,7 +447,10 @@ export class Interpreter {
       }
       const visuals = projectile.visuals;
       const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation
-      if (projectile.pos.distSq(projectile.lastTrailPos) > TRAIL_MIN_DIST_SQ) {
+      if (
+        getGraphicsSettings().particleTrails &&
+        projectile.pos.distSq(projectile.lastTrailPos) > TRAIL_MIN_DIST_SQ
+      ) {
         if (visuals?.trailType === 'NEON_RIBBON') {
           this.particles?.neonRibbon(projectile.pos, visuals.color);
         } else {
