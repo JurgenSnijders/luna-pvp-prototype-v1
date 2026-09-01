@@ -8,15 +8,41 @@ import type {
   TriggerNode,
 } from '../../types/schema';
 
-const PULL_KEYWORDS = /\b(pull|inward|attract|gravity|singularity|drag|vacuum|harpoon|black hole)\b/;
-const PERSISTENT_PULL_KEYWORDS = /\b(well|singularity|orbit|vortex)\b/;
-const LINGERING_KEYWORDS = /\b(lingering|sticky|puddle|pool|scorch|fire trail|ground|hazard)\b/;
+const PULL_KEYWORDS =
+  /\b(pull|inward|attract|gravity|singularity|drag|vacuum|harpoon|black hole|suck|reel|implosion)\b/;
+const PUSH_KEYWORDS =
+  /\b(push|knock|blast|fling|repel|shockwave|concussive|slabs|repulsor|launch)\b/;
+const ORBIT_KEYWORDS =
+  /\b(orbiting|orbits|orbit|circling|circle|ring|halo|surround|revolving|rotating|satellite|whirling)\b/;
+const OBSTACLE_KEYWORDS =
+  /\b(wall|barrier|obstacle|bunker|pillar|pylon|barricade|cover|fortified|obelisk)\b/;
+const PERSISTENT_PULL_KEYWORDS = /\b(well|vortex|black hole)\b/;
+const LINGERING_KEYWORDS =
+  /\b(lingering|sticky|puddle|pool|scorch|fire trail|hazard|toxic|sludge|burn|mire|acid)\b/;
 const ARC_KEYWORDS = /\b(arc|sweep|scatter|salvo|fan|spray|barrage|burst)\b/;
 const CHANNEL_KEYWORDS = /\b(flamethrower|continuous|channel|stream|beam)\b/;
-const HARPOON_KEYWORDS = /\b(pull|draw|harpoon|hook)\b/;
+const HARPOON_KEYWORDS = /\b(pull|draw|harpoon|hook|reel)\b/;
+
+const PULL_FORCE_FLOOR = 450;
+const PUSH_FORCE_FLOOR = 500;
+const INJECTED_IMPULSE_FORCE = 15000;
+const ATTRACTOR_FIELD_RADIUS = 250;
+const ATTRACTOR_FIELD_STRENGTH = 4000;
 
 function isPullConcept(text: string): boolean {
-  return PULL_KEYWORDS.test(text);
+  return PULL_KEYWORDS.test(text) && !isPushConcept(text);
+}
+
+function isPushConcept(text: string): boolean {
+  return PUSH_KEYWORDS.test(text);
+}
+
+function isOrbitConcept(text: string): boolean {
+  return ORBIT_KEYWORDS.test(text);
+}
+
+function isObstacleConcept(text: string): boolean {
+  return OBSTACLE_KEYWORDS.test(text);
 }
 
 function isLingeringConcept(text: string): boolean {
@@ -24,11 +50,18 @@ function isLingeringConcept(text: string): boolean {
 }
 
 function isArcConcept(text: string): boolean {
+  if (isPullConcept(text) && !/\b(arc|sweep|scatter|salvo|fan|spray|barrage)\b/.test(text)) {
+    return false;
+  }
   return ARC_KEYWORDS.test(text);
 }
 
 function isChannelConcept(text: string): boolean {
   return CHANNEL_KEYWORDS.test(text);
+}
+
+function hasInstabilityAction(schema: AbilitySchema): boolean {
+  return collectAllActions(schema.triggers).some((a) => a.type === 'ADD_INSTABILITY');
 }
 
 function repairImpulseSemantics(
@@ -38,17 +71,27 @@ function repairImpulseSemantics(
   const patched = { ...action };
   if (!patched.target) patched.target = 'TARGET';
 
+  if (isPushConcept(text) && !isPullConcept(text)) {
+    patched.directionMode = 'AWAY_FROM_ORIGIN';
+    patched.baseForce = Math.max(patched.baseForce ?? 0, PUSH_FORCE_FLOOR);
+    return patched;
+  }
+
   if (isPullConcept(text)) {
     if (!patched.directionMode || patched.directionMode === 'AWAY_FROM_ORIGIN') {
       patched.directionMode = HARPOON_KEYWORDS.test(text)
         ? 'TOWARDS_CASTER'
         : 'TOWARDS_ORIGIN';
     }
+    patched.baseForce = Math.max(patched.baseForce ?? 0, PULL_FORCE_FLOOR);
     return patched;
   }
 
   if (!patched.directionMode) {
     patched.directionMode = 'AWAY_FROM_ORIGIN';
+  }
+  if (patched.directionMode === 'AWAY_FROM_ORIGIN') {
+    patched.baseForce = Math.max(patched.baseForce ?? 0, PUSH_FORCE_FLOOR);
   }
   return patched;
 }
@@ -149,16 +192,8 @@ function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
   return found;
 }
 
-function hasFanEmitter(schema: AbilitySchema): boolean {
-  let found = false;
-  walkTriggerNodes(schema.triggers, (_node, action) => {
-    if (action.type === 'SPAWN_PROJECTILE' && action.emitter) {
-      if (action.emitter.count >= 3 && action.emitter.distribution === 'FAN') {
-        found = true;
-      }
-    }
-  });
-  return found;
+function hasSpawnObstacle(schema: AbilitySchema): boolean {
+  return collectAllActions(schema.triggers).some((a) => a.type === 'SPAWN_OBSTACLE');
 }
 
 function findOnCastProjectile(schema: AbilitySchema): {
@@ -190,55 +225,143 @@ function ensureFanEmitter(emitter?: EmitterConfig): EmitterConfig {
   };
 }
 
-function applyRuleA_PullGravity(schema: AbilitySchema, text: string): void {
-  if (!isPullConcept(text)) return;
+function ensureOnCastNode(schema: AbilitySchema): TriggerNode {
+  let onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
+  if (!onCast) {
+    onCast = { trigger: 'ON_CAST', actions: [] };
+    schema.triggers.unshift(onCast);
+  }
+  return onCast;
+}
 
-  if (
-    schema.trajectory &&
-    !hasFieldType(schema, ['MASS_ATTRACTOR', 'VORTEX_TANGENT']) &&
-    PERSISTENT_PULL_KEYWORDS.test(text)
-  ) {
-    let onTick = schema.triggers.find((t) => t.trigger === 'ON_TICK');
-    if (!onTick) {
-      onTick = { trigger: 'ON_TICK', tickIntervalMs: 100, actions: [] };
-      schema.triggers.push(onTick);
-    }
-    const hasAttractor = onTick.actions.some(
-      (a) =>
-        a.type === 'SPAWN_FIELD' &&
-        (a.field.fieldType === 'MASS_ATTRACTOR' || a.field.fieldType === 'VORTEX_TANGENT'),
-    );
-    if (!hasAttractor) {
-      onTick.actions.push({
-        type: 'SPAWN_FIELD',
-        field: {
-          fieldType: 'MASS_ATTRACTOR',
-          radius: 80,
-          strength: 2500,
-          durationMs: 2000,
-          attachToSource: true,
-        },
-      });
-    }
+function applyRuleF_Obstacle(schema: AbilitySchema, text: string): void {
+  if (!isObstacleConcept(text)) return;
+
+  const onCast = ensureOnCastNode(schema);
+  if (!hasSpawnObstacle(schema)) {
+    onCast.actions.push({
+      type: 'SPAWN_OBSTACLE',
+      target: 'CASTER',
+      obstacle: {
+        shape: 'BOX',
+        width: 80,
+        height: 24,
+        durationMs: 5000,
+        isDestructible: true,
+        maxHealth: 150,
+      },
+    });
+  }
+
+  delete schema.trajectory;
+}
+
+function applyRuleE_Orbit(schema: AbilitySchema, text: string): void {
+  if (!isOrbitConcept(text)) return;
+
+  schema.trajectory = {
+    type: 'ORBIT_ANCHOR',
+    orbitRadius: 70,
+    orbitSpeed: 3.0,
+    maxRange: 800,
+  };
+
+  if (hasFieldType(schema, ['MASS_ATTRACTOR', 'VORTEX_TANGENT'])) return;
+
+  const onCast = ensureOnCastNode(schema);
+  const hasAttractor = onCast.actions.some(
+    (a) => a.type === 'SPAWN_FIELD' && a.field.fieldType === 'MASS_ATTRACTOR',
+  );
+  const hasVortex = onCast.actions.some(
+    (a) => a.type === 'SPAWN_FIELD' && a.field.fieldType === 'VORTEX_TANGENT',
+  );
+
+  if (!hasAttractor) {
+    onCast.actions.push({
+      type: 'SPAWN_FIELD',
+      field: {
+        fieldType: 'MASS_ATTRACTOR',
+        radius: ATTRACTOR_FIELD_RADIUS,
+        strength: ATTRACTOR_FIELD_STRENGTH,
+        durationMs: 3000,
+        attachToSource: true,
+      },
+    });
+  }
+  if (!hasVortex) {
+    onCast.actions.push({
+      type: 'SPAWN_FIELD',
+      field: {
+        fieldType: 'VORTEX_TANGENT',
+        radius: 200,
+        strength: -ATTRACTOR_FIELD_STRENGTH,
+        durationMs: 3000,
+        attachToSource: true,
+      },
+    });
   }
 }
 
-function applyRuleB_LingeringHazard(schema: AbilitySchema, text: string): void {
-  if (!isLingeringConcept(text) || hasSpawnFieldOrTerrain(schema)) return;
+function applyRuleA_PullGravity(schema: AbilitySchema, text: string): void {
+  if (!isPullConcept(text) || isOrbitConcept(text)) return;
 
-  const fieldAction: ActionPayload = {
-    type: 'SPAWN_FIELD',
-    field: {
-      fieldType: 'RADIAL_IMPULSE',
-      radius: 70,
-      strength: 150,
-      durationMs: 3000,
-    },
-  };
+  const needsPersistentWell =
+    PERSISTENT_PULL_KEYWORDS.test(text) ||
+    (!schema.trajectory && /\b(spawn|swirling|black hole)\b/.test(text));
+
+  if (!needsPersistentWell || hasFieldType(schema, ['MASS_ATTRACTOR', 'VORTEX_TANGENT'])) {
+    return;
+  }
+
+  const onCast = ensureOnCastNode(schema);
+  const hasAttractor = onCast.actions.some(
+    (a) =>
+      a.type === 'SPAWN_FIELD' &&
+      (a.field.fieldType === 'MASS_ATTRACTOR' || a.field.fieldType === 'VORTEX_TANGENT'),
+  );
+  if (!hasAttractor) {
+    onCast.actions.push({
+      type: 'SPAWN_FIELD',
+      field: {
+        fieldType: 'MASS_ATTRACTOR',
+        radius: ATTRACTOR_FIELD_RADIUS,
+        strength: ATTRACTOR_FIELD_STRENGTH,
+        durationMs: 3000,
+        attachToSource: true,
+      },
+    });
+  }
+
+  if (!schema.trajectory) {
+    schema.trajectory = { type: 'LINEAR', speed: 700, maxRange: 500 };
+  }
 
   let onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
-  if (onHit) {
-    onHit.actions.push(fieldAction);
+  if (!onHit) {
+    onHit = { trigger: 'ON_HIT', actions: [] };
+    schema.triggers.push(onHit);
+  }
+  if (!actionsProvideDisplacement(onHit.actions)) {
+    onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text));
+  }
+}
+
+function injectHazardInstability(schema: AbilitySchema): void {
+  if (hasInstabilityAction(schema)) return;
+
+  const instabilityAction: ActionPayload = {
+    type: 'ADD_INSTABILITY',
+    amount: 25,
+    target: 'TARGET',
+  };
+
+  if (schema.trajectory) {
+    let onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+    if (!onHit) {
+      onHit = { trigger: 'ON_HIT', actions: [] };
+      schema.triggers.push(onHit);
+    }
+    onHit.actions.push(instabilityAction);
     return;
   }
 
@@ -247,7 +370,51 @@ function applyRuleB_LingeringHazard(schema: AbilitySchema, text: string): void {
     onTick = { trigger: 'ON_TICK', tickIntervalMs: 200, actions: [] };
     schema.triggers.push(onTick);
   }
-  onTick.actions.push(fieldAction);
+  onTick.actions.push(instabilityAction);
+}
+
+function isGroundHazardConcept(text: string): boolean {
+  return /\b(puddle|pool|mire|patch|coats|ground|zone)\b/.test(text);
+}
+
+function applyRuleB_LingeringHazard(schema: AbilitySchema, text: string): void {
+  if (!isLingeringConcept(text)) return;
+
+  if (isGroundHazardConcept(text) || (isChannelConcept(text) && isLingeringConcept(text))) {
+    if (!schema.trajectory) {
+      schema.trajectory = { type: 'LINEAR', speed: 700, maxRange: 500 };
+    }
+  }
+
+  if (!hasSpawnFieldOrTerrain(schema)) {
+    const fieldAction: ActionPayload = {
+      type: 'SPAWN_FIELD',
+      field: {
+        fieldType: 'RADIAL_IMPULSE',
+        radius: 100,
+        strength: 300,
+        durationMs: 3000,
+      },
+    };
+
+    if (schema.trajectory) {
+      let onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+      if (!onHit) {
+        onHit = { trigger: 'ON_HIT', actions: [] };
+        schema.triggers.push(onHit);
+      }
+      onHit.actions.push(fieldAction);
+    } else {
+      let onTick = schema.triggers.find((t) => t.trigger === 'ON_TICK');
+      if (!onTick) {
+        onTick = { trigger: 'ON_TICK', tickIntervalMs: 200, actions: [] };
+        schema.triggers.push(onTick);
+      }
+      onTick.actions.push(fieldAction);
+    }
+  }
+
+  injectHazardInstability(schema);
 }
 
 function applyRuleC_ArcSweep(schema: AbilitySchema, text: string): void {
@@ -297,6 +464,18 @@ function applyRuleD_ChanneledStream(schema: AbilitySchema, text: string): void {
       lockoutDurationMs: 2500,
     };
     schema.cooldownMs = 0;
+  }
+
+  if (isLingeringConcept(text)) {
+    let onTick = schema.triggers.find((t) => t.trigger === 'ON_TICK');
+    if (!onTick) {
+      onTick = { trigger: 'ON_TICK', tickIntervalMs: 100, actions: [] };
+      schema.triggers.push(onTick);
+    }
+    const hasTickInstability = onTick.actions.some((a) => a.type === 'ADD_INSTABILITY');
+    if (!hasTickInstability) {
+      onTick.actions.push({ type: 'ADD_INSTABILITY', amount: 15, target: 'TARGET' });
+    }
   }
 }
 
@@ -408,20 +587,46 @@ const ARCHETYPE_KNOCKBACK_FORCE: Partial<Record<SpellArchetype, number>> = {
   GRAVITY: 400,
 };
 
+function ensureProjectileTriggerDisplacement(schema: AbilitySchema, text: string): void {
+  for (const node of schema.triggers) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions) {
+      if (action.type !== 'SPAWN_PROJECTILE') continue;
+      if (!action.triggers) action.triggers = [];
+      let onHit = action.triggers.find((t) => t.trigger === 'ON_HIT');
+      if (!onHit) {
+        onHit = { trigger: 'ON_HIT', actions: [] };
+        action.triggers.push(onHit);
+      }
+      if (!actionsProvideDisplacement(onHit.actions)) {
+        onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text));
+      }
+    }
+  }
+}
+
 function defaultKnockbackImpulse(
   archetype: SpellArchetype | undefined,
   text: string,
 ): ApplyImpulseAction {
-  const pull = isPullConcept(text);
+  const pull = isPullConcept(text) && !isPushConcept(text);
+  const archetypeForce = ARCHETYPE_KNOCKBACK_FORCE[archetype ?? 'KINETIC'] ?? 500;
+  const injectedForce = Math.max(archetypeForce, INJECTED_IMPULSE_FORCE);
+
+  if (pull) {
+    return {
+      type: 'APPLY_IMPULSE',
+      baseForce: Math.max(injectedForce, PULL_FORCE_FLOOR),
+      target: 'TARGET',
+      directionMode: HARPOON_KEYWORDS.test(text) ? 'TOWARDS_CASTER' : 'TOWARDS_ORIGIN',
+    };
+  }
+
   return {
     type: 'APPLY_IMPULSE',
-    baseForce: ARCHETYPE_KNOCKBACK_FORCE[archetype ?? 'KINETIC'] ?? 500,
+    baseForce: Math.max(injectedForce, PUSH_FORCE_FLOOR),
     target: 'TARGET',
-    directionMode: pull
-      ? HARPOON_KEYWORDS.test(text)
-        ? 'TOWARDS_CASTER'
-        : 'TOWARDS_ORIGIN'
-      : 'AWAY_FROM_ORIGIN',
+    directionMode: 'AWAY_FROM_ORIGIN',
   };
 }
 
@@ -430,16 +635,21 @@ function ensureDisplacementSemantics(schema: AbilitySchema, text: string): Abili
     abilityProvidesDisplacement(schema) ||
     isPureSpatialUtility(schema) ||
     isStasisOnlyOnHit(schema) ||
-    hasLifecycleFieldDisplacement(schema)
+    hasLifecycleFieldDisplacement(schema) ||
+    isObstacleConcept(text)
   ) {
     return schema;
   }
 
   if (isPullConcept(text) && hasFieldType(schema, ['MASS_ATTRACTOR', 'VORTEX_TANGENT'])) {
-    return schema;
+    if (!schema.trajectory) return schema;
   }
 
   if (isLingeringConcept(text) && hasSpawnFieldOrTerrain(schema)) {
+    return schema;
+  }
+
+  if (isOrbitConcept(text)) {
     return schema;
   }
 
@@ -485,10 +695,13 @@ export function repairAbilitySemantics(
   cloned.triggers = repairTriggersSemantics(cloned.triggers, text);
 
   if (text) {
+    applyRuleF_Obstacle(cloned, text);
+    applyRuleE_Orbit(cloned, text);
     applyRuleA_PullGravity(cloned, text);
     applyRuleB_LingeringHazard(cloned, text);
     applyRuleC_ArcSweep(cloned, text);
     applyRuleD_ChanneledStream(cloned, text);
+    ensureProjectileTriggerDisplacement(cloned, text);
   }
 
   return ensureDisplacementSemantics(cloned, text);

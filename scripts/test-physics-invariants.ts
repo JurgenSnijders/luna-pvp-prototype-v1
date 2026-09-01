@@ -414,4 +414,11 @@ function run(): void {
   }
 }
 
-run();
+const isMain =
+  typeof process.argv[1] === 'string' &&
+  (process.argv[1].endsWith('test-physics-invariants.ts') ||
+    process.argv[1].includes('test-physics-invariants'));
+
+if (isMain) {
+  run();
+}
