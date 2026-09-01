@@ -108,6 +108,32 @@ export function extractMechanicBadgesFromAbility(
   return badges;
 }
 
+export function renderStreamBadges(
+  container: HTMLElement,
+  badges: string[],
+  kinds?: Record<string, BadgeKind>,
+): void {
+  const next = new Set(badges);
+  for (const child of [...container.children]) {
+    const label = child.getAttribute('data-badge');
+    if (label && !next.has(label)) child.remove();
+  }
+
+  const existing = new Set(
+    [...container.children]
+      .map((child) => child.getAttribute('data-badge'))
+      .filter((label): label is string => label !== null),
+  );
+
+  for (const label of badges) {
+    if (existing.has(label)) continue;
+    const kind = kinds?.[label] ?? classifyBadge(label);
+    const badge = renderBadge(label, kind);
+    badge.setAttribute('data-badge', label);
+    container.appendChild(badge);
+  }
+}
+
 export function extractMechanicBadges(
   card: DraftCard,
 ): { label: string; kind: BadgeKind }[] {

@@ -8,6 +8,7 @@ import type {
 import { CATEGORY_SLOT_MAP, getCategoryLabel, validateDraftCards } from '../../types/cards';
 import type { AbilitySchema } from '../../types/schema';
 import { validateAbilitySchema } from '../../types/schema';
+import { sanitizeAbilitySchema } from '../BudgetEngine';
 import { balanceCards, makeActiveCard } from './cards';
 import {
   feedSseBuffer,
@@ -31,9 +32,12 @@ import {
   UNIVERSAL_EVOLUTION_PROMPT,
   UNIVERSAL_SPELL_PROMPT,
 } from './prompts';
+import { extractPartialCard, type PartialCardStream } from './partialJson';
 import { getCategorySeeds, getEvolutionSeeds } from './seeds';
 import { DEFAULT_MODEL, type AiSettings } from './settings';
 import { setLastApiError, setLastCallSucceeded } from './status';
+
+export type { PartialCardStream } from './partialJson';
 
 function loadoutSummary(loadout: PlayerLoadout): string {
   return `Current loadout:
@@ -323,6 +327,7 @@ export async function postNativeGemini(
 export interface CallLLMOptions {
   signal?: AbortSignal;
   onChunk?: (chunk: NativeGeminiChunk) => void;
+  onCardChunk?: (index: number, partial: PartialCardStream) => void;
 }
 
 const PARALLEL_RARITIES: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
@@ -357,15 +362,30 @@ async function callUniversalAbility(
   systemPrompt: string,
   userPrompt: string,
   settings: AiSettings,
-  options: { signal?: AbortSignal; logSuffix: string; onError?: (message: string) => void },
+  options: {
+    signal?: AbortSignal;
+    logSuffix: string;
+    onError?: (message: string) => void;
+    onPartial?: (partial: PartialCardStream) => void;
+    category: SkillCategory;
+    cardIndex: number;
+  },
 ): Promise<AbilitySchema | null> {
-  const result = await postNativeGemini(systemPrompt, userPrompt, settings, {
+  const gen = streamNativeGemini(systemPrompt, userPrompt, settings, {
     timeoutMs: 8000,
     maxOutputTokens: 3072,
     logTag: `[draft/${options.logSuffix}]`,
     signal: options.signal,
   });
 
+  let iterResult = await gen.next();
+  while (!iterResult.done) {
+    const partial = extractPartialCard(iterResult.value.text);
+    options.onPartial?.({ ...partial, rawText: iterResult.value.text });
+    iterResult = await gen.next();
+  }
+
+  const result = iterResult.value;
   if (!result.ok) {
     options.onError?.(result.error ?? 'Request failed');
     return null;
@@ -383,13 +403,24 @@ async function callUniversalAbility(
     [obj.name, obj.tagline, obj.description].filter((v) => typeof v === 'string').join(' ') ||
     userPrompt;
   const repaired = repairAbilityPayload(normalized, flavorHint);
+  const sanitized = sanitizeAbilitySchema(repaired, options.category, 0, flavorHint);
 
-  if (!validateAbilitySchema(repaired)) {
+  if (!validateAbilitySchema(sanitized)) {
     options.onError?.('AbilitySchema validation failed');
     return null;
   }
 
-  return repaired as AbilitySchema;
+  const schema = sanitized as AbilitySchema;
+  const validatedCard = schemaToDraftCard(schema, options.category, options.cardIndex);
+  const partial = extractPartialCard(result.text);
+  options.onPartial?.({
+    ...partial,
+    rawText: result.text,
+    isComplete: true,
+    validatedCard,
+  });
+
+  return schema;
 }
 
 async function callPassiveLLM(
@@ -466,9 +497,12 @@ Generate ONE complete ability for this category.`;
         {
           signal: options?.signal,
           logSuffix: `${i + 1}`,
+          category,
+          cardIndex: i,
           onError: (message) => {
             lastError = message;
           },
+          onPartial: (partial) => options?.onCardChunk?.(i, partial),
         },
       ),
     ),
@@ -518,9 +552,12 @@ Generate ONE distinct evolved ability that preserves the base name's identity wh
         {
           signal: options?.signal,
           logSuffix: `evo/${i + 1}`,
+          category: context.category,
+          cardIndex: i,
           onError: (message) => {
             lastError = message;
           },
+          onPartial: (partial) => options?.onCardChunk?.(i, partial),
         },
       ),
     ),

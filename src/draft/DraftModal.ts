@@ -26,7 +26,10 @@ import {
   extractMechanicBadges,
   extractMechanicBadgesFromAbility,
   renderBadge,
+  renderStreamBadges,
 } from './mechanicBadges';
+import { STREAM_BADGE_KINDS } from '../ai/synthesizer/partialJson';
+import type { PartialCardStream } from '../ai/synthesizer/partialJson';
 import {
   buildCurrentPrefetchKey,
   formatDuration,
@@ -77,6 +80,19 @@ export class DraftModal {
   private lastDurationMs: number | null = null;
 
   private prefetchCache: PrefetchCacheEntry | null = null;
+
+  private streamingSlots: Array<{
+    root: HTMLElement;
+    rarityBadge: HTMLElement;
+    title: HTMLElement;
+    tagline: HTMLElement;
+    desc: HTMLElement;
+    badges: HTMLElement;
+    power: HTMLElement;
+    equipBtn: HTMLButtonElement;
+    card: DraftCard | null;
+    finalized: boolean;
+  }> | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
@@ -647,9 +663,19 @@ export class DraftModal {
     }
 
     this.clearSynthesisWarning();
-    this.loadingEl.style.display = 'block';
-    this.loadingEl.textContent = 'Synthesizing...';
-    this.cardsContainer.innerHTML = '';
+    const useStreaming =
+      this.mode !== 'PASSIVE_UPGRADES' &&
+      getAiSettings().apiKey.trim().length > 0 &&
+      !cachedEntry?.cards;
+
+    if (useStreaming) {
+      this.loadingEl.style.display = 'none';
+      this.renderStreamingSkeletons();
+    } else {
+      this.loadingEl.style.display = 'block';
+      this.loadingEl.textContent = 'Synthesizing...';
+      this.cardsContainer.innerHTML = '';
+    }
 
     // In-flight hits measure total wait since the prefetch was dispatched (it may have
     // started while the user was still reading the modal); everything else — fresh
@@ -677,6 +703,11 @@ export class DraftModal {
           loadout,
           this.mode === 'EVOLVE_EXISTING' ? this.evolutionContext ?? undefined : undefined,
           this.mode === 'PASSIVE_UPGRADES',
+          {
+            onCardChunk: useStreaming
+              ? (index, partial) => this.updateStreamingCard(index, partial)
+              : undefined,
+          },
         );
       }
 
@@ -694,7 +725,11 @@ export class DraftModal {
       }
 
       this.renderApiStatusPill();
-      this.renderResultCards();
+      if (useStreaming && this.streamingSlots) {
+        this.finalizeStreamingCards();
+      } else {
+        this.renderResultCards();
+      }
     } finally {
       this.clearSynthesisTimer();
       const duration = Math.round(performance.now() - this.synthesisStartTime);
@@ -705,6 +740,211 @@ export class DraftModal {
       }
       this.loadingEl.style.display = 'none';
     }
+  }
+
+  private resolveEquipTarget(card?: DraftCard): DraftSelection['slot'] | null {
+    if (this.intermissionMode) return null;
+    const targetSlot =
+      this.evolutionContext?.slotKey ??
+      this.presetSlot ??
+      (card?.category ? CATEGORY_SLOT_MAP[card.category] : null);
+    return targetSlot;
+  }
+
+  private renderStreamingSkeletons(): void {
+    this.cardsContainer.innerHTML = '';
+    this.streamingSlots = [];
+    const color = RARITY_COLORS.COMMON;
+
+    for (let index = 0; index < 3; index++) {
+      const root = document.createElement('div');
+      root.style.cssText = `
+        display:flex;flex-direction:column;min-height:0;overflow:hidden;
+        padding:12px 14px;border-radius:12px;
+        background:rgba(20,20,35,0.9);border:2px solid ${color};
+        box-shadow:0 0 24px ${color}55, inset 0 1px 0 ${color}22;
+      `;
+
+      const rarityBadge = document.createElement('div');
+      rarityBadge.textContent = 'COMMON';
+      rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
+
+      const title = document.createElement('div');
+      title.className = 'card-title';
+      title.textContent = 'Forging Spell...';
+      title.style.cssText =
+        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+
+      const tagline = document.createElement('div');
+      tagline.className = 'card-tagline';
+      tagline.textContent = 'Awaiting concept...';
+      tagline.style.cssText = 'font-size:11px;color:#666;margin-bottom:6px;flex-shrink:0;';
+
+      const desc = document.createElement('div');
+      desc.className = 'card-desc';
+      desc.textContent = '';
+      desc.style.cssText = `
+        font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+      `;
+
+      const badges = document.createElement('div');
+      badges.className = 'card-badges';
+      badges.style.cssText =
+        'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;flex-shrink:0;min-height:18px;';
+
+      const power = renderPowerBar(0, 'COMMON', false);
+      power.className = 'card-power';
+      const fill = power.querySelector('div > div');
+      if (fill instanceof HTMLElement) {
+        fill.style.animation = 'forgePulse 1.4s ease-in-out infinite';
+      }
+
+      const footer = document.createElement('div');
+      footer.style.cssText = 'margin-top:auto;flex-shrink:0;';
+
+      const equipBtn = document.createElement('button');
+      equipBtn.className = 'card-equip-btn';
+      equipBtn.textContent = 'Synthesizing...';
+      equipBtn.disabled = true;
+      equipBtn.style.cssText = btnStyle(false) + 'width:100%;opacity:0.6;cursor:not-allowed;';
+      const slotIndex = index;
+      equipBtn.onclick = () => {
+        const card = this.streamingSlots?.[slotIndex]?.card;
+        const targetSlot = this.resolveEquipTarget(card ?? undefined);
+        if (!card || !targetSlot) return;
+        this.equip(card, targetSlot);
+      };
+      footer.appendChild(equipBtn);
+
+      root.appendChild(rarityBadge);
+      root.appendChild(title);
+      root.appendChild(tagline);
+      root.appendChild(desc);
+      root.appendChild(badges);
+      root.appendChild(power);
+      root.appendChild(footer);
+      this.cardsContainer.appendChild(root);
+
+      this.streamingSlots.push({
+        root,
+        rarityBadge,
+        title,
+        tagline,
+        desc,
+        badges,
+        power,
+        equipBtn,
+        card: null,
+        finalized: false,
+      });
+    }
+  }
+
+  private updateStreamingCard(index: number, partial: PartialCardStream): void {
+    const slot = this.streamingSlots?.[index];
+    if (!slot || slot.finalized) return;
+
+    if (partial.name) slot.title.textContent = partial.name;
+    if (partial.tagline) slot.tagline.textContent = partial.tagline;
+    if (partial.description) slot.desc.textContent = partial.description;
+    renderStreamBadges(slot.badges, partial.detectedBadges, STREAM_BADGE_KINDS);
+
+    if (partial.isComplete && partial.validatedCard) {
+      slot.card = partial.validatedCard;
+      const targetSlot = this.resolveEquipTarget(partial.validatedCard);
+      const newPower = renderPowerBar(
+        partial.validatedCard.budgetCost,
+        partial.validatedCard.rarity,
+        false,
+      );
+      slot.power.replaceWith(newPower);
+      slot.power = newPower;
+      slot.equipBtn.disabled = false;
+      slot.equipBtn.style.cssText =
+        btnStyleRarity(partial.validatedCard.rarity) + 'width:100%;cursor:pointer;opacity:1;';
+      slot.equipBtn.textContent = targetSlot ? `Equip to ${targetSlot}` : 'Equip';
+    }
+  }
+
+  private finalizeStreamingCards(): void {
+    if (!this.streamingSlots) return;
+    const loadout = this.callbacks.getLoadout();
+
+    for (let i = 0; i < this.streamingSlots.length; i++) {
+      const slot = this.streamingSlots[i];
+      const card = this.cards[i];
+      if (!card) continue;
+
+      slot.card = card;
+      slot.finalized = true;
+      const color = RARITY_COLORS[card.rarity];
+      slot.root.style.border = `2px solid ${color}`;
+      slot.root.style.boxShadow = `0 0 24px ${color}55, inset 0 1px 0 ${color}22`;
+      slot.rarityBadge.textContent = card.rarity;
+      slot.rarityBadge.style.color = color;
+
+      slot.title.textContent = card.title;
+      slot.tagline.textContent = card.tagline;
+      slot.desc.textContent = card.description;
+
+      slot.badges.innerHTML = '';
+      for (const b of extractMechanicBadges(card).slice(0, 6)) {
+        const badge = renderBadge(b.label, b.kind);
+        badge.setAttribute('data-badge', b.label);
+        slot.badges.appendChild(badge);
+      }
+
+      const newPower = renderPowerBar(
+        card.budgetCost,
+        card.rarity,
+        card.type === 'PASSIVE_UPGRADE',
+      );
+      slot.power.replaceWith(newPower);
+      slot.power = newPower;
+
+      if (card.type === 'ACTIVE_ABILITY') {
+        const compareAgainst = this.getCompareAbility(loadout);
+        const diff = this.statDiff(compareAgainst, card.abilityPayload);
+        const existingDiff = slot.root.querySelector('.card-stat-diff');
+        existingDiff?.remove();
+        if (diff) {
+          const diffEl = document.createElement('div');
+          diffEl.className = 'card-stat-diff';
+          diffEl.textContent = diff;
+          diffEl.style.cssText = 'font-size:10px;color:#4f8;margin-bottom:8px;';
+          slot.power.before(diffEl);
+        }
+      }
+
+      const targetSlot = this.resolveEquipTarget(card);
+      slot.equipBtn.disabled = false;
+      slot.equipBtn.style.cssText = btnStyleRarity(card.rarity) + 'width:100%;cursor:pointer;opacity:1;';
+      if (targetSlot) {
+        slot.equipBtn.textContent = `Equip to ${targetSlot}`;
+        slot.equipBtn.onclick = () => this.equip(card, targetSlot);
+      } else if (card.type === 'ACTIVE_ABILITY' && !this.intermissionMode) {
+        slot.equipBtn.replaceWith(this.buildSlotPickerFooter(card));
+      } else if (card.type === 'PASSIVE_UPGRADE') {
+        slot.equipBtn.textContent = 'Equip Passive';
+        slot.equipBtn.onclick = () => this.equip(card, 'PASSIVE');
+      }
+    }
+
+    this.streamingSlots = null;
+  }
+
+  private buildSlotPickerFooter(card: DraftCard): HTMLElement {
+    const btnContainer = document.createElement('div');
+    btnContainer.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+    for (const key of ACTION_SLOT_KEYS) {
+      const slotBtn = document.createElement('button');
+      slotBtn.textContent = `[${key}]`;
+      slotBtn.style.cssText = btnStyleRarity(card.rarity) + 'flex:1;min-width:44px;padding:6px 8px;';
+      slotBtn.onclick = () => this.equip(card, key);
+      btnContainer.appendChild(slotBtn);
+    }
+    return btnContainer;
   }
 
   private renderResultCards(): void {

@@ -13,7 +13,8 @@
     "test:interpreter": "tsx scripts/test-interpreter.ts",
     "test:settings": "tsx scripts/test-settings.ts",
     "test:render": "tsx scripts/test-render.ts",
-    "test:gemini-sse": "tsx scripts/test-gemini-sse.ts"
+    "test:gemini-sse": "tsx scripts/test-gemini-sse.ts",
+    "test:partial-json": "tsx scripts/test-partial-json.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

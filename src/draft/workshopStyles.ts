@@ -52,6 +52,10 @@ export function injectStyles(): void {
       0%, 100% { box-shadow: 0 0 0 1px rgba(0,200,255,0.5), 0 0 12px rgba(0,200,255,0.25); }
       50% { box-shadow: 0 0 0 2px rgba(0,200,255,0.9), 0 0 20px rgba(0,200,255,0.45); }
     }
+    @keyframes forgePulse {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 1; }
+    }
     .evolve-source { animation: evolvePulse 1.6s ease-in-out infinite; }
   `;
   document.head.appendChild(style);
