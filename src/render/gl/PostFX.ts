@@ -4,7 +4,7 @@ import {
   COMPOSITE_SHADER,
   CRT_SHADER,
   FULLSCREEN_VERTEX,
-  SCENE_BLIT_SHADER,
+  OPAQUE_COMPOSITE_SHADER,
 } from './shaders';
 import {
   compileShader,
@@ -21,13 +21,15 @@ export interface CrtPresentParams {
   vignette: number;
   phosphor: number;
   bloomIntensity: number;
+  bloomPasses: number;
+  bloomThreshold: number;
 }
 
 export class PostFX {
   private thresholdProgram: WebGLProgram;
   private blurProgram: WebGLProgram;
   private compositeProgram: WebGLProgram;
-  private sceneBlitProgram: WebGLProgram;
+  private opaqueCompositeProgram: WebGLProgram;
   private crtProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
@@ -39,26 +41,24 @@ export class PostFX {
   private worldTexH = 0;
   private width = 0;
   private height = 0;
-  /** Bloom result handed to the CRT pass, or null when bloom is disabled. */
-  private crtBloomTexture: WebGLTexture | null = null;
 
   constructor(private gl: WebGL2RenderingContext) {
     const vs = compileShader(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX);
     const fsT = compileShader(gl, gl.FRAGMENT_SHADER, BLOOM_THRESHOLD_SHADER);
     const fsB = compileShader(gl, gl.FRAGMENT_SHADER, BLUR_SHADER);
     const fsC = compileShader(gl, gl.FRAGMENT_SHADER, COMPOSITE_SHADER);
-    const fsBlit = compileShader(gl, gl.FRAGMENT_SHADER, SCENE_BLIT_SHADER);
+    const fsOpaque = compileShader(gl, gl.FRAGMENT_SHADER, OPAQUE_COMPOSITE_SHADER);
     const fsCrt = compileShader(gl, gl.FRAGMENT_SHADER, CRT_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
-    this.sceneBlitProgram = linkProgram(gl, vs, fsBlit);
+    this.opaqueCompositeProgram = linkProgram(gl, vs, fsOpaque);
     this.crtProgram = linkProgram(gl, vs, fsCrt);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
     gl.deleteShader(fsC);
-    gl.deleteShader(fsBlit);
+    gl.deleteShader(fsOpaque);
     gl.deleteShader(fsCrt);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
@@ -81,7 +81,6 @@ export class PostFX {
     this.bloomFboA = null;
     this.bloomFboB = null;
     this.vfxCompositeFbo = null;
-    this.crtBloomTexture = null;
     if (this.worldTexture) {
       gl.deleteTexture(this.worldTexture);
       this.worldTexture = null;
@@ -118,9 +117,8 @@ export class PostFX {
   }
 
   /**
-   * Resolves bloom. Without CRT this composites straight to the screen as a
-   * transparent VFX overlay; with CRT the particle scene and bloom are kept
-   * apart so `presentCrt` can blend them against the world itself.
+   * Without CRT, bloom-composites the particle scene onto the transparent VFX
+   * canvas. With CRT, particles stay in `sceneFbo` for `presentCrt`.
    */
   endSceneAndComposite(
     bloomPasses: number,
@@ -131,50 +129,22 @@ export class PostFX {
     bufferHeight: number,
     crtIntermediate: boolean,
   ): void {
-    const gl = this.gl;
+    if (crtIntermediate) return;
 
-    if (!crtIntermediate) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, bufferWidth, bufferHeight);
-      gl.disable(gl.BLEND);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    }
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, bufferWidth, bufferHeight);
+    gl.disable(gl.BLEND);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     if (bloomPasses <= 0) {
-      this.crtBloomTexture = null;
-      if (crtIntermediate) {
-        this.blitScene(this.sceneFbo!.texture, this.vfxCompositeFbo!, bufferWidth, bufferHeight);
-      } else {
-        this.blit(this.sceneFbo!.texture);
-      }
+      this.blit(this.sceneFbo!.texture);
       return;
     }
 
-    const bloomA = this.bloomFboA!;
-    const bloomB = this.bloomFboB!;
+    this.extractBloom(this.sceneFbo!.texture, bloomPasses, bloomThreshold);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fbo);
-    gl.viewport(0, 0, bloomA.width, bloomA.height);
-    gl.useProgram(this.thresholdProgram);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'u_source')!, 0);
-    gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'u_threshold')!, bloomThreshold);
-    this.drawFullscreen();
-
-    for (let pass = 0; pass < bloomPasses; pass++) {
-      this.blurPass(bloomA.texture, bloomB, true);
-      this.blurPass(bloomB.texture, bloomA, false);
-    }
-
-    if (crtIntermediate) {
-      this.blitScene(this.sceneFbo!.texture, this.vfxCompositeFbo!, bufferWidth, bufferHeight);
-      this.crtBloomTexture = bloomA.texture;
-      return;
-    }
-
-    this.crtBloomTexture = null;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
     gl.useProgram(this.compositeProgram);
@@ -182,14 +152,17 @@ export class PostFX {
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
     gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, bloomA.texture);
+    gl.bindTexture(gl.TEXTURE_2D, this.bloomFboA!.texture);
     gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_bloom')!, 1);
     gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_bloomIntensity')!, bloomIntensity);
     gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_chroma')!, chroma);
     this.drawFullscreen();
   }
 
-  /** Uploads the Canvas2D world and presents the combined opaque CRT frame. */
+  /**
+   * Uploads the Canvas2D world (Y-flipped into GL), composites VFX over it,
+   * blooms that combined image, then applies CRT to the backbuffer.
+   */
   presentCrt(
     worldCanvas: HTMLCanvasElement,
     params: CrtPresentParams,
@@ -199,7 +172,27 @@ export class PostFX {
     const gl = this.gl;
     this.ensureWorldTexture(worldCanvas.width, worldCanvas.height);
     gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, worldCanvas);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+
+    const target = this.vfxCompositeFbo!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, bufferWidth, bufferHeight);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.opaqueCompositeProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
+    gl.uniform1i(gl.getUniformLocation(this.opaqueCompositeProgram, 'u_world')!, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
+    gl.uniform1i(gl.getUniformLocation(this.opaqueCompositeProgram, 'u_vfx')!, 1);
+    this.drawFullscreen();
+
+    const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
+    if (hasBloom) {
+      this.extractBloom(target.texture, params.bloomPasses, params.bloomThreshold);
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
@@ -209,18 +202,12 @@ export class PostFX {
 
     gl.useProgram(this.crtProgram);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
-    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_world')!, 0);
+    gl.bindTexture(gl.TEXTURE_2D, target.texture);
+    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.vfxCompositeFbo!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_vfx')!, 1);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.crtBloomTexture ?? this.vfxCompositeFbo!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_bloom')!, 2);
-    gl.uniform1f(
-      gl.getUniformLocation(this.crtProgram, 'u_hasBloom')!,
-      this.crtBloomTexture ? 1 : 0,
-    );
+    gl.bindTexture(gl.TEXTURE_2D, hasBloom ? this.bloomFboA!.texture : target.texture);
+    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_bloom')!, 1);
+    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_hasBloom')!, hasBloom ? 1 : 0);
     gl.uniform1f(
       gl.getUniformLocation(this.crtProgram, 'u_bloomIntensity')!,
       params.bloomIntensity,
@@ -231,6 +218,26 @@ export class PostFX {
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_vignette')!, params.vignette);
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_phosphor')!, params.phosphor);
     this.drawFullscreen();
+  }
+
+  private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {
+    const gl = this.gl;
+    const bloomA = this.bloomFboA!;
+    const bloomB = this.bloomFboB!;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fbo);
+    gl.viewport(0, 0, bloomA.width, bloomA.height);
+    gl.useProgram(this.thresholdProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, source);
+    gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'u_source')!, 0);
+    gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'u_threshold')!, bloomThreshold);
+    this.drawFullscreen();
+
+    for (let pass = 0; pass < bloomPasses; pass++) {
+      this.blurPass(bloomA.texture, bloomB, true);
+      this.blurPass(bloomB.texture, bloomA, false);
+    }
   }
 
   private ensureWorldTexture(width: number, height: number): void {
@@ -245,25 +252,6 @@ export class PostFX {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  }
-
-  private blitScene(
-    sceneTex: WebGLTexture,
-    target: FramebufferTarget,
-    bufferWidth: number,
-    bufferHeight: number,
-  ): void {
-    const gl = this.gl;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
-    gl.viewport(0, 0, bufferWidth, bufferHeight);
-    gl.disable(gl.BLEND);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(this.sceneBlitProgram);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, sceneTex);
-    gl.uniform1i(gl.getUniformLocation(this.sceneBlitProgram, 'u_scene')!, 0);
-    this.drawFullscreen();
   }
 
   private blurPass(

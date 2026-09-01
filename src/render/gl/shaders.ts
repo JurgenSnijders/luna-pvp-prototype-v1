@@ -131,9 +131,10 @@ uniform float u_threshold;
 out vec4 fragColor;
 void main() {
   vec4 c = texture(u_source, v_texCoord);
-  float br = max(c.r, max(c.g, c.b));
-  float contrib = max(br - u_threshold, 0.0) / max(br, 0.0001);
-  fragColor = c * contrib;
+  // Luminance, not max(rgb): lava is high-red but dim, neon cores are actually bright.
+  float lum = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float contrib = max(lum - u_threshold, 0.0) / max(lum, 0.0001);
+  fragColor = vec4(c.rgb * contrib, 0.0);
 }
 `;
 
@@ -175,27 +176,28 @@ void main() {
     bloom.b += texture(u_bloom, uv - vec2(u_chroma, 0.0)).b * u_bloomIntensity * 0.3;
   }
   vec3 rgb = scene.rgb + bloom;
-  float bloomA = min(1.0, (bloom.r + bloom.g + bloom.b) * 0.333);
-  fragColor = vec4(rgb, max(scene.a, bloomA));
+  fragColor = vec4(rgb, scene.a);
 }
 `;
 
-/** Straight copy used to park the particle scene in the CRT intermediate FBO. */
-export const SCENE_BLIT_SHADER = `#version 300 es
+/** Premultiplied VFX over the Canvas2D world, written opaque for bloom + CRT. */
+export const OPAQUE_COMPOSITE_SHADER = `#version 300 es
 precision mediump float;
 in vec2 v_texCoord;
-uniform sampler2D u_scene;
+uniform sampler2D u_world;
+uniform sampler2D u_vfx;
 out vec4 fragColor;
 void main() {
-  fragColor = texture(u_scene, v_texCoord);
+  vec4 world = texture(u_world, v_texCoord);
+  vec4 vfx = texture(u_vfx, v_texCoord);
+  fragColor = vec4(world.rgb * (1.0 - vfx.a) + vfx.rgb, 1.0);
 }
 `;
 
 export const CRT_SHADER = `#version 300 es
 precision mediump float;
 in vec2 v_texCoord;
-uniform sampler2D u_world;
-uniform sampler2D u_vfx;
+uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
 uniform vec2 u_resolution;
 uniform float u_bloomIntensity;
@@ -219,11 +221,7 @@ void main() {
     return;
   }
 
-  vec4 world = texture(u_world, uv);
-  vec4 vfx = texture(u_vfx, uv);
-  vec3 base = world.rgb * (1.0 - vfx.a) + vfx.rgb;
-  // Bloom is additive here: this pass writes the opaque final frame, so
-  // alpha-blending it would erase the world instead of glowing over it.
+  vec3 base = texture(u_scene, uv).rgb;
   vec3 bloomCol = u_hasBloom > 0.5 ? texture(u_bloom, uv).rgb * u_bloomIntensity : vec3(0.0);
   vec3 rgb = min(vec3(1.0), base + bloomCol);
 
