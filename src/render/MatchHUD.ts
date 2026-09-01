@@ -1,4 +1,5 @@
 import type { GameMode, MatchSnapshot, MatchState } from '../game/MatchManager';
+import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 
 export interface MatchHUDCallbacks {
   onStartMatch: () => void;
@@ -24,21 +25,20 @@ export class MatchHUD {
     this.root = document.createElement('div');
     this.root.style.cssText = `
       position: fixed; inset: 0; z-index: 9000;
-      pointer-events: none; font-family: system-ui, sans-serif;
+      pointer-events: none; font-family: ${FONTS.mono};
     `;
 
     this.header = document.createElement('div');
     this.header.style.cssText = `
       position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
       display: flex; flex-direction: column; align-items: center; gap: 8px;
-      padding: 12px 24px; border-radius: 12px;
-      background: rgba(10, 10, 20, 0.65); backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 12px 24px;
+      ${retroPanelStyle('cyan')}
     `;
 
     this.roundLabel = document.createElement('div');
     this.roundLabel.style.cssText =
-      'font-size: 12px; letter-spacing: 0.15em; color: #888; font-weight: 600;';
+      `font-size: 12px; letter-spacing: 0.15em; color: ${RETRO_COLORS.textMuted}; font-weight: 600;`;
 
     const pipRow = document.createElement('div');
     pipRow.style.cssText = 'display: flex; align-items: center; gap: 16px;';
@@ -46,7 +46,7 @@ export class MatchHUD {
     this.playerPips = this.createPipGroup('#00ccff');
     const vs = document.createElement('span');
     vs.textContent = 'VS';
-    vs.style.cssText = 'font-size: 11px; color: #555; font-weight: bold;';
+    vs.style.cssText = `font-size: 11px; color: ${RETRO_COLORS.textMuted}; font-weight: bold;`;
     this.botPips = this.createPipGroup('#ff8844');
 
     pipRow.appendChild(this.playerPips);
@@ -61,7 +61,7 @@ export class MatchHUD {
     this.countdownBanner.style.cssText = `
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
       font-size: 72px; font-weight: 800; color: #fff;
-      text-shadow: 0 0 40px rgba(0, 200, 255, 0.6);
+      text-shadow: ${RETRO_GLOW.cyan};
       opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease;
       letter-spacing: 0.05em;
     `;
@@ -70,9 +70,9 @@ export class MatchHUD {
     this.roundToast = document.createElement('div');
     this.roundToast.style.cssText = `
       position: absolute; top: 100px; left: 50%; transform: translateX(-50%);
-      padding: 12px 32px; border-radius: 8px; font-size: 18px; font-weight: 700;
+      padding: 12px 32px; font-size: 18px; font-weight: 700;
       letter-spacing: 0.12em; opacity: 0; transition: opacity 0.2s ease;
-      background: rgba(10, 10, 20, 0.8); border: 1px solid rgba(255,255,255,0.15);
+      ${retroPanelStyle('cyan')}
     `;
     this.root.appendChild(this.roundToast);
 
@@ -81,9 +81,9 @@ export class MatchHUD {
     this.lobbyBtn.style.cssText = `
       position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
       pointer-events: auto; padding: 14px 36px; font-size: 16px; font-weight: 700;
-      letter-spacing: 0.1em; border-radius: 10px; cursor: pointer;
-      border: 2px solid #00ccff; background: rgba(0, 200, 255, 0.15);
-      color: #00ccff; box-shadow: 0 0 24px rgba(0, 200, 255, 0.3);
+      letter-spacing: 0.1em; border-radius: 4px; cursor: pointer;
+      border: 2px solid ${RETRO_COLORS.neonCyan}; background: rgba(0, 200, 255, 0.15);
+      color: ${RETRO_COLORS.neonCyan}; box-shadow: ${RETRO_GLOW.boxCyan};
     `;
     this.lobbyBtn.onclick = () => this.callbacks.onStartMatch();
     this.root.appendChild(this.lobbyBtn);
@@ -96,9 +96,9 @@ export class MatchHUD {
 
     const modalPanel = document.createElement('div');
     modalPanel.style.cssText = `
-      padding: 40px 48px; border-radius: 16px; text-align: center;
-      background: rgba(10, 10, 20, 0.92); border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      padding: 40px 48px; text-align: center;
+      ${retroPanelStyle('cyan')}
+      box-shadow: ${RETRO_GLOW.boxCyan}, 0 20px 60px rgba(0,0,0,0.5);
     `;
 
     this.matchOverTitle = document.createElement('div');
@@ -106,14 +106,15 @@ export class MatchHUD {
       'font-size: 36px; font-weight: 800; margin-bottom: 12px; letter-spacing: 0.08em;';
 
     this.matchOverScore = document.createElement('div');
-    this.matchOverScore.style.cssText = 'font-size: 16px; color: #888; margin-bottom: 24px;';
+    this.matchOverScore.style.cssText = `font-size: 16px; color: ${RETRO_COLORS.textMuted}; margin-bottom: 24px;`;
 
     this.playAgainBtn = document.createElement('button');
     this.playAgainBtn.textContent = 'PLAY AGAIN';
     this.playAgainBtn.style.cssText = `
       padding: 12px 32px; font-size: 14px; font-weight: 700; cursor: pointer;
-      border-radius: 8px; border: 2px solid #00ccff;
-      background: rgba(0, 200, 255, 0.15); color: #00ccff;
+      border-radius: 4px; border: 2px solid ${RETRO_COLORS.neonCyan};
+      background: rgba(0, 200, 255, 0.15); color: ${RETRO_COLORS.neonCyan};
+      box-shadow: ${RETRO_GLOW.boxCyan};
     `;
     this.playAgainBtn.onclick = () => this.callbacks.onPlayAgain();
 

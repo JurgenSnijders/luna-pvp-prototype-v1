@@ -1,6 +1,7 @@
 import { PRESETS, PRESET_GROUPS } from './Presets';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
+import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 
 export interface SpellLibraryCallbacks {
   onAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -27,10 +28,10 @@ export class SpellLibrary {
     this.panel.style.cssText = `
       position: fixed; top: 50%; right: 0; transform: translate(100%, -50%);
       z-index: 9600; width: 320px; max-height: 80vh; overflow-y: auto;
-      padding: 16px; border-radius: 12px 0 0 12px;
-      background: rgba(10, 10, 20, 0.92); backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.12); border-right: none;
-      color: #e0e0e8; font-family: system-ui, sans-serif;
+      padding: 16px; border-radius: 4px 0 0 4px;
+      ${retroPanelStyle('cyan')}
+      border-right: none;
+      color: ${RETRO_COLORS.textPrimary}; font-family: ${FONTS.mono};
       transition: transform 0.25s ease; pointer-events: auto;
     `;
 
@@ -52,8 +53,9 @@ export class SpellLibrary {
     this.searchInput.placeholder = 'Search presets…';
     this.searchInput.style.cssText = `
       width: 100%; padding: 8px 10px; margin-bottom: 12px; box-sizing: border-box;
-      background: rgba(20, 20, 35, 0.9); color: #e0e0e8;
-      border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; font-size: 12px;
+      background: ${RETRO_COLORS.panelBgOpaque}; color: ${RETRO_COLORS.textPrimary};
+      border: 1px solid ${RETRO_COLORS.borderSubtle}; border-radius: 4px; font-size: 12px;
+      font-family: ${FONTS.mono};
     `;
     this.searchInput.addEventListener('input', () => {
       this.searchQuery = this.searchInput.value.trim().toLowerCase();
@@ -79,10 +81,12 @@ export class SpellLibrary {
 
   private btnStyle(primary = false): string {
     return `
-      padding:4px 8px;border-radius:6px;cursor:pointer;font-size:11px;
-      border:1px solid ${primary ? '#00ccff' : 'rgba(255,255,255,0.15)'};
+      padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;
+      font-family:${FONTS.mono};
+      border:1px solid ${primary ? RETRO_COLORS.neonCyan : RETRO_COLORS.borderSubtle};
       background:${primary ? 'rgba(0,200,255,0.2)' : 'rgba(255,255,255,0.05)'};
-      color:#e0e0e8;
+      color:${RETRO_COLORS.textPrimary};
+      ${primary ? `box-shadow:${RETRO_GLOW.boxCyan};` : ''}
     `;
   }
 
@@ -95,8 +99,9 @@ export class SpellLibrary {
     const card = document.createElement('div');
     card.draggable = true;
     card.style.cssText = `
-      padding: 10px; border-radius: 8px; cursor: grab;
-      background: rgba(20, 20, 35, 0.9); border: 1px solid rgba(255,255,255,0.1);
+      padding: 10px; border-radius: 4px; cursor: grab;
+      background: ${RETRO_COLORS.panelBgOpaque}; border: 1px solid ${RETRO_COLORS.borderSubtle};
+      font-family: ${FONTS.mono};
     `;
 
     const traj = entry.schema.trajectory?.type?.replace(/_/g, ' ') ?? 'Instant';
@@ -151,8 +156,9 @@ export class SpellLibrary {
       header.style.cssText = `
         width: 100%; display: flex; align-items: center; justify-content: space-between;
         padding: 8px 10px; margin-bottom: 4px; cursor: pointer; text-align: left;
-        background: rgba(30, 30, 50, 0.8); border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px; color: #c8d0e0; font-size: 11px; font-weight: 600;
+        background: ${RETRO_COLORS.panelBgOpaque}; border: 1px solid ${RETRO_COLORS.borderNeon};
+        border-radius: 4px; color: ${RETRO_COLORS.textPrimary}; font-size: 11px; font-weight: 600;
+        font-family: ${FONTS.mono}; box-shadow: ${RETRO_GLOW.boxCyan};
       `;
 
       const label = document.createElement('span');

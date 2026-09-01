@@ -49,6 +49,7 @@ import {
   injectStyles,
   renderPowerBar,
 } from './workshopStyles';
+import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
@@ -115,12 +116,11 @@ export class DraftModal {
     this.panel.style.cssText = `
       width: min(1180px, 100%); height: min(92vh, 880px); overflow: hidden;
       display: flex; flex-direction: column;
-      padding: 16px 20px 18px; border-radius: 18px;
-      background: linear-gradient(160deg, rgba(16,18,32,0.92), rgba(10,12,24,0.88));
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: 0 24px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+      padding: 16px 20px 18px; border-radius: 4px;
+      ${retroPanelStyle('cyan')}
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55);
       transform: scale(0.97); transition: transform 0.2s ease;
-      color: #e0e0e8; font-family: system-ui, sans-serif;
+      color: ${RETRO_COLORS.textPrimary}; font-family: ${FONTS.mono};
     `;
     this.panel.dataset.panel = 'true';
 
@@ -140,8 +140,8 @@ export class DraftModal {
 
     this.latencyBadgeEl = document.createElement('span');
     this.latencyBadgeEl.style.cssText = `
-      font-size:11px;font-family:monospace;color:#94a3b8;background:rgba(255,255,255,0.05);
-      padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);
+      font-size:11px;font-family:${FONTS.mono};color:${RETRO_COLORS.textMuted};background:rgba(255,255,255,0.05);
+      padding:2px 8px;border-radius:4px;border:1px solid ${RETRO_COLORS.borderSubtle};
       display:none;flex-shrink:0;margin-right:8px;
     `;
 
@@ -190,8 +190,9 @@ export class DraftModal {
     this.promptInput.type = 'text';
     this.promptInput.placeholder = 'Describe your ability... (e.g. "ice vortex boomerang")';
     this.promptInput.style.cssText = `
-      flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);
-      background:rgba(8,10,20,0.9);color:#e0e0e8;font-size:13px;
+      flex:1;padding:8px 12px;border-radius:4px;border:1px solid ${RETRO_COLORS.borderSubtle};
+      background:${RETRO_COLORS.panelBgOpaque};color:${RETRO_COLORS.textPrimary};font-size:13px;
+      font-family:${FONTS.mono};
     `;
     this.promptInput.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -768,8 +769,9 @@ export class DraftModal {
       const root = document.createElement('div');
       root.style.cssText = `
         display:flex;flex-direction:column;min-height:0;overflow:hidden;
-        padding:12px 14px;border-radius:12px;
-        background:rgba(20,20,35,0.9);border:2px solid ${color};
+        padding:12px 14px;border-radius:4px;
+        ${retroPanelStyle('cyan')}
+        border:2px solid ${color};
         box-shadow:0 0 24px ${color}55, inset 0 1px 0 ${color}22;
       `;
 
@@ -967,8 +969,9 @@ export class DraftModal {
       const color = RARITY_COLORS[card.rarity];
       el.style.cssText = `
         display:flex;flex-direction:column;min-height:0;overflow:hidden;
-        padding:12px 14px;border-radius:12px;
-        background:rgba(20,20,35,0.9);border:2px solid ${color};
+        padding:12px 14px;border-radius:4px;
+        ${retroPanelStyle('cyan')}
+        border:2px solid ${color};
         box-shadow:0 0 24px ${color}55, inset 0 1px 0 ${color}22;
       `;
 

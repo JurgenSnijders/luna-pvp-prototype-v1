@@ -1,12 +1,15 @@
+import { FONTS, RETRO_COLORS } from '../../ui/tokens';
+
 export function buttonStyle(active: boolean): string {
   return `
       padding: 6px 10px;
-      border: 1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.15)'};
+      border: 1px solid ${active ? RETRO_COLORS.neonCyan : RETRO_COLORS.borderSubtle};
       background: ${active ? 'rgba(0,200,255,0.15)' : 'rgba(255,255,255,0.05)'};
-      color: #e0e0e8;
-      border-radius: 6px;
+      color: ${RETRO_COLORS.textPrimary};
+      border-radius: 4px;
       cursor: pointer;
       font-size: 12px;
+      font-family: ${FONTS.mono};
     `;
 }
 
@@ -52,7 +55,8 @@ export function sliderRow(
 export function inputStyle(): string {
   return `
       width:100%;padding:8px;margin-bottom:6px;box-sizing:border-box;
-      background:#0a0a14;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);
-      border-radius:6px;font-size:12px;
+      background:${RETRO_COLORS.panelBgOpaque};color:${RETRO_COLORS.textPrimary};
+      border:1px solid ${RETRO_COLORS.borderSubtle};
+      border-radius:4px;font-size:12px;font-family:${FONTS.mono};
     `;
 }

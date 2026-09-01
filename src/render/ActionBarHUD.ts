@@ -2,6 +2,7 @@ import type { Player } from '../entities/Player';
 import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
+import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -159,7 +160,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const resourceCost = ability.resourceCost;
   const resourceLine = resourceCost
     ? `<div style="margin-bottom:8px;">
-        <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Resource</div>
+        <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Resource</div>
         <div style="font-size:11px;">${escapeHtml(formatEnumLabel(resourceCost.type))} · cost ${resourceCost.cost}${
           resourceCost.maxCapacity !== undefined ? ` · cap ${resourceCost.maxCapacity}` : ''
         }${
@@ -169,6 +170,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
     : '';
 
   return `
+    <div style="font-family:${FONTS.mono};">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
       <span style="font-weight:700; font-size:13px; color:${accentColor};">${escapeHtml(ability.name)}</span>
       <span style="font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
@@ -176,24 +178,25 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
     ${flavorBlock}
     <div style="font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
     <div style="display:flex; gap:10px; margin-bottom:8px; font-size:11px;">
-      <div><span style="color:#64748b;">CD</span> ${cooldown}</div>
-      <div><span style="color:#64748b;">Recoil</span> ${ability.recoilKick}px/s</div>
-      <div><span style="color:#64748b;">Instab</span> ${instability}</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">CD</span> ${cooldown}</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">Recoil</span> ${ability.recoilKick}px/s</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">Instab</span> ${instability}</div>
     </div>
     <div style="margin-bottom:8px;">
-      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
       <div style="font-size:11px;">${trajectoryLine}</div>
     </div>
     <div style="margin-bottom:8px;">
-      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
       <div style="font-size:11px;">${triggerList}</div>
-      <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
       <div style="font-size:11px;">${actionList}</div>
     </div>
     ${resourceLine}
     <div style="display:flex; align-items:center; gap:6px;">
       <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
       <span style="font-size:10px; color:#cbd5e1;">${projectileStyle}</span>
+    </div>
     </div>
   `;
 }
@@ -210,7 +213,7 @@ export class ActionBarHUD {
     this.root.style.cssText = `
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
       z-index: 9500; display: flex; gap: 12px; pointer-events: auto;
-      font-family: system-ui, sans-serif;
+      font-family: ${FONTS.mono};
     `;
 
     for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
@@ -230,12 +233,12 @@ export class ActionBarHUD {
     this.tooltipEl = document.createElement('div');
     this.tooltipEl.style.cssText = `
       position: fixed; display: none; pointer-events: none; z-index: 10000;
-      width: 250px; background: rgba(15, 23, 42, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px;
+      width: 250px; background: ${RETRO_COLORS.panelBg};
+      border: 1px solid ${RETRO_COLORS.borderSubtle}; border-radius: 4px;
       padding: 10px 12px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 200, 255, 0.1);
-      backdrop-filter: blur(8px); font-family: system-ui, -apple-system, sans-serif;
-      color: #f8fafc; font-size: 12px; line-height: 1.4; opacity: 0;
+      box-shadow: ${RETRO_GLOW.boxCyan};
+      backdrop-filter: blur(8px); font-family: ${FONTS.mono};
+      color: ${RETRO_COLORS.textPrimary}; font-size: 12px; line-height: 1.4; opacity: 0;
       transition: opacity 0.15s ease, transform 0.15s ease;
     `;
     document.body.appendChild(this.tooltipEl);
@@ -249,7 +252,8 @@ export class ActionBarHUD {
     root.style.cssText = `
       width: 60px; height: 60px; position: relative; overflow: hidden;
       backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
-      border: 1px dashed ${accent.color}40; border-radius: 8px;
+      border: 1px solid ${RETRO_COLORS.borderNeon}40; border-radius: 4px;
+      box-shadow: ${RETRO_GLOW.boxCyan};
       cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
     `;
 
@@ -342,7 +346,7 @@ export class ActionBarHUD {
     root.addEventListener('dragover', (e) => {
       e.preventDefault();
       root.style.borderColor = accent.color;
-      root.style.boxShadow = `0 0 12px ${accent.color}66`;
+      root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 12px ${accent.color}66`;
     });
 
     root.addEventListener('dragleave', () => {
@@ -564,7 +568,7 @@ export class ActionBarHUD {
 
       if (ready && ability) {
         slot.root.style.borderColor = accent;
-        slot.root.style.boxShadow = `0 0 10px ${accent}59`;
+        slot.root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 10px ${accent}59`;
       } else if (!slot.root.matches(':hover')) {
         slot.root.style.borderColor = ability ? `${accent}4d` : `${accent}40`;
         slot.root.style.boxShadow = '';

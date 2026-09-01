@@ -1,4 +1,5 @@
 import type { ActionSlotKey, CardRarity } from '../types/cards';
+import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 
 export type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
 
@@ -63,25 +64,29 @@ export function injectStyles(): void {
 
 export function btnStyle(primary = false): string {
   return `
-    padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
-    border:1px solid ${primary ? '#00ccff' : 'rgba(255,255,255,0.15)'};
+    padding:7px 12px;border-radius:4px;cursor:pointer;font-size:12px;
+    font-family:${FONTS.mono};
+    border:1px solid ${primary ? RETRO_COLORS.neonCyan : RETRO_COLORS.borderSubtle};
     background:${primary ? 'rgba(0,200,255,0.2)' : 'rgba(255,255,255,0.05)'};
-    color:#e0e0e8;
+    color:${RETRO_COLORS.textPrimary};
+    ${primary ? `text-shadow:${RETRO_GLOW.cyan};` : ''}
   `;
 }
 
 export function btnStyleRarity(rarity: CardRarity): string {
   const theme = RARITY_BTN[rarity];
   return `
-    padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;
-    border:1px solid ${theme.border};background:${theme.bg};color:#e0e0e8;
+    padding:7px 12px;border-radius:4px;cursor:pointer;font-size:12px;
+    font-family:${FONTS.mono};
+    border:1px solid ${theme.border};background:${theme.bg};color:${RETRO_COLORS.textPrimary};
   `;
 }
 
 export function chipStyle(active = false): string {
   return `
-    padding:3px 9px;border-radius:999px;cursor:pointer;font-size:11px;
-    border:1px solid ${active ? '#00ccff' : 'rgba(255,255,255,0.14)'};
+    padding:3px 9px;border-radius:2px;cursor:pointer;font-size:11px;
+    font-family:${FONTS.mono};
+    border:1px solid ${active ? RETRO_COLORS.neonCyan : RETRO_COLORS.borderSubtle};
     background:${active ? 'rgba(0,200,255,0.22)' : 'rgba(255,255,255,0.04)'};
     color:${active ? '#dff' : '#bbb'};
   `;

@@ -7,6 +7,7 @@ import type { Interpreter } from '../primitives/Interpreter';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import { INSPECTOR_COLLAPSED_STORAGE_KEY } from '../game/settings';
+import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 import { buttonStyle } from './inspector/domHelpers';
 import { buildGraphicsTab } from './inspector/graphicsTab';
 import { buildHarnessTab } from './inspector/harnessTab';
@@ -66,13 +67,10 @@ export class InspectorUI {
       max-height: 100vh;
       overflow-y: auto;
       margin: 12px;
-      background: rgba(10, 10, 20, 0.85);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      font-family: system-ui, sans-serif;
+      ${retroPanelStyle('cyan')}
+      font-family: ${FONTS.mono};
       font-size: 13px;
-      color: #e0e0e8;
+      color: ${RETRO_COLORS.textPrimary};
     `;
 
     this.headerEl = document.createElement('div');
@@ -83,7 +81,7 @@ export class InspectorUI {
     const title = document.createElement('span');
     title.textContent = 'DEVTOOLS';
     title.style.cssText =
-      'font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.05em;';
+      `font-size: 11px; font-weight: 700; color: ${RETRO_COLORS.textMuted}; letter-spacing: 0.05em; text-shadow: ${RETRO_GLOW.cyan};`;
 
     this.toggleBtn = document.createElement('button');
     this.toggleBtn.type = 'button';

@@ -1,5 +1,6 @@
 import type { CombatEvent, VectorTelemetry } from '../types/telemetry';
 import { EVENT_TYPE_COLORS } from '../types/telemetry';
+import { FONTS, RETRO_COLORS } from '../ui/tokens';
 
 export const TELEMETRY_STYLE_ID = 'luna-telemetry-styles';
 
@@ -11,25 +12,25 @@ export function injectTelemetryStyles(): void {
     .telemetry-overlay {
       position: fixed; inset: 0; z-index: 9999;
       display: none; flex-direction: column;
-      background: rgba(6, 8, 16, 0.94);
+      background: ${RETRO_COLORS.panelBg};
       backdrop-filter: blur(16px);
-      color: #e2e8f0;
-      font-family: system-ui, -apple-system, sans-serif;
+      color: ${RETRO_COLORS.textPrimary};
+      font-family: ${FONTS.mono};
       pointer-events: auto;
     }
     .telemetry-overlay.open { display: flex; }
     .telemetry-header {
       display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
       padding: 14px 18px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      background: rgba(10, 12, 24, 0.6);
+      border-bottom: 1px solid ${RETRO_COLORS.borderSubtle};
+      background: ${RETRO_COLORS.panelBgOpaque};
     }
     .telemetry-title {
       font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
       color: #f8fafc; margin-right: 8px;
     }
     .telemetry-badge-count {
-      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
       background: rgba(0, 229, 255, 0.15); color: #00e5ff;
       border: 1px solid rgba(0, 229, 255, 0.35);
     }
@@ -47,7 +48,7 @@ export function injectTelemetryStyles(): void {
     }
     .telemetry-pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
     .telemetry-pill {
-      padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
       letter-spacing: 0.04em; cursor: pointer; border: 1px solid rgba(255,255,255,0.12);
       background: rgba(255,255,255,0.04); color: #94a3b8;
       transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -58,16 +59,17 @@ export function injectTelemetryStyles(): void {
     }
     .telemetry-search {
       flex: 1; min-width: 160px; max-width: 280px;
-      padding: 6px 10px; border-radius: 6px; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.35);
-      color: #e2e8f0; outline: none;
+      padding: 6px 10px; border-radius: 4px; font-size: 12px;
+      border: 1px solid ${RETRO_COLORS.borderSubtle}; background: rgba(0,0,0,0.35);
+      color: ${RETRO_COLORS.textPrimary}; outline: none; font-family: ${FONTS.mono};
     }
     .telemetry-search:focus { border-color: rgba(0, 229, 255, 0.5); }
     .telemetry-actions { display: flex; gap: 6px; margin-left: auto; }
     .telemetry-btn {
-      padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
-      cursor: pointer; border: 1px solid rgba(255,255,255,0.15);
+      padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600;
+      cursor: pointer; border: 1px solid ${RETRO_COLORS.borderSubtle};
       background: rgba(255,255,255,0.05); color: #cbd5e1;
+      font-family: ${FONTS.mono};
     }
     .telemetry-btn:hover { background: rgba(255,255,255,0.1); }
     .telemetry-btn.primary {
@@ -103,7 +105,7 @@ export function injectTelemetryStyles(): void {
     .telemetry-delta { font-size: 11px; color: #a5b4fc; font-variant-numeric: tabular-nums; }
     .telemetry-instab { font-size: 11px; color: #f97316; }
     .telemetry-badge {
-      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
       font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
     }
     .telemetry-badge--cast { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.35); }
@@ -112,7 +114,7 @@ export function injectTelemetryStyles(): void {
     .telemetry-badge--ram { background: rgba(249,115,22,0.15); color: #f97316; border: 1px solid rgba(249,115,22,0.35); }
     .telemetry-badge--slam { background: rgba(244,63,94,0.15); color: #f43f5e; border: 1px solid rgba(244,63,94,0.35); }
     .telemetry-vec {
-      font-family: ui-monospace, 'Cascadia Code', monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px; color: #94a3b8;
     }
     .telemetry-detail td {
@@ -121,10 +123,10 @@ export function injectTelemetryStyles(): void {
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
     .telemetry-detail pre {
-      margin: 0; padding: 10px; border-radius: 6px;
+      margin: 0; padding: 10px; border-radius: 4px;
       background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255,255,255,0.08);
       font-size: 11px; color: #cbd5e1; overflow-x: auto;
-      font-family: ui-monospace, 'Cascadia Code', monospace;
+      font-family: ${FONTS.mono};
     }
     .telemetry-empty {
       padding: 48px; text-align: center; color: #64748b; font-size: 14px;

@@ -1,6 +1,7 @@
 import type { DraftCard } from '../types/cards';
 import type { AbilitySchema, ActionPayload } from '../types/schema';
 import { walkActions } from '../types/schema';
+import { FONTS, RETRO_COLORS } from '../ui/tokens';
 
 export type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
 
@@ -39,7 +40,9 @@ export function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
   const span = document.createElement('span');
   span.textContent = label;
   span.style.cssText = `
-    font-size:9px;padding:2px 6px;border-radius:4px;
+    font-size:9px;padding:2px 6px;border-radius:2px;
+    font-family:${FONTS.mono};text-transform:uppercase;letter-spacing:0.04em;
+    border:1px solid ${RETRO_COLORS.borderSubtle};
     background:${colors.bg};color:${colors.text};white-space:nowrap;
   `;
   return span;

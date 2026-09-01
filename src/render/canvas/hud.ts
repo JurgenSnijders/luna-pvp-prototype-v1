@@ -1,6 +1,7 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
+import { canvasFont } from '../../ui/tokens';
 
 export function drawOverheadHUD(
   ctx: CanvasRenderingContext2D,
@@ -10,7 +11,7 @@ export function drawOverheadHUD(
   const entities = [...world.players, ...world.dummies, ...world.summons].filter(
     (e) => !e.isDead && !e.isStealthed(),
   );
-  ctx.font = '11px system-ui, sans-serif';
+  ctx.font = canvasFont(11);
   ctx.textAlign = 'center';
 
   const barWidth = 40;
