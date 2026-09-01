@@ -64,7 +64,8 @@ Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
 
 CORE WIN CONDITION: The primary goal of the game is knocking enemies into the lava. Unless a spell is strictly a defensive utility, it MUST include a physical displacement action (APPLY_IMPULSE or RADIAL_IMPULSE/MASS_ATTRACTOR) to push or pull the target.
 
-AbilitySchema: { id, name, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+AbilitySchema: { id, name, tagline?, description?, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+tagline?: string; description?: string;  // copy from concept if known
 archetype: REQUIRED — assign one of KINETIC, FIRE, FROST, LIGHTNING, VOID, HOLY, TOXIC, ARCANE, MAGNETIC, SONIC, AERO, GRAVITY, EARTH, CHRONO, PLASMA, NATURE, BLOOD, PHASE, CHAOS.
 The engine scales implicit vulnerability and field physics from archetype — do NOT spam ADD_INSTABILITY; rely on archetype + kinetic impact math instead.
 Archetype scaling cheat sheet:
@@ -153,5 +154,11 @@ Holy: color #ffdd88, secondaryColor #fff8e0, projectileStyle RUNE_SIGIL, impactV
 Toxic: color #66ff44, secondaryColor #ccff99, trailType DUST_PUFF, impactVfx SHATTER
 Kinetic: color #00e5ff, secondaryColor #88eeff, projectileStyle DISC or BEAM, trailType NONE, impactVfx SPARKS
 Arcane: color #aa44ff, secondaryColor #ff88ff, projectileStyle PRISM, trailType NEON_RIBBON, impactVfx VORTEX_SWIRL
+
+SEMANTIC FIDELITY RULES (The compiled physics MUST match the concept description 1:1):
+- PULL / GRAVITY: If description mentions pull, inward, gravity, or singularity, you MUST use directionMode: "TOWARDS_ORIGIN" or "TOWARDS_CASTER" on APPLY_IMPULSE, or use SPAWN_FIELD MASS_ATTRACTOR. NEVER use AWAY_FROM_ORIGIN for a pull spell.
+- SWEEP / ARC / SALVO: If description mentions sweep, arc, salvo, or scatter, you MUST use SPAWN_PROJECTILE with an emitter (count: 3-5, spreadDeg: 30-60, distribution: "FAN").
+- LINGERING / FIRE: If description mentions lingering, sticky fire, or pools, you MUST spawn a persistent SPAWN_FIELD or MUTATE_TERRAIN.
+- FLAMETHROWER / STREAM: If description mentions flamethrower, stream, or continuous fire, you MUST use inputProfile: { mode: "CHANNELED", channelIntervalMs: 100 } and resourceCost: { type: "HEAT" }.
 
 Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;

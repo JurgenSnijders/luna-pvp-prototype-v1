@@ -91,6 +91,14 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const { triggers, actions } = summarizeTriggers(ability);
   const triggerList = triggers.length > 0 ? escapeHtml(triggers.join(', ')) : '—';
   const actionList = actions.length > 0 ? escapeHtml(formatEnumLabel(actions.join(', '))) : '—';
+  const flavorBlock = [
+    ability.tagline
+      ? `<div style="font-size:11px;color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
+      : '',
+    ability.description
+      ? `<div style="font-size:11px;color:#aaa;line-height:1.3;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);">${escapeHtml(ability.description)}</div>`
+      : '',
+  ].join('');
   const visuals = ability.visuals;
   const swatchColor = visuals?.color ?? '#888';
   const projectileStyle = visuals ? escapeHtml(formatEnumLabel(visuals.projectileStyle)) : '—';
@@ -111,6 +119,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
       <span style="font-weight:700; font-size:13px; color:${accentColor};">${escapeHtml(ability.name)}</span>
       <span style="font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
     </div>
+    ${flavorBlock}
     <div style="font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
     <div style="display:flex; gap:10px; margin-bottom:8px; font-size:11px;">
       <div><span style="color:#64748b;">CD</span> ${cooldown}</div>

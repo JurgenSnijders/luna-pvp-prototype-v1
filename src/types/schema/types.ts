@@ -360,6 +360,8 @@ export interface TriggerNode {
 export interface AbilitySchema {
   id: string;
   name: string;
+  tagline?: string;
+  description?: string;
   archetype?: SpellArchetype;
   cooldownMs: number;
   recoilKick: number;

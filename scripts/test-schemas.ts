@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sanitizeAbilitySchema, schemaHasApplyImpulse, scoreAbilitySchema } from '../src/ai/BudgetEngine';
+import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
 import type { AbilitySchema, ActionPayload, TriggerNode } from '../src/types/schema';
 import { validateAbilitySchema } from '../src/types/schema';
@@ -96,6 +96,105 @@ function runDisplacementAssertions(): string[] {
   return failures;
 }
 
+function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
+  let found = false;
+  const walk = (nodes: TriggerNode[]): void => {
+    for (const node of nodes) {
+      for (const action of node.actions) {
+        if (action.type === 'SPAWN_FIELD' || action.type === 'MUTATE_TERRAIN') {
+          found = true;
+        }
+        if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+          walk(action.triggers);
+        }
+        if (action.type === 'CAST_CHILD_PAYLOAD') {
+          walk(action.payload.triggers);
+        }
+      }
+      if (node.children) walk(node.children);
+    }
+  };
+  walk(schema.triggers);
+  return found;
+}
+
+function runSemanticRepairAssertions(): string[] {
+  const failures: string[] = [];
+
+  const singularityDart = sanitizeAbilitySchema(
+    {
+      id: 'singularity_dart',
+      name: 'Singularity Dart',
+      cooldownMs: 400,
+      recoilKick: 30,
+      trajectory: { type: 'LINEAR', speed: 700, maxRange: 500 },
+      triggers: [
+        {
+          trigger: 'ON_HIT',
+          actions: [
+            {
+              type: 'APPLY_IMPULSE',
+              baseForce: 500,
+              target: 'TARGET',
+              directionMode: 'AWAY_FROM_ORIGIN',
+            },
+          ],
+        },
+      ],
+      visuals: { color: '#220044', size: 8, projectileStyle: 'DISC', trailType: 'NONE', impactVfx: 'SPARKS' },
+    },
+    'SECONDARY',
+    0,
+    'Singularity Dart Fires a rapid dart that micro-pulls targets inward on impact',
+  );
+
+  if (schemaHasImpulseDirection(singularityDart, 'AWAY_FROM_ORIGIN')) {
+    failures.push('Singularity Dart: must not keep AWAY_FROM_ORIGIN on pull concept');
+  }
+  if (
+    !schemaHasImpulseDirection(singularityDart, 'TOWARDS_ORIGIN') &&
+    !schemaHasImpulseDirection(singularityDart, 'TOWARDS_CASTER')
+  ) {
+    failures.push('Singularity Dart: expected TOWARDS_ORIGIN or TOWARDS_CASTER impulse');
+  }
+
+  const napalmArc = sanitizeAbilitySchema(
+    {
+      id: 'napalm_arc',
+      name: 'Napalm Arc',
+      cooldownMs: 1200,
+      recoilKick: 80,
+      trajectory: { type: 'LINEAR', speed: 500, maxRange: 600 },
+      triggers: [{ trigger: 'ON_CAST', actions: [] }],
+      visuals: { color: '#ff6622', size: 10, projectileStyle: 'DISC', trailType: 'EMBER_SPIRAL', impactVfx: 'PLASMA_BLOOM' },
+    },
+    'SECONDARY',
+    0,
+    'Napalm Arc Fires a sweeping arc of lingering sticky fire across the arena',
+  );
+
+  if (!schemaHasFanEmitter(napalmArc, 3)) {
+    failures.push('Napalm Arc: expected FAN emitter with count >= 3');
+  }
+  if (!hasSpawnFieldOrTerrain(napalmArc)) {
+    failures.push('Napalm Arc: expected lingering SPAWN_FIELD or MUTATE_TERRAIN');
+  }
+
+  const preset = PRESETS['Kinetic Railgun'];
+  const withFlavor = sanitizeAbilitySchema(
+    { ...preset, tagline: 'Test Tagline', description: 'A test description' },
+    'SECONDARY',
+  );
+  if (withFlavor.tagline !== 'Test Tagline') {
+    failures.push('flavor round-trip: tagline not preserved');
+  }
+  if (withFlavor.description !== 'A test description') {
+    failures.push('flavor round-trip: description not preserved');
+  }
+
+  return failures;
+}
+
 function runPresetContractAssertions(): string[] {
   const failures: string[] = [];
 
@@ -131,6 +230,7 @@ function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
     ...runDisplacementAssertions(),
+    ...runSemanticRepairAssertions(),
     ...runPresetContractAssertions(),
   ];
 

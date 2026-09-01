@@ -1,7 +1,16 @@
 import type { AbilitySchema, SpellArchetype, TriggerNode } from '../types';
 import { SPELL_ARCHETYPE_SET } from '../constants';
 import { validateInputProfile, validateResourceCost } from './condition';
-import { isNumber, isObject, isString } from './helpers';
+import { clamp, isNumber, isObject, isString } from './helpers';
+
+const FLAVOR_MAX_LEN = 120;
+
+function clampFlavorString(value: unknown, max = FLAVOR_MAX_LEN): string | undefined {
+  if (!isString(value)) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, clamp(max, 1, 500));
+}
 import { validateTriggerNode } from './trigger';
 import { validateTrajectoryConfig } from './trajectory';
 import { validateVisualDescriptor } from './visuals';
@@ -62,6 +71,12 @@ export function validateAbilitySchema(json: unknown, depth = 0): AbilitySchema |
       schema.archetype = archetypeRaw as SpellArchetype;
     }
   }
+
+  const tagline = clampFlavorString(json.tagline);
+  if (tagline) schema.tagline = tagline;
+
+  const description = clampFlavorString(json.description);
+  if (description) schema.description = description;
 
   return schema;
 }

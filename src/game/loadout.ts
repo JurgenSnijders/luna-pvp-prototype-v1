@@ -41,6 +41,8 @@ export function applyDraftSelection(app: GameApp, target: Player, selection: Dra
 
   if (card.abilityPayload) {
     const ability = sanitizeAbilitySchema(structuredClone(card.abilityPayload), category);
+    ability.tagline = card.tagline;
+    ability.description = card.description;
     target.setAbility(slotIndex, ability);
     if (target === app.player) {
       app.spellLibrary.addSpell(ability);

@@ -2,4 +2,4 @@
 export { scoreAbilitySchema } from './budget/score';
 export { sanitizeAbilitySchema } from './budget/sanitize/ability';
 export { balanceAbilitySchema, balancePassiveModifiers } from './budget/balance';
-export { repairAbilitySemantics, schemaHasApplyImpulse } from './budget/repair';
+export { repairAbilitySemantics, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection } from './budget/repair';

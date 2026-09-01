@@ -22,6 +22,18 @@ const CATEGORY_COMPILE_HINTS: Record<SkillCategory, string> = {
   MOBILITY: 'displacement, teleports, dashes, stealth — movement over damage',
 };
 
+function finalizeCompiledSchema(
+  card: DraftCard,
+  schema: AbilitySchema,
+  category: SkillCategory,
+): AbilitySchema {
+  const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
+  const sanitized = sanitizeAbilitySchema(schema, category, 0, compileDescription);
+  sanitized.tagline = card.tagline;
+  sanitized.description = card.description;
+  return sanitized;
+}
+
 function buildCompileUserPrompt(
   card: DraftCard,
   baseAbility: AbilitySchema | undefined,
@@ -80,11 +92,10 @@ function fallbackCompiledSchema(
     source = forged[0]?.abilityPayload ?? forged[1]?.abilityPayload;
   }
 
-  const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
   const compiled = source ? structuredClone(source) : sanitizeAbilitySchema({}, category);
   compiled.id = card.id || compiled.id;
   compiled.name = card.title || compiled.name;
-  return sanitizeAbilitySchema(compiled, category, 0, compileDescription);
+  return finalizeCompiledSchema(card, compiled, category);
 }
 
 /**
@@ -103,7 +114,7 @@ export async function compileAbilityPayload(
 
   // Offline heuristic / pre-compiled cards already carry a full payload — skip the network.
   if (card.abilityPayload) {
-    return structuredClone(card.abilityPayload);
+    return finalizeCompiledSchema(card, structuredClone(card.abilityPayload), category);
   }
 
   const settings = getAiSettings();
@@ -132,12 +143,12 @@ export async function compileAbilityPayload(
   const normalized = deepNormalizeLLMValue(parseResult.value);
   const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
   const repaired = repairAbilityPayload(normalized, compileDescription);
-  const sanitized = sanitizeAbilitySchema(repaired, category, 0, compileDescription);
+  const finalized = finalizeCompiledSchema(card, repaired as AbilitySchema, category);
 
-  if (!validateAbilitySchema(sanitized)) {
+  if (!validateAbilitySchema(finalized)) {
     console.warn('[Synthesizer] compileAbilityPayload validation failed, using fallback');
     return fallbackCompiledSchema(card, baseAbility, category);
   }
 
-  return sanitized;
+  return finalized;
 }

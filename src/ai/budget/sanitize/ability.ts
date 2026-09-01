@@ -3,6 +3,15 @@ import type { AbilitySchema, SpellArchetype, TriggerNode } from '../../../types/
 import { SPELL_ARCHETYPE_SET, validateAbilitySchema } from '../../../types/schema';
 import { repairAbilitySemantics } from '../repair';
 import { ensureFiniteNumber, isObject } from '../helpers';
+
+const FLAVOR_MAX_LEN = 120;
+
+function clampFlavorString(value: unknown, max = FLAVOR_MAX_LEN): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, max);
+}
 import { sanitizeInputProfile, sanitizeResourceCost } from './condition';
 import { hasOnCastEffect, promoteRootEmitter, sanitizeTriggerNode } from './trigger';
 import { sanitizeTrajectory } from './trajectory';
@@ -64,6 +73,12 @@ export function sanitizeAbilitySchema(
     }
   }
 
+  const tagline = clampFlavorString(obj.tagline);
+  if (tagline) schema.tagline = tagline;
+
+  const cardDescription = clampFlavorString(obj.description);
+  if (cardDescription) schema.description = cardDescription;
+
   promoteRootEmitter(schema, obj);
 
   if (!schema.trajectory && !hasOnCastEffect(schema.triggers)) {
@@ -83,5 +98,9 @@ export function sanitizeAbilitySchema(
     };
   }
 
-  return repairAbilitySemantics(validated, description ?? validated.name);
+  const repairText =
+    description ??
+    [validated.tagline, validated.description].filter(Boolean).join(' ');
+  const repaired = repairAbilitySemantics(validated, repairText);
+  return validateAbilitySchema(repaired) ?? repaired;
 }

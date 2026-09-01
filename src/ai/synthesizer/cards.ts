@@ -47,6 +47,8 @@ export function makeActiveCard(
   evolutionDiff?: string[],
 ): DraftCard {
   const balanced = balanceAbilitySchema(schema, category);
+  balanced.tagline = tagline;
+  balanced.description = description;
   return {
     id,
     title,
