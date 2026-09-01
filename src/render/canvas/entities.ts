@@ -1,8 +1,22 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
+import { RETRO_COLORS } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
+
+function withNeonStroke(
+  ctx: CanvasRenderingContext2D,
+  color: string,
+  blur: number,
+  draw: () => void,
+): void {
+  ctx.save();
+  ctx.shadowBlur = blur;
+  ctx.shadowColor = color;
+  draw();
+  ctx.restore();
+}
 
 export function drawCombatants(
   ctx: CanvasRenderingContext2D,
@@ -47,24 +61,36 @@ function drawCombatantBody(
   ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
   ctx.fill();
 
+  withNeonStroke(ctx, drawColor, 10, () => {
+    ctx.strokeStyle = drawColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
   if (entity.activeMorph) {
     const morphPulse = 0.5 + 0.5 * Math.sin(state.ringRotation * 4);
-    ctx.strokeStyle = `rgba(160, 200, 255, ${0.35 + morphPulse * 0.45})`;
-    ctx.lineWidth = 2 + morphPulse * 2;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, radius + 3 + morphPulse * 2, 0, Math.PI * 2);
-    ctx.stroke();
+    withNeonStroke(ctx, RETRO_COLORS.neonCyan, 8, () => {
+      ctx.strokeStyle = `rgba(160, 200, 255, ${0.35 + morphPulse * 0.45})`;
+      ctx.lineWidth = 2 + morphPulse * 2;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius + 3 + morphPulse * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    });
   }
 
   if (aimColor && 'facingAngle' in entity) {
     const facing = (entity as { facingAngle: number }).facingAngle;
     const aimEnd = pos.add(Vector2D.fromAngle(facing, radius + 14));
-    ctx.strokeStyle = aimColor;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
-    ctx.lineTo(aimEnd.x, aimEnd.y);
-    ctx.stroke();
+    withNeonStroke(ctx, aimColor, 6, () => {
+      ctx.strokeStyle = aimColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(aimEnd.x, aimEnd.y);
+      ctx.stroke();
+    });
   }
 
   ctx.globalAlpha = prevAlpha;
@@ -86,23 +112,32 @@ export function drawSummons(
     if (summon.config.actorArchetype === 'TURRET') {
       ctx.fillStyle = turretColor;
       ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
-      ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
-      ctx.strokeRect(pos.x - half - 2, pos.y - half - 2, half * 2 + 4, half * 2 + 4);
+      withNeonStroke(ctx, turretColor, 8, () => {
+        ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pos.x - half - 2, pos.y - half - 2, half * 2 + 4, half * 2 + 4);
+      });
       const barrelEnd = pos.add(Vector2D.fromAngle(summon.facingAngle, half + 12));
-      ctx.strokeStyle = turretColor;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-      ctx.lineTo(barrelEnd.x, barrelEnd.y);
-      ctx.stroke();
+      withNeonStroke(ctx, turretColor, 8, () => {
+        ctx.strokeStyle = turretColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.lineTo(barrelEnd.x, barrelEnd.y);
+        ctx.stroke();
+      });
     } else {
       ctx.fillStyle = decoyColor;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 180, 220, 0.55)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      withNeonStroke(ctx, decoyColor, 8, () => {
+        ctx.strokeStyle = 'rgba(255, 180, 220, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
+        ctx.stroke();
+      });
     }
   }
 }
@@ -115,18 +150,22 @@ function drawStasisOverlay(
 ): void {
   if (entity.stasisRemainingMs > 0) {
     const crystal = 0.5 + 0.5 * Math.sin(state.ringRotation * 5);
-    ctx.strokeStyle = `rgba(255, 215, 80, ${0.55 + crystal * 0.4})`;
-    ctx.lineWidth = 2 + crystal * 2;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, entity.effectiveRadius + 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(180, 230, 255, ${0.25 + crystal * 0.35})`;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 5]);
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, entity.effectiveRadius + 7, state.ringRotation, state.ringRotation + Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    withNeonStroke(ctx, '#fcd34d', 6, () => {
+      ctx.strokeStyle = `rgba(255, 215, 80, ${0.55 + crystal * 0.4})`;
+      ctx.lineWidth = 2 + crystal * 2;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    withNeonStroke(ctx, RETRO_COLORS.neonCyan, 6, () => {
+      ctx.strokeStyle = `rgba(180, 230, 255, ${0.25 + crystal * 0.35})`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, entity.effectiveRadius + 7, state.ringRotation, state.ringRotation + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
   }
 
   if (entity.stashedMomentum.magSq() > 0) {

@@ -190,6 +190,67 @@ void main() {
 }
 `;
 
+export const CRT_SHADER = `#version 300 es
+precision mediump float;
+
+in vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform float u_scanlineIntensity;
+uniform float u_scanlineDensity;
+uniform float u_vignetteIntensity;
+uniform float u_curvature;
+uniform float u_chromaticAberration;
+uniform float u_phosphorGridIntensity;
+uniform float u_flickerIntensity;
+
+out vec4 fragColor;
+
+vec2 curve(vec2 uv, float k) {
+  uv = uv * 2.0 - 1.0;
+  vec2 offset = abs(uv.yx) / vec2(6.0, 4.0);
+  uv = uv + uv * offset * offset * k;
+  return uv * 0.5 + 0.5;
+}
+
+void main() {
+  vec2 uv = u_curvature > 0.0 ? curve(v_texCoord, u_curvature * 10.0) : v_texCoord;
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    discard;
+  }
+
+  vec2 ca = vec2(u_chromaticAberration);
+  float r = texture(u_texture, uv + ca).r;
+  float g = texture(u_texture, uv).g;
+  float b = texture(u_texture, uv - ca).b;
+  vec3 color = vec3(r, g, b);
+  float alpha = texture(u_texture, uv).a;
+
+  float px = mod(floor(v_texCoord.x * u_resolution.x), 3.0);
+  vec3 phosphorMask = vec3(
+    px < 1.0 ? 1.0 + 0.2 * u_phosphorGridIntensity : 1.0 - 0.08 * u_phosphorGridIntensity,
+    px >= 1.0 && px < 2.0 ? 1.0 + 0.15 * u_phosphorGridIntensity : 1.0 - 0.08 * u_phosphorGridIntensity,
+    px >= 2.0 ? 1.0 + 0.2 * u_phosphorGridIntensity : 1.0 - 0.08 * u_phosphorGridIntensity
+  );
+  color *= phosphorMask;
+
+  float scan = sin(v_texCoord.y * u_resolution.y * 3.14159 * u_scanlineDensity);
+  float scanMul = 1.0 - u_scanlineIntensity * (0.5 + 0.5 * scan) * 0.5;
+
+  vec2 vig = v_texCoord - 0.5;
+  float vigMul = clamp(1.0 - dot(vig, vig) * u_vignetteIntensity * 3.0, 0.0, 1.0);
+
+  float flicker = 1.0 + sin(u_time * 60.0) * u_flickerIntensity;
+  color *= scanMul * vigMul * flicker;
+
+  float crtOverlay = (1.0 - scanMul) * 0.35 + (1.0 - vigMul) * 0.5;
+  float outAlpha = max(alpha, crtOverlay * max(u_scanlineIntensity, u_vignetteIntensity * 0.5));
+
+  fragColor = vec4(color, outAlpha);
+}
+`;
+
 /** Shape id constants shared between CPU and GPU. */
 export const ShapeId = {
   DISC: 0,

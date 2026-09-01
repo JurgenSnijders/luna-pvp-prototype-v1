@@ -45,10 +45,31 @@
         z-index: 10;
         pointer-events: none;
       }
+
+      #crt-bezel {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        border-radius: 18px;
+        box-shadow:
+          inset 0 0 80px rgba(0, 0, 0, 0.75),
+          inset 0 0 2px rgba(0, 229, 255, 0.15),
+          0 0 0 14px #0a0a12,
+          0 0 0 16px rgba(0, 229, 255, 0.08);
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.03) 0%,
+          transparent 40%,
+          transparent 60%,
+          rgba(0, 0, 0, 0.15) 100%
+        );
+      }
     </style>
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
+    <div id="crt-bezel" aria-hidden="true"></div>
     <div id="inspector-root"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
