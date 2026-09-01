@@ -76,7 +76,7 @@ export class Summon extends Entity {
       return;
     }
 
-    if (this.getTriggers('ON_TICK').length > 0 || this.config.archetype !== 'TURRET' || !world) {
+    if (this.getTriggers('ON_TICK').length > 0 || this.config.actorArchetype !== 'TURRET' || !world) {
       return;
     }
 

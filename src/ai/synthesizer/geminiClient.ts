@@ -32,6 +32,7 @@ import {
   UNIVERSAL_EVOLUTION_PROMPT,
   UNIVERSAL_SPELL_PROMPT,
 } from './prompts';
+import { ABILITY_RESPONSE_SCHEMA } from './abilityResponseSchema';
 import { extractPartialCard, type PartialCardStream } from './partialJson';
 import { getCategorySeeds, getEvolutionSeeds } from './seeds';
 import { DEFAULT_MODEL, type AiSettings } from './settings';
@@ -67,6 +68,52 @@ export interface StreamNativeGeminiOptions {
   logTag: string;
   signal?: AbortSignal;
   onChunk?: (chunk: NativeGeminiChunk) => void;
+  responseSchema?: Record<string, unknown>;
+}
+
+function buildGeminiRequestBody(
+  systemPrompt: string,
+  userPrompt: string,
+  maxOutputTokens: number,
+  responseSchema?: Record<string, unknown>,
+): string {
+  return JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      maxOutputTokens,
+      ...(responseSchema ? { responseSchema } : {}),
+    },
+  });
+}
+
+async function fetchGeminiStreamResponse(
+  endpoint: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options: StreamNativeGeminiOptions,
+  signal: AbortSignal,
+): Promise<Response> {
+  const requestInit = (responseSchema?: Record<string, unknown>): RequestInit => ({
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: buildGeminiRequestBody(systemPrompt, userPrompt, options.maxOutputTokens, responseSchema),
+    signal,
+  });
+
+  let response = await fetch(endpoint, requestInit(options.responseSchema));
+  if (!response.ok && response.status === 400 && options.responseSchema) {
+    console.warn(
+      `[Synthesizer] ${options.logTag} responseSchema rejected (HTTP 400), retrying without schema`,
+    );
+    response = await fetch(endpoint, requestInit(undefined));
+  }
+  return response;
 }
 
 function abortErrorResult(timedOut: boolean, timeoutMs: number): NativeGeminiResult {
@@ -186,22 +233,14 @@ export async function* streamNativeGemini(
 
     startTtfbTimer();
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': settings.apiKey.trim(),
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          maxOutputTokens: options.maxOutputTokens,
-        },
-      }),
-      signal: controller.signal,
-    });
+    const response = await fetchGeminiStreamResponse(
+      endpoint,
+      settings.apiKey.trim(),
+      systemPrompt,
+      userPrompt,
+      options,
+      controller.signal,
+    );
 
     if (ttfbTimer !== null) {
       clearTimeout(ttfbTimer);
@@ -376,6 +415,7 @@ async function callUniversalAbility(
     maxOutputTokens: 3072,
     logTag: `[draft/${options.logSuffix}]`,
     signal: options.signal,
+    responseSchema: ABILITY_RESPONSE_SCHEMA,
   });
 
   let iterResult = await gen.next();

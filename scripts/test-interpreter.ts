@@ -82,7 +82,7 @@ function testDeployableNestedTriggerSelfHit(): string | null {
             type: 'SPAWN_ACTOR',
             target: 'CASTER',
             actor: {
-              archetype: 'TURRET',
+              actorArchetype: 'TURRET',
               health: 80,
               durationMs: 8000,
               triggers: [

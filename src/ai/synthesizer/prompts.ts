@@ -128,15 +128,41 @@ REFLECT_PROJECTILES { target?, radius? }
 SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
 MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
-SPAWN_ACTOR { actor: { archetype: TURRET|DECOY, health, durationMs, anchored?, radius?, mass?, targetingRange?, triggers[], visuals? }, target? }
+SPAWN_ACTOR { actor: { actorArchetype: TURRET|DECOY, health, durationMs, anchored?, radius?, mass?, targetingRange?, triggers[], visuals? }, target? }
 APPLY_STEALTH { durationMs, revealOnCast?, target? }
 
 SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE/SPAWN_ACTOR). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
 
-DEPLOYABLES: An entity that persists and acts autonomously. Two shapes:
+DEPLOYABLES: An entity that persists and acts autonomously. Use actorArchetype (TURRET|DECOY) on the actor object — NOT the spell-level archetype field (FROST, VOID, etc.).
+Two shapes:
 - PLACED (instant, at the caster): NO root trajectory. ON_CAST -> SPAWN_ACTOR. Autonomous behavior MUST live in actor.triggers, NOT in the ability's root triggers.
 - THROWN (lands then deploys): root trajectory LINEAR + ON_HIT or ON_EXPIRY -> SPAWN_ACTOR at impact position.
 Root-level ON_TICK binds to a flying projectile carrier — it NEVER executes on a deployed SPAWN_ACTOR entity.
+
+DEPLOYABLE JSON SKELETON (copy this structure for turrets, traps, pylons):
+{
+  "trigger": "ON_CAST",
+  "actions": [
+    {
+      "type": "SPAWN_ACTOR",
+      "target": "CASTER",
+      "actor": {
+        "actorArchetype": "TURRET",
+        "health": 100,
+        "durationMs": 7000,
+        "anchored": true,
+        "triggers": [
+          {
+            "trigger": "ON_TICK",
+            "tickIntervalMs": 1000,
+            "actions": [ "... periodic logic here (SPAWN_PROJECTILE, SPAWN_FIELD, etc.) ..." ]
+          }
+        ]
+      }
+    }
+  ]
+}
+Set the root AbilitySchema.archetype separately for spell element (e.g. "FROST" for ice turret visuals/scaling).
 
 SEMANTIC RECIPE BOOK (map user verbs to these patterns):
 Harpoon/Pull: ON_HIT -> APPLY_IMPULSE { baseForce:600, target:"TARGET", directionMode:"TOWARDS_CASTER" } + SPAWN_CONSTRAINT { type:"SPRING_TETHER", source:"CASTER", target:"TARGET", durationMs:2000 }
@@ -151,8 +177,8 @@ Stasis Combo: inputProfile:{ mode:"COMBO_CHAIN", comboWindowMs:3000 } + two ON_C
 Crowd Breaker: ON_CAST conditions:[{ query:"PROXIMITY_COUNT", target:"CASTER", radius:120, comparison:"GTE", value:2 }] strong field + ifFalseActions weaker field
 Iron Colossus: ON_CAST -> MORPH_ENTITY { target:"CASTER", morph:{ radius:32, mass:200, speedMultiplier:0.6, durationMs:6000 } }
 Tripwire Bomb: trajectory LINEAR + ON_DISTANCE_TRAVELED triggerDistance:300 -> SPAWN_FIELD { field: { fieldType:"RADIAL_IMPULSE", radius:90, strength:700, durationMs:500 } }
-Ice Turret: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ archetype:"TURRET", health:80, durationMs:8000, triggers:[{ trigger:"ON_TICK", tickIntervalMs:900, actions:[{ type:"SPAWN_PROJECTILE", projectileTrajectory:{ type:"HOMING_SLERP", speed:420, maxRange:400, turnAccel:400 }, triggers:[{ trigger:"ON_HIT", actions:[{ type:"MODIFY_STAT", stat:"moveSpeed", value:0.6, mode:"multiply", target:"TARGET" }] }] }] }] } } + archetype FROST + frost visuals
-Deployed Singularity: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ archetype:"DECOY", health:60, durationMs:6000, anchored:true, triggers:[{ trigger:"ON_TICK", tickIntervalMs:100, actions:[{ type:"SPAWN_FIELD", field:{ fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:140, durationMs:600 } }] }] } } + archetype VOID + void visuals
+Ice Turret: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ actorArchetype:"TURRET", health:80, durationMs:8000, triggers:[{ trigger:"ON_TICK", tickIntervalMs:900, actions:[{ type:"SPAWN_PROJECTILE", projectileTrajectory:{ type:"HOMING_SLERP", speed:420, maxRange:400, turnAccel:400 }, triggers:[{ trigger:"ON_HIT", actions:[{ type:"MODIFY_STAT", stat:"moveSpeed", value:0.6, mode:"multiply", target:"TARGET" }] }] }] }] } } + archetype FROST + frost visuals
+Deployed Singularity: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ actorArchetype:"DECOY", health:60, durationMs:6000, anchored:true, triggers:[{ trigger:"ON_TICK", tickIntervalMs:100, actions:[{ type:"SPAWN_FIELD", field:{ fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:140, durationMs:600 } }] }] } } + archetype VOID + void visuals
 
 Set inputProfile and/or resourceCost whenever the concept implies charging, channeling, combos, overheating, magazines, or health cost.
 
@@ -171,7 +197,7 @@ SEMANTIC FIDELITY RULES (The compiled physics MUST match the concept description
 - SWEEP / ARC / SALVO: If description mentions sweep, arc, salvo, or scatter, you MUST use SPAWN_PROJECTILE with an emitter (count: 3-5, spreadDeg: 30-60, distribution: "FAN").
 - LINGERING / FIRE: If description mentions lingering, sticky fire, or pools, you MUST spawn a persistent SPAWN_FIELD or MUTATE_TERRAIN.
 - FLAMETHROWER / STREAM: If description mentions flamethrower, stream, or continuous fire, you MUST use inputProfile: { mode: "CHANNELED", channelIntervalMs: 100 } and resourceCost: { type: "HEAT" }.
-- DEPLOY / TURRET / SENTRY / TRAP / MINE / PYLON / TOTEM: You MUST use SPAWN_ACTOR with a populated actor.triggers array. If the concept says deploy, place, or drop, you MUST omit the root trajectory. NEVER satisfy a deployable concept with a bare projectile.
+- DEPLOY / TURRET / SENTRY / TRAP / MINE / PYLON / TOTEM: You MUST use SPAWN_ACTOR with actorArchetype (TURRET or DECOY) and a populated actor.triggers array. If the concept says deploy, place, or drop, you MUST omit the root trajectory. NEVER satisfy a deployable concept with a bare projectile. NEVER put spell archetype (FROST, VOID) in actorArchetype.
 
 Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;
 

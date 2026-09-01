@@ -95,7 +95,7 @@ export function extractMechanicBadgesFromAbility(
     if (action.type === 'SPAWN_FIELD') {
       pushBadge(`[${action.field.fieldType.replace(/_/g, ' ')}]`, 'field');
     } else if (action.type === 'SPAWN_ACTOR') {
-      if (action.actor.archetype === 'TURRET') {
+      if (action.actor.actorArchetype === 'TURRET') {
         pushBadge('[TURRET]', 'trigger');
       } else {
         const label = actionBadges.SPAWN_ACTOR;

@@ -307,7 +307,7 @@ export interface MorphConfig {
 export type ActorArchetype = 'TURRET' | 'DECOY';
 
 export interface ActorConfig {
-  archetype: ActorArchetype;
+  actorArchetype: ActorArchetype;
   health: number;
   durationMs: number;
   anchored?: boolean;

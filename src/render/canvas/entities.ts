@@ -83,7 +83,7 @@ export function drawSummons(
     const turretColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#88aa44';
     const decoyColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#aa6688';
 
-    if (summon.config.archetype === 'TURRET') {
+    if (summon.config.actorArchetype === 'TURRET') {
       ctx.fillStyle = turretColor;
       ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
       ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';

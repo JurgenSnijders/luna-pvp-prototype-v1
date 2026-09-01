@@ -332,7 +332,7 @@ function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
         type: 'SPAWN_ACTOR',
         target: 'CASTER',
         actor: {
-          archetype: 'TURRET',
+          actorArchetype: 'TURRET',
           health: 80,
           durationMs: 8000,
           anchored: true,
@@ -348,7 +348,7 @@ function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
 
   if (!spawnActor.actor.triggers || spawnActor.actor.triggers.length === 0) {
     if (isPullConcept(text)) {
-      spawnActor.actor.archetype = 'DECOY';
+      spawnActor.actor.actorArchetype = 'DECOY';
       spawnActor.actor.anchored = true;
       spawnActor.actor.triggers = [
         {
@@ -369,7 +369,7 @@ function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
         },
       ];
     } else {
-      spawnActor.actor.archetype = 'TURRET';
+      spawnActor.actor.actorArchetype = 'TURRET';
       spawnActor.actor.triggers = [
         {
           trigger: 'ON_TICK',

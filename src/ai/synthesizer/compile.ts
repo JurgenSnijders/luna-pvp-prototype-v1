@@ -4,6 +4,7 @@ import { CATEGORY_SLOT_MAP } from '../../types/cards';
 import type { AbilitySchema } from '../../types/schema';
 import { validateAbilitySchema } from '../../types/schema';
 import { postNativeGemini, type NativeGeminiChunk } from './geminiClient';
+import { ABILITY_RESPONSE_SCHEMA } from './abilityResponseSchema';
 import {
   deepNormalizeLLMValue,
   repairAbilityPayload,
@@ -130,6 +131,7 @@ export async function compileAbilityPayload(
     logTag: '[compile]',
     signal: options?.signal,
     onChunk: options?.onChunk,
+    responseSchema: ABILITY_RESPONSE_SCHEMA,
   });
 
   if (!result.ok) {

@@ -131,7 +131,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
           {
             type: 'SPAWN_ACTOR',
             target: 'CASTER',
-            actor: { archetype: 'TURRET', health: 80, durationMs: 8000 },
+            actor: { actorArchetype: 'TURRET', health: 80, durationMs: 8000 },
           },
         ],
       },
@@ -159,7 +159,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
             type: 'SPAWN_ACTOR',
             target: 'CASTER',
             actor: {
-              archetype: 'TURRET',
+              actorArchetype: 'TURRET',
               health: 80,
               durationMs: 8000,
               targetingRange: 400,
@@ -228,7 +228,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
           {
             type: 'SPAWN_ACTOR',
             target: 'TARGET',
-            actor: { archetype: 'TURRET', health: 60, durationMs: 6000 },
+            actor: { actorArchetype: 'TURRET', health: 60, durationMs: 6000 },
           },
         ],
       },
@@ -255,7 +255,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
           {
             type: 'SPAWN_ACTOR',
             target: 'CASTER',
-            actor: { archetype: 'DECOY', health: 100, durationMs: 7000 },
+            actor: { actorArchetype: 'DECOY', health: 100, durationMs: 7000 },
           },
         ],
       },

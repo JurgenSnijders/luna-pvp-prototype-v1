@@ -94,9 +94,14 @@ export function validateActorConfig(
   path = 'actor',
 ): ActorConfig | null {
   if (!isObject(value)) return validationFail(issues, path, 'expected object');
-  const archetypeRaw = isString(value.archetype) ? value.archetype.toUpperCase() : '';
+  const actorArchetypeCandidate = value.actorArchetype ?? value.archetype;
+  const archetypeRaw = isString(actorArchetypeCandidate) ? actorArchetypeCandidate.toUpperCase() : '';
   if (!ACTOR_ARCHETYPES.has(archetypeRaw)) {
-    return validationFail(issues, `${path}.archetype`, `invalid actor archetype: ${archetypeRaw || '(missing)'}`);
+    return validationFail(
+      issues,
+      `${path}.actorArchetype`,
+      `invalid actor archetype: ${archetypeRaw || '(missing)'}`,
+    );
   }
   if (!isNumber(value.health) || value.health <= 0) {
     return validationFail(issues, `${path}.health`, 'invalid health');
@@ -106,7 +111,7 @@ export function validateActorConfig(
   }
 
   const config: ActorConfig = {
-    archetype: archetypeRaw as ActorArchetype,
+    actorArchetype: archetypeRaw as ActorArchetype,
     health: value.health,
     durationMs: value.durationMs,
   };

@@ -75,7 +75,7 @@ function scoreAction(action: ActionPayload, depth: number): number {
       return (action.durationMs / 1000) * 5;
     case 'SPAWN_ACTOR': {
       const actor = action.actor;
-      const turretBonus = actor.archetype === 'TURRET' ? 4 : 0;
+      const turretBonus = actor.actorArchetype === 'TURRET' ? 4 : 0;
       let score = (actor.durationMs / 1000) * 6 + actor.health / 50 + turretBonus;
       if (actor.triggers) {
         for (const node of actor.triggers) {

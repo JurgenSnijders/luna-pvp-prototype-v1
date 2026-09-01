@@ -228,7 +228,7 @@ function runDeployableRepairAssertions(): string[] {
           {
             type: 'SPAWN_ACTOR',
             actor: {
-              archetype: 'TURRET',
+              actorArchetype: 'TURRET',
               health: 100,
               durationMs: 5000,
               anchored: true,
@@ -281,7 +281,7 @@ function runDeployableRepairAssertions(): string[] {
           actions: [
             {
               type: 'SPAWN_ACTOR',
-              actor: { archetype: 'FROST', health: 100, durationMs: 5000 },
+              actor: { actorArchetype: 'FROST', health: 100, durationMs: 5000 },
             },
           ],
         },

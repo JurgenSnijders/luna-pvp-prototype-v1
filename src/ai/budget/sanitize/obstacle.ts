@@ -71,13 +71,16 @@ export function sanitizeActorConfig(
   category: SkillCategory = 'SECONDARY',
 ): ActorConfig {
   const obj = isObject(raw) ? raw : {};
-  const archetypeRaw = typeof obj.archetype === 'string' ? obj.archetype.toUpperCase() : 'DECOY';
-  const archetype = (
-    ['TURRET', 'DECOY'].includes(archetypeRaw) ? archetypeRaw : 'DECOY'
+  const actorArchetypeRaw =
+    typeof (obj.actorArchetype ?? obj.archetype) === 'string'
+      ? String(obj.actorArchetype ?? obj.archetype).toUpperCase()
+      : 'DECOY';
+  const actorArchetype = (
+    ['TURRET', 'DECOY'].includes(actorArchetypeRaw) ? actorArchetypeRaw : 'DECOY'
   ) as ActorArchetype;
 
   const config: ActorConfig = {
-    archetype,
+    actorArchetype,
     health: clamp(ensureFiniteNumber(obj.health, 50), 1, 500),
     durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 30000),
     anchored: obj.anchored === false ? false : true,

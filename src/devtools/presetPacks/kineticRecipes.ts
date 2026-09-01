@@ -411,7 +411,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
           {
             type: 'SPAWN_ACTOR',
             target: 'CASTER',
-            actor: { archetype: 'TURRET', health: 80, durationMs: 8000 },
+            actor: { actorArchetype: 'TURRET', health: 80, durationMs: 8000 },
           },
         ],
       },
