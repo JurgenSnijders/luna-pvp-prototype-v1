@@ -2,8 +2,10 @@ import { Vector2D } from '../../math/Vector2D';
 import { MAX_ENTITIES, type PhysicsWorld } from '../../engine/PhysicsWorld';
 import { Projectile } from '../../entities/Projectile';
 import type { ParticleSystem } from '../../render/ParticleSystem';
+import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { AbilitySchema, VisualDescriptor } from '../../types/schema';
 import type { TriggerContext, ExecutionOverrides } from '../../types/triggerContext';
+import { vecTelemetry } from '../../types/telemetry';
 import { DEFAULT_VISUALS, MAX_DEPTH } from './constants';
 import { buildTriggerMap, safeNormalize } from './helpers';
 import { dispatchRecast as dispatchRecastImpl, processLifecycleEvents as processLifecycleEventsImpl, updateTrajectories as updateTrajectoriesImpl } from './lifecycle';
@@ -48,6 +50,18 @@ export class Interpreter {
     const visuals = schema.visuals ?? DEFAULT_VISUALS;
     this.activeCastVisuals = visuals;
     this.particles?.triggerMuzzleFlash(castCtx.origin, heading, visuals.color);
+
+    if (depth === 0) {
+      CombatLogger.getInstance().record({
+        type: 'ABILITY_CAST',
+        casterId: castCtx.caster.id,
+        abilityId: schema.name,
+        archetype: schema.archetype,
+        aimDirection: vecTelemetry(heading),
+        recoilKick: schema.recoilKick,
+        cooldownMs: schema.cooldownMs,
+      });
+    }
 
     if (schema.recoilKick > 0 && depth === 0) {
       world.applyKnockback(castCtx.caster, heading.scale(-1), schema.recoilKick);

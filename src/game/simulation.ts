@@ -1,6 +1,7 @@
 import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import { adaptiveQuality } from '../render/AdaptiveQuality';
 import { applyField } from '../primitives/Fields';
+import { CombatLogger } from '../telemetry/CombatLogger';
 import type { GameApp } from './GameApp';
 import { getHexCenter } from './arena';
 import { applyPlayerInput, executePlayerCast } from './input';
@@ -31,6 +32,7 @@ export function applySpatialFields(app: GameApp, dt: number): void {
 }
 
 export function runSimulationStep(app: GameApp, dt: number): void {
+  CombatLogger.getInstance().advanceClock(dt);
   app.particles.beginFrame(dt);
   app.world.beginDebugFrame();
   syncArenaRadius(app, dt);

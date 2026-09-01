@@ -14,6 +14,8 @@ import {
   makeDebugVector,
   type DebugForceVector,
 } from '../types/debug';
+import { CombatLogger } from '../telemetry/CombatLogger';
+import { vecTelemetry } from '../types/telemetry';
 
 export const MAX_ENTITIES = 256;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
@@ -301,7 +303,7 @@ export class PhysicsWorld {
     rammer: Entity,
     target: Entity,
     closingSpeed: number,
-  ): { J: number; knockDir: Vector2D } {
+  ): { J: number; knockDir: Vector2D; reducedMass: number } {
     const knockDelta = target.pos.sub(rammer.pos);
     const knockDir =
       knockDelta.magSq() > 0 ? knockDelta.normalize() : Vector2D.fromAngle(0);
@@ -310,6 +312,10 @@ export class PhysicsWorld {
       (rammer.effectiveMass * target.effectiveMass) /
       (rammer.effectiveMass + target.effectiveMass);
     const J = closingSpeed * RAMMING_IMPULSE_FACTOR * reducedMass;
+
+    const rammerVelBefore = vecTelemetry(rammer.vel);
+    const targetVelBefore = vecTelemetry(target.vel);
+    const instabBefore = target.instabilityPct;
 
     this.applyVelocityImpulse(target, knockDir.scale(J / target.effectiveMass));
     this.applyVelocityImpulse(
@@ -323,15 +329,53 @@ export class PhysicsWorld {
     );
     this.addInstability(target, rammingInstability);
 
-    return { J, knockDir };
+    CombatLogger.getInstance().record({
+      type: 'RAM_COLLISION',
+      rammerId: rammer.id,
+      targetId: target.id,
+      relativeVelocityNormal: closingSpeed,
+      collisionNormal: vecTelemetry(knockDir),
+      impulseMagnitude: J,
+      reducedMass,
+      rammerVelBefore,
+      rammerVelAfter: vecTelemetry(rammer.vel),
+      targetVelBefore,
+      targetVelAfter: vecTelemetry(target.vel),
+      targetInstabDelta: target.instabilityPct - instabBefore,
+      targetInstabTotal: target.instabilityPct,
+    });
+
+    return { J, knockDir, reducedMass };
   }
 
-  private applySlamInstability(entity: Entity, impactSpeed: number): void {
+  private applySlamInstability(entity: Entity, impactSpeed: number): number {
     const slamInstability = Math.min(
       SLAM_INSTABILITY_CAP,
       (impactSpeed - SLAM_SPEED_THRESHOLD) * SLAM_INSTABILITY_SCALE,
     );
     this.addInstability(entity, slamInstability);
+    return slamInstability;
+  }
+
+  private recordSlamCollision(
+    entity: Entity,
+    surfaceType: 'OBSTACLE' | 'HEX_BOUNDARY' | 'VIEWPORT',
+    impactSpeed: number,
+    surfaceNormal: Vector2D,
+    velBefore: Vector2D,
+    instabDelta: number,
+  ): void {
+    CombatLogger.getInstance().record({
+      type: 'SLAM_COLLISION',
+      entityId: entity.id,
+      surfaceType,
+      impactSpeed,
+      surfaceNormal: vecTelemetry(surfaceNormal),
+      instabDelta,
+      instabTotal: entity.instabilityPct,
+      velBefore: vecTelemetry(velBefore),
+      velAfter: vecTelemetry(entity.vel),
+    });
   }
 
   private reflectVelocityAlongNormal(entity: Entity, normal: Vector2D): void {
@@ -582,10 +626,12 @@ export class PhysicsWorld {
     const vImpact = entity.vel.dot(normal.scale(-1));
 
     if (vImpact > SLAM_SPEED_THRESHOLD) {
-      this.applySlamInstability(entity, vImpact);
+      const velBefore = entity.vel.clone();
+      const instabDelta = this.applySlamInstability(entity, vImpact);
       entity.pos = clampToHex(entity.pos, this.hexCenter, this.hexRadius);
       const vn = entity.vel.dot(normal);
       if (vn > 0) entity.vel = entity.vel.sub(normal.scale(vn));
+      this.recordSlamCollision(entity, 'HEX_BOUNDARY', vImpact, normal, velBefore, instabDelta);
       if (this.debugPhysicsEnabled) {
         this.recordDebugVector(
           makeDebugVector(entity.pos, normal, vImpact, DEBUG_VECTOR_COLORS.COLLISION, 'hex'),
@@ -611,7 +657,15 @@ export class PhysicsWorld {
     if (hitX) {
       const impactSpeed = Math.abs(entity.vel.x);
       if (impactSpeed > SLAM_SPEED_THRESHOLD) {
-        this.applySlamInstability(entity, impactSpeed);
+        const velBefore = entity.vel.clone();
+        const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
+        const instabDelta = this.applySlamInstability(entity, impactSpeed);
+        entity.pos.x = clampedX;
+        entity.vel.x = 0;
+        this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
+      } else {
+        entity.pos.x = clampedX;
+        entity.vel.x = 0;
       }
       if (this.debugPhysicsEnabled && impactSpeed > 0) {
         const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
@@ -625,13 +679,19 @@ export class PhysicsWorld {
           ),
         );
       }
-      entity.pos.x = clampedX;
-      entity.vel.x = 0;
     }
     if (hitY) {
       const impactSpeed = Math.abs(entity.vel.y);
       if (impactSpeed > SLAM_SPEED_THRESHOLD) {
-        this.applySlamInstability(entity, impactSpeed);
+        const velBefore = entity.vel.clone();
+        const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
+        const instabDelta = this.applySlamInstability(entity, impactSpeed);
+        entity.pos.y = clampedY;
+        entity.vel.y = 0;
+        this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
+      } else {
+        entity.pos.y = clampedY;
+        entity.vel.y = 0;
       }
       if (this.debugPhysicsEnabled && impactSpeed > 0) {
         const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
@@ -645,8 +705,6 @@ export class PhysicsWorld {
           ),
         );
       }
-      entity.pos.y = clampedY;
-      entity.vel.y = 0;
     }
     if (hitX || hitY) {
       this.pendingWallImpacts.push(entity.pos.clone());
@@ -817,11 +875,20 @@ export class PhysicsWorld {
         }
 
         const vImpact = entity.vel.dot(penetration.normal.scale(-1));
+        const velBefore = entity.vel.clone();
         entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
 
         if (vImpact > SLAM_SPEED_THRESHOLD) {
-          this.applySlamInstability(entity, vImpact);
+          const instabDelta = this.applySlamInstability(entity, vImpact);
           this.reflectVelocityAlongNormal(entity, penetration.normal);
+          this.recordSlamCollision(
+            entity,
+            'OBSTACLE',
+            vImpact,
+            penetration.normal,
+            velBefore,
+            instabDelta,
+          );
         }
       }
     }

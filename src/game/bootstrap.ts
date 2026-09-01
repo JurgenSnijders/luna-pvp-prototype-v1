@@ -157,6 +157,15 @@ function init(app: GameApp): void {
   );
 
   window.addEventListener('keydown', (e) => {
+    if (e.code === 'F2') {
+      e.preventDefault();
+      app.copyCombatLog().then((count) => {
+        app.matchHUD.showTransientToast(`Copied ${count} combat events`);
+        console.log(`[CombatLogger] Copied ${count} events (last 10s)`);
+      });
+      return;
+    }
+
     if (e.code === 'F3' || e.code === 'Backquote') {
       e.preventDefault();
       app.togglePhysicsDebug();

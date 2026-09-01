@@ -18,6 +18,7 @@ export class MatchHUD {
   private matchOverTitle: HTMLElement;
   private matchOverScore: HTMLElement;
   private playAgainBtn: HTMLButtonElement;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private callbacks: MatchHUDCallbacks) {
     this.root = document.createElement('div');
@@ -218,6 +219,18 @@ export class MatchHUD {
   }
 
   destroy(): void {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
     this.root.remove();
+  }
+
+  showTransientToast(message: string, durationMs = 2000): void {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.roundToast.textContent = message;
+    this.roundToast.style.color = '#88ffaa';
+    this.roundToast.style.opacity = '1';
+    this.toastTimer = setTimeout(() => {
+      this.roundToast.style.opacity = '0';
+      this.toastTimer = null;
+    }, durationMs);
   }
 }

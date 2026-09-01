@@ -16,7 +16,8 @@
     "test:gemini-sse": "tsx scripts/test-gemini-sse.ts",
     "test:partial-json": "tsx scripts/test-partial-json.ts",
     "test:invariants": "tsx scripts/test-physics-invariants.ts",
-    "test:fidelity": "tsx scripts/test-synthesizer-fidelity.ts"
+    "test:fidelity": "tsx scripts/test-synthesizer-fidelity.ts",
+    "test:telemetry": "tsx scripts/test-combat-logger.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

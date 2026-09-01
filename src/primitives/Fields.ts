@@ -2,6 +2,8 @@ import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
+import { CombatLogger } from '../telemetry/CombatLogger';
+import { vecTelemetry } from '../types/telemetry';
 import { DEBUG_VECTOR_COLORS, makeDebugVector } from '../types/debug';
 import { ARCHETYPE_TUNING } from './interpreter/constants';
 
@@ -21,6 +23,30 @@ function recordFieldForce(
       `${zone.config.fieldType}:${Math.round(zone.config.strength)}`,
     ),
   );
+}
+
+function recordFieldTick(
+  zone: SpatialZone,
+  entity: Entity,
+  force: Vector2D,
+  dist: number,
+  dt: number,
+): void {
+  if (force.magSq() === 0) return;
+  const velocityBefore = vecTelemetry(entity.vel);
+  const projectedVel = entity.vel.add(force.scale(dt));
+  CombatLogger.getInstance().record({
+    type: 'FIELD_ACCEL_TICK',
+    zoneId: zone.id,
+    fieldType: zone.config.fieldType,
+    targetId: entity.id,
+    fieldCenter: { x: zone.pos.x, y: zone.pos.y },
+    distance: dist,
+    strength: zone.config.strength,
+    acceleration: vecTelemetry(force),
+    velocityBefore,
+    velocityAfter: vecTelemetry(projectedVel),
+  });
 }
 
 export function applyField(
@@ -55,6 +81,7 @@ export function applyField(
         .scale(forceScale);
       entity.accel = entity.accel.add(force);
       recordFieldForce(world, entity, zone, force);
+      recordFieldTick(zone, entity, force, dist, dt);
       break;
     }
     case 'VORTEX_TANGENT': {
@@ -76,6 +103,7 @@ export function applyField(
       const combined = tangentForce.add(inward);
       entity.accel = entity.accel.add(combined);
       recordFieldForce(world, entity, zone, combined);
+      recordFieldTick(zone, entity, combined, dist, dt);
       break;
     }
     case 'FRICTION_OVERRIDE':
@@ -96,6 +124,7 @@ export function applyField(
         .scale(forceScale);
       entity.accel = entity.accel.add(pull);
       recordFieldForce(world, entity, zone, pull);
+      recordFieldTick(zone, entity, pull, dist, dt);
       break;
     }
   }

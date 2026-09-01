@@ -16,6 +16,8 @@ import type {
   VisualDescriptor,
 } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
+import { deltaVec, vecTelemetry } from '../../types/telemetry';
+import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { Interpreter } from './Interpreter';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
 import { buildTriggerMap, safeNormalize, secondaryColor } from './helpers';
@@ -122,8 +124,23 @@ export function dispatchAction(
       const implicitSpike = (action.baseForce * 0.02) * tuning.impactInstabilityScale * scale;
       t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
-      // Debug impulse vectors are recorded in PhysicsWorld.applyKnockback.
+      const velocityBefore = vecTelemetry(t.vel);
+      const appliedDir = dir.magSq() > 0 ? dir.normalize() : Vector2D.zero();
       world.applyKnockback(t, dir, action.baseForce * scale);
+      const velocityAfter = vecTelemetry(t.vel);
+      CombatLogger.getInstance().record({
+        type: 'IMPULSE_APPLIED',
+        sourceId: ctx.caster.id,
+        targetId: t.id,
+        abilityId: ctx.ability?.name,
+        baseForce: action.baseForce * scale,
+        directionMode: action.directionMode ?? 'NONE',
+        appliedDirection: vecTelemetry(appliedDir),
+        targetMass: t.effectiveMass,
+        deltaVelocity: deltaVec(velocityBefore, velocityAfter),
+        velocityBefore,
+        velocityAfter,
+      });
       interp.particles?.burstSparks(ctx.origin, 8, interp.activeCastVisuals?.color ?? '#ffaa44');
       break;
     }

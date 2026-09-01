@@ -13,6 +13,7 @@ import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import type { MatchHUD } from '../render/MatchHUD';
 import type { ParticleSystem } from '../render/ParticleSystem';
 import type { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
+import { CombatLogger } from '../telemetry/CombatLogger';
 
 export class GameApp {
   canvas: HTMLCanvasElement;
@@ -53,5 +54,13 @@ export class GameApp {
       this.world.debugVectors.length = 0;
     }
     console.log('[DEBUG] Physics Overlay:', this.world.debugPhysicsEnabled);
+  }
+
+  async copyCombatLog(durationMs = 10_000): Promise<number> {
+    const logger = CombatLogger.getInstance();
+    const events = logger.getRecentEvents(durationMs);
+    const json = logger.exportJson(durationMs);
+    await navigator.clipboard.writeText(json);
+    return events.length;
   }
 }
