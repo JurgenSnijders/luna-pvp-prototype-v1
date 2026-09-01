@@ -20,6 +20,13 @@ export function getInstabilityScale(instabilityPct: number): number {
 const LAVA_DRAG = 0.15;
 const COLLISION_RESTITUTION = 0.3;
 const OBSTACLE_PROJECTILE_DAMAGE = 25;
+const RAMMING_SPEED_THRESHOLD = 350;
+const RAMMING_RECOIL_FACTOR = 0.3;
+const RAMMING_INSTABILITY_SCALE = 0.05;
+const RAMMING_INSTABILITY_CAP = 40;
+const SLAM_SPEED_THRESHOLD = 400;
+const SLAM_INSTABILITY_SCALE = 0.06;
+const SLAM_INSTABILITY_CAP = 50;
 
 interface PenetrationResult {
   normal: Vector2D;
@@ -236,6 +243,61 @@ export class PhysicsWorld {
     target.vel = target.vel.add(impulse);
   }
 
+  private addInstability(entity: Entity, amount: number): void {
+    entity.instabilityPct = Math.min(500, entity.instabilityPct + amount);
+  }
+
+  private applyVelocityImpulse(entity: Entity, impulse: Vector2D): void {
+    if (entity.stasisRemainingMs > 0) {
+      entity.stashedMomentum = entity.stashedMomentum.add(
+        impulse.scale(entity.forceAccumulatorScale),
+      );
+      return;
+    }
+    entity.vel = entity.vel.add(impulse);
+  }
+
+  private applyRammingImpulse(
+    rammer: Entity,
+    target: Entity,
+    closingSpeed: number,
+  ): void {
+    const knockDelta = target.pos.sub(rammer.pos);
+    const knockDir =
+      knockDelta.magSq() > 0 ? knockDelta.normalize() : Vector2D.fromAngle(0);
+
+    const reducedMass =
+      (rammer.effectiveMass * target.effectiveMass) /
+      (rammer.effectiveMass + target.effectiveMass);
+    const J = closingSpeed * 0.5 * reducedMass;
+
+    this.applyVelocityImpulse(target, knockDir.scale(J / target.effectiveMass));
+    this.applyVelocityImpulse(
+      rammer,
+      knockDir.scale(-(J * RAMMING_RECOIL_FACTOR) / rammer.effectiveMass),
+    );
+
+    const rammingInstability = Math.min(
+      RAMMING_INSTABILITY_CAP,
+      (closingSpeed - RAMMING_SPEED_THRESHOLD) * RAMMING_INSTABILITY_SCALE,
+    );
+    this.addInstability(target, rammingInstability);
+  }
+
+  private applySlamInstability(entity: Entity, impactSpeed: number): void {
+    const slamInstability = Math.min(
+      SLAM_INSTABILITY_CAP,
+      (impactSpeed - SLAM_SPEED_THRESHOLD) * SLAM_INSTABILITY_SCALE,
+    );
+    this.addInstability(entity, slamInstability);
+  }
+
+  private reflectVelocityAlongNormal(entity: Entity, normal: Vector2D): void {
+    const vn = entity.vel.dot(normal);
+    if (vn >= 0) return;
+    entity.vel = entity.vel.sub(normal.scale((1 + COLLISION_RESTITUTION) * vn));
+  }
+
   getEntitiesInRadius(center: Vector2D, radius: number): Entity[] {
     const results: Entity[] = [];
     const radiusSq = radius * radius;
@@ -363,6 +425,16 @@ export class PhysicsWorld {
 
     if (velAlongNormal > 0) return;
 
+    const closingSpeed = -velAlongNormal;
+    if (closingSpeed > RAMMING_SPEED_THRESHOLD) {
+      const aApproach = a.vel.dot(normal);
+      const bApproach = b.vel.dot(normal.scale(-1));
+      const rammer = aApproach >= bApproach ? a : b;
+      const target = rammer === a ? b : a;
+      this.applyRammingImpulse(rammer, target, closingSpeed);
+      return;
+    }
+
     const impulseMag =
       (-(1 + COLLISION_RESTITUTION) * velAlongNormal) /
       (1 / a.effectiveMass + 1 / b.effectiveMass);
@@ -417,10 +489,18 @@ export class PhysicsWorld {
     const hitY = clampedY !== entity.pos.y;
 
     if (hitX) {
+      const impactSpeed = Math.abs(entity.vel.x);
+      if (impactSpeed > SLAM_SPEED_THRESHOLD) {
+        this.applySlamInstability(entity, impactSpeed);
+      }
       entity.pos.x = clampedX;
       entity.vel.x = 0;
     }
     if (hitY) {
+      const impactSpeed = Math.abs(entity.vel.y);
+      if (impactSpeed > SLAM_SPEED_THRESHOLD) {
+        this.applySlamInstability(entity, impactSpeed);
+      }
       entity.pos.y = clampedY;
       entity.vel.y = 0;
     }
@@ -587,9 +667,18 @@ export class PhysicsWorld {
           continue;
         }
 
-        if (entity.stasisRemainingMs > 0) continue;
+        if (entity.stasisRemainingMs > 0) {
+          entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
+          continue;
+        }
 
+        const vImpact = entity.vel.dot(penetration.normal.scale(-1));
         entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
+
+        if (vImpact > SLAM_SPEED_THRESHOLD) {
+          this.applySlamInstability(entity, vImpact);
+          this.reflectVelocityAlongNormal(entity, penetration.normal);
+        }
       }
     }
 

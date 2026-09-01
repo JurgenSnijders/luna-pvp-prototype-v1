@@ -1,6 +1,7 @@
 import type { SkillCategory } from '../../../types/cards';
 import type { AbilitySchema, SpellArchetype, TriggerNode } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET, validateAbilitySchema } from '../../../types/schema';
+import { repairAbilitySemantics } from '../repair';
 import { ensureFiniteNumber, isObject } from '../helpers';
 import { sanitizeInputProfile, sanitizeResourceCost } from './condition';
 import { hasOnCastEffect, promoteRootEmitter, sanitizeTriggerNode } from './trigger';
@@ -11,6 +12,7 @@ export function sanitizeAbilitySchema(
   raw: unknown,
   _category: SkillCategory = 'SECONDARY',
   sanitizeDepth = 0,
+  description?: string,
 ): AbilitySchema {
   const obj = isObject(raw) ? { ...raw } : {};
 
@@ -69,13 +71,17 @@ export function sanitizeAbilitySchema(
   }
 
   const validated = validateAbilitySchema(schema);
-  return validated ?? {
-    id,
-    name,
-    cooldownMs,
-    recoilKick,
-    trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
-    triggers: [],
-    visuals: sanitizeVisuals(undefined),
-  };
+  if (!validated) {
+    return {
+      id,
+      name,
+      cooldownMs,
+      recoilKick,
+      trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+      triggers: [],
+      visuals: sanitizeVisuals(undefined),
+    };
+  }
+
+  return repairAbilitySemantics(validated, description ?? validated.name);
 }

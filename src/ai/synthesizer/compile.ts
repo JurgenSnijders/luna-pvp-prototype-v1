@@ -80,14 +80,11 @@ function fallbackCompiledSchema(
     source = forged[0]?.abilityPayload ?? forged[1]?.abilityPayload;
   }
 
+  const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
   const compiled = source ? structuredClone(source) : sanitizeAbilitySchema({}, category);
   compiled.id = card.id || compiled.id;
   compiled.name = card.title || compiled.name;
-  const result = sanitizeAbilitySchema(compiled, category);
-  // #region agent log
-  fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'compile.ts:fallback',message:'fallback compiled schema',data:{cardTitle:card.title,abilityName:result.name,archetype:result.archetype,triggers:result.triggers.map((t)=>({trigger:t.trigger,actionTypes:t.actions.map((a)=>a.type),impulses:t.actions.filter((a)=>a.type==='APPLY_IMPULSE')})),usedRecipe:!!recipe},timestamp:Date.now(),hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
-  return result;
+  return sanitizeAbilitySchema(compiled, category, 0, compileDescription);
 }
 
 /**
@@ -135,16 +132,12 @@ export async function compileAbilityPayload(
   const normalized = deepNormalizeLLMValue(parseResult.value);
   const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
   const repaired = repairAbilityPayload(normalized, compileDescription);
-  const sanitized = sanitizeAbilitySchema(repaired, category);
+  const sanitized = sanitizeAbilitySchema(repaired, category, 0, compileDescription);
 
   if (!validateAbilitySchema(sanitized)) {
     console.warn('[Synthesizer] compileAbilityPayload validation failed, using fallback');
     return fallbackCompiledSchema(card, baseAbility, category);
   }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'compile.ts:compiled',message:'compiled ability schema',data:{cardTitle:card.title,abilityName:sanitized.name,archetype:sanitized.archetype,hasTrajectory:!!sanitized.trajectory,triggers:sanitized.triggers.map((t)=>({trigger:t.trigger,actionTypes:t.actions.map((a)=>a.type),impulses:t.actions.filter((a)=>a.type==='APPLY_IMPULSE').map((a)=>a),fields:t.actions.filter((a)=>a.type==='SPAWN_FIELD').map((a)=>a.field?.fieldType)})),recoilKick:sanitized.recoilKick},timestamp:Date.now(),hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
 
   return sanitized;
 }

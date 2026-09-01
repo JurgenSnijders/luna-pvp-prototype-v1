@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sanitizeAbilitySchema, scoreAbilitySchema } from '../src/ai/BudgetEngine';
+import { sanitizeAbilitySchema, schemaHasApplyImpulse, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
+import type { AbilitySchema } from '../src/types/schema';
 import { validateAbilitySchema } from '../src/types/schema';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,9 +14,30 @@ function roundScore(score: number): number {
   return Math.round(score * 100) / 100;
 }
 
+function hasOnHitImpulse(schema: AbilitySchema): boolean {
+  const onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+  return onHit?.actions.some((a) => a.type === 'APPLY_IMPULSE') ?? false;
+}
+
+function runDisplacementAssertions(): string[] {
+  const failures: string[] = [];
+
+  const cryo = sanitizeAbilitySchema(PRESETS['Cryo Ice Trail'], 'SECONDARY');
+  if (!hasOnHitImpulse(cryo)) {
+    failures.push('Cryo Ice Trail: expected ON_HIT APPLY_IMPULSE after sanitize');
+  }
+
+  const iceBarrier = sanitizeAbilitySchema(PRESETS['Ice Barrier'], 'SECONDARY');
+  if (schemaHasApplyImpulse(iceBarrier)) {
+    failures.push('Ice Barrier: must not receive APPLY_IMPULSE injection');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
-  const failures: string[] = [];
+  const failures: string[] = runDisplacementAssertions();
 
   for (const [name, preset] of Object.entries(PRESETS)) {
     const validated = validateAbilitySchema(preset);

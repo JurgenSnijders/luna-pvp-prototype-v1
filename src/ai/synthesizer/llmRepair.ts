@@ -1,4 +1,4 @@
-import { repairAbilitySemantics, sanitizeAbilitySchema } from '../BudgetEngine';
+import { sanitizeAbilitySchema } from '../BudgetEngine';
 import type { CardRarity, SkillCategory } from '../../types/cards';
 import type { TriggerNode } from '../../types/schema';
 import { ACTION_TYPES, TRIGGER_TYPES, validateAbilitySchema } from '../../types/schema';
@@ -641,13 +641,6 @@ export function repairAbilityPayload(payload: unknown, description?: string): un
     delete obj.metadata;
   }
 
-  if (description) {
-    const category = 'SECONDARY' as SkillCategory;
-    const sanitized = sanitizeAbilitySchema(obj, category);
-    const semantic = repairAbilitySemantics(sanitized, description);
-    return semantic;
-  }
-
   return obj;
 }
 
@@ -679,7 +672,12 @@ function repairDraftCard(card: unknown, index = 0): unknown {
     const repaired = repairAbilityPayload(obj.abilityPayload, description || undefined);
     const category =
       typeof obj.category === 'string' ? (obj.category as SkillCategory) : 'SECONDARY';
-    obj.abilityPayload = sanitizeAbilitySchema(repaired, category);
+    obj.abilityPayload = sanitizeAbilitySchema(
+      repaired,
+      category,
+      0,
+      description || undefined,
+    );
   }
   return obj;
 }

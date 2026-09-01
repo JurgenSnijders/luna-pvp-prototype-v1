@@ -117,21 +117,12 @@ export function dispatchAction(
     }
     case 'APPLY_IMPULSE': {
       const t = resolveActionTarget(action.target, ctx);
-      if (!t) {
-        // #region agent log
-        fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'actions.ts:APPLY_IMPULSE',message:'impulse skipped — no target',data:{actionTarget:action.target,hasTargetEntity:!!ctx.targetEntity,casterId:ctx.caster.id},timestamp:Date.now(),hypothesisId:'C,E'})}).catch(()=>{});
-        // #endregion
-        break;
-      }
+      if (!t) break;
       const tuning = getArchetypeTuning(ctx);
       const implicitSpike = (action.baseForce * 0.02) * tuning.impactInstabilityScale * scale;
       t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
-      const force = action.baseForce * scale;
-      // #region agent log
-      fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'actions.ts:APPLY_IMPULSE',message:'impulse applied',data:{actionTarget:action.target,directionMode:action.directionMode,baseForce:action.baseForce,scale,force,dirX:dir.x,dirY:dir.y,resolvedTargetId:t.id,resolvedMass:t.effectiveMass,knockbackResistance:t.knockbackResistance,stasisMs:t.stasisRemainingMs,archetype:ctx.ability?.archetype,velBeforeX:t.vel.x,velBeforeY:t.vel.y},timestamp:Date.now(),hypothesisId:'C,D'})}).catch(()=>{});
-      // #endregion
-      world.applyKnockback(t, dir, force);
+      world.applyKnockback(t, dir, action.baseForce * scale);
       interp.particles?.burstSparks(ctx.origin, 8, interp.activeCastVisuals?.color ?? '#ffaa44');
       break;
     }

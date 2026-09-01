@@ -55,6 +55,19 @@ function repairTriggersSemantics(nodes: TriggerNode[], desc: string): TriggerNod
   }));
 }
 
+function collectAllActions(nodes: TriggerNode[]): ActionPayload[] {
+  const all: ActionPayload[] = [];
+  const collect = (triggerNodes: TriggerNode[]): void => {
+    for (const node of triggerNodes) {
+      all.push(...node.actions);
+      if (node.ifFalseActions) all.push(...node.ifFalseActions);
+      if (node.children) collect(node.children);
+    }
+  };
+  collect(nodes);
+  return all;
+}
+
 function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
   for (const action of actions) {
     if (action.type === 'APPLY_IMPULSE') return true;
@@ -85,31 +98,15 @@ function abilityProvidesDisplacement(schema: AbilitySchema): boolean {
   return triggersProvideDisplacement(schema.triggers);
 }
 
-function isStrictlyDefensiveUtility(schema: AbilitySchema): boolean {
+/** No trajectory and only obstacle/field spawns — barriers, vortices, quakes. */
+function isPureSpatialUtility(schema: AbilitySchema): boolean {
   if (schema.trajectory) return false;
 
-  const allActions: ActionPayload[] = [];
-  const collect = (nodes: TriggerNode[]): void => {
-    for (const node of nodes) {
-      allActions.push(...node.actions);
-      if (node.ifFalseActions) allActions.push(...node.ifFalseActions);
-      if (node.children) collect(node.children);
-    }
-  };
-  collect(schema.triggers);
+  const allActions = collectAllActions(schema.triggers);
   if (allActions.length === 0) return false;
 
   return allActions.every(
-    (action) =>
-      action.type === 'APPLY_STASIS' ||
-      action.type === 'RELEASE_STASIS' ||
-      action.type === 'APPLY_STEALTH' ||
-      action.type === 'MORPH_ENTITY' ||
-      action.type === 'TELEPORT' ||
-      action.type === 'SPAWN_OBSTACLE' ||
-      action.type === 'REFLECT_PROJECTILES' ||
-      action.type === 'MUTATE_TERRAIN' ||
-      (action.type === 'SPAWN_FIELD' && action.field.fieldType === 'FRICTION_OVERRIDE'),
+    (action) => action.type === 'SPAWN_OBSTACLE' || action.type === 'SPAWN_FIELD',
   );
 }
 
@@ -137,45 +134,33 @@ function defaultKnockbackImpulse(archetype?: SpellArchetype): ApplyImpulseAction
 }
 
 function ensureDisplacementSemantics(schema: AbilitySchema): AbilitySchema {
-  if (abilityProvidesDisplacement(schema) || isStrictlyDefensiveUtility(schema)) {
+  if (abilityProvidesDisplacement(schema) || isPureSpatialUtility(schema)) {
     return schema;
   }
 
-  const impulse = defaultKnockbackImpulse(schema.archetype);
-  const isProjectile = !!schema.trajectory;
-
-  if (isProjectile) {
-    let onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
-    if (!onHit) {
-      onHit = { trigger: 'ON_HIT', actions: [] };
-      schema.triggers.push(onHit);
-    }
-    if (!actionsProvideDisplacement(onHit.actions)) {
-      onHit.actions.push(impulse);
-      // #region agent log
-      fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'repair.ts:ensureDisplacement',message:'injected ON_HIT knockback',data:{abilityName:schema.name,archetype:schema.archetype,baseForce:impulse.baseForce},timestamp:Date.now(),hypothesisId:'A-fix',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
+  if (!schema.trajectory) {
+    const onExpiry = schema.triggers.find((t) => t.trigger === 'ON_EXPIRY');
+    if (onExpiry && !actionsProvideDisplacement(onExpiry.actions)) {
+      onExpiry.actions.push({
+        type: 'SPAWN_FIELD',
+        field: {
+          fieldType: 'RADIAL_IMPULSE',
+          radius: 80,
+          strength: 600,
+          durationMs: 400,
+        },
+      });
     }
     return schema;
   }
 
-  const onExpiry = schema.triggers.find((t) => t.trigger === 'ON_EXPIRY');
-  if (onExpiry && !actionsProvideDisplacement(onExpiry.actions)) {
-    onExpiry.actions.push({
-      type: 'SPAWN_FIELD',
-      field: {
-        fieldType: 'RADIAL_IMPULSE',
-        radius: 80,
-        strength: 600,
-        durationMs: 400,
-      },
-    });
-    return schema;
+  let onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+  if (!onHit) {
+    onHit = { trigger: 'ON_HIT', actions: [] };
+    schema.triggers.push(onHit);
   }
-
-  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
-  if (onCast && !actionsProvideDisplacement(onCast.actions)) {
-    onCast.actions.push(impulse);
+  if (!actionsProvideDisplacement(onHit.actions)) {
+    onHit.actions.push(defaultKnockbackImpulse(schema.archetype));
   }
 
   return schema;
@@ -190,4 +175,9 @@ export function repairAbilitySemantics(
   const cloned = structuredClone(payload);
   cloned.triggers = repairTriggersSemantics(cloned.triggers, desc);
   return ensureDisplacementSemantics(cloned);
+}
+
+/** Returns true if the schema contains any APPLY_IMPULSE action (for tests). */
+export function schemaHasApplyImpulse(schema: AbilitySchema): boolean {
+  return collectAllActions(schema.triggers).some((a) => a.type === 'APPLY_IMPULSE');
 }

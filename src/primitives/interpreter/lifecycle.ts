@@ -113,14 +113,6 @@ export function processLifecycleEvents(
     interp.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
     if (shake > 0) screenShake.trigger(shake * 4, 0.12);
-    // #region agent log
-    {
-      const onHitNodes = hit.projectile.getTriggers('ON_HIT');
-      const onHitActionTypes = onHitNodes.flatMap((n) => n.actions.map((a) => a.type));
-      const hasImpulse = onHitActionTypes.includes('APPLY_IMPULSE');
-      fetch('http://127.0.0.1:7853/ingest/87466bd9-6f45-4f18-b6dd-cf4ace948d67',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae00b1'},body:JSON.stringify({sessionId:'ae00b1',location:'lifecycle.ts:ON_HIT',message:'projectile hit',data:{abilityName:hit.projectile.abilityName,archetype:hit.projectile.spellArchetype,onHitNodeCount:onHitNodes.length,onHitActionTypes,hasImpulse,targetId:hit.target.id,targetMass:hit.target.effectiveMass},timestamp:Date.now(),hypothesisId:'A,B,E'})}).catch(()=>{});
-    }
-    // #endregion
     dispatchProjectileTriggers(
       interp,
       hit.projectile,
