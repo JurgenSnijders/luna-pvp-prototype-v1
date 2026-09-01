@@ -9,7 +9,20 @@ import {
 } from '../graphicsSettings';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
-import { buttonStyle } from './domHelpers';
+import {
+  retroVfxConfig,
+  saveRetroConfigToStorage,
+  type RetroShaderConfig,
+} from '../../render/gl/retroVfxConfig';
+import { STYLE_PRESETS, type StylePresetId } from '../../render/presets/stylePresets';
+import { styleManager } from '../../ui/styleManager';
+import { FONTS, RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
+import {
+  buttonStyle,
+  createSelectRow,
+  createSliderRow,
+  type SliderRowHandle,
+} from './domHelpers';
 
 export function buildGraphicsTab(parent: HTMLElement): void {
   const section = document.createElement('div');
@@ -146,4 +159,104 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   section.appendChild(highQualityBtn);
 
   parent.appendChild(section);
+
+  buildRetroCrtPanel(parent);
+}
+
+type SliderKey = Exclude<keyof RetroShaderConfig, 'enabled' | 'tintColor'>;
+
+interface SliderBinding {
+  key: SliderKey;
+  handle: SliderRowHandle;
+}
+
+function buildRetroCrtPanel(parent: HTMLElement): void {
+  const panel = document.createElement('div');
+  panel.style.cssText = retroPanelStyle('cyan') + 'padding: 12px; margin-top: 12px;';
+
+  const header = document.createElement('div');
+  header.textContent = 'RETRO & CRT ENGINE';
+  header.style.cssText = `font-weight: bold; margin-bottom: 12px; font-size: 12px; color: ${RETRO_COLORS.textPrimary}; font-family: ${FONTS.mono}; letter-spacing: 0.08em;`;
+  panel.appendChild(header);
+
+  const crtEnabledRow = document.createElement('label');
+  crtEnabledRow.style.cssText =
+    'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:10px;font-family:' +
+    FONTS.mono +
+    ';';
+  const crtEnabledCheckbox = document.createElement('input');
+  crtEnabledCheckbox.type = 'checkbox';
+  crtEnabledCheckbox.checked = retroVfxConfig.enabled;
+  crtEnabledCheckbox.onchange = () => {
+    retroVfxConfig.enabled = crtEnabledCheckbox.checked;
+    saveRetroConfigToStorage();
+  };
+  crtEnabledRow.appendChild(crtEnabledCheckbox);
+  crtEnabledRow.appendChild(document.createTextNode('CRT Master Pass'));
+  panel.appendChild(crtEnabledRow);
+
+  const presetSelect = createSelectRow(
+    'Style Preset',
+    Object.values(STYLE_PRESETS).map((p) => ({ value: p.id, label: p.name })),
+    styleManager.getPresetId(),
+    (id) => styleManager.applyPreset(id as StylePresetId),
+  );
+  panel.appendChild(presetSelect.element);
+
+  const sliderBindings: SliderBinding[] = [];
+  const sliderDefs: Array<{
+    label: string;
+    key: SliderKey;
+    min: number;
+    max: number;
+    step: number;
+  }> = [
+    { label: 'Scanline Intensity', key: 'scanlineIntensity', min: 0, max: 1, step: 0.05 },
+    { label: 'Scanline Density', key: 'scanlineDensity', min: 0.25, max: 3, step: 0.25 },
+    { label: 'Curvature', key: 'curvature', min: 0, max: 0.08, step: 0.005 },
+    { label: 'Vignette', key: 'vignetteIntensity', min: 0, max: 1, step: 0.05 },
+    { label: 'Chromatic Aberration', key: 'chromaticAberration', min: 0, max: 0.01, step: 0.0005 },
+    { label: 'Bloom Intensity', key: 'bloomIntensity', min: 0.5, max: 3.5, step: 0.1 },
+    { label: 'Bloom Threshold', key: 'bloomThreshold', min: 0.2, max: 0.9, step: 0.05 },
+    { label: 'Phosphor Grid', key: 'phosphorGridIntensity', min: 0, max: 0.5, step: 0.05 },
+    { label: 'Flicker', key: 'flickerIntensity', min: 0, max: 0.05, step: 0.005 },
+    { label: 'Contrast', key: 'contrast', min: 0.5, max: 2, step: 0.05 },
+    { label: 'Brightness', key: 'brightness', min: 0.5, max: 2, step: 0.05 },
+    { label: 'Tint Amount', key: 'tintAmount', min: 0, max: 1, step: 0.05 },
+  ];
+
+  for (const def of sliderDefs) {
+    const handle = createSliderRow(
+      def.label,
+      def.min,
+      def.max,
+      def.step,
+      retroVfxConfig[def.key] as number,
+      (val) => {
+        (retroVfxConfig as Record<SliderKey, number>)[def.key] = val;
+        saveRetroConfigToStorage();
+      },
+    );
+    sliderBindings.push({ key: def.key, handle });
+    panel.appendChild(handle.element);
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset to Preset Defaults';
+  resetBtn.style.cssText = buttonStyle(false) + 'margin-top:8px;width:100%;';
+  resetBtn.onclick = () => styleManager.resetCurrentPresetDefaults();
+  panel.appendChild(resetBtn);
+
+  const syncSlidersFromConfig = (): void => {
+    for (const { key, handle } of sliderBindings) {
+      handle.setValue(retroVfxConfig[key] as number);
+    }
+    crtEnabledCheckbox.checked = retroVfxConfig.enabled;
+    presetSelect.setValue(styleManager.getPresetId());
+  };
+
+  window.addEventListener('stylepresetapplied', syncSlidersFromConfig);
+  syncSlidersFromConfig();
+
+  parent.appendChild(panel);
 }

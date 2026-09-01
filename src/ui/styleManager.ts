@@ -1,6 +1,8 @@
 import {
   DEFAULT_RETRO_CONFIG,
+  loadRetroConfigFromStorage,
   retroVfxConfig,
+  saveRetroConfigToStorage,
 } from '../render/gl/retroVfxConfig';
 import {
   STYLE_PRESETS,
@@ -8,6 +10,8 @@ import {
   type StylePresetColors,
   type StylePresetId,
 } from '../render/presets/stylePresets';
+
+export const RETRO_STYLE_PRESET_KEY = 'retro_style_preset';
 
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '');
@@ -43,7 +47,7 @@ class StyleManager {
     return STYLE_PRESETS[this.currentPreset].colors;
   }
 
-  applyPreset(id: StylePresetId): void {
+  applyPreset(id: StylePresetId, saveToStorage = true): void {
     const preset = STYLE_PRESETS[id];
     if (!preset) return;
 
@@ -76,15 +80,36 @@ class StyleManager {
     document.body.style.backgroundColor = c.bgDark;
     document.body.style.color = c.textPrimary;
 
+    if (saveToStorage) {
+      localStorage.setItem(RETRO_STYLE_PRESET_KEY, id);
+      saveRetroConfigToStorage();
+    }
+
     window.dispatchEvent(
       new CustomEvent('stylepresetapplied', { detail: { id } }),
+    );
+  }
+
+  resetCurrentPresetDefaults(): void {
+    const preset = STYLE_PRESETS[this.currentPreset];
+    Object.assign(retroVfxConfig, { ...DEFAULT_RETRO_CONFIG }, preset.shader);
+    saveRetroConfigToStorage();
+    window.dispatchEvent(
+      new CustomEvent('stylepresetapplied', { detail: { id: this.currentPreset } }),
     );
   }
 }
 
 export const styleManager = new StyleManager();
 
-styleManager.applyPreset('CYBER_NEON');
+function initStyleManager(): void {
+  const stored = localStorage.getItem(RETRO_STYLE_PRESET_KEY) as StylePresetId | null;
+  const id = stored && STYLE_PRESETS[stored] ? stored : 'CYBER_NEON';
+  styleManager.applyPreset(id, false);
+  loadRetroConfigFromStorage();
+}
+
+initStyleManager();
 
 (window as unknown as { __setStylePreset?: (id: StylePresetId) => void }).__setStylePreset =
   (id: StylePresetId) => styleManager.applyPreset(id);

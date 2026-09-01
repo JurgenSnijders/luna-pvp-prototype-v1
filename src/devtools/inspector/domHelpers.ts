@@ -60,3 +60,119 @@ export function inputStyle(): string {
       border-radius:4px;font-size:12px;font-family:${FONTS.mono};
     `;
 }
+
+export interface SliderRowHandle {
+  element: HTMLElement;
+  setValue: (val: number) => void;
+}
+
+function formatSliderValue(value: number, step: number): string {
+  if (step < 0.001) return value.toFixed(4);
+  if (step < 0.01) return value.toFixed(3);
+  if (step < 1) return value.toFixed(2);
+  return String(Math.round(value));
+}
+
+export function createSliderRow(
+  label: string,
+  min: number,
+  max: number,
+  step: number,
+  initialValue: number,
+  onChange: (val: number) => void,
+): SliderRowHandle {
+  const row = document.createElement('div');
+  row.style.cssText = 'margin-bottom: 10px;';
+
+  const header = document.createElement('div');
+  header.style.cssText =
+    'display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;';
+
+  const lbl = document.createElement('span');
+  lbl.textContent = label;
+  lbl.style.cssText = `font-size: 11px; color: ${RETRO_COLORS.textMuted}; font-family: ${FONTS.mono};`;
+
+  const readout = document.createElement('span');
+  readout.style.cssText = `font-size: 11px; color: ${RETRO_COLORS.textPrimary}; font-family: ${FONTS.mono};`;
+
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.style.cssText = `width: 100%; accent-color: ${RETRO_COLORS.neonCyan};`;
+
+  let syncing = false;
+
+  const setValue = (val: number): void => {
+    syncing = true;
+    input.value = String(val);
+    readout.textContent = formatSliderValue(val, step);
+    syncing = false;
+  };
+
+  input.oninput = () => {
+    if (syncing) return;
+    const v = parseFloat(input.value);
+    readout.textContent = formatSliderValue(v, step);
+    onChange(v);
+  };
+
+  setValue(initialValue);
+
+  header.appendChild(lbl);
+  header.appendChild(readout);
+  row.appendChild(header);
+  row.appendChild(input);
+
+  return { element: row, setValue };
+}
+
+export interface SelectRowHandle {
+  element: HTMLElement;
+  setValue: (val: string) => void;
+}
+
+export function createSelectRow(
+  label: string,
+  options: Array<{ value: string; label: string }>,
+  initialValue: string,
+  onChange: (val: string) => void,
+): SelectRowHandle {
+  const row = document.createElement('div');
+  row.style.cssText = 'margin-bottom: 10px;';
+
+  const lbl = document.createElement('div');
+  lbl.textContent = label;
+  lbl.style.cssText = `font-size: 11px; color: ${RETRO_COLORS.textMuted}; font-family: ${FONTS.mono}; margin-bottom: 4px;`;
+
+  const select = document.createElement('select');
+  select.style.cssText = inputStyle();
+
+  for (const opt of options) {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.appendChild(option);
+  }
+
+  let syncing = false;
+
+  const setValue = (val: string): void => {
+    syncing = true;
+    select.value = val;
+    syncing = false;
+  };
+
+  select.onchange = () => {
+    if (syncing) return;
+    onChange(select.value);
+  };
+
+  setValue(initialValue);
+
+  row.appendChild(lbl);
+  row.appendChild(select);
+
+  return { element: row, setValue };
+}

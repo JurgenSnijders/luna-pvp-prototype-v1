@@ -34,5 +34,22 @@ export const DEFAULT_RETRO_CONFIG: RetroShaderConfig = {
 
 export const retroVfxConfig: RetroShaderConfig = { ...DEFAULT_RETRO_CONFIG };
 
+export const RETRO_VFX_STORAGE_KEY = 'retro_vfx_config';
+
+export function saveRetroConfigToStorage(): void {
+  localStorage.setItem(RETRO_VFX_STORAGE_KEY, JSON.stringify(retroVfxConfig));
+}
+
+export function loadRetroConfigFromStorage(): void {
+  try {
+    const raw = localStorage.getItem(RETRO_VFX_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Partial<RetroShaderConfig>;
+    Object.assign(retroVfxConfig, parsed);
+  } catch {
+    // ignore corrupt storage
+  }
+}
+
 (window as unknown as { __retroVfxConfig?: RetroShaderConfig }).__retroVfxConfig =
   retroVfxConfig;
