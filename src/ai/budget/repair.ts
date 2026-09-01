@@ -98,7 +98,11 @@ function repairImpulseSemantics(
   return patched;
 }
 
-function repairActionsSemantics(actions: ActionPayload[], text: string): ActionPayload[] {
+function repairActionsSemantics(
+  actions: ActionPayload[],
+  text: string,
+  isHeadlessMode: boolean,
+): ActionPayload[] {
   return actions.map((action) => {
     if (action.type === 'APPLY_IMPULSE') {
       return repairImpulseSemantics(action, text);
@@ -106,27 +110,33 @@ function repairActionsSemantics(actions: ActionPayload[], text: string): ActionP
     if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
       return {
         ...action,
-        triggers: repairTriggersSemantics(action.triggers, text),
+        triggers: repairTriggersSemantics(action.triggers, text, isHeadlessMode),
       };
     }
     if (action.type === 'CAST_CHILD_PAYLOAD') {
       return {
         ...action,
-        payload: repairAbilitySemantics(action.payload, text),
+        payload: repairAbilitySemantics(action.payload, text, isHeadlessMode),
       };
     }
     return action;
   });
 }
 
-function repairTriggersSemantics(nodes: TriggerNode[], text: string): TriggerNode[] {
+function repairTriggersSemantics(
+  nodes: TriggerNode[],
+  text: string,
+  isHeadlessMode: boolean,
+): TriggerNode[] {
   return nodes.map((node) => ({
     ...node,
-    actions: repairActionsSemantics(node.actions, text),
+    actions: repairActionsSemantics(node.actions, text, isHeadlessMode),
     ifFalseActions: node.ifFalseActions
-      ? repairActionsSemantics(node.ifFalseActions, text)
+      ? repairActionsSemantics(node.ifFalseActions, text, isHeadlessMode)
       : undefined,
-    children: node.children ? repairTriggersSemantics(node.children, text) : undefined,
+    children: node.children
+      ? repairTriggersSemantics(node.children, text, isHeadlessMode)
+      : undefined,
   }));
 }
 
@@ -304,7 +314,11 @@ function applyRuleE_Orbit(schema: AbilitySchema, text: string): void {
   }
 }
 
-function applyRuleA_PullGravity(schema: AbilitySchema, text: string): void {
+function applyRuleA_PullGravity(
+  schema: AbilitySchema,
+  text: string,
+  isHeadlessMode: boolean,
+): void {
   if (!isPullConcept(text) || isOrbitConcept(text)) return;
 
   const needsPersistentWell =
@@ -344,7 +358,7 @@ function applyRuleA_PullGravity(schema: AbilitySchema, text: string): void {
     schema.triggers.push(onHit);
   }
   if (!actionsProvideDisplacement(onHit.actions)) {
-    onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text));
+    onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text, isHeadlessMode));
   }
 }
 
@@ -589,7 +603,11 @@ const ARCHETYPE_KNOCKBACK_FORCE: Partial<Record<SpellArchetype, number>> = {
   GRAVITY: 400,
 };
 
-function ensureProjectileTriggerDisplacement(schema: AbilitySchema, text: string): void {
+function ensureProjectileTriggerDisplacement(
+  schema: AbilitySchema,
+  text: string,
+  isHeadlessMode: boolean,
+): void {
   for (const node of schema.triggers) {
     if (node.trigger !== 'ON_CAST') continue;
     for (const action of node.actions) {
@@ -601,7 +619,7 @@ function ensureProjectileTriggerDisplacement(schema: AbilitySchema, text: string
         action.triggers.push(onHit);
       }
       if (!actionsProvideDisplacement(onHit.actions)) {
-        onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text));
+        onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text, isHeadlessMode));
       }
     }
   }
@@ -610,10 +628,13 @@ function ensureProjectileTriggerDisplacement(schema: AbilitySchema, text: string
 function defaultKnockbackImpulse(
   archetype: SpellArchetype | undefined,
   text: string,
+  isHeadlessMode: boolean,
 ): ApplyImpulseAction {
   const pull = isPullConcept(text) && !isPushConcept(text);
   const archetypeForce = ARCHETYPE_KNOCKBACK_FORCE[archetype ?? 'KINETIC'] ?? 500;
-  const injectedForce = Math.max(archetypeForce, INJECTED_IMPULSE_FORCE);
+  const injectedForce = isHeadlessMode
+    ? Math.max(archetypeForce, INJECTED_IMPULSE_FORCE)
+    : archetypeForce;
 
   if (pull) {
     return {
@@ -632,7 +653,11 @@ function defaultKnockbackImpulse(
   };
 }
 
-function ensureDisplacementSemantics(schema: AbilitySchema, text: string): AbilitySchema {
+function ensureDisplacementSemantics(
+  schema: AbilitySchema,
+  text: string,
+  isHeadlessMode: boolean,
+): AbilitySchema {
   if (
     abilityProvidesDisplacement(schema) ||
     isPureSpatialUtility(schema) ||
@@ -677,7 +702,7 @@ function ensureDisplacementSemantics(schema: AbilitySchema, text: string): Abili
     schema.triggers.push(onHit);
   }
   if (!actionsProvideDisplacement(onHit.actions)) {
-    onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text));
+    onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text, isHeadlessMode));
   }
 
   return schema;
@@ -699,6 +724,7 @@ function clampContinuousFieldStrength(schema: AbilitySchema): void {
 export function repairAbilitySemantics(
   payload: AbilitySchema,
   descriptionText = '',
+  isHeadlessMode = false,
 ): AbilitySchema {
   const text = (
     descriptionText ||
@@ -706,19 +732,19 @@ export function repairAbilitySemantics(
   ).toLowerCase();
 
   const cloned = structuredClone(payload);
-  cloned.triggers = repairTriggersSemantics(cloned.triggers, text);
+  cloned.triggers = repairTriggersSemantics(cloned.triggers, text, isHeadlessMode);
 
   if (text) {
     applyRuleF_Obstacle(cloned, text);
     applyRuleE_Orbit(cloned, text);
-    applyRuleA_PullGravity(cloned, text);
+    applyRuleA_PullGravity(cloned, text, isHeadlessMode);
     applyRuleB_LingeringHazard(cloned, text);
     applyRuleC_ArcSweep(cloned, text);
     applyRuleD_ChanneledStream(cloned, text);
-    ensureProjectileTriggerDisplacement(cloned, text);
+    ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);
   }
 
-  const result = ensureDisplacementSemantics(cloned, text);
+  const result = ensureDisplacementSemantics(cloned, text, isHeadlessMode);
   clampContinuousFieldStrength(result);
   return result;
 }

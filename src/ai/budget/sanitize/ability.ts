@@ -22,6 +22,7 @@ export function sanitizeAbilitySchema(
   _category: SkillCategory = 'SECONDARY',
   sanitizeDepth = 0,
   description?: string,
+  isHeadlessMode = false,
 ): AbilitySchema {
   const obj = isObject(raw) ? { ...raw } : {};
 
@@ -101,6 +102,6 @@ export function sanitizeAbilitySchema(
   const repairText =
     description ??
     [validated.tagline, validated.description].filter(Boolean).join(' ');
-  const repaired = repairAbilitySemantics(validated, repairText);
+  const repaired = repairAbilitySemantics(validated, repairText, isHeadlessMode);
   return validateAbilitySchema(repaired) ?? repaired;
 }

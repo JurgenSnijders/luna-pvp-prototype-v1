@@ -242,8 +242,8 @@ function buildScenarioText(scenario: FidelityScenario): string {
 
 function processScenario(scenario: FidelityScenario): AbilitySchema {
   const text = buildScenarioText(scenario);
-  const repaired = repairAbilitySemantics(buildRawSchema(scenario), text);
-  return sanitizeAbilitySchema(repaired, scenario.category, 0, text);
+  const repaired = repairAbilitySemantics(buildRawSchema(scenario), text, true);
+  return sanitizeAbilitySchema(repaired, scenario.category, 0, text, true);
 }
 
 function formatTelemetry(t: SimulationTelemetry): string {
