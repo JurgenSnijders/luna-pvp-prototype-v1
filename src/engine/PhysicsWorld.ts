@@ -535,7 +535,7 @@ export class PhysicsWorld {
 
     this.updateConstraints(dt);
 
-    this.resolveCircleCollisions();
+    this.resolveCircleCollisions(dt);
     this.resolveObstacleCollisions();
     this.resolveHexBoundaries(dt);
     this.resolveProjectileHits();
@@ -543,17 +543,17 @@ export class PhysicsWorld {
     this.pruneDead();
   }
 
-  private resolveCircleCollisions(): void {
+  private resolveCircleCollisions(dt: number): void {
     const combatants = this.combatantsCache;
 
     for (let i = 0; i < combatants.length; i++) {
       for (let j = i + 1; j < combatants.length; j++) {
-        this.resolveCirclePair(combatants[i], combatants[j]);
+        this.resolveCirclePair(combatants[i], combatants[j], dt);
       }
     }
   }
 
-  private resolveCirclePair(a: Entity, b: Entity): void {
+  private resolveCirclePair(a: Entity, b: Entity, dt: number): void {
     if (a.isIntangible() || b.isIntangible()) return;
     if (isOwnerSummonPair(a, b)) return;
     const aStasis = a.stasisRemainingMs > 0;
@@ -585,12 +585,14 @@ export class PhysicsWorld {
     if (velAlongNormal > 0) return;
 
     const closingSpeed = -velAlongNormal;
-    if (closingSpeed > RAMMING_SPEED_THRESHOLD) {
+    const relDisp = a.pos.sub(a.prevPos).sub(b.pos.sub(b.prevPos));
+    const approachSpeed = Math.max(closingSpeed, dt > 0 ? relDisp.dot(normal) / dt : closingSpeed);
+    if (approachSpeed > RAMMING_SPEED_THRESHOLD) {
       const aApproach = a.vel.dot(normal);
       const bApproach = b.vel.dot(normal.scale(-1));
       const rammer = aApproach >= bApproach ? a : b;
       const target = rammer === a ? b : a;
-      const { J, knockDir } = this.applyRammingImpulse(rammer, target, closingSpeed);
+      const { J, knockDir } = this.applyRammingImpulse(rammer, target, approachSpeed);
       if (this.debugPhysicsEnabled && J > 0) {
         const contact = rammer.pos.add(target.pos).scale(0.5);
         this.recordDebugVector(
@@ -605,10 +607,10 @@ export class PhysicsWorld {
       (1 / a.effectiveMass + 1 / b.effectiveMass);
     const impulse = normal.scale(impulseMag);
 
-    if (!aStasis) {
+    if (!aStasis && !a.isImmovable()) {
       a.vel = a.vel.sub(impulse.scale(1 / a.effectiveMass));
     }
-    if (!bStasis) {
+    if (!bStasis && !b.isImmovable()) {
       b.vel = b.vel.add(impulse.scale(1 / b.effectiveMass));
     }
 

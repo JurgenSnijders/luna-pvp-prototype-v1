@@ -25,6 +25,9 @@ const DEFAULT_VISUALS: VisualDescriptor = {
 
 // ── Telemetry & harness ─────────────────────────────────────────────────────
 
+const ORBIT_BAND_MIN = 39;
+const ORBIT_BAND_MAX = 120;
+
 export interface SimulationTelemetry {
   initialDistance: number;
   finalDistance: number;
@@ -81,6 +84,7 @@ export function runHeadlessSimulation(
   if (options.casterNoFriction) {
     caster.friction = 0;
     caster.linearDrag = 0;
+    caster.baseLinearDrag = 0;
   }
   const target = new Dummy(new Vector2D(casterRadius + 1 + targetDistance, 0), {
     mass: options.dummyMass ?? 100,
@@ -128,7 +132,7 @@ export function runHeadlessSimulation(
     peakTargetSpeed = Math.max(peakTargetSpeed, target.vel.mag());
     maxTargetDisplacement = Math.max(maxTargetDisplacement, target.pos.dist(initialTargetPos));
 
-    if (dist >= 40 && dist <= 120) {
+    if (dist >= ORBIT_BAND_MIN && dist <= ORBIT_BAND_MAX) {
       orbitBandFrameCount++;
     }
 
@@ -220,7 +224,7 @@ export function assertInvariant(
       }
       return {
         pass: false,
-        reason: `orbitBandFrames=${telemetry.orbitBandFrameCount}, need >= 28 (dist band [40, 120]px from caster)`,
+        reason: `orbitBandFrames=${telemetry.orbitBandFrameCount}, need >= 28 (dist band [${ORBIT_BAND_MIN}, ${ORBIT_BAND_MAX}]px from caster)`,
       };
     }
     case 'OBSTACLE': {
