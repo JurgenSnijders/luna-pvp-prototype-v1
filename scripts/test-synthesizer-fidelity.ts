@@ -1,7 +1,9 @@
 import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { sanitizeAbilitySchema } from '../src/ai/budget/sanitize/ability';
+import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
 import type { SkillCategory } from '../src/types/cards';
-import type { AbilitySchema, SpellArchetype } from '../src/types/schema';
+import type { AbilitySchema, ActionPayload, SpellArchetype, TriggerNode } from '../src/types/schema';
+import { normalizeAbilityPayload, validateAbilitySchema } from '../src/types/schema';
 import {
   assertInvariant,
   runHeadlessSimulation,
@@ -256,9 +258,103 @@ function formatTelemetry(t: SimulationTelemetry): string {
   ].join(' | ');
 }
 
+function findSpawnField(
+  schema: AbilitySchema,
+): Extract<ActionPayload, { type: 'SPAWN_FIELD' }> | null {
+  const walk = (nodes: TriggerNode[]): Extract<ActionPayload, { type: 'SPAWN_FIELD' }> | null => {
+    for (const node of nodes) {
+      for (const action of node.actions) {
+        if (action.type === 'SPAWN_FIELD') return action;
+        if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+          const found = walk(action.triggers);
+          if (found) return found;
+        }
+        if (action.type === 'CAST_CHILD_PAYLOAD') {
+          const found = walk(action.payload.triggers);
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  };
+  return walk(schema.triggers);
+}
+
+function runFlatSpawnFieldRepairTest(): boolean {
+  const description =
+    'Gravity Singularity Deploys a heavy gravity well using legacy un-nested field properties.';
+  const raw = {
+    id: 'flat_spawn_field_repair',
+    name: 'Gravity Singularity (Flat Format)',
+    tagline: 'Defensive format test',
+    description: 'Deploys a heavy gravity well using legacy un-nested field properties.',
+    archetype: 'VOID',
+    cooldownMs: 2000,
+    recoilKick: 120,
+    trajectory: { type: 'LINEAR', speed: 650, maxRange: 500 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'SPAWN_FIELD',
+            fieldType: 'MASS_ATTRACTOR',
+            radius: 240,
+            durationMs: 2500,
+            strength: 400,
+            falloff: 'LINEAR',
+          },
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 15000,
+            target: 'TARGET',
+            directionMode: 'TOWARDS_CASTER',
+          },
+          { type: 'ADD_INSTABILITY', amount: 10 },
+        ],
+      },
+    ],
+  };
+
+  const repaired = repairAbilityPayload(normalizeAbilityPayload(raw));
+  const schema = sanitizeAbilitySchema(repaired, 'UTILITY', 0, description);
+
+  if (!validateAbilitySchema(schema)) {
+    console.log(`${RED}[FAIL]${RESET} Flat SPAWN_FIELD repair (validation)`);
+    return false;
+  }
+
+  const fieldAction = findSpawnField(schema);
+  if (!fieldAction || fieldAction.field.fieldType !== 'MASS_ATTRACTOR') {
+    console.log(`${RED}[FAIL]${RESET} Flat SPAWN_FIELD repair (nested fieldType)`);
+    return false;
+  }
+  if (Math.abs(fieldAction.field.strength) < 3500) {
+    console.log(`${RED}[FAIL]${RESET} Flat SPAWN_FIELD repair (strength floor)`);
+    return false;
+  }
+  if ('falloff' in fieldAction.field) {
+    console.log(`${RED}[FAIL]${RESET} Flat SPAWN_FIELD repair (falloff stripped)`);
+    return false;
+  }
+
+  const telemetry = runHeadlessSimulation(schema, 60, 1 / 60, 200);
+  const result = assertInvariant('Flat SPAWN_FIELD repair', telemetry, 'PULL');
+  const tag = result.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${tag} Flat SPAWN_FIELD repair (PULL)`);
+  console.log(`  ${DIM}${result.reason}${RESET}`);
+  console.log(`  ${DIM}${formatTelemetry(telemetry)}${RESET}`);
+  return result.pass;
+}
+
 function run(): void {
   console.log('test:fidelity');
   let passed = 0;
+  const totalTests = FIDELITY_SCENARIOS.length + 1;
+
+  if (runFlatSpawnFieldRepairTest()) {
+    passed++;
+  }
 
   for (const scenario of FIDELITY_SCENARIOS) {
     let telemetry: SimulationTelemetry;
@@ -287,9 +383,9 @@ function run(): void {
   }
 
   console.log('');
-  console.log(`${passed}/${FIDELITY_SCENARIOS.length} passed`);
+  console.log(`${passed}/${totalTests} passed`);
 
-  if (passed < FIDELITY_SCENARIOS.length) {
+  if (passed < totalTests) {
     process.exit(1);
   }
 }

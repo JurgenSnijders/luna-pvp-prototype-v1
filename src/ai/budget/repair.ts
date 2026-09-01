@@ -28,6 +28,8 @@ const PUSH_FORCE_FLOOR = 500;
 const INJECTED_IMPULSE_FORCE = 15000;
 const ATTRACTOR_FIELD_RADIUS = 250;
 const ATTRACTOR_FIELD_STRENGTH = 4000;
+const CONTINUOUS_FIELD_STRENGTH_FLOOR = 3500;
+const CONTINUOUS_FIELD_STRENGTH_CLAMP = 4500;
 
 function isPullConcept(text: string): boolean {
   return PULL_KEYWORDS.test(text) && !isPushConcept(text);
@@ -681,6 +683,18 @@ function ensureDisplacementSemantics(schema: AbilitySchema, text: string): Abili
   return schema;
 }
 
+function clampContinuousFieldStrength(schema: AbilitySchema): void {
+  walkTriggerNodes(schema.triggers, (_node, action) => {
+    if (action.type !== 'SPAWN_FIELD') return;
+    const ft = action.field.fieldType;
+    if (ft !== 'MASS_ATTRACTOR' && ft !== 'VORTEX_TANGENT') return;
+    if (Math.abs(action.field.strength) < CONTINUOUS_FIELD_STRENGTH_FLOOR) {
+      action.field.strength =
+        Math.sign(action.field.strength || 1) * CONTINUOUS_FIELD_STRENGTH_CLAMP;
+    }
+  });
+}
+
 /** Patches concept semantics and injects knockback when offensive spells omit displacement. */
 export function repairAbilitySemantics(
   payload: AbilitySchema,
@@ -704,7 +718,9 @@ export function repairAbilitySemantics(
     ensureProjectileTriggerDisplacement(cloned, text);
   }
 
-  return ensureDisplacementSemantics(cloned, text);
+  const result = ensureDisplacementSemantics(cloned, text);
+  clampContinuousFieldStrength(result);
+  return result;
 }
 
 /** Returns true if the schema contains any APPLY_IMPULSE action (for tests). */

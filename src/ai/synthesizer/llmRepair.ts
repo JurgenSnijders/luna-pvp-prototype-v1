@@ -1,7 +1,13 @@
 import { sanitizeAbilitySchema } from '../BudgetEngine';
 import type { CardRarity, SkillCategory } from '../../types/cards';
 import type { TriggerNode } from '../../types/schema';
-import { ACTION_TYPES, TRIGGER_TYPES, validateAbilitySchema } from '../../types/schema';
+import {
+  ACTION_TYPES,
+  normalizeAbilityPayload,
+  normalizeActionPayload,
+  TRIGGER_TYPES,
+  validateAbilitySchema,
+} from '../../types/schema';
 
 export function diagnoseDraftCardsValidation(val: unknown): string[] {
   const reasons: string[] = [];
@@ -495,7 +501,8 @@ function repairFieldConfig(field: unknown): unknown {
 
 function repairActionPayload(action: unknown): unknown {
   if (action === null || typeof action !== 'object') return action;
-  const obj = { ...(action as Record<string, unknown>) };
+  const normalized = normalizeActionPayload(action);
+  const obj = { ...(normalized as Record<string, unknown>) };
   stripNullFields(obj);
 
   if (obj.baseForce === undefined && obj.force !== undefined) {
@@ -621,7 +628,8 @@ function repairTriggersField(triggers: unknown): unknown[] {
 
 export function repairAbilityPayload(payload: unknown, description?: string): unknown {
   if (payload === null || typeof payload !== 'object') return payload;
-  const obj = { ...(payload as Record<string, unknown>) };
+  const normalized = normalizeAbilityPayload(payload);
+  const obj = { ...(normalized as Record<string, unknown>) };
   stripNullFields(obj);
 
   obj.cooldownMs = ensureFiniteNumber(obj.cooldownMs, 800);

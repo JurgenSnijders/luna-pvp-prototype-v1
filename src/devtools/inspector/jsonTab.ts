@@ -1,5 +1,7 @@
+import { sanitizeAbilitySchema } from '../../ai/BudgetEngine';
+import { repairAbilityPayload } from '../../ai/synthesizer/llmRepair';
 import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../../types/cards';
-import { validateAbilitySchema } from '../../types/schema';
+import { normalizeAbilityPayload, validateAbilitySchema } from '../../types/schema';
 import type { InspectorContext } from '../InspectorUI';
 import { buttonStyle } from './domHelpers';
 
@@ -133,7 +135,9 @@ export function buildJsonTab(parent: HTMLElement, ctx: InspectorContext): JsonTa
   applyBtn.onclick = () => {
     try {
       const parsed = JSON.parse(jsonTextarea.value);
-      const validated = validateAbilitySchema(parsed);
+      const normalized = normalizeAbilityPayload(parsed);
+      const repaired = repairAbilityPayload(normalized);
+      const validated = validateAbilitySchema(sanitizeAbilitySchema(repaired, 'SECONDARY'));
       if (!validated) {
         showJsonError(refs, 'Invalid ability schema structure.');
         return;
