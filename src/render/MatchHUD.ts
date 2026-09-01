@@ -18,7 +18,6 @@ export class MatchHUD {
   private matchOverTitle: HTMLElement;
   private matchOverScore: HTMLElement;
   private playAgainBtn: HTMLButtonElement;
-  private sandboxBadge: HTMLElement;
 
   constructor(private callbacks: MatchHUDCallbacks) {
     this.root = document.createElement('div');
@@ -56,20 +55,6 @@ export class MatchHUD {
     this.header.appendChild(this.roundLabel);
     this.header.appendChild(pipRow);
     this.root.appendChild(this.header);
-
-    this.sandboxBadge = document.createElement('div');
-    this.sandboxBadge.textContent =
-      '[ SANDBOX MODE ] — Press [Tab] / [B] to Synthesize / Draft';
-    this.sandboxBadge.style.cssText = `
-      position: absolute; top: 16px; left: 16px;
-      padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;
-      letter-spacing: 0.04em; color: #a8e6ff;
-      background: rgba(10, 10, 20, 0.7); backdrop-filter: blur(10px);
-      border: 1px solid rgba(0, 200, 255, 0.35);
-      box-shadow: 0 0 16px rgba(0, 200, 255, 0.15);
-      display: none;
-    `;
-    this.root.appendChild(this.sandboxBadge);
 
     this.countdownBanner = document.createElement('div');
     this.countdownBanner.style.cssText = `
@@ -183,11 +168,9 @@ export class MatchHUD {
       this.matchOverModal.style.display = 'none';
       this.countdownBanner.style.opacity = '0';
       this.roundToast.style.opacity = '0';
-      this.sandboxBadge.style.display = 'block';
       return;
     }
 
-    this.sandboxBadge.style.display = 'none';
     this.header.style.display = 'flex';
 
     this.roundLabel.textContent = `ROUND ${snapshot.roundNumber}`;

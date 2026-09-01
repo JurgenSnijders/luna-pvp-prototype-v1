@@ -14,7 +14,8 @@
     "test:settings": "tsx scripts/test-settings.ts",
     "test:render": "tsx scripts/test-render.ts",
     "test:gemini-sse": "tsx scripts/test-gemini-sse.ts",
-    "test:partial-json": "tsx scripts/test-partial-json.ts"
+    "test:partial-json": "tsx scripts/test-partial-json.ts",
+    "test:invariants": "tsx scripts/test-physics-invariants.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
