@@ -654,9 +654,11 @@ export class DraftModal {
       this.evolutionContext,
     );
     const cachedEntry = this.prefetchCache?.key === key ? this.prefetchCache : null;
+    const prefetchCards = cachedEntry?.cards ?? null;
+    let prefetchPromise: Promise<DraftCard[]> | null =
+      cachedEntry && !cachedEntry.cards ? cachedEntry.promise : null;
+
     if (cachedEntry) {
-      // Claim the entry now so it can never be replayed on a later click, regardless
-      // of whether the consumption below succeeds or throws.
       this.prefetchCache = null;
     } else {
       this.invalidatePrefetch();
@@ -666,7 +668,13 @@ export class DraftModal {
     const useStreaming =
       this.mode !== 'PASSIVE_UPGRADES' &&
       getAiSettings().apiKey.trim().length > 0 &&
-      !cachedEntry?.cards;
+      !prefetchCards;
+
+    if (useStreaming && prefetchPromise && cachedEntry) {
+      cachedEntry.abortController.abort();
+      cachedEntry.promise.catch(() => {});
+      prefetchPromise = null;
+    }
 
     if (useStreaming) {
       this.loadingEl.style.display = 'none';
@@ -677,11 +685,11 @@ export class DraftModal {
       this.cardsContainer.innerHTML = '';
     }
 
-    // In-flight hits measure total wait since the prefetch was dispatched (it may have
-    // started while the user was still reading the modal); everything else — fresh
-    // requests and already-resolved cache hits — starts the stopwatch now.
+    // In-flight prefetch (non-streaming) measures from prefetch dispatch; fresh requests start now.
     this.synthesisStartTime =
-      cachedEntry && !cachedEntry.cards ? cachedEntry.startedAt : performance.now();
+      prefetchPromise && !useStreaming && cachedEntry
+        ? cachedEntry.startedAt
+        : performance.now();
     this.latencyBadgeEl.style.display = 'none';
     this.synthesizeBtn.disabled = true;
     this.clearSynthesisTimer(false);
@@ -691,10 +699,10 @@ export class DraftModal {
     }, 50);
 
     try {
-      if (cachedEntry?.cards) {
-        this.cards = cachedEntry.cards;
-      } else if (cachedEntry) {
-        this.cards = await cachedEntry.promise;
+      if (prefetchCards) {
+        this.cards = prefetchCards;
+      } else if (prefetchPromise) {
+        this.cards = await prefetchPromise;
       } else {
         const loadout = this.callbacks.getLoadout();
         this.cards = await synthesizeAbility(
@@ -766,18 +774,18 @@ export class DraftModal {
       `;
 
       const rarityBadge = document.createElement('div');
-      rarityBadge.textContent = 'COMMON';
+      rarityBadge.textContent = 'FORGING...';
       rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
 
       const title = document.createElement('div');
       title.className = 'card-title';
       title.textContent = 'Forging Spell...';
       title.style.cssText =
-        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:forgePulse 1.4s ease-in-out infinite;';
 
       const tagline = document.createElement('div');
       tagline.className = 'card-tagline';
-      tagline.textContent = 'Awaiting concept...';
+      tagline.textContent = 'Synthesizing concept...';
       tagline.style.cssText = 'font-size:11px;color:#666;margin-bottom:6px;flex-shrink:0;';
 
       const desc = document.createElement('div');
@@ -845,7 +853,10 @@ export class DraftModal {
     const slot = this.streamingSlots?.[index];
     if (!slot || slot.finalized) return;
 
-    if (partial.name) slot.title.textContent = partial.name;
+    if (partial.name) {
+      slot.title.textContent = partial.name;
+      slot.title.style.animation = '';
+    }
     if (partial.tagline) slot.tagline.textContent = partial.tagline;
     if (partial.description) slot.desc.textContent = partial.description;
     renderStreamBadges(slot.badges, partial.detectedBadges, STREAM_BADGE_KINDS);

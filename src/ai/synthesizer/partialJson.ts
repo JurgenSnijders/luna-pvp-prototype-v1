@@ -20,15 +20,15 @@ const STREAM_TOKEN_BADGES: Array<{ token: string; label: string }> = [
   { token: 'MASS_ATTRACTOR', label: '[GRAVITY]' },
   { token: 'VORTEX_TANGENT', label: '[VORTEX]' },
   { token: 'RADIAL_IMPULSE', label: '[RADIAL]' },
-  { token: 'FRICTION_OVERRIDE', label: '[FRICTION]' },
+  { token: 'FRICTION_OVERRIDE', label: '[SLIPSTREAM]' },
   { token: 'HEAT', label: '[HEAT]' },
   { token: 'AMMO', label: '[AMMO]' },
   { token: 'HEALTH_PCT', label: '[HEALTH]' },
-  { token: 'CHARGE_AND_RELEASE', label: '[CHARGE]' },
-  { token: 'CHANNELED', label: '[CHANNEL]' },
+  { token: 'CHARGE_AND_RELEASE', label: '[CHARGED]' },
+  { token: 'CHANNELED', label: '[CHANNELED]' },
   { token: 'COMBO_CHAIN', label: '[COMBO]' },
   { token: 'APPLY_STASIS', label: '[STASIS]' },
-  { token: 'SPAWN_OBSTACLE', label: '[OBSTACLE]' },
+  { token: 'SPAWN_OBSTACLE', label: '[BARRIER]' },
   { token: 'TELEPORT', label: '[TELEPORT]' },
   { token: 'MORPH_ENTITY', label: '[MORPH]' },
 ];
@@ -40,15 +40,15 @@ export const STREAM_BADGE_KINDS: Record<string, StreamBadgeKind> = {
   '[GRAVITY]': 'field',
   '[VORTEX]': 'field',
   '[RADIAL]': 'field',
-  '[FRICTION]': 'field',
+  '[SLIPSTREAM]': 'field',
   '[HEAT]': 'cast',
   '[AMMO]': 'cast',
   '[HEALTH]': 'cast',
-  '[CHARGE]': 'cast',
-  '[CHANNEL]': 'cast',
+  '[CHARGED]': 'cast',
+  '[CHANNELED]': 'cast',
   '[COMBO]': 'cast',
   '[STASIS]': 'trigger',
-  '[OBSTACLE]': 'trigger',
+  '[BARRIER]': 'trigger',
   '[TELEPORT]': 'trigger',
   '[MORPH]': 'trigger',
 };
@@ -91,11 +91,44 @@ function detectStreamBadges(buffer: string): string[] {
   return badges;
 }
 
+function isBufferStructurallyComplete(buffer: string): boolean {
+  const trimmed = buffer.trim();
+  if (!trimmed.startsWith('{')) return false;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const ch of trimmed) {
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth < 0) return false;
+    }
+  }
+
+  return depth === 0 && trimmed.endsWith('}');
+}
+
 export function extractPartialCard(buffer: string): PartialCardStream {
   const partial: PartialCardStream = {
     detectedBadges: detectStreamBadges(buffer),
     rawText: buffer,
-    isComplete: false,
+    isComplete: isBufferStructurallyComplete(buffer),
   };
 
   for (const { key, pattern } of PARTIAL_STRING_FIELDS) {

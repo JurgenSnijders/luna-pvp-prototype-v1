@@ -24,6 +24,7 @@ function run(): void {
   test('extracts truncated name mid-string', () => {
     const partial = extractPartialCard('{"name":"Frost L');
     assertEqual(partial.name, 'Frost L', 'partial name');
+    assertEqual(partial.isComplete, false, 'isComplete');
   });
 
   test('extracts closed fields before JSON ends', () => {
@@ -34,6 +35,7 @@ function run(): void {
     assertEqual(partial.tagline, 'Kinetic Snap', 'tagline');
     assertEqual(partial.description, 'A fast shot', 'description');
     assertEqual(partial.archetype, 'KINETIC', 'archetype');
+    assertEqual(partial.isComplete, false, 'isComplete');
   });
 
   test('detects mechanic tokens before JSON closes', () => {
@@ -47,6 +49,12 @@ function run(): void {
   test('unescapes quotes and newlines in description', () => {
     const partial = extractPartialCard('{"description":"Line one\\nLine \\"two\\""}');
     assertEqual(partial.description, 'Line one\nLine "two"', 'escaped description');
+    assertEqual(partial.isComplete, true, 'isComplete');
+  });
+
+  test('unescapes quotes in name', () => {
+    const partial = extractPartialCard('{"name":"Frost \\"Shard\\""}');
+    assertEqual(partial.name, 'Frost "Shard"', 'escaped name');
   });
 
   test('dedupes badges in encounter order', () => {
@@ -58,8 +66,24 @@ function run(): void {
     assertEqual(partial.detectedBadges.length, 2, 'badge count');
   });
 
-  test('defaults isComplete to false', () => {
+  test('maps spec badge labels from structural tokens', () => {
+    const partial = extractPartialCard(
+      '{"inputProfile":{"mode":"CHANNELED"},"resourceCost":{"type":"HEAT"},"actions":[{"type":"SPAWN_OBSTACLE"},{"fieldType":"FRICTION_OVERRIDE"},{"type":"CHARGE_AND_RELEASE"}]}',
+    );
+    assert(partial.detectedBadges.includes('[SLIPSTREAM]'), 'slipstream badge');
+    assert(partial.detectedBadges.includes('[CHARGED]'), 'charged badge');
+    assert(partial.detectedBadges.includes('[CHANNELED]'), 'channeled badge');
+    assert(partial.detectedBadges.includes('[BARRIER]'), 'barrier badge');
+    assert(partial.detectedBadges.includes('[HEAT]'), 'heat badge');
+  });
+
+  test('isComplete true on well-formed closed JSON', () => {
     const partial = extractPartialCard('{"name":"Test"}');
+    assertEqual(partial.isComplete, true, 'isComplete');
+  });
+
+  test('isComplete false on truncated JSON', () => {
+    const partial = extractPartialCard('{"name":"Test"');
     assertEqual(partial.isComplete, false, 'isComplete');
   });
 
