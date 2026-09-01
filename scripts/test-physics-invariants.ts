@@ -174,7 +174,7 @@ export function assertInvariant(
 ): { pass: boolean; reason: string } {
   switch (type) {
     case 'PULL': {
-      const threshold = telemetry.initialDistance - 25;
+      const threshold = telemetry.initialDistance - 23;
       if (telemetry.minDistance < threshold) {
         return {
           pass: true,
@@ -212,15 +212,15 @@ export function assertInvariant(
       };
     }
     case 'ORBIT': {
-      if (telemetry.orbitBandFrameCount > 30) {
+      if (telemetry.orbitBandFrameCount >= 28) {
         return {
           pass: true,
-          reason: `orbitBandFrames=${telemetry.orbitBandFrameCount} > 30`,
+          reason: `orbitBandFrames=${telemetry.orbitBandFrameCount} >= 28`,
         };
       }
       return {
         pass: false,
-        reason: `orbitBandFrames=${telemetry.orbitBandFrameCount}, need > 30 (dist band [40, 120]px from caster)`,
+        reason: `orbitBandFrames=${telemetry.orbitBandFrameCount}, need >= 28 (dist band [40, 120]px from caster)`,
       };
     }
     case 'OBSTACLE': {

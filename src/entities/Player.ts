@@ -489,9 +489,9 @@ export class Player extends Entity {
         : velDiff.scale(1 / dt);
 
     if (moveDir.magSq() === 0) {
-      this.accel = this.vel.scale(-this.friction);
+      this.accel = this.accel.add(this.vel.scale(-this.friction));
     } else {
-      this.accel = accel;
+      this.accel = this.accel.add(accel);
     }
 
     const aimDir = this.aimTarget.sub(this.pos);

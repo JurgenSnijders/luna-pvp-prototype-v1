@@ -117,10 +117,11 @@ export function applyField(
       );
       const forceScale = getInstabilityScale(entity.instabilityPct) * tuning.fieldStrengthScale;
       const toZone = zone.pos.sub(entity.pos);
-      const distSq = Math.max(toZone.magSq(), 400);
-      const pull = toZone
-        .normalize()
-        .scale((zone.config.strength / distSq) * falloff)
+      if (toZone.magSq() === 0) break;
+      const dir = toZone.normalize();
+      const sign = zone.config.strength >= 0 ? 1 : -1;
+      const pull = dir
+        .scale(Math.abs(zone.config.strength) * falloff * sign)
         .scale(forceScale);
       entity.accel = entity.accel.add(pull);
       recordFieldForce(world, entity, zone, pull);

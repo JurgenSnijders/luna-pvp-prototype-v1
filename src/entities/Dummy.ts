@@ -51,9 +51,10 @@ export class Dummy extends Entity {
     const targetVel = this.chaseVector.scale(this.moveSpeed);
     const velDiff = targetVel.sub(this.vel);
     const accelMag = 600 * dt;
-    this.accel =
+    const steeringAccel =
       velDiff.mag() > accelMag
         ? velDiff.normalize().scale(accelMag / dt)
         : velDiff.scale(1 / dt);
+    this.accel = this.accel.add(steeringAccel);
   }
 }
