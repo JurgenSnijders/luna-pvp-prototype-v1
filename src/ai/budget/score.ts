@@ -73,6 +73,8 @@ function scoreAction(action: ActionPayload, depth: number): number {
     }
     case 'APPLY_STEALTH':
       return (action.durationMs / 1000) * 5;
+    case 'APPLY_STATUS':
+      return (action.durationMs / 1000) * 4;
     case 'SPAWN_ACTOR': {
       const actor = action.actor;
       const turretBonus = actor.actorArchetype === 'TURRET' ? 4 : 0;

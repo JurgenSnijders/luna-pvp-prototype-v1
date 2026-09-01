@@ -3,7 +3,7 @@ import type { ActionPayload, TriggerNode, VisualDescriptor } from '../../types/s
 import { FALLBACK_DIR } from './constants';
 
 export function getActionPriority(type: ActionPayload['type']): number {
-  if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT' || type === 'APPLY_STASIS') return 1;
+  if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT' || type === 'APPLY_STASIS' || type === 'APPLY_STATUS') return 1;
   if (type === 'SPAWN_CONSTRAINT' || type === 'MUTATE_TERRAIN' || type === 'SPAWN_OBSTACLE') return 2;
   if (type === 'APPLY_IMPULSE') return 3;
   return 4;

@@ -346,6 +346,12 @@ export function dispatchAction(
       t.stealthRevealOnCast = action.revealOnCast ?? true;
       break;
     }
+    case 'APPLY_STATUS': {
+      const t = resolveActionTarget(action.target, ctx);
+      if (!t) break;
+      t.applyStatus(action.archetype, action.durationMs, action.stacks ?? 1);
+      break;
+    }
     case 'SPAWN_ACTOR': {
       const t = resolveActionTarget(action.target, ctx);
       let pos = t ? t.pos.clone() : ctx.origin.clone();

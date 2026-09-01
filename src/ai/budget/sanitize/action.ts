@@ -1,5 +1,6 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { ActionPayload, TriggerNode } from '../../../types/schema';
+import type { ActionPayload, SpellArchetype, TriggerNode } from '../../../types/schema';
+import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
 import { FIELD_TYPES, MAX_DEPTH } from '../constants';
 import {
   clamp,
@@ -298,6 +299,25 @@ export function sanitizeAction(
       };
       if (typeof raw.revealOnCast === 'boolean') {
         action.revealOnCast = raw.revealOnCast;
+      }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STATUS': {
+      const archetypeRaw =
+        typeof raw.archetype === 'string' ? raw.archetype.toUpperCase() : 'KINETIC';
+      const archetype = (
+        SPELL_ARCHETYPE_SET.has(archetypeRaw) ? archetypeRaw : 'KINETIC'
+      ) as SpellArchetype;
+      const action: Extract<ActionPayload, { type: 'APPLY_STATUS' }> = {
+        type: 'APPLY_STATUS',
+        archetype,
+        durationMs: clamp(ensureFiniteNumber(raw.durationMs, 2000), 100, 10000),
+      };
+      if (raw.stacks !== undefined) {
+        action.stacks = clamp(ensureFiniteNumber(raw.stacks, 1), 1, 10);
       }
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

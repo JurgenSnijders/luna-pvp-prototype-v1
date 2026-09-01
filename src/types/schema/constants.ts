@@ -72,6 +72,7 @@ export const ACTION_TYPES: ReadonlySet<string> = new Set([
   'MORPH_ENTITY',
   'SPAWN_ACTOR',
   'APPLY_STEALTH',
+  'APPLY_STATUS',
 ]);
 
 export const OBSTACLE_SHAPES: ReadonlySet<string> = new Set(['CIRCLE', 'BOX']);

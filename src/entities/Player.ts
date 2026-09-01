@@ -85,7 +85,6 @@ export class Player extends Entity {
   baseAcceleration: number;
   brakeAccel: number;
   turnAccel: number;
-  friction: number;
   maxSpeed: number;
   stopThreshold: number;
   inputSmoothingMs: number;
@@ -532,7 +531,7 @@ export class Player extends Entity {
     const velDiff = targetVel.sub(this.vel);
 
     if (moveDir.magSq() === 0) {
-      this.accel = this.accel.add(this.vel.scale(-this.friction));
+      this.accel = this.accel.add(this.vel.scale(-this.getEffectiveFriction()));
     } else {
       const currentSpeed = this.vel.mag();
       const heading =

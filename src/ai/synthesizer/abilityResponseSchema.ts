@@ -263,6 +263,18 @@ const actionBranches = [
   },
   {
     type: 'object',
+    required: ['type', 'archetype', 'durationMs'],
+    properties: {
+      type: { type: 'string', enum: ['APPLY_STATUS'] },
+      archetype: stringEnum(SPELL_ARCHETYPES),
+      durationMs: { type: 'number' },
+      stacks: { type: 'number' },
+      target: actionTarget,
+    },
+    additionalProperties: false,
+  },
+  {
+    type: 'object',
     required: ['type'],
     properties: {
       type: { type: 'string', enum: ['RELEASE_STASIS'] },

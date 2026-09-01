@@ -1,8 +1,9 @@
-import { ACTION_TYPES } from '../constants';
+import { ACTION_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
 import type {
   ActionPayload,
   ApplyImpulseAction,
   ApplyStasisAction,
+  ApplyStatusAction,
   ApplyStealthAction,
   CastChildPayloadAction,
   ModifyStatAction,
@@ -280,6 +281,29 @@ export function validateActionPayload(
           return validationFail(issues, `${path}.revealOnCast`, 'invalid revealOnCast');
         }
         action.revealOnCast = value.revealOnCast;
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'APPLY_STATUS': {
+      if (!isString(value.archetype) || !SPELL_ARCHETYPE_SET.has(value.archetype)) {
+        return validationFail(issues, `${path}.archetype`, 'invalid archetype');
+      }
+      if (!isNumber(value.durationMs) || value.durationMs <= 0) {
+        return validationFail(issues, `${path}.durationMs`, 'invalid durationMs');
+      }
+      const action: ApplyStatusAction = {
+        type: 'APPLY_STATUS',
+        archetype: value.archetype as ApplyStatusAction['archetype'],
+        durationMs: value.durationMs,
+      };
+      if (value.stacks !== undefined) {
+        if (!isNumber(value.stacks) || value.stacks <= 0) {
+          return validationFail(issues, `${path}.stacks`, 'invalid stacks');
+        }
+        action.stacks = value.stacks;
       }
       const target = parseActionTarget(value.target);
       if (target) action.target = target;

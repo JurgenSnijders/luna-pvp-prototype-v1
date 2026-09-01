@@ -955,6 +955,10 @@ export class PhysicsWorld {
           target.instabilityPct + BASELINE_INSTABILITY_ON_HIT,
         );
 
+        if (projectile.spellArchetype) {
+          target.applyStatus(projectile.spellArchetype, 2000, 1);
+        }
+
         const hitPos = projectile.pos.lerp(target.pos, 0.5);
         this.pendingHits.push({ projectile, target, hitPos });
 

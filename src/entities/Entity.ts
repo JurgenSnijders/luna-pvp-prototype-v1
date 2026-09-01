@@ -1,7 +1,14 @@
 import { Vector2D } from '../math/Vector2D';
-import type { MorphConfig } from '../types/schema';
+import type { MorphConfig, SpellArchetype } from '../types/schema';
 
 let nextEntityId = 1;
+
+export interface StatusEffect {
+  durationMs: number;
+  stacks: number;
+}
+
+const MAX_STATUS_STACKS = 5;
 
 export function generateEntityId(prefix = 'entity'): string {
   return `${prefix}_${nextEntityId++}`;
@@ -31,6 +38,8 @@ export class Entity {
   morphRemainingMs: number;
   stealthRemainingMs: number;
   stealthRevealOnCast: boolean;
+  activeStatuses: Map<SpellArchetype, StatusEffect>;
+  friction: number;
 
   constructor(
     id: string,
@@ -68,14 +77,47 @@ export class Entity {
     this.morphRemainingMs = 0;
     this.stealthRemainingMs = 0;
     this.stealthRevealOnCast = true;
+    this.activeStatuses = new Map();
+    this.friction = 0;
   }
 
   get effectiveRadius(): number {
     return this.activeMorph?.radius ?? this.radius;
   }
 
+  getEffectiveMass(): number {
+    let mass = this.activeMorph?.mass ?? this.mass;
+    if (this.activeStatuses.has('EARTH')) mass *= 3.0;
+    return mass;
+  }
+
   get effectiveMass(): number {
-    return this.activeMorph?.mass ?? this.mass;
+    return this.getEffectiveMass();
+  }
+
+  getEffectiveLinearDrag(): number {
+    let drag = this.linearDrag;
+    if (this.activeStatuses.has('EARTH')) drag *= 2.0;
+    if (this.activeStatuses.has('FROST')) drag *= 0.1;
+    if (this.activeStatuses.has('AERO')) drag *= 0.5;
+    return drag;
+  }
+
+  getEffectiveFriction(): number {
+    let friction = this.friction;
+    if (this.activeStatuses.has('FROST')) friction *= 0.1;
+    if (this.activeStatuses.has('AERO')) friction = 0;
+    return friction;
+  }
+
+  applyStatus(archetype: SpellArchetype, durationMs: number, stacks = 1): void {
+    const existing = this.activeStatuses.get(archetype);
+    if (existing) {
+      existing.durationMs = Math.max(existing.durationMs, durationMs);
+      existing.stacks = Math.min(MAX_STATUS_STACKS, existing.stacks + stacks);
+    } else {
+      this.activeStatuses.set(archetype, { durationMs, stacks });
+    }
   }
 
   isStealthed(): boolean {
@@ -134,6 +176,13 @@ export class Entity {
         this.dischargeStasis();
       }
     }
+
+    for (const [archetype, effect] of this.activeStatuses) {
+      effect.durationMs -= dt * 1000;
+      if (effect.durationMs <= 0) {
+        this.activeStatuses.delete(archetype);
+      }
+    }
   }
 
   integrate(dt: number): void {
@@ -143,7 +192,7 @@ export class Entity {
     this.prevPos.copyFrom(this.pos);
     this.vel.addScaledMut(this.accel, dt);
     const speed = this.vel.mag();
-    const dragCoeff = this.linearDrag + this.quadraticDrag * speed;
+    const dragCoeff = this.getEffectiveLinearDrag() + this.quadraticDrag * speed;
     if (dragCoeff > 0) {
       this.vel.scaleMut(Math.exp(-dragCoeff * dt));
     }

@@ -61,7 +61,8 @@ export type ActionType =
   | 'MUTATE_TERRAIN'
   | 'MORPH_ENTITY'
   | 'SPAWN_ACTOR'
-  | 'APPLY_STEALTH';
+  | 'APPLY_STEALTH'
+  | 'APPLY_STATUS';
 
 export type ObstacleShape = 'CIRCLE' | 'BOX';
 export type TerrainType = 'SAFE' | 'LAVA';
@@ -258,6 +259,14 @@ export interface ApplyStasisAction {
   target?: ActionTarget;
 }
 
+export interface ApplyStatusAction {
+  type: 'APPLY_STATUS';
+  archetype: SpellArchetype;
+  durationMs: number;
+  stacks?: number;
+  target?: ActionTarget;
+}
+
 export interface ReleaseStasisAction {
   type: 'RELEASE_STASIS';
   target?: ActionTarget;
@@ -404,4 +413,5 @@ export type ActionPayload =
   | MutateTerrainAction
   | MorphEntityAction
   | SpawnActorAction
-  | ApplyStealthAction;
+  | ApplyStealthAction
+  | ApplyStatusAction;
