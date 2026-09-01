@@ -180,6 +180,71 @@ void main() {
 }
 `;
 
+/** Straight copy used to park the particle scene in the CRT intermediate FBO. */
+export const SCENE_BLIT_SHADER = `#version 300 es
+precision mediump float;
+in vec2 v_texCoord;
+uniform sampler2D u_scene;
+out vec4 fragColor;
+void main() {
+  fragColor = texture(u_scene, v_texCoord);
+}
+`;
+
+export const CRT_SHADER = `#version 300 es
+precision mediump float;
+in vec2 v_texCoord;
+uniform sampler2D u_world;
+uniform sampler2D u_vfx;
+uniform sampler2D u_bloom;
+uniform vec2 u_resolution;
+uniform float u_bloomIntensity;
+uniform float u_hasBloom;
+uniform float u_scanline;
+uniform float u_curvature;
+uniform float u_vignette;
+uniform float u_phosphor;
+out vec4 fragColor;
+
+vec2 barrelDistort(vec2 uv, float k) {
+  vec2 cc = uv - 0.5;
+  float r2 = dot(cc, cc);
+  return uv + cc * r2 * k;
+}
+
+void main() {
+  vec2 uv = barrelDistort(v_texCoord, u_curvature);
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  vec4 world = texture(u_world, uv);
+  vec4 vfx = texture(u_vfx, uv);
+  vec3 base = world.rgb * (1.0 - vfx.a) + vfx.rgb;
+  // Bloom is additive here: this pass writes the opaque final frame, so
+  // alpha-blending it would erase the world instead of glowing over it.
+  vec3 bloomCol = u_hasBloom > 0.5 ? texture(u_bloom, uv).rgb * u_bloomIntensity : vec3(0.0);
+  vec3 rgb = min(vec3(1.0), base + bloomCol);
+
+  float px = uv.x * u_resolution.x;
+  vec3 phosphorMask = vec3(
+    0.8 + 0.2 * step(0.5, mod(px, 3.0)),
+    0.8 + 0.2 * step(0.5, mod(px + 1.0, 3.0)),
+    0.8 + 0.2 * step(0.5, mod(px + 2.0, 3.0))
+  );
+  rgb = mix(rgb, rgb * phosphorMask, u_phosphor);
+
+  float scan = sin(uv.y * u_resolution.y * 3.14159265);
+  rgb *= 1.0 - u_scanline * (0.5 + 0.5 * scan) * 0.5;
+
+  vec2 vigUv = uv * 2.0 - 1.0;
+  rgb *= clamp(1.0 - dot(vigUv, vigUv) * u_vignette, 0.0, 1.0);
+
+  fragColor = vec4(rgb, 1.0);
+}
+`;
+
 export const FULLSCREEN_VERTEX = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;

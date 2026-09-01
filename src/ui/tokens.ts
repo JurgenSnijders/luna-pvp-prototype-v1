@@ -23,6 +23,10 @@ export const RETRO_COLORS = {
   neonGreen: '#39ff14',
   textPrimary: '#e0f8ff',
   textMuted: '#6d8896',
+  playerCyan: '#00ccff',
+  playerCyanAim: '#88eeff',
+  botOrange: '#ff8844',
+  botOrangeAim: '#ffbb88',
 };
 
 export const RETRO_GLOW = {

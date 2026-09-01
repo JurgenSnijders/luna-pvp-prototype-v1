@@ -9,7 +9,7 @@ import {
 } from '../graphicsSettings';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
-import { buttonStyle } from './domHelpers';
+import { buttonStyle, sliderRow } from './domHelpers';
 
 export function buildGraphicsTab(parent: HTMLElement): void {
   const section = document.createElement('div');
@@ -76,6 +76,27 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   addToggle('particleTrails', 'Projectile Particle Trails');
   addToggle('bloomEnabled', 'Bloom Post-Processing');
   addToggle('refractionEnabled', 'Refraction (ULTRA)');
+  addToggle('crtEnabled', 'CRT Post-Processing');
+  addToggle('arcadeBezel', 'Arcade Bezel');
+
+  const numeric = (key: keyof GraphicsSettings) => ({
+    get: () => getGraphicsSettings()[key] as number,
+    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
+  });
+
+  const bloomSlider = numeric('bloomIntensity');
+  const scanSlider = numeric('crtScanlineIntensity');
+  const curveSlider = numeric('crtCurvature');
+  const vigSlider = numeric('crtVignette');
+  const phosSlider = numeric('crtPhosphor');
+
+  const sliders = [
+    sliderRow(section, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
+    sliderRow(section, 'CRT Scanlines', 0, 1, 0.05, scanSlider.get, scanSlider.set),
+    sliderRow(section, 'CRT Curvature', 0, 0.5, 0.01, curveSlider.get, curveSlider.set),
+    sliderRow(section, 'CRT Vignette', 0, 1, 0.05, vigSlider.get, vigSlider.set),
+    sliderRow(section, 'CRT Phosphor', 0, 1, 0.05, phosSlider.get, phosSlider.set),
+  ];
 
   const tierRow = document.createElement('div');
   tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;';
@@ -90,17 +111,19 @@ export function buildGraphicsTab(parent: HTMLElement): void {
       } else {
         applyTierPreset(tier);
       }
+      syncControls(getGraphicsSettings());
       refreshPerf();
     };
     tierRow.appendChild(btn);
   }
   section.appendChild(tierRow);
 
-  const syncCheckboxes = (s: GraphicsSettings): void => {
+  const syncControls = (s: GraphicsSettings): void => {
     for (const key of Object.keys(checkboxes) as (keyof GraphicsSettings)[]) {
       const box = checkboxes[key];
       if (box) box.checked = s[key] as boolean;
     }
+    for (const slider of sliders) slider.refresh();
   };
 
   const presetRow = document.createElement('div');
@@ -141,7 +164,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   highQualityBtn.onclick = () => {
     const next: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
     saveGraphicsSettings(next);
-    syncCheckboxes(next);
+    syncControls(next);
   };
   section.appendChild(highQualityBtn);
 

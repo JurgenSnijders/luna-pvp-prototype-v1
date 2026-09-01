@@ -11,6 +11,13 @@ export interface GraphicsSettings {
   refractionEnabled: boolean;
   screenShakeIntensity: number;
   manualTierOverride: boolean;
+  crtEnabled: boolean;
+  crtScanlineIntensity: number;
+  crtCurvature: number;
+  crtVignette: number;
+  crtPhosphor: number;
+  bloomIntensity: number;
+  arcadeBezel: boolean;
 }
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
@@ -22,6 +29,13 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   refractionEnabled: false,
   screenShakeIntensity: 1,
   manualTierOverride: false,
+  crtEnabled: true,
+  crtScanlineIntensity: 0.35,
+  crtCurvature: 0.12,
+  crtVignette: 0.45,
+  crtPhosphor: 0.25,
+  bloomIntensity: 0.8,
+  arcadeBezel: true,
 };
 
 export interface TierLimits {
@@ -33,6 +47,23 @@ export interface TierLimits {
   trailDensity: number;
   maxPrimitives: number;
   groundDecals: boolean;
+}
+
+/**
+ * CRT knobs after tier clamping. `webglCrt` and `cssOverlay` are mutually
+ * exclusive so the two CRT paths can never stack on screen.
+ */
+export interface EffectiveCrtSettings {
+  crtEnabled: boolean;
+  webglCrt: boolean;
+  cssOverlay: boolean;
+  scanlineIntensity: number;
+  curvature: number;
+  vignette: number;
+  phosphor: number;
+  bloomIntensity: number;
+  bloomThreshold: number;
+  arcadeBezel: boolean;
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -80,6 +111,7 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
 
 let cache: GraphicsSettings | null = null;
 let effectiveTier: Exclude<QualityTier, 'AUTO'> = 'HIGH';
+const listeners = new Set<() => void>();
 
 export function getEffectiveTier(): Exclude<QualityTier, 'AUTO'> {
   const s = getGraphicsSettings();
@@ -110,6 +142,58 @@ export function getEffectiveDprCap(): number {
   return Math.min(native, cap);
 }
 
+export function getEffectiveCrtSettings(): EffectiveCrtSettings {
+  const s = getGraphicsSettings();
+  const tier = getEffectiveTier();
+  const bloomIntensity = tier === 'LOW' ? 0 : s.bloomIntensity;
+  const bloomThreshold = tier === 'ULTRA' ? 0.5 : 0.6;
+
+  if (!s.crtEnabled) {
+    return {
+      crtEnabled: false,
+      webglCrt: false,
+      cssOverlay: false,
+      scanlineIntensity: 0,
+      curvature: 0,
+      vignette: 0,
+      phosphor: 0,
+      bloomIntensity,
+      bloomThreshold,
+      arcadeBezel: s.arcadeBezel,
+    };
+  }
+
+  // LOW has no budget for the world-texture upload, so it degrades to the CSS overlay.
+  if (tier === 'LOW') {
+    return {
+      crtEnabled: true,
+      webglCrt: false,
+      cssOverlay: true,
+      scanlineIntensity: s.crtScanlineIntensity,
+      curvature: 0,
+      vignette: s.crtVignette,
+      phosphor: 0,
+      bloomIntensity,
+      bloomThreshold,
+      arcadeBezel: s.arcadeBezel,
+    };
+  }
+
+  const fullCrt = tier !== 'MEDIUM';
+  return {
+    crtEnabled: true,
+    webglCrt: true,
+    cssOverlay: false,
+    scanlineIntensity: s.crtScanlineIntensity,
+    curvature: fullCrt ? s.crtCurvature : 0,
+    vignette: s.crtVignette,
+    phosphor: fullCrt ? s.crtPhosphor : 0,
+    bloomIntensity,
+    bloomThreshold,
+    arcadeBezel: s.arcadeBezel,
+  };
+}
+
 function loadFromStorage(): GraphicsSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_GRAPHICS);
@@ -130,6 +214,14 @@ function loadFromStorage(): GraphicsSettings {
         parsed.screenShakeIntensity ?? DEFAULT_GRAPHICS_SETTINGS.screenShakeIntensity,
       manualTierOverride:
         parsed.manualTierOverride ?? DEFAULT_GRAPHICS_SETTINGS.manualTierOverride,
+      crtEnabled: parsed.crtEnabled ?? DEFAULT_GRAPHICS_SETTINGS.crtEnabled,
+      crtScanlineIntensity:
+        parsed.crtScanlineIntensity ?? DEFAULT_GRAPHICS_SETTINGS.crtScanlineIntensity,
+      crtCurvature: parsed.crtCurvature ?? DEFAULT_GRAPHICS_SETTINGS.crtCurvature,
+      crtVignette: parsed.crtVignette ?? DEFAULT_GRAPHICS_SETTINGS.crtVignette,
+      crtPhosphor: parsed.crtPhosphor ?? DEFAULT_GRAPHICS_SETTINGS.crtPhosphor,
+      bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
+      arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
     };
   } catch {
     return { ...DEFAULT_GRAPHICS_SETTINGS };
@@ -146,6 +238,12 @@ export function getGraphicsSettings(): GraphicsSettings {
 export function saveGraphicsSettings(settings: GraphicsSettings): void {
   cache = { ...settings };
   localStorage.setItem(STORAGE_KEY_GRAPHICS, JSON.stringify(cache));
+  for (const listener of listeners) listener();
+}
+
+export function subscribeGraphicsSettings(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSettings {
@@ -159,6 +257,7 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     particleTrails: true,
     bloomEnabled: limits.bloomPasses > 0,
     refractionEnabled: limits.refraction,
+    crtEnabled: tier !== 'LOW',
   };
   saveGraphicsSettings(next);
   return next;

@@ -1,6 +1,7 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
+import { RETRO_COLORS } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 
@@ -14,14 +15,15 @@ export function drawCombatants(
     if (player.isDead) continue;
     const pos = lerpPos(player, alpha);
     const isBot = player.tags.has('bot');
-    const baseColor = isBot ? '#ff8844' : '#00ccff';
-    drawCombatantBody(ctx, state, player, pos, baseColor, isBot ? '#ffbb88' : '#88eeff');
+    const baseColor = isBot ? RETRO_COLORS.botOrange : RETRO_COLORS.playerCyan;
+    const aimColor = isBot ? RETRO_COLORS.botOrangeAim : RETRO_COLORS.playerCyanAim;
+    drawCombatantBody(ctx, state, player, pos, baseColor, aimColor);
   }
 
   for (const dummy of world.dummies) {
     if (dummy.isDead) continue;
     const pos = lerpPos(dummy, alpha);
-    drawCombatantBody(ctx, state, dummy, pos, '#ff8844');
+    drawCombatantBody(ctx, state, dummy, pos, RETRO_COLORS.botOrange);
   }
 }
 
@@ -41,6 +43,9 @@ function drawCombatantBody(
 
   const radius = entity.effectiveRadius;
   const drawColor = entity.activeMorph ? '#6a7a8a' : fillColor;
+
+  const glow = state.spriteCache.getSprite('COMBATANT', drawColor, radius);
+  ctx.drawImage(glow.canvas, pos.x - glow.w / 2, pos.y - glow.h / 2, glow.w, glow.h);
 
   ctx.fillStyle = drawColor;
   ctx.beginPath();

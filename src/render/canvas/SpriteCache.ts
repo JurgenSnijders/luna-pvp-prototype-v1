@@ -2,7 +2,7 @@
 const GLOW_PAD = 20;
 const SPRITE_CACHE_MAX = 300;
 
-export type SpriteKind = 'DISC' | 'ORB' | 'SHURIKEN' | 'BEAM' | 'DOT';
+export type SpriteKind = 'DISC' | 'ORB' | 'SHURIKEN' | 'BEAM' | 'DOT' | 'COMBATANT';
 
 export interface SpriteEntry {
   canvas: HTMLCanvasElement;
@@ -70,6 +70,8 @@ function bakeSprite(
       return bakeShurikenSprite(color, radius, dpr);
     case 'DOT':
       return bakeDotSprite(color, radius, dpr);
+    case 'COMBATANT':
+      return bakeCombatantGlowSprite(color, radius, dpr);
     case 'DISC':
     default:
       return bakeDiscSprite(color, radius, dpr);
@@ -194,6 +196,33 @@ function bakeShurikenSprite(color: string, radius: number, dpr: number): SpriteE
   bctx.lineWidth = 1.5;
   bctx.beginPath();
   bctx.arc(0, 0, radius * 0.22, 0, Math.PI * 2);
+  bctx.stroke();
+
+  return { canvas, w: size, h: size };
+}
+
+/**
+ * Outer halo drawn beneath the live combatant body. Baked once per
+ * colour/radius so the neon look costs no per-frame shadowBlur.
+ */
+function bakeCombatantGlowSprite(color: string, radius: number, dpr: number): SpriteEntry {
+  const glowRadius = radius + 14;
+  const size = (glowRadius + GLOW_PAD) * 2;
+  const { canvas, bctx } = createSpriteCanvas(size, size, dpr);
+
+  const grad = bctx.createRadialGradient(0, 0, radius * 0.4, 0, 0, glowRadius);
+  grad.addColorStop(0, `${color}66`);
+  grad.addColorStop(0.55, `${color}33`);
+  grad.addColorStop(1, `${color}00`);
+  bctx.fillStyle = grad;
+  bctx.beginPath();
+  bctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+  bctx.fill();
+
+  bctx.strokeStyle = `${color}55`;
+  bctx.lineWidth = 2;
+  bctx.beginPath();
+  bctx.arc(0, 0, radius + 3, 0, Math.PI * 2);
   bctx.stroke();
 
   return { canvas, w: size, h: size };

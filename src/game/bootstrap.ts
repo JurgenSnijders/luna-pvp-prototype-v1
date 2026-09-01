@@ -37,6 +37,9 @@ import {
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
+import { subscribeGraphicsSettings } from '../devtools/graphicsSettings';
+import { applyArcadeBezel } from '../ui/arcadeBezel';
+import { applyCrtOverlay } from '../ui/crtOverlay';
 
 function init(app: GameApp): void {
   resize(app);
@@ -63,6 +66,15 @@ function init(app: GameApp): void {
   if (glCtx) {
     (window as unknown as { __lunaGlCtx?: typeof glCtx }).__lunaGlCtx = glCtx;
   }
+  applyCrtOverlay();
+  applyArcadeBezel();
+  // A tier change moves dprCap, so the world canvas has to be re-sized in step
+  // with the GL drawing buffer or the CRT world texture samples at the wrong scale.
+  subscribeGraphicsSettings(() => {
+    resize(app);
+    applyCrtOverlay();
+    applyArcadeBezel();
+  });
   app.renderer = new CanvasRenderer(app.ctx);
   app.interpreter.setParticleSystem(app.particles);
   perfMonitor.probeCapabilities(app.particles.getGlContext()?.gl ?? null);
@@ -299,6 +311,14 @@ function init(app: GameApp): void {
       );
       app.ctx.restore();
 
+      const isWebGL = app.particles.isWebGL();
+      const showPerfOverlay = perfMonitor.isOverlayVisible();
+      // The CRT pass snapshots #game-canvas during the particle render and
+      // presents it opaquely, so the overlay has to be on the canvas by then.
+      if (isWebGL && showPerfOverlay) {
+        drawPerfOverlay(app);
+      }
+
       const vfxStats = app.particles.render(window.innerWidth, window.innerHeight);
       perfMonitor.setCounters({
         liveParticles: vfxStats.liveParticles,
@@ -308,12 +328,11 @@ function init(app: GameApp): void {
         uploadBytes: vfxStats.uploadBytes,
       });
 
-      if (!app.particles.isWebGL()) {
+      if (!isWebGL) {
         app.particles.draw(app.ctx);
-      }
-
-      if (perfMonitor.isOverlayVisible()) {
-        drawPerfOverlay(app);
+        if (showPerfOverlay) {
+          drawPerfOverlay(app);
+        }
       }
 
       app.physicsDebugLayer.render(app.world, alpha, shake.x, shake.y);

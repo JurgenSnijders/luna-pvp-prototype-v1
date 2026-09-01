@@ -35,6 +35,14 @@ export function drawZones(
     );
     ctx.stroke();
     ctx.setLineDash([]);
+
+    ctx.strokeStyle = rimHue;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 }
 

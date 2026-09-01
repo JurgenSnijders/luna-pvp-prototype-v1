@@ -1,6 +1,6 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx } from '../../types/schema';
-import { getTierLimits } from '../../devtools/graphicsSettings';
+import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
 import { PostFX } from '../gl/PostFX';
@@ -111,6 +111,7 @@ export class WebGLBackend implements ParticleBackend {
     const bufferW = gl.drawingBufferWidth;
     const bufferH = gl.drawingBufferHeight;
     const limits = getTierLimits();
+    const crt = getEffectiveCrtSettings();
     this.postFx.resize(bufferW, bufferH, limits.bloomResolution);
     this.postFx.beginScene();
 
@@ -118,7 +119,33 @@ export class WebGLBackend implements ParticleBackend {
     const stats = this.renderer.drawSorted(width, height);
 
     const chroma = limits.bloomPasses >= 2 && limits.refraction ? 0.002 : 0;
-    this.postFx.endSceneAndComposite(limits.bloomPasses, 0.8, chroma, bufferW, bufferH);
+    this.postFx.endSceneAndComposite(
+      limits.bloomPasses,
+      crt.bloomIntensity,
+      chroma,
+      crt.bloomThreshold,
+      bufferW,
+      bufferH,
+      crt.webglCrt,
+    );
+
+    const worldCanvas = crt.webglCrt
+      ? (document.getElementById('game-canvas') as HTMLCanvasElement | null)
+      : null;
+    if (worldCanvas) {
+      this.postFx.presentCrt(
+        worldCanvas,
+        {
+          scanline: crt.scanlineIntensity,
+          curvature: crt.curvature,
+          vignette: crt.vignette,
+          phosphor: crt.phosphor,
+          bloomIntensity: crt.bloomIntensity,
+        },
+        bufferW,
+        bufferH,
+      );
+    }
 
     return {
       liveParticles: this.particles.length,

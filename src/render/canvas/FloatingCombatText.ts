@@ -1,5 +1,6 @@
 import type { CombatVisualEvent } from '../../engine/PhysicsWorld';
 import type { SpellArchetype } from '../../types/schema';
+import { canvasFont } from '../../ui/tokens';
 
 export type FCTType =
   | 'DAMAGE'
@@ -159,15 +160,19 @@ export class FloatingCombatTextManager {
     for (const p of this.particles) {
       const alpha = Math.max(0, p.lifeMs / p.maxLifeMs);
       const fontSize = Math.round(14 * p.scale);
-      ctx.font = `${fontSize}px "FixedSys", "Courier New", monospace`;
+      ctx.font = canvasFont(fontSize);
       ctx.globalAlpha = alpha;
       ctx.lineWidth = 3;
       ctx.strokeStyle = '#000000';
       ctx.fillStyle = p.color;
       ctx.strokeText(p.text, p.pos.x, p.pos.y);
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
       ctx.fillText(p.text, p.pos.x, p.pos.y);
+      ctx.shadowBlur = 0;
     }
 
+    ctx.shadowColor = 'transparent';
     ctx.textAlign = prevAlign;
     ctx.globalAlpha = prevAlpha;
   }
