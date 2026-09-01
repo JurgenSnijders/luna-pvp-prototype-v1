@@ -57,15 +57,17 @@ Passive ops: ADD, MULTIPLY
 
 Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 
-// Phase 2 (lazy compilation): single-ability physics compiler. Unlike FORGE/EVOLUTION,
-// this targets exactly one already-chosen concept and returns the full AbilitySchema.
-export const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
-Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
+const CATEGORY_DESIGN_FLAVOR = `Category design flavor:
+- PRIMARY: rapid-fire skillshots, low payload, short cooldown pacing, ammo magazines
+- SECONDARY: medium area/skillshot pressure, charged shots, combo chains
+- UTILITY: crowd control, zones, friction patches, vortices, terrain mutation, obstacles, stasis traps
+- ULTIMATE: high-impact screen presence, large fields, morphs, turrets/decoys, long cooldown pacing
+- MOBILITY: displacement, teleports, dashes, stealth, escapes — prioritize movement over damage`;
 
-CORE WIN CONDITION: The primary goal of the game is knocking enemies into the lava. Unless a spell is strictly a defensive utility, it MUST include a physical displacement action (APPLY_IMPULSE or RADIAL_IMPULSE/MASS_ATTRACTOR) to push or pull the target.
+export const ABILITY_SCHEMA_GRAMMAR = `CORE WIN CONDITION: The primary goal of the game is knocking enemies into the lava. Unless a spell is strictly a defensive utility, it MUST include a physical displacement action (APPLY_IMPULSE or RADIAL_IMPULSE/MASS_ATTRACTOR) to push or pull the target.
 
-AbilitySchema: { id, name, tagline?, description?, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
-tagline?: string; description?: string;  // copy from concept if known
+AbilitySchema: { id, name, tagline, description, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+tagline: string (REQUIRED, 2-4 words); description: string (REQUIRED, 1 sentence, under 80 characters)
 archetype: REQUIRED — assign one of KINETIC, FIRE, FROST, LIGHTNING, VOID, HOLY, TOXIC, ARCANE, MAGNETIC, SONIC, AERO, GRAVITY, EARTH, CHRONO, PLASMA, NATURE, BLOOD, PHASE, CHAOS.
 The engine scales implicit vulnerability and field physics from archetype — do NOT spam ADD_INSTABILITY; rely on archetype + kinetic impact math instead.
 Archetype scaling cheat sheet:
@@ -162,3 +164,34 @@ SEMANTIC FIDELITY RULES (The compiled physics MUST match the concept description
 - FLAMETHROWER / STREAM: If description mentions flamethrower, stream, or continuous fire, you MUST use inputProfile: { mode: "CHANNELED", channelIntervalMs: 100 } and resourceCost: { type: "HEAT" }.
 
 Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;
+
+// Phase 2 (lazy compilation): single-ability physics compiler for metadata-only cards.
+export const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
+Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
+
+${ABILITY_SCHEMA_GRAMMAR}`;
+
+export const UNIVERSAL_SPELL_PROMPT = `You are a unified spell author for a 2D physics kinetic arena game.
+You invent imaginative abilities AND compile their full physics in a single pass — flavor text and mechanics must be authored together.
+Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
+
+The AbilitySchema MUST include an imaginative name, a short 2-4 word tagline, and a 1-sentence description (under 80 characters).
+All three flavor fields must align with the triggers, trajectory, and actions you design.
+
+${CATEGORY_DESIGN_FLAVOR}
+
+Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports, morphs, stealth, turrets/decoys, terrain mutation, obstacles, stasis, charged/channel/combo casting, heat/ammo/health-cost economies.
+Tune the spell for the requested category and design seed. Displacement toward lava is the primary win condition.
+
+${ABILITY_SCHEMA_GRAMMAR}`;
+
+export const UNIVERSAL_EVOLUTION_PROMPT = `You are a unified spell evolution author for a 2D physics kinetic arena game.
+You receive a base ability and a player mutation request, then output ONE fully mutated AbilitySchema — flavor and physics authored together.
+Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
+
+The AbilitySchema MUST include an imaginative evolved name (preserve the base name's stem/identity), a short 2-4 word tagline, and a 1-sentence description (under 80 characters).
+Layer the requested mutation distinctly while keeping the core identity of the base spell.
+
+${CATEGORY_DESIGN_FLAVOR}
+
+${ABILITY_SCHEMA_GRAMMAR}`;

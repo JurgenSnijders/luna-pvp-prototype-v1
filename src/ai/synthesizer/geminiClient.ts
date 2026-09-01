@@ -1,11 +1,14 @@
 import type {
+  CardRarity,
   DraftCard,
   EvolutionContext,
   PlayerLoadout,
   SkillCategory,
 } from '../../types/cards';
 import { CATEGORY_SLOT_MAP, getCategoryLabel, validateDraftCards } from '../../types/cards';
-import { balanceCards } from './cards';
+import type { AbilitySchema } from '../../types/schema';
+import { validateAbilitySchema } from '../../types/schema';
+import { balanceCards, makeActiveCard } from './cards';
 import {
   feedSseBuffer,
   flushSseBuffer,
@@ -14,16 +17,21 @@ import {
   stripMarkdownFences,
 } from './geminiSse';
 import {
+  deepNormalizeLLMValue,
   diagnoseDraftCardsValidation,
   normalizeLLMResponse,
+  repairAbilityPayload,
   summarizeValidationFailure,
   tryParseLLMJson,
 } from './llmRepair';
+import { generateOfflineEvolution } from './offline/evolution';
+import { generateOfflineForge } from './offline/forge';
 import {
-  EVOLUTION_SYSTEM_PROMPT,
-  FORGE_SYSTEM_PROMPT,
   PASSIVE_SYSTEM_PROMPT,
+  UNIVERSAL_EVOLUTION_PROMPT,
+  UNIVERSAL_SPELL_PROMPT,
 } from './prompts';
+import { getCategorySeeds, getEvolutionSeeds } from './seeds';
 import { DEFAULT_MODEL, type AiSettings } from './settings';
 import { setLastApiError, setLastCallSucceeded } from './status';
 
@@ -317,7 +325,74 @@ export interface CallLLMOptions {
   onChunk?: (chunk: NativeGeminiChunk) => void;
 }
 
-async function callLLM(
+const PARALLEL_RARITIES: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
+
+function schemaToDraftCard(
+  schema: AbilitySchema,
+  category: SkillCategory,
+  index: number,
+): DraftCard {
+  return makeActiveCard(
+    schema.id,
+    schema.name,
+    schema.tagline ?? '',
+    schema.description ?? '',
+    PARALLEL_RARITIES[index] ?? 'COMMON',
+    schema,
+    category,
+  );
+}
+
+function mergeParallelResults(
+  results: (AbilitySchema | null)[],
+  category: SkillCategory,
+  offlineCards: DraftCard[],
+): DraftCard[] {
+  return results.map((schema, i) =>
+    schema ? schemaToDraftCard(schema, category, i) : structuredClone(offlineCards[i]),
+  );
+}
+
+async function callUniversalAbility(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AiSettings,
+  options: { signal?: AbortSignal; logSuffix: string; onError?: (message: string) => void },
+): Promise<AbilitySchema | null> {
+  const result = await postNativeGemini(systemPrompt, userPrompt, settings, {
+    timeoutMs: 8000,
+    maxOutputTokens: 3072,
+    logTag: `[draft/${options.logSuffix}]`,
+    signal: options.signal,
+  });
+
+  if (!result.ok) {
+    options.onError?.(result.error ?? 'Request failed');
+    return null;
+  }
+
+  const parseResult = tryParseLLMJson(result.text);
+  if (!parseResult.ok) {
+    options.onError?.(`JSON parse failed (${parseResult.error})`);
+    return null;
+  }
+
+  const normalized = deepNormalizeLLMValue(parseResult.value);
+  const obj = normalized as Record<string, unknown>;
+  const flavorHint =
+    [obj.name, obj.tagline, obj.description].filter((v) => typeof v === 'string').join(' ') ||
+    userPrompt;
+  const repaired = repairAbilityPayload(normalized, flavorHint);
+
+  if (!validateAbilitySchema(repaired)) {
+    options.onError?.('AbilitySchema validation failed');
+    return null;
+  }
+
+  return repaired as AbilitySchema;
+}
+
+async function callPassiveLLM(
   systemPrompt: string,
   userPrompt: string,
   settings: AiSettings,
@@ -369,14 +444,46 @@ export async function fetchLLMForge(
   settings: AiSettings,
   options?: CallLLMOptions,
 ): Promise<DraftCard[] | null> {
+  setLastCallSucceeded(false);
+  setLastApiError(null);
+
   const slot = CATEGORY_SLOT_MAP[category];
-  const userPrompt = `Player prompt: "${prompt}"
+  const baseUserPrompt = `Player prompt: "${prompt}"
 Target category: ${category} (${getCategoryLabel(category)}) → slot ${slot}
 ${loadoutSummary(loadout)}
 
-Generate 3 thematic ability concepts for this category.`;
+Generate ONE complete ability for this category.`;
 
-  return callLLM(FORGE_SYSTEM_PROMPT, userPrompt, settings, category, options);
+  const seeds = getCategorySeeds(category);
+  let lastError: string | null = null;
+
+  const results = await Promise.all(
+    seeds.map((seed, i) =>
+      callUniversalAbility(
+        UNIVERSAL_SPELL_PROMPT,
+        `${baseUserPrompt}\n\nDesign seed: ${seed}`,
+        settings,
+        {
+          signal: options?.signal,
+          logSuffix: `${i + 1}`,
+          onError: (message) => {
+            lastError = message;
+          },
+        },
+      ),
+    ),
+  );
+
+  if (results.every((schema) => schema === null)) {
+    setLastApiError(lastError ?? 'All parallel spell requests failed');
+    return null;
+  }
+
+  const offlineCards = generateOfflineForge(prompt, category);
+  const cards = mergeParallelResults(results, category, offlineCards);
+  setLastCallSucceeded(true);
+  setLastApiError(null);
+  return balanceCards(cards, category);
 }
 
 export async function fetchLLMEvolution(
@@ -386,16 +493,49 @@ export async function fetchLLMEvolution(
   settings: AiSettings,
   options?: CallLLMOptions,
 ): Promise<DraftCard[] | null> {
-  const userPrompt = `Base Ability Name: "${context.baseAbility.name}"
+  setLastCallSucceeded(false);
+  setLastApiError(null);
+
+  const baseUserPrompt = `Base Ability Name: "${context.baseAbility.name}"
+Base Ability Schema: ${JSON.stringify(context.baseAbility)}
 
 User Mutation Request: ${prompt}
 
 Category: ${context.category} (${getCategoryLabel(context.category)}) → slot ${context.slotKey}
 ${loadoutSummary(loadout)}
 
-Generate 3 distinct evolved ability concepts that preserve the base name's identity while applying the mutation.`;
+Generate ONE distinct evolved ability that preserves the base name's identity while applying the mutation.`;
 
-  return callLLM(EVOLUTION_SYSTEM_PROMPT, userPrompt, settings, context.category, options);
+  const seeds = getEvolutionSeeds();
+  let lastError: string | null = null;
+
+  const results = await Promise.all(
+    seeds.map((seed, i) =>
+      callUniversalAbility(
+        UNIVERSAL_EVOLUTION_PROMPT,
+        `${baseUserPrompt}\n\nDesign seed: ${seed}`,
+        settings,
+        {
+          signal: options?.signal,
+          logSuffix: `evo/${i + 1}`,
+          onError: (message) => {
+            lastError = message;
+          },
+        },
+      ),
+    ),
+  );
+
+  if (results.every((schema) => schema === null)) {
+    setLastApiError(lastError ?? 'All parallel evolution requests failed');
+    return null;
+  }
+
+  const offlineCards = generateOfflineEvolution(prompt, context);
+  const cards = mergeParallelResults(results, context.category, offlineCards);
+  setLastCallSucceeded(true);
+  setLastApiError(null);
+  return balanceCards(cards, context.category);
 }
 
 export async function fetchLLMPassive(
@@ -409,5 +549,5 @@ ${loadoutSummary(loadout)}
 
 Generate 3 thematic PASSIVE_UPGRADE draft cards.`;
 
-  return callLLM(PASSIVE_SYSTEM_PROMPT, userPrompt, settings, 'SECONDARY', options);
+  return callPassiveLLM(PASSIVE_SYSTEM_PROMPT, userPrompt, settings, 'SECONDARY', options);
 }
