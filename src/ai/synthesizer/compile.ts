@@ -3,7 +3,7 @@ import type { DraftCard, SkillCategory } from '../../types/cards';
 import { CATEGORY_SLOT_MAP } from '../../types/cards';
 import type { AbilitySchema } from '../../types/schema';
 import { validateAbilitySchema } from '../../types/schema';
-import { postNativeGemini } from './geminiClient';
+import { postNativeGemini, type NativeGeminiChunk } from './geminiClient';
 import {
   deepNormalizeLLMValue,
   repairAbilityPayload,
@@ -109,6 +109,7 @@ function fallbackCompiledSchema(
 export async function compileAbilityPayload(
   card: DraftCard,
   baseAbility?: AbilitySchema,
+  options?: { signal?: AbortSignal; onChunk?: (chunk: NativeGeminiChunk) => void },
 ): Promise<AbilitySchema> {
   const category = card.category ?? 'SECONDARY';
 
@@ -127,6 +128,8 @@ export async function compileAbilityPayload(
     timeoutMs: 5000,
     maxOutputTokens: 3072,
     logTag: '[compile]',
+    signal: options?.signal,
+    onChunk: options?.onChunk,
   });
 
   if (!result.ok) {

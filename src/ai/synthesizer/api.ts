@@ -8,6 +8,7 @@ import {
   fetchLLMEvolution,
   fetchLLMForge,
   fetchLLMPassive,
+  type NativeGeminiChunk,
 } from './geminiClient';
 import { generateOfflineEvolution } from './offline/evolution';
 import { generateOfflineForge, generateOfflinePassives } from './offline/forge';
@@ -24,20 +25,23 @@ export async function synthesizeAbility(
   loadout: PlayerLoadout,
   evolution?: EvolutionContext,
   passiveOnly = false,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; onChunk?: (chunk: NativeGeminiChunk) => void },
 ): Promise<DraftCard[]> {
   const settings = getAiSettings();
-  const signal = options?.signal;
+  const transportOptions = {
+    signal: options?.signal,
+    onChunk: options?.onChunk,
+  };
 
   if (settings.apiKey.trim()) {
     let online: DraftCard[] | null = null;
 
     if (passiveOnly) {
-      online = await fetchLLMPassive(prompt, loadout, settings, signal);
+      online = await fetchLLMPassive(prompt, loadout, settings, transportOptions);
     } else if (evolution) {
-      online = await fetchLLMEvolution(prompt, evolution, loadout, settings, signal);
+      online = await fetchLLMEvolution(prompt, evolution, loadout, settings, transportOptions);
     } else {
-      online = await fetchLLMForge(prompt, category, loadout, settings, signal);
+      online = await fetchLLMForge(prompt, category, loadout, settings, transportOptions);
     }
 
     if (online) {
