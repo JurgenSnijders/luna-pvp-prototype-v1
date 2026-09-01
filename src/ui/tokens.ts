@@ -1,3 +1,6 @@
+import { styleManager } from './styleManager';
+import type { StylePresetColors } from '../render/presets/stylePresets';
+
 export const FONTS = {
   mono: "'Fixedsys', 'FixedSys', 'Courier New', monospace",
   size: {
@@ -11,26 +14,30 @@ export const FONTS = {
 };
 
 export const RETRO_COLORS = {
-  bgDark: '#06060c',
-  panelBg: 'rgba(8, 10, 20, 0.85)',
-  panelBgOpaque: '#0a0d18',
-  borderSubtle: 'rgba(0, 229, 255, 0.2)',
-  borderNeon: '#00e5ff',
-  borderHot: '#ff007f',
-  neonCyan: '#00e5ff',
-  neonMagenta: '#ff007f',
-  neonYellow: '#ffee00',
-  neonGreen: '#39ff14',
-  textPrimary: '#e0f8ff',
-  textMuted: '#6d8896',
+  bgDark: 'var(--retro-bg-dark, #06060c)',
+  panelBg: 'var(--retro-panel-bg, rgba(8, 10, 20, 0.85))',
+  panelBgOpaque: 'var(--retro-panel-bg-opaque, #0a0d18)',
+  borderSubtle: 'var(--retro-border-subtle, rgba(0, 229, 255, 0.2))',
+  borderNeon: 'var(--retro-border-neon, #00e5ff)',
+  borderHot: 'var(--retro-border-hot, #ff007f)',
+  neonCyan: 'var(--retro-neon-cyan, #00e5ff)',
+  neonMagenta: 'var(--retro-neon-magenta, #ff007f)',
+  neonYellow: 'var(--retro-neon-yellow, #ffee00)',
+  neonGreen: 'var(--retro-neon-green, #39ff14)',
+  textPrimary: 'var(--retro-text-primary, #e0f8ff)',
+  textMuted: 'var(--retro-text-muted, #6d8896)',
 };
 
 export const RETRO_GLOW = {
-  cyan: '0 0 8px rgba(0, 229, 255, 0.6), 0 0 16px rgba(0, 229, 255, 0.3)',
-  magenta: '0 0 8px rgba(255, 0, 127, 0.6), 0 0 16px rgba(255, 0, 127, 0.3)',
-  boxCyan: '0 0 10px rgba(0, 229, 255, 0.3), inset 0 0 10px rgba(0, 229, 255, 0.1)',
-  boxMagenta: '0 0 10px rgba(255, 0, 127, 0.3), inset 0 0 10px rgba(255, 0, 127, 0.1)',
+  cyan: 'var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6), 0 0 16px rgba(0, 229, 255, 0.3))',
+  magenta: 'var(--retro-glow-magenta, 0 0 8px rgba(255, 0, 127, 0.6), 0 0 16px rgba(255, 0, 127, 0.3))',
+  boxCyan: 'var(--retro-box-cyan, 0 0 10px rgba(0, 229, 255, 0.3), inset 0 0 10px rgba(0, 229, 255, 0.1))',
+  boxMagenta: 'var(--retro-box-magenta, 0 0 10px rgba(255, 0, 127, 0.3), inset 0 0 10px rgba(255, 0, 127, 0.1))',
 };
+
+export function getActiveColors(): StylePresetColors {
+  return styleManager.getActiveColors();
+}
 
 export function retroPanelStyle(glowColor: 'cyan' | 'magenta' = 'cyan'): string {
   const glow = glowColor === 'cyan' ? RETRO_GLOW.boxCyan : RETRO_GLOW.boxMagenta;

@@ -26,6 +26,10 @@ interface CrtUniforms {
   chromaticAberration: WebGLUniformLocation | null;
   phosphorGridIntensity: WebGLUniformLocation | null;
   flickerIntensity: WebGLUniformLocation | null;
+  tintColor: WebGLUniformLocation | null;
+  tintAmount: WebGLUniformLocation | null;
+  contrast: WebGLUniformLocation | null;
+  brightness: WebGLUniformLocation | null;
 }
 
 export class PostFX {
@@ -68,6 +72,10 @@ export class PostFX {
       chromaticAberration: gl.getUniformLocation(this.crtProgram, 'u_chromaticAberration'),
       phosphorGridIntensity: gl.getUniformLocation(this.crtProgram, 'u_phosphorGridIntensity'),
       flickerIntensity: gl.getUniformLocation(this.crtProgram, 'u_flickerIntensity'),
+      tintColor: gl.getUniformLocation(this.crtProgram, 'u_tintColor'),
+      tintAmount: gl.getUniformLocation(this.crtProgram, 'u_tintAmount'),
+      contrast: gl.getUniformLocation(this.crtProgram, 'u_contrast'),
+      brightness: gl.getUniformLocation(this.crtProgram, 'u_brightness'),
     };
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
@@ -231,6 +239,15 @@ export class PostFX {
     gl.uniform1f(this.crtUniforms.chromaticAberration, cfg.chromaticAberration);
     gl.uniform1f(this.crtUniforms.phosphorGridIntensity, cfg.phosphorGridIntensity);
     gl.uniform1f(this.crtUniforms.flickerIntensity, cfg.flickerIntensity);
+    gl.uniform3f(
+      this.crtUniforms.tintColor,
+      cfg.tintColor[0],
+      cfg.tintColor[1],
+      cfg.tintColor[2],
+    );
+    gl.uniform1f(this.crtUniforms.tintAmount, cfg.tintAmount);
+    gl.uniform1f(this.crtUniforms.contrast, cfg.contrast);
+    gl.uniform1f(this.crtUniforms.brightness, cfg.brightness);
     this.drawFullscreen();
   }
 

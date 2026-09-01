@@ -204,6 +204,10 @@ uniform float u_curvature;
 uniform float u_chromaticAberration;
 uniform float u_phosphorGridIntensity;
 uniform float u_flickerIntensity;
+uniform vec3 u_tintColor;
+uniform float u_tintAmount;
+uniform float u_contrast;
+uniform float u_brightness;
 
 out vec4 fragColor;
 
@@ -234,6 +238,13 @@ void main() {
     px >= 2.0 ? 1.0 + 0.2 * u_phosphorGridIntensity : 1.0 - 0.08 * u_phosphorGridIntensity
   );
   color *= phosphorMask;
+
+  color = (color - 0.5) * u_contrast + 0.5 + (u_brightness - 1.0);
+  if (u_tintAmount > 0.0) {
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    vec3 tinted = luma * u_tintColor;
+    color = mix(color, tinted, u_tintAmount);
+  }
 
   float scan = sin(v_texCoord.y * u_resolution.y * 3.14159 * u_scanlineDensity);
   float scanMul = 1.0 - u_scanlineIntensity * (0.5 + 0.5 * scan) * 0.5;

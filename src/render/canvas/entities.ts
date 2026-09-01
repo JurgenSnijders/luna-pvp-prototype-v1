@@ -1,7 +1,7 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
-import { RETRO_COLORS } from '../../ui/tokens';
+import { getActiveColors } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 
@@ -71,7 +71,8 @@ function drawCombatantBody(
 
   if (entity.activeMorph) {
     const morphPulse = 0.5 + 0.5 * Math.sin(state.ringRotation * 4);
-    withNeonStroke(ctx, RETRO_COLORS.neonCyan, 8, () => {
+    const colors = getActiveColors();
+    withNeonStroke(ctx, colors.neonCyan, 8, () => {
       ctx.strokeStyle = `rgba(160, 200, 255, ${0.35 + morphPulse * 0.45})`;
       ctx.lineWidth = 2 + morphPulse * 2;
       ctx.beginPath();
@@ -150,6 +151,7 @@ function drawStasisOverlay(
 ): void {
   if (entity.stasisRemainingMs > 0) {
     const crystal = 0.5 + 0.5 * Math.sin(state.ringRotation * 5);
+    const colors = getActiveColors();
     withNeonStroke(ctx, '#fcd34d', 6, () => {
       ctx.strokeStyle = `rgba(255, 215, 80, ${0.55 + crystal * 0.4})`;
       ctx.lineWidth = 2 + crystal * 2;
@@ -157,7 +159,7 @@ function drawStasisOverlay(
       ctx.arc(pos.x, pos.y, entity.effectiveRadius + 4, 0, Math.PI * 2);
       ctx.stroke();
     });
-    withNeonStroke(ctx, RETRO_COLORS.neonCyan, 6, () => {
+    withNeonStroke(ctx, colors.neonCyan, 6, () => {
       ctx.strokeStyle = `rgba(180, 230, 255, ${0.25 + crystal * 0.35})`;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 5]);
