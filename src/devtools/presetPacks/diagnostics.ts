@@ -4,6 +4,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Entity Storm': {
     id: 'test_entity_storm',
     name: 'Entity Storm',
+    archetype: 'CHAOS',
     cooldownMs: 3000,
     recoilKick: 100,
     visuals: {
@@ -38,6 +39,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Field Dedup Ticker': {
     id: 'test_field_dedup_ticker',
     name: 'Field Dedup Ticker',
+    archetype: 'VOID',
     cooldownMs: 2000,
     recoilKick: 20,
     trajectory: { type: 'LINEAR', speed: 350, maxRange: 600 },
@@ -71,6 +73,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Null Ability': {
     id: 'test_null_ability',
     name: 'Null Ability',
+    archetype: 'KINETIC',
     cooldownMs: 500,
     recoilKick: 150,
     visuals: {
@@ -86,6 +89,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Hazard Probe': {
     id: 'test_hazard_probe',
     name: 'Hazard Probe',
+    archetype: 'FIRE',
     cooldownMs: 1000,
     recoilKick: 30,
     trajectory: { type: 'LINEAR', speed: 600, maxRange: 500 },
@@ -123,6 +127,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Surface Probe': {
     id: 'test_surface_probe',
     name: 'Surface Probe',
+    archetype: 'EARTH',
     cooldownMs: 800,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 700, maxRange: 500 },
@@ -162,6 +167,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'Reflect Probe': {
     id: 'test_reflect_probe',
     name: 'Reflect Probe',
+    archetype: 'FROST',
     cooldownMs: 1200,
     recoilKick: 30,
     trajectory: { type: 'LINEAR', speed: 500, maxRange: 600 },
@@ -176,6 +182,12 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 200,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           { type: 'REFLECT_PROJECTILES', target: 'SELF' },
           { type: 'ADD_INSTABILITY', amount: 10, target: 'TARGET' },
         ],
@@ -186,6 +198,7 @@ export const DIAGNOSTIC_PRESETS: Record<string, AbilitySchema> = {
   'VFX Stress Storm': {
     id: 'test_vfx_stress_storm',
     name: 'VFX Stress Storm',
+    archetype: 'ARCANE',
     cooldownMs: 400,
     recoilKick: 40,
     visuals: {

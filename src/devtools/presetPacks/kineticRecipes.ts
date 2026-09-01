@@ -4,6 +4,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   harpoon: {
     id: 'recipe_harpoon',
     name: 'Blood Harpoon',
+    archetype: 'BLOOD',
     cooldownMs: 900,
     recoilKick: 70,
     trajectory: { type: 'LINEAR', speed: 900, maxRange: 650, piercing: 1 },
@@ -38,6 +39,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   vortex: {
     id: 'recipe_vortex',
     name: 'Void Singularity',
+    archetype: 'VOID',
     cooldownMs: 1200,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
@@ -71,6 +73,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   cluster: {
     id: 'recipe_cluster',
     name: 'Cluster MIRV',
+    archetype: 'FIRE',
     cooldownMs: 1100,
     recoilKick: 90,
     trajectory: { type: 'LINEAR', speed: 520, maxRange: 600 },
@@ -136,6 +139,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   stasisTrap: {
     id: 'recipe_stasis_trap',
     name: 'Stasis Freeze Trap',
+    archetype: 'FROST',
     cooldownMs: 1000,
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 700, maxRange: 550 },
@@ -163,6 +167,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   iceWall: {
     id: 'recipe_ice_wall',
     name: 'Ice Barrier',
+    archetype: 'FROST',
     cooldownMs: 1500,
     recoilKick: 20,
     visuals: {
@@ -196,6 +201,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   execute: {
     id: 'recipe_execute',
     name: 'Coupe de Grace',
+    archetype: 'BLOOD',
     cooldownMs: 800,
     recoilKick: 60,
     trajectory: { type: 'LINEAR', speed: 800, maxRange: 500 },
@@ -228,6 +234,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   chargedShot: {
     id: 'recipe_charged_shot',
     name: 'Charged Rail Burst',
+    archetype: 'KINETIC',
     cooldownMs: 1200,
     recoilKick: 200,
     inputProfile: { mode: 'CHARGE_AND_RELEASE', minChargeMs: 200, maxChargeMs: 1200 },
@@ -258,6 +265,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   heatWeapon: {
     id: 'recipe_heat_weapon',
     name: 'Plasma Flamer',
+    archetype: 'FIRE',
     cooldownMs: 50,
     recoilKick: 5,
     inputProfile: { mode: 'CHANNELED', channelIntervalMs: 100 },
@@ -296,6 +304,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   comboChain: {
     id: 'recipe_combo_chain',
     name: 'Stasis Battery Combo',
+    archetype: 'FROST',
     cooldownMs: 800,
     recoilKick: 0,
     inputProfile: { mode: 'COMBO_CHAIN', comboWindowMs: 3000 },
@@ -330,6 +339,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   morphColossus: {
     id: 'recipe_morph_colossus',
     name: 'Iron Colossus',
+    archetype: 'EARTH',
     cooldownMs: 4000,
     recoilKick: 0,
     visuals: {
@@ -356,6 +366,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   ghostWalk: {
     id: 'recipe_ghost_walk',
     name: 'Ghost Walk',
+    archetype: 'PHASE',
     cooldownMs: 3000,
     recoilKick: 0,
     visuals: {
@@ -383,6 +394,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   autoTurret: {
     id: 'recipe_auto_turret',
     name: 'Auto Turret',
+    archetype: 'KINETIC',
     cooldownMs: 2500,
     recoilKick: 20,
     visuals: {
@@ -409,6 +421,7 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
   lavaPatch: {
     id: 'recipe_lava_patch',
     name: 'Lava Patch',
+    archetype: 'FIRE',
     cooldownMs: 1500,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 600, maxRange: 500 },
@@ -423,6 +436,12 @@ export const KINETIC_RECIPES: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 450,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           {
             type: 'MUTATE_TERRAIN',
             target: 'TARGET',

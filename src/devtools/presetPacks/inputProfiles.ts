@@ -4,6 +4,7 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
   'Charged Rail Burst': {
     id: 'test_charged_rail_burst',
     name: 'Charged Rail Burst',
+    archetype: 'KINETIC',
     cooldownMs: 1200,
     recoilKick: 200,
     inputProfile: { mode: 'CHARGE_AND_RELEASE', minChargeMs: 200, maxChargeMs: 1200 },
@@ -34,6 +35,7 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
   'Charged Nova Bomb': {
     id: 'test_charged_nova_bomb',
     name: 'Charged Nova Bomb',
+    archetype: 'FIRE',
     cooldownMs: 2000,
     recoilKick: 80,
     inputProfile: { mode: 'CHARGE_AND_RELEASE', minChargeMs: 300, maxChargeMs: 1500 },
@@ -65,6 +67,7 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
   'Void Channel': {
     id: 'test_void_channel',
     name: 'Void Channel',
+    archetype: 'VOID',
     cooldownMs: 100,
     recoilKick: 0,
     inputProfile: { mode: 'CHANNELED', channelIntervalMs: 150 },
@@ -97,6 +100,7 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
   'Flame Channel Cone': {
     id: 'test_flame_channel_cone',
     name: 'Flame Channel Cone',
+    archetype: 'FIRE',
     cooldownMs: 80,
     recoilKick: 10,
     inputProfile: { mode: 'CHANNELED', channelIntervalMs: 120 },
@@ -132,6 +136,7 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
   'Triple Tap Combo': {
     id: 'test_triple_tap_combo',
     name: 'Triple Tap Combo',
+    archetype: 'KINETIC',
     cooldownMs: 600,
     recoilKick: 40,
     inputProfile: { mode: 'COMBO_CHAIN', comboWindowMs: 1500 },
@@ -155,7 +160,12 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
               {
                 trigger: 'ON_HIT',
                 actions: [
-                  { type: 'APPLY_IMPULSE', baseForce: 300, target: 'TARGET' },
+                  {
+                    type: 'APPLY_IMPULSE',
+                    baseForce: 300,
+                    target: 'TARGET',
+                    directionMode: 'AWAY_FROM_ORIGIN',
+                  },
                 ],
               },
             ],
@@ -174,7 +184,12 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
               {
                 trigger: 'ON_HIT',
                 actions: [
-                  { type: 'APPLY_IMPULSE', baseForce: 450, target: 'TARGET' },
+                  {
+                    type: 'APPLY_IMPULSE',
+                    baseForce: 450,
+                    target: 'TARGET',
+                    directionMode: 'AWAY_FROM_ORIGIN',
+                  },
                 ],
               },
             ],

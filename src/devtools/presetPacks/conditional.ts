@@ -4,6 +4,7 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
   'Crowd Breaker': {
     id: 'test_crowd_breaker',
     name: 'Crowd Breaker',
+    archetype: 'FIRE',
     cooldownMs: 1500,
     recoilKick: 60,
     visuals: {
@@ -48,6 +49,7 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
   'Lava Hunter': {
     id: 'test_lava_hunter',
     name: 'Lava Hunter',
+    archetype: 'FIRE',
     cooldownMs: 1000,
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 850, maxRange: 600 },
@@ -88,6 +90,7 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
   'Instability Executioner': {
     id: 'test_instability_executioner',
     name: 'Instability Executioner',
+    archetype: 'CHAOS',
     cooldownMs: 900,
     recoilKick: 55,
     trajectory: { type: 'LINEAR', speed: 900, maxRange: 550 },
@@ -126,6 +129,7 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
   'Branching Cascade': {
     id: 'test_branching_cascade',
     name: 'Branching Cascade',
+    archetype: 'CHAOS',
     cooldownMs: 1400,
     recoilKick: 45,
     trajectory: { type: 'LINEAR', speed: 600, maxRange: 550 },
@@ -140,6 +144,12 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 550,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           { type: 'ADD_INSTABILITY', amount: 15, target: 'TARGET' },
         ],
         children: [
@@ -165,6 +175,7 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
   'Recursive Fractal': {
     id: 'test_recursive_fractal',
     name: 'Recursive Fractal',
+    archetype: 'ARCANE',
     cooldownMs: 1800,
     recoilKick: 70,
     trajectory: { type: 'LINEAR', speed: 500, maxRange: 500 },
@@ -176,6 +187,17 @@ export const CONDITIONAL_PRESETS: Record<string, AbilitySchema> = {
       impactVfx: 'MINI_NUKE',
     },
     triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
       {
         trigger: 'ON_EXPIRY',
         actions: [

@@ -4,6 +4,7 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
   'Kinetic Railgun': {
     id: 'kinetic_railgun',
     name: 'Kinetic Railgun',
+    archetype: 'KINETIC',
     cooldownMs: 1000,
     recoilKick: 450,
     trajectory: {
@@ -22,7 +23,12 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
-          { type: 'APPLY_IMPULSE', baseForce: 1200 },
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 1200,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           { type: 'ADD_INSTABILITY', amount: 40 },
         ],
       },
@@ -32,6 +38,7 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
   'Graviton Boomerang': {
     id: 'graviton_boomerang',
     name: 'Graviton Boomerang',
+    archetype: 'GRAVITY',
     cooldownMs: 800,
     recoilKick: 80,
     trajectory: {
@@ -49,6 +56,17 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
       impactVfx: 'VORTEX_SWIRL',
     },
     triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 300,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
       {
         trigger: 'ON_RETURN',
         actions: [
@@ -69,6 +87,7 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
   'Cryo Ice Trail': {
     id: 'cryo_ice_trail',
     name: 'Cryo Ice Trail',
+    archetype: 'FROST',
     cooldownMs: 600,
     recoilKick: 50,
     trajectory: {
@@ -99,12 +118,24 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
           },
         ],
       },
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 350,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
     ],
   },
 
   'Singularity Scatter': {
     id: 'singularity_scatter',
     name: 'Singularity Scatter',
+    archetype: 'GRAVITY',
     cooldownMs: 1200,
     recoilKick: 100,
     visuals: {
@@ -204,6 +235,7 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
   'Phase Nova': {
     id: 'phase_nova',
     name: 'Phase Nova',
+    archetype: 'PHASE',
     cooldownMs: 1500,
     recoilKick: 0,
     visuals: {

@@ -4,6 +4,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Iron Colossus': {
     id: 'test_iron_colossus',
     name: 'Iron Colossus',
+    archetype: 'EARTH',
     cooldownMs: 4000,
     recoilKick: 0,
     visuals: {
@@ -30,6 +31,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Quicksilver Form': {
     id: 'test_quicksilver_form',
     name: 'Quicksilver Form',
+    archetype: 'AERO',
     cooldownMs: 3500,
     recoilKick: 0,
     visuals: {
@@ -56,6 +58,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Ghost Walk': {
     id: 'test_ghost_walk',
     name: 'Ghost Walk',
+    archetype: 'PHASE',
     cooldownMs: 3000,
     recoilKick: 0,
     visuals: {
@@ -83,6 +86,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Deep Shroud': {
     id: 'test_deep_shroud',
     name: 'Deep Shroud',
+    archetype: 'VOID',
     cooldownMs: 4000,
     recoilKick: 0,
     visuals: {
@@ -110,6 +114,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Auto Turret': {
     id: 'test_auto_turret',
     name: 'Auto Turret',
+    archetype: 'KINETIC',
     cooldownMs: 2500,
     recoilKick: 20,
     visuals: {
@@ -136,6 +141,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Forward Turret Drop': {
     id: 'test_forward_turret_drop',
     name: 'Forward Turret Drop',
+    archetype: 'KINETIC',
     cooldownMs: 2000,
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 500, maxRange: 400 },
@@ -151,6 +157,12 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
         trigger: 'ON_HIT',
         actions: [
           {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+          {
             type: 'SPAWN_ACTOR',
             target: 'TARGET',
             actor: { archetype: 'TURRET', health: 60, durationMs: 6000 },
@@ -163,6 +175,7 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
   'Mirror Decoy': {
     id: 'test_mirror_decoy',
     name: 'Mirror Decoy',
+    archetype: 'ARCANE',
     cooldownMs: 2200,
     recoilKick: 0,
     visuals: {

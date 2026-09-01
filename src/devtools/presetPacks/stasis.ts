@@ -4,6 +4,7 @@ export const STASIS_PRESETS: Record<string, AbilitySchema> = {
   'Stasis Shell': {
     id: 'test_stasis_shell',
     name: 'Stasis Shell',
+    archetype: 'FROST',
     cooldownMs: 3000,
     recoilKick: 0,
     visuals: {
@@ -31,6 +32,7 @@ export const STASIS_PRESETS: Record<string, AbilitySchema> = {
   'Momentum Release': {
     id: 'test_momentum_release',
     name: 'Momentum Release',
+    archetype: 'CHRONO',
     cooldownMs: 500,
     recoilKick: 0,
     visuals: {
@@ -51,6 +53,7 @@ export const STASIS_PRESETS: Record<string, AbilitySchema> = {
   'Stasis Battery Combo': {
     id: 'test_stasis_battery_combo',
     name: 'Stasis Battery Combo',
+    archetype: 'FROST',
     cooldownMs: 800,
     recoilKick: 0,
     inputProfile: { mode: 'COMBO_CHAIN', comboWindowMs: 3000 },

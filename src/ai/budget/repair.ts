@@ -85,6 +85,61 @@ function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
   return false;
 }
 
+function actionsProvideLifecycleDisplacement(actions: ActionPayload[]): boolean {
+  for (const action of actions) {
+    if (action.type === 'SPAWN_FIELD') {
+      const ft = action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR' || ft === 'VORTEX_TANGENT') {
+        return true;
+      }
+    }
+    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+      if (triggersProvideLifecycleDisplacement(action.triggers)) return true;
+    }
+    if (action.type === 'CAST_CHILD_PAYLOAD') {
+      if (hasLifecycleFieldDisplacement(action.payload)) return true;
+    }
+  }
+  return false;
+}
+
+function triggersProvideLifecycleDisplacement(nodes: TriggerNode[]): boolean {
+  for (const node of nodes) {
+    if (actionsProvideLifecycleDisplacement(node.actions)) return true;
+    if (node.ifFalseActions && actionsProvideLifecycleDisplacement(node.ifFalseActions)) return true;
+    if (node.children && triggersProvideLifecycleDisplacement(node.children)) return true;
+  }
+  return false;
+}
+
+const LIFECYCLE_DISPLACEMENT_TRIGGERS = new Set([
+  'ON_RETURN',
+  'ON_EXPIRY',
+  'ON_HIT_WALL',
+  'ON_DISTANCE_TRAVELED',
+]);
+
+/** Trajectory spell whose displacement lives on return/expiry/wall triggers (e.g. boomerang vortex). */
+function hasLifecycleFieldDisplacement(schema: AbilitySchema): boolean {
+  if (!schema.trajectory) return false;
+  for (const node of schema.triggers) {
+    if (!LIFECYCLE_DISPLACEMENT_TRIGGERS.has(node.trigger)) continue;
+    if (actionsProvideLifecycleDisplacement(node.actions)) return true;
+    if (node.ifFalseActions && actionsProvideLifecycleDisplacement(node.ifFalseActions)) return true;
+    if (node.children && triggersProvideLifecycleDisplacement(node.children)) return true;
+  }
+  return false;
+}
+
+/** ON_HIT is exclusively crowd-control freeze — do not add knockback. */
+function isStasisOnlyOnHit(schema: AbilitySchema): boolean {
+  const onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+  if (!onHit || onHit.actions.length === 0) return false;
+  return onHit.actions.every(
+    (action) => action.type === 'APPLY_STASIS' || action.type === 'ADD_INSTABILITY',
+  );
+}
+
 function triggersProvideDisplacement(nodes: TriggerNode[]): boolean {
   for (const node of nodes) {
     if (actionsProvideDisplacement(node.actions)) return true;
@@ -134,7 +189,12 @@ function defaultKnockbackImpulse(archetype?: SpellArchetype): ApplyImpulseAction
 }
 
 function ensureDisplacementSemantics(schema: AbilitySchema): AbilitySchema {
-  if (abilityProvidesDisplacement(schema) || isPureSpatialUtility(schema)) {
+  if (
+    abilityProvidesDisplacement(schema) ||
+    isPureSpatialUtility(schema) ||
+    isStasisOnlyOnHit(schema) ||
+    hasLifecycleFieldDisplacement(schema)
+  ) {
     return schema;
   }
 

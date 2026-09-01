@@ -4,6 +4,7 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
   'Overheat Laser': {
     id: 'test_overheat_laser',
     name: 'Overheat Laser',
+    archetype: 'PLASMA',
     cooldownMs: 0,
     recoilKick: 30,
     resourceCost: {
@@ -24,7 +25,12 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
-          { type: 'APPLY_IMPULSE', baseForce: 500, target: 'TARGET' },
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           { type: 'ADD_INSTABILITY', amount: 20, target: 'TARGET' },
         ],
       },
@@ -34,6 +40,7 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
   'Plasma Flamer': {
     id: 'test_plasma_flamer',
     name: 'Plasma Flamer',
+    archetype: 'FIRE',
     cooldownMs: 50,
     recoilKick: 5,
     inputProfile: { mode: 'CHANNELED', channelIntervalMs: 100 },
@@ -72,6 +79,7 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
   'Burst Pistol': {
     id: 'test_burst_pistol',
     name: 'Burst Pistol',
+    archetype: 'KINETIC',
     cooldownMs: 0,
     recoilKick: 80,
     resourceCost: {
@@ -92,7 +100,12 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
-          { type: 'APPLY_IMPULSE', baseForce: 400, target: 'TARGET' },
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 400,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
         ],
       },
     ],
@@ -101,6 +114,7 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
   'Scattergun': {
     id: 'test_scattergun',
     name: 'Scattergun',
+    archetype: 'KINETIC',
     cooldownMs: 0,
     recoilKick: 120,
     resourceCost: {
@@ -128,7 +142,12 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
               {
                 trigger: 'ON_HIT',
                 actions: [
-                  { type: 'APPLY_IMPULSE', baseForce: 250, target: 'TARGET' },
+                  {
+                    type: 'APPLY_IMPULSE',
+                    baseForce: 250,
+                    target: 'TARGET',
+                    directionMode: 'AWAY_FROM_ORIGIN',
+                  },
                 ],
               },
             ],
@@ -141,6 +160,7 @@ export const RESOURCE_PRESETS: Record<string, AbilitySchema> = {
   'Blood Pact': {
     id: 'test_blood_pact',
     name: 'Blood Pact',
+    archetype: 'BLOOD',
     cooldownMs: 400,
     recoilKick: 100,
     resourceCost: { type: 'HEALTH_PCT', cost: 12 },

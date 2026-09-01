@@ -4,6 +4,7 @@ export const TERRAIN_PRESETS: Record<string, AbilitySchema> = {
   'Boulder Drop': {
     id: 'test_boulder_drop',
     name: 'Boulder Drop',
+    archetype: 'EARTH',
     cooldownMs: 2000,
     recoilKick: 30,
     visuals: {
@@ -36,6 +37,7 @@ export const TERRAIN_PRESETS: Record<string, AbilitySchema> = {
   'Lava Patch': {
     id: 'test_lava_patch',
     name: 'Lava Patch',
+    archetype: 'FIRE',
     cooldownMs: 1500,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 600, maxRange: 500 },
@@ -51,6 +53,12 @@ export const TERRAIN_PRESETS: Record<string, AbilitySchema> = {
         trigger: 'ON_HIT',
         actions: [
           {
+            type: 'APPLY_IMPULSE',
+            baseForce: 450,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+          {
             type: 'MUTATE_TERRAIN',
             target: 'TARGET',
             mutation: { type: 'LAVA', radius: 70, durationMs: 6000 },
@@ -63,6 +71,7 @@ export const TERRAIN_PRESETS: Record<string, AbilitySchema> = {
   'Safe Haven': {
     id: 'test_safe_haven',
     name: 'Safe Haven',
+    archetype: 'HOLY',
     cooldownMs: 2500,
     recoilKick: 0,
     visuals: {
@@ -89,6 +98,7 @@ export const TERRAIN_PRESETS: Record<string, AbilitySchema> = {
   'Minefield Volley': {
     id: 'test_minefield_volley',
     name: 'Minefield Volley',
+    archetype: 'EARTH',
     cooldownMs: 1800,
     recoilKick: 60,
     visuals: {

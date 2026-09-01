@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
-import type { AbilitySchema } from '../src/types/schema';
+import type { AbilitySchema, ActionPayload, TriggerNode } from '../src/types/schema';
 import { validateAbilitySchema } from '../src/types/schema';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +19,62 @@ function hasOnHitImpulse(schema: AbilitySchema): boolean {
   return onHit?.actions.some((a) => a.type === 'APPLY_IMPULSE') ?? false;
 }
 
+function collectAllActions(nodes: TriggerNode[]): ActionPayload[] {
+  const all: ActionPayload[] = [];
+  const collect = (triggerNodes: TriggerNode[]): void => {
+    for (const node of triggerNodes) {
+      all.push(...node.actions);
+      if (node.ifFalseActions) all.push(...node.ifFalseActions);
+      if (node.children) collect(node.children);
+    }
+  };
+  collect(nodes);
+  return all;
+}
+
+function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
+  for (const action of actions) {
+    if (action.type === 'APPLY_IMPULSE') return true;
+    if (action.type === 'SPAWN_FIELD') {
+      const ft = action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') return true;
+    }
+    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+      if (triggersProvideDisplacement(action.triggers)) return true;
+    }
+    if (action.type === 'CAST_CHILD_PAYLOAD') {
+      if (abilityProvidesDisplacement(action.payload)) return true;
+    }
+  }
+  return false;
+}
+
+function triggersProvideDisplacement(nodes: TriggerNode[]): boolean {
+  for (const node of nodes) {
+    if (actionsProvideDisplacement(node.actions)) return true;
+    if (node.ifFalseActions && actionsProvideDisplacement(node.ifFalseActions)) return true;
+    if (node.children && triggersProvideDisplacement(node.children)) return true;
+  }
+  return false;
+}
+
+function abilityProvidesDisplacement(schema: AbilitySchema): boolean {
+  return triggersProvideDisplacement(schema.triggers);
+}
+
+function isStasisOnlyOnHit(schema: AbilitySchema): boolean {
+  const onHit = schema.triggers.find((t) => t.trigger === 'ON_HIT');
+  if (!onHit || onHit.actions.length === 0) return false;
+  return onHit.actions.every(
+    (a) => a.type === 'APPLY_STASIS' || a.type === 'ADD_INSTABILITY',
+  );
+}
+
+function trajectoryHasDisplacement(schema: AbilitySchema): boolean {
+  if (!schema.trajectory) return true;
+  return abilityProvidesDisplacement(schema) || isStasisOnlyOnHit(schema);
+}
+
 function runDisplacementAssertions(): string[] {
   const failures: string[] = [];
 
@@ -32,12 +88,51 @@ function runDisplacementAssertions(): string[] {
     failures.push('Ice Barrier: must not receive APPLY_IMPULSE injection');
   }
 
+  const stasisTrap = sanitizeAbilitySchema(PRESETS['Stasis Freeze Trap'], 'SECONDARY');
+  if (schemaHasApplyImpulse(stasisTrap)) {
+    failures.push('Stasis Freeze Trap: stasis-only ON_HIT must not receive knockback injection');
+  }
+
+  return failures;
+}
+
+function runPresetContractAssertions(): string[] {
+  const failures: string[] = [];
+
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    if (!preset.archetype) {
+      failures.push(`${name}: missing archetype in source preset`);
+    }
+
+    const once = sanitizeAbilitySchema(preset, 'SECONDARY', 0, name);
+    if (!once.archetype) {
+      failures.push(`${name}: missing archetype after sanitize`);
+    }
+
+    const twice = sanitizeAbilitySchema(once, 'SECONDARY', 0, name);
+    if (JSON.stringify(once) !== JSON.stringify(twice)) {
+      failures.push(`${name}: sanitize is not idempotent`);
+    }
+
+    if (preset.trajectory && !trajectoryHasDisplacement(preset)) {
+      failures.push(`${name}: trajectory preset lacks displacement in source`);
+    }
+
+    const sanitized = once;
+    if (sanitized.trajectory && !trajectoryHasDisplacement(sanitized)) {
+      failures.push(`${name}: trajectory preset lacks displacement after sanitize`);
+    }
+  }
+
   return failures;
 }
 
 function run(): void {
   const scores: Record<string, number> = {};
-  const failures: string[] = runDisplacementAssertions();
+  const failures: string[] = [
+    ...runDisplacementAssertions(),
+    ...runPresetContractAssertions(),
+  ];
 
   for (const [name, preset] of Object.entries(PRESETS)) {
     const validated = validateAbilitySchema(preset);

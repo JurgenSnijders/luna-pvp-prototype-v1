@@ -4,6 +4,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Seeker Missile': {
     id: 'test_seeker_missile',
     name: 'Seeker Missile',
+    archetype: 'KINETIC',
     cooldownMs: 1400,
     recoilKick: 60,
     trajectory: { type: 'HOMING_SLERP', speed: 350, maxRange: 700, turnAccel: 800 },
@@ -32,6 +33,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Blink Lance': {
     id: 'test_blink_lance',
     name: 'Blink Lance',
+    archetype: 'PHASE',
     cooldownMs: 1100,
     recoilKick: 40,
     trajectory: {
@@ -51,6 +53,12 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           { type: 'ADD_INSTABILITY', amount: 25, target: 'TARGET' },
         ],
       },
@@ -60,6 +68,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Orbital Sentry': {
     id: 'test_orbital_sentry',
     name: 'Orbital Sentry',
+    archetype: 'GRAVITY',
     cooldownMs: 2000,
     recoilKick: 30,
     visuals: {
@@ -109,6 +118,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Recast Detonate': {
     id: 'test_recast_detonate',
     name: 'Recast Detonate',
+    archetype: 'FIRE',
     cooldownMs: 1500,
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 450, maxRange: 800 },
@@ -140,6 +150,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Tripwire Bomb': {
     id: 'test_tripwire_bomb',
     name: 'Tripwire Bomb',
+    archetype: 'FIRE',
     cooldownMs: 1200,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 500, maxRange: 700 },
@@ -172,6 +183,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Wallbreaker': {
     id: 'test_wallbreaker',
     name: 'Wallbreaker',
+    archetype: 'EARTH',
     cooldownMs: 1300,
     recoilKick: 70,
     trajectory: { type: 'LINEAR', speed: 650, maxRange: 600 },
@@ -208,6 +220,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Rod Snare': {
     id: 'test_rod_snare',
     name: 'Rod Snare',
+    archetype: 'MAGNETIC',
     cooldownMs: 1600,
     recoilKick: 50,
     trajectory: { type: 'LINEAR', speed: 750, maxRange: 500 },
@@ -222,6 +235,12 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           {
             type: 'SPAWN_CONSTRAINT',
             constraint: {
@@ -241,6 +260,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Anchor Pin': {
     id: 'test_anchor_pin',
     name: 'Anchor Pin',
+    archetype: 'GRAVITY',
     cooldownMs: 1400,
     recoilKick: 40,
     trajectory: { type: 'LINEAR', speed: 800, maxRange: 450 },
@@ -256,6 +276,12 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
         trigger: 'ON_HIT',
         actions: [
           {
+            type: 'APPLY_IMPULSE',
+            baseForce: 400,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+          {
             type: 'SPAWN_CONSTRAINT',
             constraint: { type: 'SURFACE_PIN', durationMs: 2500 },
             target: 'TARGET',
@@ -268,6 +294,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Haste Surge': {
     id: 'test_haste_surge',
     name: 'Haste Surge',
+    archetype: 'LIGHTNING',
     cooldownMs: 2500,
     recoilKick: 0,
     visuals: {
@@ -296,6 +323,7 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
   'Gravity Curse': {
     id: 'test_gravity_curse',
     name: 'Gravity Curse',
+    archetype: 'GRAVITY',
     cooldownMs: 1200,
     recoilKick: 30,
     trajectory: { type: 'LINEAR', speed: 700, maxRange: 500 },
@@ -310,6 +338,12 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
       {
         trigger: 'ON_HIT',
         actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 400,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
           {
             type: 'MODIFY_STAT',
             stat: 'mass',
