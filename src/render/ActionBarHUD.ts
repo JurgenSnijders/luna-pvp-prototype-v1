@@ -1,7 +1,7 @@
 import type { Player } from '../entities/Player';
 import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
-import type { AbilitySchema, ActionPayload, TriggerNode } from '../types/schema';
+import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -43,6 +43,53 @@ function formatEnumLabel(value: string): string {
   return value.replace(/_/g, ' ');
 }
 
+interface DisplayTrajectory {
+  trajectory?: TrajectoryConfig;
+  emitter?: EmitterConfig;
+  isNested?: boolean;
+}
+
+function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
+  if (ability.trajectory) {
+    return { trajectory: ability.trajectory, isNested: false };
+  }
+  for (const triggerNode of ability.triggers ?? []) {
+    if (triggerNode.trigger !== 'ON_CAST') continue;
+    for (const action of triggerNode.actions ?? []) {
+      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
+        return {
+          trajectory: action.projectileTrajectory,
+          emitter: action.emitter,
+          isNested: true,
+        };
+      }
+      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
+        return {
+          trajectory: action.payload.trajectory,
+          isNested: true,
+        };
+      }
+    }
+  }
+  return {};
+}
+
+function formatTrajectoryLine(resolved: DisplayTrajectory): string {
+  if (!resolved.trajectory) {
+    return 'Instant · 0px/s · 0px range';
+  }
+  const trajectory = resolved.trajectory;
+  const type = escapeHtml(formatEnumLabel(trajectory.type));
+  const speed = trajectory.speed ?? 0;
+  const range = trajectory.maxRange ?? 0;
+  let line = `${type} · ${speed}px/s · ${range}px range`;
+  if (resolved.emitter && resolved.emitter.count > 1) {
+    const distribution = escapeHtml(formatEnumLabel(resolved.emitter.distribution ?? 'FAN'));
+    line += ` · ${resolved.emitter.count}x ${distribution}`;
+  }
+  return line;
+}
+
 // Trigger trees can nest another full trigger tree inside a SPAWN_PROJECTILE action
 // (e.g. the projectile's own ON_EXPIRY behavior), so tooltip summaries must recurse.
 function walkTriggers(
@@ -54,6 +101,9 @@ function walkTriggers(
       visit(node, action);
       if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
         walkTriggers(action.triggers, visit);
+      }
+      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.triggers) {
+        walkTriggers(action.payload.triggers, visit);
       }
     }
     if (node.children) walkTriggers(node.children, visit);
@@ -68,14 +118,20 @@ function sumInstability(ability: AbilitySchema): number {
   return total;
 }
 
-function summarizeTriggers(ability: AbilitySchema): { triggers: string[]; actions: string[] } {
-  const triggers = new Set<string>();
+function collectAllActionTypes(ability: AbilitySchema): string[] {
   const actions = new Set<string>();
-  walkTriggers(ability.triggers, (node, action) => {
-    triggers.add(node.trigger);
+  walkTriggers(ability.triggers, (_node, action) => {
     actions.add(action.type);
   });
-  return { triggers: [...triggers], actions: [...actions] };
+  return [...actions];
+}
+
+function summarizeTriggerNames(ability: AbilitySchema): string[] {
+  const triggers = new Set<string>();
+  walkTriggers(ability.triggers, (node) => {
+    triggers.add(node.trigger);
+  });
+  return [...triggers];
 }
 
 function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, accentColor: string): string {
@@ -84,13 +140,11 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
     ? `${(ability.cooldownMs / 1000).toFixed(1)}s`
     : `${ability.cooldownMs}ms`;
   const instability = sumInstability(ability);
-  const trajectory = ability.trajectory;
-  const trajectoryType = escapeHtml(trajectory ? formatEnumLabel(trajectory.type) : 'Instant');
-  const speed = trajectory?.speed ?? 0;
-  const range = trajectory?.maxRange ?? 0;
-  const { triggers, actions } = summarizeTriggers(ability);
+  const trajectoryLine = formatTrajectoryLine(resolveDisplayTrajectory(ability));
+  const triggers = summarizeTriggerNames(ability);
+  const actionTypes = collectAllActionTypes(ability);
   const triggerList = triggers.length > 0 ? escapeHtml(triggers.join(', ')) : '—';
-  const actionList = actions.length > 0 ? escapeHtml(formatEnumLabel(actions.join(', '))) : '—';
+  const actionList = actionTypes.length > 0 ? escapeHtml(formatEnumLabel(actionTypes.join(', '))) : '—';
   const flavorBlock = [
     ability.tagline
       ? `<div style="font-size:11px;color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
@@ -128,7 +182,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
     </div>
     <div style="margin-bottom:8px;">
       <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
-      <div style="font-size:11px;">${trajectoryType} · ${speed}px/s · ${range}px range</div>
+      <div style="font-size:11px;">${trajectoryLine}</div>
     </div>
     <div style="margin-bottom:8px;">
       <div style="color:#64748b; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
