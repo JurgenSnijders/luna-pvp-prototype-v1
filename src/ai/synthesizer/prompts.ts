@@ -62,6 +62,8 @@ Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 export const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.
 Output ONE AbilitySchema JSON object only — no array, no wrapper keys.
 
+CORE WIN CONDITION: The primary goal of the game is knocking enemies into the lava. Unless a spell is strictly a defensive utility, it MUST include a physical displacement action (APPLY_IMPULSE or RADIAL_IMPULSE/MASS_ATTRACTOR) to push or pull the target.
+
 AbilitySchema: { id, name, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
 archetype: REQUIRED — assign one of KINETIC, FIRE, FROST, LIGHTNING, VOID, HOLY, TOXIC, ARCANE, MAGNETIC, SONIC, AERO, GRAVITY, EARTH, CHRONO, PLASMA, NATURE, BLOOD, PHASE, CHAOS.
 The engine scales implicit vulnerability and field physics from archetype — do NOT spam ADD_INSTABILITY; rely on archetype + kinetic impact math instead.
@@ -92,7 +94,7 @@ secondaryColor should contrast with color. glowIntensity tracks power (0.6 subtl
 TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.
 IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWARDS_ORIGIN | ALONG_TRAJECTORY | PERPENDICULAR_TRAJECTORY | CUSTOM
 APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
-NEVER default to bare outward knockback for pull/tether/freeze intents. Always set target + directionMode on APPLY_IMPULSE.
+Always set target + directionMode on APPLY_IMPULSE. Ensure damaging spells actually move the target by including APPLY_IMPULSE on ON_HIT or ON_EXPIRY.
 
 TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT (projectile-only — requires root trajectory or SPAWN_PROJECTILE)
 TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, conditions?, actions[], ifFalseActions?, children? }
@@ -152,4 +154,4 @@ Toxic: color #66ff44, secondaryColor #ccff99, trailType DUST_PUFF, impactVfx SHA
 Kinetic: color #00e5ff, secondaryColor #88eeff, projectileStyle DISC or BEAM, trailType NONE, impactVfx SPARKS
 Arcane: color #aa44ff, secondaryColor #ff88ff, projectileStyle PRISM, trailType NEON_RIBBON, impactVfx VORTEX_SWIRL
 
-Match visuals to concept. Prefer constraints, fields, stasis, child payloads, and relational impulses over plain ADD_INSTABILITY spam.`;
+Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;
