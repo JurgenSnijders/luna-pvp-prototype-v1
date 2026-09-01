@@ -26,7 +26,7 @@ export function getInstabilityScale(instabilityPct: number): number {
   return 1 + (instabilityPct / 100) * 1.5;
 }
 const LAVA_DRAG = 0.15;
-const COLLISION_RESTITUTION = 0.3;
+const DEFAULT_COLLISION_RESTITUTION = 0.3;
 const OBSTACLE_PROJECTILE_DAMAGE = 25;
 const RAMMING_SPEED_THRESHOLD = 350;
 const RAMMING_IMPULSE_FACTOR = 0.6;
@@ -88,6 +88,7 @@ export class PhysicsWorld {
 
   debugPhysicsEnabled = false;
   debugVectors: DebugForceVector[] = [];
+  collisionRestitution = DEFAULT_COLLISION_RESTITUTION;
 
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
@@ -383,13 +384,13 @@ export class PhysicsWorld {
   private reflectVelocityAlongNormal(entity: Entity, normal: Vector2D): void {
     const vn = entity.vel.dot(normal);
     if (vn >= 0) return;
-    const bounceMag = Math.abs((1 + COLLISION_RESTITUTION) * vn);
+    const bounceMag = Math.abs((1 + this.collisionRestitution) * vn);
     if (this.debugPhysicsEnabled) {
       this.recordDebugVector(
         makeDebugVector(entity.pos, normal, bounceMag, DEBUG_VECTOR_COLORS.COLLISION, 'bounce'),
       );
     }
-    entity.vel = entity.vel.sub(normal.scale((1 + COLLISION_RESTITUTION) * vn));
+    entity.vel = entity.vel.sub(normal.scale((1 + this.collisionRestitution) * vn));
   }
 
   getEntitiesInRadius(center: Vector2D, radius: number): Entity[] {
@@ -556,7 +557,7 @@ export class PhysicsWorld {
     }
 
     const impulseMag =
-      (-(1 + COLLISION_RESTITUTION) * velAlongNormal) /
+      (-(1 + this.collisionRestitution) * velAlongNormal) /
       (1 / a.effectiveMass + 1 / b.effectiveMass);
     const impulse = normal.scale(impulseMag);
 

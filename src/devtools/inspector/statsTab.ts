@@ -6,6 +6,14 @@ import {
 } from '../../engine/PhysicsWorld';
 import { Player } from '../../entities/Player';
 import {
+  applyMovementPreset,
+  getMovementPresetNames,
+  getMovementProfile,
+  saveMovementProfile,
+  type MovementPresetName,
+  type MovementProfile,
+} from '../movementSettings';
+import {
   ARENA_HEX_RADIUS_KEY,
   COMBATANT_RADIUS_KEY,
   COOLDOWN_SCALE_KEY,
@@ -18,7 +26,16 @@ import {
   getStoredGlobalCooldownMs,
 } from '../../game/settings';
 import type { InspectorContext } from '../InspectorUI';
-import { sliderRow } from './domHelpers';
+import { buttonStyle, sliderRow } from './domHelpers';
+
+function applyProfileToCombatants(
+  profile: MovementProfile,
+  ctx: InspectorContext,
+): void {
+  ctx.player.applyMovementProfile(profile);
+  ctx.bot?.applyMovementProfile(profile);
+  ctx.world.collisionRestitution = profile.restitution;
+}
 
 export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void {
   const { world, arenaShrink } = ctx;
@@ -97,20 +114,81 @@ export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void 
   );
   parent.appendChild(pacingSection);
 
+  const movementSection = document.createElement('div');
+  movementSection.style.cssText =
+    'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
+  const movementTitle = document.createElement('div');
+  movementTitle.textContent = 'Movement';
+  movementTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+  movementSection.appendChild(movementTitle);
+
+  let profile = { ...getMovementProfile() };
+  const sliderRefreshes: Array<() => void> = [];
+
+  const commitProfile = (): void => {
+    saveMovementProfile(profile);
+    applyProfileToCombatants(profile, ctx);
+    for (const refresh of sliderRefreshes) refresh();
+  };
+
+  const bindProfileSlider = (
+    label: string,
+    min: number,
+    max: number,
+    step: number,
+    key: keyof MovementProfile,
+    unit = '',
+  ): void => {
+    const { refresh } = sliderRow(
+      movementSection,
+      label,
+      min,
+      max,
+      step,
+      () => profile[key] as number,
+      (v) => {
+        profile = { ...profile, [key]: v };
+        commitProfile();
+      },
+      unit,
+    );
+    sliderRefreshes.push(refresh);
+  };
+
+  const presetRow = document.createElement('div');
+  presetRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;';
+  for (const name of getMovementPresetNames()) {
+    const btn = document.createElement('button');
+    btn.textContent = name;
+    btn.style.cssText = buttonStyle(false);
+    btn.onclick = () => {
+      profile = applyMovementPreset(name as MovementPresetName);
+      commitProfile();
+      for (const b of presetRow.querySelectorAll('button')) {
+        (b as HTMLButtonElement).style.cssText = buttonStyle(b.textContent === name);
+      }
+    };
+    presetRow.appendChild(btn);
+  }
+  movementSection.appendChild(presetRow);
+
+  bindProfileSlider('Move Speed', 50, 600, 10, 'moveSpeed');
+  bindProfileSlider('Max Speed', 100, 2000, 10, 'maxSpeed');
+  bindProfileSlider('Accel', 100, 6000, 50, 'accel');
+  bindProfileSlider('Brake Accel', 100, 6000, 50, 'brakeAccel');
+  bindProfileSlider('Turn Accel', 50, 3000, 50, 'turnAccel');
+  bindProfileSlider('Friction', 0, 30, 0.1, 'friction');
+  bindProfileSlider('Linear Drag', 0, 15, 0.1, 'linearDrag');
+  bindProfileSlider('Quadratic Drag', 0, 0.05, 0.001, 'quadraticDrag');
+  bindProfileSlider('Mass', 0.1, 5, 0.1, 'mass');
+  bindProfileSlider('Knockback Resist', 0, 0.75, 0.05, 'knockbackResistance');
+  bindProfileSlider('Restitution', 0, 1.2, 0.05, 'restitution');
+  bindProfileSlider('Stop Threshold', 0, 20, 1, 'stopThreshold', 'px/s');
+  bindProfileSlider('Input Smoothing', 0, 300, 10, 'inputSmoothingMs', 'ms');
+
+  parent.appendChild(movementSection);
+
   const p = ctx.player;
-  sliderRow(parent, 'Move Speed', 50, 600, 10, () => p.moveSpeed, (v) => {
-    p.moveSpeed = v;
-  });
-  sliderRow(parent, 'Acceleration', 200, 3000, 50, () => p.baseAcceleration, (v) => {
-    p.baseAcceleration = v;
-  });
-  sliderRow(parent, 'Linear Drag', 0, 10, 0.1, () => p.baseLinearDrag, (v) => {
-    p.baseLinearDrag = v;
-    p.linearDrag = v;
-  });
-  sliderRow(parent, 'Mass', 0.1, 5, 0.1, () => p.mass, (v) => {
-    p.mass = v;
-  });
   sliderRow(parent, 'Instability %', 0, 400, 1, () => p.instabilityPct, (v) => {
     p.instabilityPct = v;
   });

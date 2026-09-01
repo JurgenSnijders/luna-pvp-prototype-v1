@@ -33,6 +33,7 @@ import { drawPerfOverlay } from './perfOverlay';
 import { runSimulationStep } from './simulation';
 import {
   applyCooldownPacingSettings,
+  applyMovementSettings,
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
@@ -52,6 +53,7 @@ function init(app: GameApp): void {
   app.world.addPlayer(app.player);
   app.world.addPlayer(app.bot);
   app.world.setCombatantRadius(getStoredCombatantRadius());
+  applyMovementSettings(app.player, app.bot, app.world);
 
   app.interpreter = new Interpreter();
   app.particles = new ParticleSystem(document.body);
@@ -132,6 +134,7 @@ function init(app: GameApp): void {
     document.getElementById('inspector-root')!,
     {
       player: app.player,
+      bot: app.bot,
       world: app.world,
       interpreter: app.interpreter,
       renderer: app.renderer,

@@ -21,6 +21,7 @@ import {
 
 export interface InspectorContext {
   player: Player;
+  bot?: Player;
   world: PhysicsWorld;
   interpreter: Interpreter;
   renderer: CanvasRenderer;

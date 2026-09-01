@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import type { MovementProfile } from '../devtools/movementSettings';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
@@ -68,6 +69,12 @@ function getInputProfile(ability: AbilitySchema): InputProfile {
   return ability.inputProfile ?? { mode: 'INSTANT' };
 }
 
+function clampMag(vec: Vector2D, maxMag: number): Vector2D {
+  const mag = vec.mag();
+  if (mag <= maxMag) return vec;
+  return vec.scale(maxMag / mag);
+}
+
 export class Player extends Entity {
   /** DevTools-configurable pacing knobs, shared across all Player instances (player + bot). */
   static globalCooldownScale = 1.5;
@@ -76,7 +83,13 @@ export class Player extends Entity {
   moveSpeed: number;
   baseMoveSpeed: number;
   baseAcceleration: number;
+  brakeAccel: number;
+  turnAccel: number;
   friction: number;
+  maxSpeed: number;
+  stopThreshold: number;
+  inputSmoothingMs: number;
+  smoothedInputMove: Vector2D;
   facingAngle: number;
   abilities: AbilitySlotTuple;
   cooldownTimersMs: NumberSlotTuple;
@@ -105,7 +118,13 @@ export class Player extends Entity {
     this.moveSpeed = 280;
     this.baseMoveSpeed = 280;
     this.baseAcceleration = 1200;
+    this.brakeAccel = 1200;
+    this.turnAccel = 1200;
     this.friction = 8;
+    this.maxSpeed = 600;
+    this.stopThreshold = 5;
+    this.inputSmoothingMs = 0;
+    this.smoothedInputMove = Vector2D.zero();
     this.facingAngle = 0;
     this.abilities = [null, null, null, null, null];
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
@@ -434,6 +453,24 @@ export class Player extends Entity {
     }
   }
 
+  applyMovementProfile(profile: MovementProfile): void {
+    this.moveSpeed = profile.moveSpeed;
+    this.baseMoveSpeed = profile.moveSpeed;
+    this.baseAcceleration = profile.accel;
+    this.brakeAccel = profile.brakeAccel;
+    this.turnAccel = profile.turnAccel;
+    this.friction = profile.friction;
+    this.mass = profile.mass;
+    this.knockbackResistance = profile.knockbackResistance;
+    this.baseLinearDrag = profile.linearDrag;
+    this.linearDrag = profile.linearDrag;
+    this.quadraticDrag = profile.quadraticDrag;
+    this.maxSpeed = profile.maxSpeed;
+    this.stopThreshold = profile.stopThreshold;
+    this.inputSmoothingMs = profile.inputSmoothingMs;
+    this.smoothedInputMove = Vector2D.zero();
+  }
+
   getEffectiveCooldown(baseMs: number): number {
     const scaled = baseMs * Player.globalCooldownScale;
     return Math.max(100, Math.round(scaled * (1 - this.cooldownReductionPct / 100)));
@@ -478,25 +515,53 @@ export class Player extends Entity {
       }
     }
 
-    const moveDir = this.inputMove.magSq() > 0 ? this.inputMove.normalize() : Vector2D.zero();
+    const rawMove = this.inputMove;
+    if (this.inputSmoothingMs > 0) {
+      const t = Math.min(1, (dt * 1000) / this.inputSmoothingMs);
+      this.smoothedInputMove = this.smoothedInputMove.add(
+        rawMove.sub(this.smoothedInputMove).scale(t),
+      );
+    } else {
+      this.smoothedInputMove = rawMove.clone();
+    }
+
+    const moveDir =
+      this.smoothedInputMove.magSq() > 0 ? this.smoothedInputMove.normalize() : Vector2D.zero();
     const speedMultiplier = this.activeMorph?.speedMultiplier ?? 1;
     const targetVel = moveDir.scale(this.moveSpeed * speedMultiplier);
     const velDiff = targetVel.sub(this.vel);
-    const accelMag = this.baseAcceleration * dt;
-    const accel =
-      velDiff.mag() > accelMag
-        ? velDiff.normalize().scale(accelMag / dt)
-        : velDiff.scale(1 / dt);
 
     if (moveDir.magSq() === 0) {
       this.accel = this.accel.add(this.vel.scale(-this.friction));
     } else {
-      this.accel = this.accel.add(accel);
+      const currentSpeed = this.vel.mag();
+      const heading =
+        currentSpeed > this.stopThreshold ? this.vel.normalize() : moveDir;
+      const along = velDiff.dot(heading);
+      const alongVec = heading.scale(along);
+      const perpVec = velDiff.sub(alongVec);
+      const alongRate = along >= 0 ? this.baseAcceleration : this.brakeAccel;
+      const deltaV = clampMag(alongVec, alongRate * dt).add(
+        clampMag(perpVec, this.turnAccel * dt),
+      );
+      this.accel = this.accel.add(deltaV.scale(1 / dt));
     }
 
     const aimDir = this.aimTarget.sub(this.pos);
     if (aimDir.magSq() > 0.01) {
       this.facingAngle = Math.atan2(aimDir.y, aimDir.x);
+    }
+  }
+
+  override integrate(dt: number): void {
+    super.integrate(dt);
+    const speed = this.vel.mag();
+    if (speed < this.stopThreshold) {
+      this.vel.set(0, 0);
+      return;
+    }
+    if (speed > this.maxSpeed) {
+      this.vel = this.vel.normalize().scale(this.maxSpeed);
     }
   }
 
@@ -520,6 +585,7 @@ export class Player extends Entity {
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
     this.resetSlotInputs();
+    this.smoothedInputMove = Vector2D.zero();
     this.resetStasis();
     this.resetMorphStealth();
     for (let i = 0; i < SLOT_COUNT; i++) {

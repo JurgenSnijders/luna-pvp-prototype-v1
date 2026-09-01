@@ -5,7 +5,9 @@ import {
   MAX_HEX_RADIUS,
   MIN_HEX_RADIUS,
 } from '../engine/PhysicsWorld';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { Player } from '../entities/Player';
+import { getMovementProfile } from '../devtools/movementSettings';
 
 export const ARENA_HEX_RADIUS_KEY = 'LUNA_ARENA_HEX_RADIUS';
 export const COMBATANT_RADIUS_KEY = 'LUNA_COMBATANT_RADIUS';
@@ -48,4 +50,15 @@ export function getStoredGlobalCooldownMs(): number {
 export function applyCooldownPacingSettings(): void {
   Player.globalCooldownScale = getStoredCooldownScale();
   Player.globalCooldownDurationMs = getStoredGlobalCooldownMs();
+}
+
+export function applyMovementSettings(
+  player: Player,
+  bot: Player,
+  world: PhysicsWorld,
+): void {
+  const profile = getMovementProfile();
+  player.applyMovementProfile(profile);
+  bot.applyMovementProfile(profile);
+  world.collisionRestitution = profile.restitution;
 }

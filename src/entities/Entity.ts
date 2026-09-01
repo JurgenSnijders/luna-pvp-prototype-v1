@@ -17,6 +17,7 @@ export class Entity {
   radius: number;
   linearDrag: number;
   baseLinearDrag: number;
+  quadraticDrag: number;
   isDead: boolean;
   instabilityPct: number;
   knockbackResistance: number;
@@ -53,6 +54,7 @@ export class Entity {
     this.radius = options.radius ?? 16;
     this.linearDrag = options.linearDrag ?? 2;
     this.baseLinearDrag = this.linearDrag;
+    this.quadraticDrag = 0;
     this.isDead = false;
     this.instabilityPct = options.instabilityPct ?? 0;
     this.knockbackResistance = 0;
@@ -140,7 +142,11 @@ export class Entity {
 
     this.prevPos.copyFrom(this.pos);
     this.vel.addScaledMut(this.accel, dt);
-    this.vel.scaleMut(Math.max(0, 1 - this.linearDrag * dt));
+    const speed = this.vel.mag();
+    const dragCoeff = this.linearDrag + this.quadraticDrag * speed;
+    if (dragCoeff > 0) {
+      this.vel.scaleMut(Math.exp(-dragCoeff * dt));
+    }
     this.pos.addScaledMut(this.vel, dt);
     this.accel.set(0, 0);
   }

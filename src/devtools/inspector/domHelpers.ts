@@ -19,7 +19,7 @@ export function sliderRow(
   get: () => number,
   set: (v: number) => void,
   unit = '',
-): void {
+): { refresh: () => void } {
   const row = document.createElement('div');
   row.style.marginBottom = '10px';
   const lbl = document.createElement('label');
@@ -30,18 +30,23 @@ export function sliderRow(
   input.min = String(min);
   input.max = String(max);
   input.step = String(step);
-  input.value = String(get());
   input.style.width = '100%';
   const update = () => {
     const v = parseFloat(input.value);
     set(v);
     lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}${unit}`;
   };
+  const refresh = () => {
+    input.value = String(get());
+    const v = parseFloat(input.value);
+    lbl.textContent = `${label}: ${step < 1 ? v.toFixed(2) : Math.round(v)}${unit}`;
+  };
   input.oninput = update;
-  update();
+  refresh();
   row.appendChild(lbl);
   row.appendChild(input);
   parent.appendChild(row);
+  return { refresh };
 }
 
 export function inputStyle(): string {
