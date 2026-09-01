@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { MorphConfig, SpellArchetype } from '../types/schema';
 
 let nextEntityId = 1;
@@ -40,6 +41,7 @@ export class Entity {
   stealthRevealOnCast: boolean;
   activeStatuses: Map<SpellArchetype, StatusEffect>;
   friction: number;
+  chronoSnapshot?: { pos: Vector2D; vel: Vector2D };
 
   constructor(
     id: string,
@@ -110,13 +112,57 @@ export class Entity {
     return friction;
   }
 
-  applyStatus(archetype: SpellArchetype, durationMs: number, stacks = 1): void {
+  getEffectiveBounciness(): number {
+    return this.activeStatuses.has('SONIC') ? 1.5 : 1.0;
+  }
+
+  addInstability(amount: number, world?: PhysicsWorld): void {
+    const old = this.instabilityPct;
+    const next = Math.min(500, Math.max(0, old + amount));
+    this.instabilityPct = next;
+
+    if (old < 100 && next >= 100 && this.activeStatuses.has('PLASMA') && world) {
+      this.triggerPlasmaDetonation(world);
+    }
+  }
+
+  private triggerPlasmaDetonation(world: PhysicsWorld): void {
+    world.spawnPlasmaDetonation(this.pos.clone(), this.id);
+    this.instabilityPct = 0;
+    this.activeStatuses.delete('PLASMA');
+    this.chronoSnapshot = undefined;
+  }
+
+  onStatusApplied(archetype: SpellArchetype, _world?: PhysicsWorld): void {
+    if (archetype === 'CHRONO') {
+      this.chronoSnapshot = { pos: this.pos.clone(), vel: this.vel.clone() };
+    }
+  }
+
+  onStatusExpired(archetype: SpellArchetype, _world?: PhysicsWorld): void {
+    if (archetype === 'CHRONO' && this.chronoSnapshot) {
+      this.pos.copyFrom(this.chronoSnapshot.pos);
+      this.vel.copyFrom(this.chronoSnapshot.vel);
+      this.chronoSnapshot = undefined;
+    }
+  }
+
+  applyStatus(
+    archetype: SpellArchetype,
+    durationMs: number,
+    stacks = 1,
+    world?: PhysicsWorld,
+  ): void {
+    const isNew = !this.activeStatuses.has(archetype);
     const existing = this.activeStatuses.get(archetype);
     if (existing) {
       existing.durationMs = Math.max(existing.durationMs, durationMs);
       existing.stacks = Math.min(MAX_STATUS_STACKS, existing.stacks + stacks);
     } else {
       this.activeStatuses.set(archetype, { durationMs, stacks });
+    }
+    if (isNew) {
+      this.onStatusApplied(archetype, world);
     }
   }
 
@@ -157,7 +203,7 @@ export class Entity {
     return false;
   }
 
-  tickStatusTimers(dt: number): void {
+  tickStatusTimers(dt: number, world?: PhysicsWorld): void {
     if (this.morphRemainingMs > 0) {
       this.morphRemainingMs = Math.max(0, this.morphRemainingMs - dt * 1000);
       if (this.morphRemainingMs <= 0) {
@@ -177,16 +223,21 @@ export class Entity {
       }
     }
 
+    const expired: SpellArchetype[] = [];
     for (const [archetype, effect] of this.activeStatuses) {
       effect.durationMs -= dt * 1000;
       if (effect.durationMs <= 0) {
-        this.activeStatuses.delete(archetype);
+        expired.push(archetype);
       }
+    }
+    for (const archetype of expired) {
+      this.onStatusExpired(archetype, world);
+      this.activeStatuses.delete(archetype);
     }
   }
 
-  integrate(dt: number): void {
-    this.tickStatusTimers(dt);
+  integrate(dt: number, world?: PhysicsWorld): void {
+    this.tickStatusTimers(dt, world);
     if (this.stasisRemainingMs > 0) return;
 
     this.prevPos.copyFrom(this.pos);

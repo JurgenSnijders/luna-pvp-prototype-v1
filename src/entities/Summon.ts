@@ -69,7 +69,7 @@ export class Summon extends Entity {
   }
 
   override update(dt: number, world?: PhysicsWorld): void {
-    this.tickStatusTimers(dt);
+    this.tickStatusTimers(dt, world);
     this.remainingDurationMs = Math.max(0, this.remainingDurationMs - dt * 1000);
     if (this.remainingDurationMs <= 0 || this.health <= 0) {
       this.isDead = true;

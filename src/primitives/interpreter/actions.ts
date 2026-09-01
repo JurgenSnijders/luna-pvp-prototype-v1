@@ -118,7 +118,7 @@ export function dispatchAction(
     case 'ADD_INSTABILITY': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
-      t.instabilityPct = Math.min(500, t.instabilityPct + action.amount * scale);
+      t.addInstability(action.amount * scale, world);
       break;
     }
     case 'APPLY_IMPULSE': {
@@ -126,7 +126,7 @@ export function dispatchAction(
       if (!t) break;
       const tuning = getArchetypeTuning(ctx);
       const implicitSpike = (action.baseForce * 0.02) * tuning.impactInstabilityScale * scale;
-      t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
+      t.addInstability(implicitSpike, world);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
       const velocityBefore = vecTelemetry(t.vel);
       const appliedDir = dir.magSq() > 0 ? dir.normalize() : Vector2D.zero();
@@ -269,7 +269,7 @@ export function dispatchAction(
       if (action.stat === 'health' && scaledValue < 0) {
         const tuning = getArchetypeTuning(ctx);
         const implicitSpike = Math.abs(scaledValue) * 0.5 * tuning.impactInstabilityScale;
-        t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
+        t.addInstability(implicitSpike, world);
       }
       applyModifyStat(t, action.stat, scaledValue, action.mode);
       break;
@@ -349,7 +349,7 @@ export function dispatchAction(
     case 'APPLY_STATUS': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
-      t.applyStatus(action.archetype, action.durationMs, action.stacks ?? 1);
+      t.applyStatus(action.archetype, action.durationMs, action.stacks ?? 1, world);
       break;
     }
     case 'SPAWN_ACTOR': {

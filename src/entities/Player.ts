@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { MovementProfile } from '../devtools/movementSettings';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
@@ -552,8 +553,8 @@ export class Player extends Entity {
     }
   }
 
-  override integrate(dt: number): void {
-    super.integrate(dt);
+  override integrate(dt: number, world?: PhysicsWorld): void {
+    super.integrate(dt, world);
     const speed = this.vel.mag();
     if (speed < this.stopThreshold) {
       this.vel.set(0, 0);

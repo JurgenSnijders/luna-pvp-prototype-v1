@@ -196,6 +196,16 @@ export class PhysicsWorld {
     return true;
   }
 
+  spawnPlasmaDetonation(pos: Vector2D, ownerId: string): void {
+    const zone = new SpatialZone(
+      pos,
+      { fieldType: 'RADIAL_IMPULSE', strength: 2500, radius: 250, durationMs: 200 },
+      ownerId,
+      'PLASMA',
+    );
+    this.addZone(zone);
+  }
+
   getConstraints(): readonly ConstraintJoint[] {
     return this.constraints;
   }
@@ -279,7 +289,7 @@ export class PhysicsWorld {
   }
 
   private addInstability(entity: Entity, amount: number): void {
-    entity.instabilityPct = Math.min(500, entity.instabilityPct + amount);
+    entity.addInstability(amount, this);
   }
 
   private applyVelocityImpulse(entity: Entity, impulse: Vector2D): void {
@@ -391,6 +401,13 @@ export class PhysicsWorld {
       );
     }
     entity.vel = entity.vel.sub(normal.scale((1 + this.collisionRestitution) * vn));
+    const bounce = entity.getEffectiveBounciness();
+    if (bounce !== 1) {
+      const vnOut = entity.vel.dot(normal);
+      if (vnOut > 0) {
+        entity.vel = entity.vel.add(normal.scale(vnOut * (bounce - 1)));
+      }
+    }
   }
 
   getEntitiesInRadius(center: Vector2D, radius: number): Entity[] {
@@ -472,22 +489,22 @@ export class PhysicsWorld {
     for (const entity of this.players) {
       if (entity.isDead) continue;
       entity.update(dt);
-      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt, this);
     }
     for (const entity of this.dummies) {
       if (entity.isDead) continue;
       entity.update(dt);
-      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt, this);
     }
     for (const summon of this.summons) {
       if (summon.isDead) continue;
       summon.update(dt, this);
-      if (summon.config.anchored === false) summon.integrate(dt);
+      if (summon.config.anchored === false) summon.integrate(dt, this);
     }
     for (const entity of this.projectiles) {
       if (entity.isDead) continue;
       entity.update(dt);
-      if (!entity.tags.has('kinematic')) entity.integrate(dt);
+      if (!entity.tags.has('kinematic')) entity.integrate(dt, this);
     }
 
     this.updateConstraints(dt);
@@ -645,6 +662,10 @@ export class PhysicsWorld {
       entity.pos = clampToHex(entity.pos, this.hexCenter, this.hexRadius);
       const vn = entity.vel.dot(normal);
       if (vn > 0) entity.vel = entity.vel.sub(normal.scale(vn));
+      const bounce = entity.getEffectiveBounciness();
+      if (bounce > 1) {
+        entity.vel = entity.vel.scale(bounce);
+      }
       this.recordSlamCollision(entity, 'HEX_BOUNDARY', vImpact, normal, velBefore, instabDelta);
       if (this.debugPhysicsEnabled) {
         this.recordDebugVector(
@@ -652,6 +673,21 @@ export class PhysicsWorld {
         );
       }
       this.pendingWallImpacts.push(entity.pos.clone());
+    }
+  }
+
+  private applyViewportBounce(entity: Entity, axis: 'x' | 'y'): void {
+    const bounce = entity.getEffectiveBounciness();
+    if (bounce > 1) {
+      if (axis === 'x') {
+        entity.vel.x = -entity.vel.x * bounce;
+      } else {
+        entity.vel.y = -entity.vel.y * bounce;
+      }
+    } else if (axis === 'x') {
+      entity.vel.x = 0;
+    } else {
+      entity.vel.y = 0;
     }
   }
 
@@ -675,11 +711,11 @@ export class PhysicsWorld {
         const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
         const instabDelta = this.applySlamInstability(entity, impactSpeed);
         entity.pos.x = clampedX;
-        entity.vel.x = 0;
+        this.applyViewportBounce(entity, 'x');
         this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
       } else {
         entity.pos.x = clampedX;
-        entity.vel.x = 0;
+        this.applyViewportBounce(entity, 'x');
       }
       if (this.debugPhysicsEnabled && impactSpeed > 0) {
         const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
@@ -701,11 +737,11 @@ export class PhysicsWorld {
         const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
         const instabDelta = this.applySlamInstability(entity, impactSpeed);
         entity.pos.y = clampedY;
-        entity.vel.y = 0;
+        this.applyViewportBounce(entity, 'y');
         this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
       } else {
         entity.pos.y = clampedY;
-        entity.vel.y = 0;
+        this.applyViewportBounce(entity, 'y');
       }
       if (this.debugPhysicsEnabled && impactSpeed > 0) {
         const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
@@ -950,13 +986,10 @@ export class PhysicsWorld {
 
         if (!projectile.registerHit(target.id)) continue;
 
-        target.instabilityPct = Math.min(
-          500,
-          target.instabilityPct + BASELINE_INSTABILITY_ON_HIT,
-        );
+        target.addInstability(BASELINE_INSTABILITY_ON_HIT, this);
 
         if (projectile.spellArchetype) {
-          target.applyStatus(projectile.spellArchetype, 2000, 1);
+          target.applyStatus(projectile.spellArchetype, 2000, 1, this);
         }
 
         const hitPos = projectile.pos.lerp(target.pos, 0.5);
