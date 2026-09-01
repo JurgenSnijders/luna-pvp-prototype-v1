@@ -1,5 +1,5 @@
 import type { DraftCard } from '../types/cards';
-import type { AbilitySchema } from '../types/schema';
+import type { AbilitySchema, ActionPayload, TriggerNode } from '../types/schema';
 
 export type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
 
@@ -44,6 +44,19 @@ export function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
   return span;
 }
 
+function collectDeployableActions(nodes: TriggerNode[]): ActionPayload[] {
+  const all: ActionPayload[] = [];
+  const collect = (triggerNodes: TriggerNode[]): void => {
+    for (const node of triggerNodes) {
+      all.push(...node.actions);
+      if (node.ifFalseActions) all.push(...node.ifFalseActions);
+      if (node.children) collect(node.children);
+    }
+  };
+  collect(nodes);
+  return all;
+}
+
 export function extractMechanicBadgesFromAbility(
   s: AbilitySchema,
 ): { label: string; kind: BadgeKind }[] {
@@ -84,20 +97,40 @@ export function extractMechanicBadgesFromAbility(
     CAST_CHILD_PAYLOAD: '[CHILD PAYLOAD]',
   };
 
+  const visitAction = (action: ActionPayload): void => {
+    if (action.type === 'SPAWN_FIELD') {
+      pushBadge(`[${action.field.fieldType.replace(/_/g, ' ')}]`, 'field');
+    } else if (action.type === 'SPAWN_ACTOR') {
+      if (action.actor.archetype === 'TURRET') {
+        pushBadge('[TURRET]', 'trigger');
+      } else {
+        const label = actionBadges.SPAWN_ACTOR;
+        if (label) pushBadge(label, 'trigger');
+      }
+    } else {
+      const label = actionBadges[action.type];
+      if (label) pushBadge(label, 'trigger');
+    }
+
+    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+      collectActions(action.triggers);
+    }
+    if (action.type === 'CAST_CHILD_PAYLOAD') {
+      collectActions(action.payload.triggers);
+    }
+    if (action.type === 'SPAWN_ACTOR' && action.actor.triggers) {
+      collectActions(action.actor.triggers);
+    }
+  };
+
   const collectActions = (nodes: AbilitySchema['triggers']): void => {
     for (const node of nodes) {
       for (const action of node.actions) {
-        if (action.type === 'SPAWN_FIELD') {
-          pushBadge(`[${action.field.fieldType.replace(/_/g, ' ')}]`, 'field');
-        } else {
-          const label = actionBadges[action.type];
-          if (label) pushBadge(label, 'trigger');
-        }
+        visitAction(action);
       }
       if (node.ifFalseActions) {
         for (const action of node.ifFalseActions) {
-          const label = actionBadges[action.type];
-          if (label) pushBadge(label, 'trigger');
+          visitAction(action);
         }
       }
       if (node.children) collectActions(node.children);
@@ -105,6 +138,17 @@ export function extractMechanicBadgesFromAbility(
   };
 
   collectActions(s.triggers);
+
+  if (!s.trajectory) {
+    const deployActions = collectDeployableActions(s.triggers);
+    const hasStationaryDeploy = deployActions.some(
+      (a) => a.type === 'SPAWN_ACTOR' || a.type === 'SPAWN_OBSTACLE',
+    );
+    if (hasStationaryDeploy) {
+      pushBadge('[STATIONARY]', 'trigger');
+    }
+  }
+
   return badges;
 }
 

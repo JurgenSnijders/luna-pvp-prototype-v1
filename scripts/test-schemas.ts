@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
+import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { PRESETS } from '../src/devtools/Presets';
 import type { AbilitySchema, ActionPayload, TriggerNode } from '../src/types/schema';
 import { validateAbilitySchema } from '../src/types/schema';
@@ -195,6 +196,61 @@ function runSemanticRepairAssertions(): string[] {
   return failures;
 }
 
+function actorHasMassAttractorTick(schema: AbilitySchema): boolean {
+  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
+  if (!onCast) return false;
+  for (const action of onCast.actions) {
+    if (action.type !== 'SPAWN_ACTOR' || !action.actor.triggers) continue;
+    for (const node of action.actor.triggers) {
+      if (node.trigger !== 'ON_TICK') continue;
+      for (const tickAction of node.actions) {
+        if (
+          tickAction.type === 'SPAWN_FIELD' &&
+          tickAction.field.fieldType === 'MASS_ATTRACTOR'
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function runDeployableRepairAssertions(): string[] {
+  const failures: string[] = [];
+
+  const minimal: AbilitySchema = {
+    id: 'deployable_black_hole_trap',
+    name: 'Deployable Black Hole Trap',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    triggers: [{ trigger: 'ON_CAST', actions: [] }],
+  };
+
+  const repaired = repairAbilitySemantics(
+    minimal,
+    'deployable black hole trap that pulls enemies inward',
+    true,
+  );
+
+  if (repaired.trajectory) {
+    failures.push('deployable black hole trap: must not have root trajectory after repair');
+  }
+
+  const spawnActor = repaired.triggers
+    .find((t) => t.trigger === 'ON_CAST')
+    ?.actions.find((a) => a.type === 'SPAWN_ACTOR');
+  if (!spawnActor || spawnActor.type !== 'SPAWN_ACTOR') {
+    failures.push('deployable black hole trap: expected ON_CAST SPAWN_ACTOR after repair');
+  } else if (!actorHasMassAttractorTick(repaired)) {
+    failures.push(
+      'deployable black hole trap: expected actor.triggers ON_TICK MASS_ATTRACTOR after repair',
+    );
+  }
+
+  return failures;
+}
+
 function runPresetContractAssertions(): string[] {
   const failures: string[] = [];
 
@@ -231,6 +287,7 @@ function run(): void {
   const failures: string[] = [
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
+    ...runDeployableRepairAssertions(),
     ...runPresetContractAssertions(),
   ];
 

@@ -5,6 +5,7 @@ import type {
   EmitterConfig,
   FieldType,
   SpellArchetype,
+  SpawnActorAction,
   TriggerNode,
 } from '../../types/schema';
 
@@ -22,6 +23,12 @@ const LINGERING_KEYWORDS =
 const ARC_KEYWORDS = /\b(arc|sweep|scatter|salvo|fan|spray|barrage|burst)\b/;
 const CHANNEL_KEYWORDS = /\b(flamethrower|continuous|channel|stream|beam)\b/;
 const HARPOON_KEYWORDS = /\b(pull|draw|harpoon|hook|reel)\b/;
+
+const DEFAULT_SINGLE_EMITTER: EmitterConfig = {
+  count: 1,
+  spreadDeg: 0,
+  distribution: 'FAN',
+};
 
 const PULL_FORCE_FLOOR = 450;
 const PUSH_FORCE_FLOOR = 500;
@@ -60,6 +67,69 @@ function isArcConcept(text: string): boolean {
 
 function isChannelConcept(text: string): boolean {
   return CHANNEL_KEYWORDS.test(text);
+}
+
+function isDeployableConcept(text: string, schema?: AbilitySchema): boolean {
+  if (/\b(deploy|deployable|turret)\b/.test(text)) return true;
+
+  if (/\b(sentry|pylon|totem)\b/.test(text)) {
+    if (schema && hasOrbitAnchorProjectileOnCast(schema)) return false;
+    return /\b(deploy|place|placed|stationary)\b/.test(text);
+  }
+
+  if (/\b(trap|mine)\b/.test(text)) {
+    if (/\b(deploy|deployable|place|placed|stationary)\b/.test(text)) return true;
+    if (/\b(black hole|singularity)\b/.test(text) && /\bdeploy/.test(text)) return true;
+  }
+
+  return false;
+}
+
+function hasOrbitAnchorProjectileOnCast(schema: AbilitySchema): boolean {
+  for (const node of schema.triggers) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions) {
+      if (
+        action.type === 'SPAWN_PROJECTILE' &&
+        action.projectileTrajectory.type === 'ORBIT_ANCHOR'
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function findThrownSpawnActor(schema: AbilitySchema): SpawnActorAction | null {
+  let found: SpawnActorAction | null = null;
+  walkTriggerNodes(schema.triggers, (node, action) => {
+    if (
+      (node.trigger === 'ON_HIT' || node.trigger === 'ON_EXPIRY') &&
+      action.type === 'SPAWN_ACTOR'
+    ) {
+      found = action;
+    }
+  });
+  return found;
+}
+
+function isThrownDeployable(schema: AbilitySchema): boolean {
+  if (!schema.trajectory) return false;
+  return findThrownSpawnActor(schema) !== null;
+}
+
+function findOnCastSpawnActor(schema: AbilitySchema): SpawnActorAction | null {
+  for (const node of schema.triggers) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions) {
+      if (action.type === 'SPAWN_ACTOR') return action;
+    }
+  }
+  return null;
+}
+
+function hasSpawnActorOnCast(schema: AbilitySchema): boolean {
+  return findOnCastSpawnActor(schema) !== null;
 }
 
 function hasInstabilityAction(schema: AbilitySchema): boolean {
@@ -117,6 +187,15 @@ function repairActionsSemantics(
       return {
         ...action,
         payload: repairAbilitySemantics(action.payload, text, isHeadlessMode),
+      };
+    }
+    if (action.type === 'SPAWN_ACTOR' && action.actor.triggers) {
+      return {
+        ...action,
+        actor: {
+          ...action.actor,
+          triggers: repairTriggersSemantics(action.actor.triggers, text, isHeadlessMode),
+        },
       };
     }
     return action;
@@ -268,6 +347,82 @@ function applyRuleF_Obstacle(schema: AbilitySchema, text: string): void {
   delete schema.trajectory;
 }
 
+function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
+  if (!isDeployableConcept(text, schema)) return;
+
+  const thrown = isThrownDeployable(schema);
+  let spawnActor: SpawnActorAction | null;
+
+  if (thrown) {
+    spawnActor = findThrownSpawnActor(schema);
+    if (!spawnActor) return;
+  } else {
+    const onCast = ensureOnCastNode(schema);
+    spawnActor = findOnCastSpawnActor(schema);
+    if (!spawnActor) {
+      spawnActor = {
+        type: 'SPAWN_ACTOR',
+        target: 'CASTER',
+        actor: {
+          archetype: 'TURRET',
+          health: 80,
+          durationMs: 8000,
+          anchored: true,
+        },
+      };
+      onCast.actions.push(spawnActor);
+    }
+  }
+
+  if (spawnActor.actor.anchored !== false) {
+    spawnActor.actor.anchored = true;
+  }
+
+  if (!spawnActor.actor.triggers || spawnActor.actor.triggers.length === 0) {
+    if (isPullConcept(text)) {
+      spawnActor.actor.archetype = 'DECOY';
+      spawnActor.actor.anchored = true;
+      spawnActor.actor.triggers = [
+        {
+          trigger: 'ON_TICK',
+          tickIntervalMs: 100,
+          actions: [
+            {
+              type: 'SPAWN_FIELD',
+              field: {
+                fieldType: 'MASS_ATTRACTOR',
+                attachToSource: true,
+                strength: 5000,
+                radius: 140,
+                durationMs: 600,
+              },
+            },
+          ],
+        },
+      ];
+    } else {
+      spawnActor.actor.archetype = 'TURRET';
+      spawnActor.actor.triggers = [
+        {
+          trigger: 'ON_TICK',
+          tickIntervalMs: 100,
+          actions: [
+            {
+              type: 'SPAWN_PROJECTILE',
+              projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+              emitter: DEFAULT_SINGLE_EMITTER,
+            },
+          ],
+        },
+      ];
+    }
+  }
+
+  if (!thrown) {
+    delete schema.trajectory;
+  }
+}
+
 function applyRuleE_Orbit(schema: AbilitySchema, text: string): void {
   if (!isOrbitConcept(text)) return;
 
@@ -347,6 +502,8 @@ function applyRuleA_PullGravity(
       },
     });
   }
+
+  if (!schema.trajectory && hasSpawnActorOnCast(schema)) return;
 
   if (!schema.trajectory) {
     schema.trajectory = { type: 'LINEAR', speed: 700, maxRange: 500 };
@@ -736,6 +893,7 @@ export function repairAbilitySemantics(
 
   if (text) {
     applyRuleF_Obstacle(cloned, text);
+    applyRuleG_Deployable(cloned, text);
     applyRuleE_Orbit(cloned, text);
     applyRuleA_PullGravity(cloned, text, isHeadlessMode);
     applyRuleB_LingeringHazard(cloned, text);

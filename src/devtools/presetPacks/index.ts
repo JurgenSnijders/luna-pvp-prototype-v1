@@ -85,6 +85,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       'Ghost Walk',
       'Deep Shroud',
       'Auto Turret',
+      'Ice Turret',
       'Forward Turret Drop',
       'Mirror Decoy',
     ],

@@ -138,6 +138,69 @@ export const METAMORPH_PRESETS: Record<string, AbilitySchema> = {
     ],
   },
 
+  'Ice Turret': {
+    id: 'schema_turret_test',
+    name: 'Ice Turret',
+    archetype: 'FROST',
+    cooldownMs: 2800,
+    recoilKick: 15,
+    visuals: {
+      color: '#88ddff',
+      size: 10,
+      projectileStyle: 'CRYSTAL_SHARD',
+      trailType: 'FROST_CRYSTALS',
+      impactVfx: 'ICE_BURST',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: {
+              archetype: 'TURRET',
+              health: 80,
+              durationMs: 8000,
+              targetingRange: 400,
+              triggers: [
+                {
+                  trigger: 'ON_TICK',
+                  tickIntervalMs: 900,
+                  actions: [
+                    {
+                      type: 'SPAWN_PROJECTILE',
+                      projectileTrajectory: {
+                        type: 'HOMING_SLERP',
+                        speed: 420,
+                        maxRange: 400,
+                        turnAccel: 400,
+                      },
+                      triggers: [
+                        {
+                          trigger: 'ON_HIT',
+                          actions: [
+                            {
+                              type: 'MODIFY_STAT',
+                              stat: 'moveSpeed',
+                              value: 0.6,
+                              mode: 'multiply',
+                              target: 'TARGET',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  },
+
   'Forward Turret Drop': {
     id: 'test_forward_turret_drop',
     name: 'Forward Turret Drop',
