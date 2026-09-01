@@ -42,6 +42,8 @@ export class Entity {
   activeStatuses: Map<SpellArchetype, StatusEffect>;
   friction: number;
   chronoSnapshot?: { pos: Vector2D; vel: Vector2D };
+  arcaneBuffer?: Vector2D;
+  voidDistanceAcc: number;
 
   constructor(
     id: string,
@@ -81,6 +83,7 @@ export class Entity {
     this.stealthRevealOnCast = true;
     this.activeStatuses = new Map();
     this.friction = 0;
+    this.voidDistanceAcc = 0;
   }
 
   get effectiveRadius(): number {
@@ -90,6 +93,11 @@ export class Entity {
   getEffectiveMass(): number {
     let mass = this.activeMorph?.mass ?? this.mass;
     if (this.activeStatuses.has('EARTH')) mass *= 3.0;
+    if (this.activeStatuses.has('TOXIC')) {
+      const status = this.activeStatuses.get('TOXIC')!;
+      const pct = Math.min(1, status.durationMs / 4000);
+      mass *= Math.max(0.3, pct);
+    }
     return mass;
   }
 
@@ -133,6 +141,27 @@ export class Entity {
     this.chronoSnapshot = undefined;
   }
 
+  applyKineticImpulse(deltaVel: Vector2D, _world?: PhysicsWorld): void {
+    if (this.stasisRemainingMs > 0) {
+      this.stashedMomentum = this.stashedMomentum.add(
+        deltaVel.scale(this.forceAccumulatorScale),
+      );
+      return;
+    }
+
+    let impulse = deltaVel;
+    if (this.activeStatuses.has('CHAOS')) {
+      impulse = impulse.rotate((Math.random() - 0.5) * Math.PI);
+    }
+
+    if (this.activeStatuses.has('ARCANE')) {
+      this.arcaneBuffer = (this.arcaneBuffer ?? Vector2D.zero()).add(impulse.scale(-1));
+      return;
+    }
+
+    this.vel.addMut(impulse);
+  }
+
   onStatusApplied(archetype: SpellArchetype, _world?: PhysicsWorld): void {
     if (archetype === 'CHRONO') {
       this.chronoSnapshot = { pos: this.pos.clone(), vel: this.vel.clone() };
@@ -144,6 +173,10 @@ export class Entity {
       this.pos.copyFrom(this.chronoSnapshot.pos);
       this.vel.copyFrom(this.chronoSnapshot.vel);
       this.chronoSnapshot = undefined;
+    }
+    if (archetype === 'ARCANE' && this.arcaneBuffer) {
+      this.vel.addMut(this.arcaneBuffer);
+      this.arcaneBuffer = undefined;
     }
   }
 
@@ -242,12 +275,25 @@ export class Entity {
 
     this.prevPos.copyFrom(this.pos);
     this.vel.addScaledMut(this.accel, dt);
-    const speed = this.vel.mag();
-    const dragCoeff = this.getEffectiveLinearDrag() + this.quadraticDrag * speed;
+    const preDragSpeed = this.vel.mag();
+    const dragCoeff = this.getEffectiveLinearDrag() + this.quadraticDrag * preDragSpeed;
     if (dragCoeff > 0) {
       this.vel.scaleMut(Math.exp(-dragCoeff * dt));
     }
     this.pos.addScaledMut(this.vel, dt);
+
+    const speed = this.vel.mag();
+    if (this.activeStatuses.has('FIRE') && speed > 50) {
+      this.addInstability((speed * dt) / 50, world);
+    }
+    if (this.activeStatuses.has('VOID') && world) {
+      this.voidDistanceAcc += speed * dt;
+      if (this.voidDistanceAcc >= 150) {
+        this.voidDistanceAcc = 0;
+        world.spawnVoidTrail(this.pos.clone(), this.id);
+      }
+    }
+
     this.accel.set(0, 0);
   }
 

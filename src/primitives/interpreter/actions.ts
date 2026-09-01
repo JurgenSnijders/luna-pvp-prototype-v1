@@ -1,6 +1,6 @@
 import { clampToHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
-import { MAX_ENTITIES, type PhysicsWorld } from '../../engine/PhysicsWorld';
+import { MAX_ENTITIES, getInstabilityScale, type PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Obstacle } from '../../entities/Obstacle';
 import { Player } from '../../entities/Player';
@@ -129,8 +129,13 @@ export function dispatchAction(
       t.addInstability(implicitSpike, world);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
       const velocityBefore = vecTelemetry(t.vel);
-      const appliedDir = dir.magSq() > 0 ? dir.normalize() : Vector2D.zero();
-      world.applyKnockback(t, dir, action.baseForce * scale);
+      const normalized = dir.magSq() > 0 ? dir.normalize() : Vector2D.zero();
+      const instabilityScale = getInstabilityScale(t.instabilityPct);
+      const resistance = Math.min(0.75, t.knockbackResistance ?? 0);
+      const deltaVel = normalized.scale(
+        ((action.baseForce * scale) / t.effectiveMass) * instabilityScale * (1 - resistance),
+      );
+      t.applyKineticImpulse(deltaVel, world);
       const velocityAfter = vecTelemetry(t.vel);
       CombatLogger.getInstance().record({
         type: 'IMPULSE_APPLIED',
@@ -139,7 +144,7 @@ export function dispatchAction(
         abilityId: ctx.ability?.name,
         baseForce: action.baseForce * scale,
         directionMode: action.directionMode ?? 'NONE',
-        appliedDirection: vecTelemetry(appliedDir),
+        appliedDirection: vecTelemetry(normalized),
         targetMass: t.effectiveMass,
         deltaVelocity: deltaVec(velocityBefore, velocityAfter),
         velocityBefore,

@@ -206,6 +206,16 @@ export class PhysicsWorld {
     this.addZone(zone);
   }
 
+  spawnVoidTrail(pos: Vector2D, ownerId: string): void {
+    const zone = new SpatialZone(
+      pos,
+      { fieldType: 'MASS_ATTRACTOR', strength: 2000, radius: 80, durationMs: 600 },
+      ownerId,
+      'VOID',
+    );
+    this.addZone(zone);
+  }
+
   getConstraints(): readonly ConstraintJoint[] {
     return this.constraints;
   }
