@@ -139,6 +139,14 @@ export class Entity {
     const next = Math.min(500, Math.max(0, old + amount));
     this.instabilityPct = next;
 
+    if (world && amount >= 5) {
+      world.emitCombatVisualEvent({
+        type: 'INSTABILITY',
+        pos: { x: this.pos.x, y: this.pos.y },
+        value: amount,
+      });
+    }
+
     if (old < 100 && next >= 100 && this.activeStatuses.has('PLASMA') && world) {
       this.triggerPlasmaDetonation(world);
     }
@@ -146,6 +154,12 @@ export class Entity {
 
   private triggerPlasmaDetonation(world: PhysicsWorld): void {
     world.spawnPlasmaDetonation(this.pos.clone(), this.id);
+    world.emitCombatVisualEvent({
+      type: 'STATUS_APPLIED',
+      pos: { x: this.pos.x, y: this.pos.y },
+      label: 'DETONATION!',
+      archetype: 'PLASMA',
+    });
     this.instabilityPct = 0;
     this.activeStatuses.delete('PLASMA');
     this.chronoSnapshot = undefined;
@@ -185,7 +199,7 @@ export class Entity {
     }
   }
 
-  onStatusExpired(archetype: SpellArchetype, _world?: PhysicsWorld): void {
+  onStatusExpired(archetype: SpellArchetype, world?: PhysicsWorld): void {
     if (archetype === 'CHRONO' && this.chronoSnapshot) {
       this.pos.copyFrom(this.chronoSnapshot.pos);
       this.vel.copyFrom(this.chronoSnapshot.vel);
@@ -197,6 +211,13 @@ export class Entity {
     }
     if (archetype === 'NATURE') {
       this.natureAnchor = undefined;
+    }
+    if (world) {
+      world.emitCombatVisualEvent({
+        type: 'STATUS_EXPIRED',
+        pos: { x: this.pos.x, y: this.pos.y },
+        archetype,
+      });
     }
   }
 
@@ -221,6 +242,13 @@ export class Entity {
     }
     if (isNew) {
       this.onStatusApplied(archetype, world);
+      if (world) {
+        world.emitCombatVisualEvent({
+          type: 'STATUS_APPLIED',
+          pos: { x: this.pos.x, y: this.pos.y },
+          archetype,
+        });
+      }
     }
   }
 

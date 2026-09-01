@@ -9,7 +9,7 @@ import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
 import { isAlliedTo, isOwnerSummonPair } from './allegiance';
-import type { TerrainMutationConfig, TerrainType } from '../types/schema';
+import type { SpellArchetype, TerrainMutationConfig, TerrainType } from '../types/schema';
 import {
   DEBUG_VECTOR_COLORS,
   makeDebugVector,
@@ -63,6 +63,14 @@ export interface PendingHit {
   hitPos: Vector2D;
 }
 
+export interface CombatVisualEvent {
+  type: 'DAMAGE' | 'INSTABILITY' | 'STATUS_APPLIED' | 'STATUS_EXPIRED';
+  pos: { x: number; y: number };
+  value?: number;
+  archetype?: SpellArchetype;
+  label?: string;
+}
+
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
@@ -81,7 +89,10 @@ export class PhysicsWorld {
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
   pendingWallImpacts: Vector2D[] = [];
+  combatVisualEvents: CombatVisualEvent[] = [];
 
+  private readonly maxCombatVisualEvents = 128;
+  private lavaDamageAccumulator = new Map<string, number>();
   private combatantsCache: Entity[] = [];
   private entityRegistry = new Map<string, Entity>();
   private combatantRadius: number = DEFAULT_COMBATANT_RADIUS;
@@ -467,6 +478,37 @@ export class PhysicsWorld {
     this.pendingHits = [];
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
+    this.combatVisualEvents = [];
+    this.lavaDamageAccumulator.clear();
+  }
+
+  emitCombatVisualEvent(event: CombatVisualEvent): void {
+    if (this.combatVisualEvents.length >= this.maxCombatVisualEvents) {
+      this.combatVisualEvents.shift();
+    }
+    this.combatVisualEvents.push(event);
+  }
+
+  drainCombatVisualEvents(): CombatVisualEvent[] {
+    if (this.combatVisualEvents.length === 0) return [];
+    const events = this.combatVisualEvents;
+    this.combatVisualEvents = [];
+    return events;
+  }
+
+  private emitLavaDamage(entity: Entity, dmg: number): void {
+    const accumulated = (this.lavaDamageAccumulator.get(entity.id) ?? 0) + dmg;
+    if (accumulated < 1) {
+      this.lavaDamageAccumulator.set(entity.id, accumulated);
+      return;
+    }
+    const displayDmg = Math.floor(accumulated);
+    this.lavaDamageAccumulator.set(entity.id, accumulated - displayDmg);
+    this.emitCombatVisualEvent({
+      type: 'DAMAGE',
+      pos: { x: entity.pos.x, y: entity.pos.y },
+      value: displayDmg,
+    });
   }
 
   /** Syncs attached zone transforms to their parent and ticks zone duration. Runs before
@@ -983,21 +1025,27 @@ export class PhysicsWorld {
 
     if (override === 'SAFE') {
       entity.tags.delete('in_lava');
+      this.lavaDamageAccumulator.delete(entity.id);
       return;
     }
 
     if (override === 'LAVA') {
       entity.tags.add('in_lava');
-      entity.health = Math.max(0, entity.health - LAVA_DAMAGE_PER_SEC * dt);
+      const dmg = LAVA_DAMAGE_PER_SEC * dt;
+      entity.health = Math.max(0, entity.health - dmg);
+      this.emitLavaDamage(entity, dmg);
       entity.linearDrag = LAVA_DRAG;
       return;
     }
 
     if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
       entity.tags.delete('in_lava');
+      this.lavaDamageAccumulator.delete(entity.id);
     } else {
       entity.tags.add('in_lava');
-      entity.health = Math.max(0, entity.health - LAVA_DAMAGE_PER_SEC * dt);
+      const dmg = LAVA_DAMAGE_PER_SEC * dt;
+      entity.health = Math.max(0, entity.health - dmg);
+      this.emitLavaDamage(entity, dmg);
       entity.linearDrag = LAVA_DRAG;
     }
   }

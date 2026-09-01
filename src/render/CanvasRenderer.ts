@@ -7,6 +7,10 @@ import { drawDebugOverlay, type DebugOptions } from './canvas/debug';
 import { drawCombatants, drawSummons } from './canvas/entities';
 import { drawOverheadHUD } from './canvas/hud';
 import { drawProjectiles } from './canvas/projectiles';
+import {
+  combatEventToFct,
+  FloatingCombatTextManager,
+} from './canvas/FloatingCombatText';
 import type { CanvasRenderCtx } from './canvas/renderCtx';
 import { SpriteCache } from './canvas/SpriteCache';
 import {
@@ -28,6 +32,8 @@ export class CanvasRenderer {
   private cachedHexVertices: Vector2D[] = [];
   private bgCacheCanvas: HTMLCanvasElement | null = null;
   private bgCacheKey = '';
+  private fctManager = new FloatingCombatTextManager();
+  private lastRenderMs = 0;
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -64,6 +70,15 @@ export class CanvasRenderer {
     isShrinking = false,
   ): void {
     const ctx = this.ctx;
+    const now = performance.now();
+    const renderDt = this.lastRenderMs > 0 ? (now - this.lastRenderMs) / 1000 : 1 / 60;
+    this.lastRenderMs = now;
+
+    for (const event of world.drainCombatVisualEvents()) {
+      const { text, type, color } = combatEventToFct(event);
+      this.fctManager.spawn(text, event.pos, type, color);
+    }
+
     this.ringRotation += 0.02;
     const state = this.getRenderCtx();
 
@@ -80,6 +95,9 @@ export class CanvasRenderer {
     drawConstraints(ctx, world);
     drawProjectiles(ctx, state, world, alpha);
     drawOverheadHUD(ctx, world, alpha);
+
+    this.fctManager.update(renderDt);
+    this.fctManager.draw(ctx);
 
     this.syncStateFromCtx(state);
 
