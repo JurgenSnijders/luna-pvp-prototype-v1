@@ -216,6 +216,22 @@ export class PhysicsWorld {
     this.addZone(zone);
   }
 
+  spawnChainLightning(pos: Vector2D, sourceId: string): void {
+    const aimAngle = Math.random() * Math.PI * 2;
+    const projectile = new Projectile(
+      pos,
+      { type: 'HOMING_SLERP', speed: 1200, maxRange: 500, turnAccel: 1500 },
+      sourceId,
+      aimAngle,
+      new Map(),
+      0,
+      null,
+      '',
+      'LIGHTNING',
+    );
+    this.addProjectile(projectile);
+  }
+
   getConstraints(): readonly ConstraintJoint[] {
     return this.constraints;
   }
@@ -538,6 +554,7 @@ export class PhysicsWorld {
   }
 
   private resolveCirclePair(a: Entity, b: Entity): void {
+    if (a.isIntangible() || b.isIntangible()) return;
     if (isOwnerSummonPair(a, b)) return;
     const aStasis = a.stasisRemainingMs > 0;
     const bStasis = b.stasisRemainingMs > 0;
@@ -661,6 +678,7 @@ export class PhysicsWorld {
   }
 
   private clampEntityToHex(entity: Entity): void {
+    if (entity.isIntangible()) return;
     if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) return;
 
     const normal = getClosestEdgeNormal(entity.pos, this.hexCenter, this.hexRadius);
@@ -702,6 +720,8 @@ export class PhysicsWorld {
   }
 
   private clampToViewport(entity: Entity): void {
+    if (entity.isIntangible()) return;
+
     const { width, height } = this.viewportBounds;
     const r = entity.effectiveRadius;
     const minX = r;
@@ -999,7 +1019,7 @@ export class PhysicsWorld {
         target.addInstability(BASELINE_INSTABILITY_ON_HIT, this);
 
         if (projectile.spellArchetype) {
-          target.applyStatus(projectile.spellArchetype, 2000, 1, this);
+          target.applyStatus(projectile.spellArchetype, 2000, 1, this, projectile.sourceEntityId);
         }
 
         const hitPos = projectile.pos.lerp(target.pos, 0.5);

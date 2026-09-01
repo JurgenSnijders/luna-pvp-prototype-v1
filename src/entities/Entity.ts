@@ -7,6 +7,7 @@ let nextEntityId = 1;
 export interface StatusEffect {
   durationMs: number;
   stacks: number;
+  sourceId?: string;
 }
 
 const MAX_STATUS_STACKS = 5;
@@ -44,6 +45,7 @@ export class Entity {
   chronoSnapshot?: { pos: Vector2D; vel: Vector2D };
   arcaneBuffer?: Vector2D;
   voidDistanceAcc: number;
+  natureAnchor?: Vector2D;
 
   constructor(
     id: string,
@@ -92,6 +94,7 @@ export class Entity {
 
   getEffectiveMass(): number {
     let mass = this.activeMorph?.mass ?? this.mass;
+    if (this.activeStatuses.has('GRAVITY')) mass *= 0.2;
     if (this.activeStatuses.has('EARTH')) mass *= 3.0;
     if (this.activeStatuses.has('TOXIC')) {
       const status = this.activeStatuses.get('TOXIC')!;
@@ -110,6 +113,7 @@ export class Entity {
     if (this.activeStatuses.has('EARTH')) drag *= 2.0;
     if (this.activeStatuses.has('FROST')) drag *= 0.1;
     if (this.activeStatuses.has('AERO')) drag *= 0.5;
+    if (this.activeStatuses.has('KINETIC')) drag *= 0.2;
     return drag;
   }
 
@@ -124,7 +128,13 @@ export class Entity {
     return this.activeStatuses.has('SONIC') ? 1.5 : 1.0;
   }
 
-  addInstability(amount: number, world?: PhysicsWorld): void {
+  addInstability(amount: number, world?: PhysicsWorld, isCascade = false): void {
+    if (!isCascade && amount > 0 && this.activeStatuses.has('BLOOD') && world) {
+      const sourceId = this.activeStatuses.get('BLOOD')!.sourceId;
+      const source = sourceId ? world.getEntityById(sourceId) : null;
+      if (source) source.addInstability(amount * 0.5, world, true);
+    }
+
     const old = this.instabilityPct;
     const next = Math.min(500, Math.max(0, old + amount));
     this.instabilityPct = next;
@@ -141,7 +151,7 @@ export class Entity {
     this.chronoSnapshot = undefined;
   }
 
-  applyKineticImpulse(deltaVel: Vector2D, _world?: PhysicsWorld): void {
+  applyKineticImpulse(deltaVel: Vector2D, world?: PhysicsWorld): void {
     if (this.stasisRemainingMs > 0) {
       this.stashedMomentum = this.stashedMomentum.add(
         deltaVel.scale(this.forceAccumulatorScale),
@@ -152,6 +162,10 @@ export class Entity {
     let impulse = deltaVel;
     if (this.activeStatuses.has('CHAOS')) {
       impulse = impulse.rotate((Math.random() - 0.5) * Math.PI);
+    }
+
+    if (this.activeStatuses.has('LIGHTNING') && world && impulse.magSq() > 2500) {
+      world.spawnChainLightning(this.pos.clone(), this.id);
     }
 
     if (this.activeStatuses.has('ARCANE')) {
@@ -166,6 +180,9 @@ export class Entity {
     if (archetype === 'CHRONO') {
       this.chronoSnapshot = { pos: this.pos.clone(), vel: this.vel.clone() };
     }
+    if (archetype === 'NATURE') {
+      this.natureAnchor = this.pos.clone();
+    }
   }
 
   onStatusExpired(archetype: SpellArchetype, _world?: PhysicsWorld): void {
@@ -178,6 +195,9 @@ export class Entity {
       this.vel.addMut(this.arcaneBuffer);
       this.arcaneBuffer = undefined;
     }
+    if (archetype === 'NATURE') {
+      this.natureAnchor = undefined;
+    }
   }
 
   applyStatus(
@@ -185,6 +205,7 @@ export class Entity {
     durationMs: number,
     stacks = 1,
     world?: PhysicsWorld,
+    sourceId?: string,
   ): void {
     const isNew = !this.activeStatuses.has(archetype);
     const existing = this.activeStatuses.get(archetype);
@@ -192,7 +213,11 @@ export class Entity {
       existing.durationMs = Math.max(existing.durationMs, durationMs);
       existing.stacks = Math.min(MAX_STATUS_STACKS, existing.stacks + stacks);
     } else {
-      this.activeStatuses.set(archetype, { durationMs, stacks });
+      this.activeStatuses.set(archetype, {
+        durationMs,
+        stacks,
+        ...(sourceId ? { sourceId } : {}),
+      });
     }
     if (isNew) {
       this.onStatusApplied(archetype, world);
@@ -234,6 +259,10 @@ export class Entity {
 
   isImmovable(): boolean {
     return false;
+  }
+
+  isIntangible(): boolean {
+    return this.activeStatuses.has('PHASE');
   }
 
   tickStatusTimers(dt: number, world?: PhysicsWorld): void {
@@ -291,6 +320,27 @@ export class Entity {
       if (this.voidDistanceAcc >= 150) {
         this.voidDistanceAcc = 0;
         world.spawnVoidTrail(this.pos.clone(), this.id);
+      }
+    }
+
+    if (this.activeStatuses.has('NATURE') && this.natureAnchor) {
+      if (this.pos.dist(this.natureAnchor) > 100) {
+        this.vel.addMut(this.natureAnchor.sub(this.pos).scale(5 * dt));
+      }
+    }
+
+    if (world) {
+      for (const other of world.getCombatants()) {
+        if (other.id === this.id || other.isDead) continue;
+        const dist = this.pos.dist(other.pos);
+        if (dist < 1) continue;
+
+        if (this.activeStatuses.has('MAGNETIC') && other.activeStatuses.has('MAGNETIC')) {
+          this.vel.addMut(other.pos.sub(this.pos).normalize().scale(600 * dt));
+        }
+        if (this.activeStatuses.has('HOLY') && dist < 180) {
+          other.vel.addMut(other.pos.sub(this.pos).normalize().scale(800 * dt));
+        }
       }
     }
 
