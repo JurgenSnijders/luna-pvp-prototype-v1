@@ -4,11 +4,14 @@ import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSetti
 import { screenShake } from '../../render/ScreenShake';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
-import type { TriggerNode, TriggerType } from '../../types/schema';
+import { Summon } from '../../entities/Summon';
+import type { ActionPayload, TriggerNode, TriggerType } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
-import { secondaryColor, trailColor } from './helpers';
+import { MAX_DEPTH } from './constants';
+import { safeNormalize, secondaryColor, trailColor } from './helpers';
+import type { TriggerHost } from './TriggerHost';
 import { dispatchTriggerNode } from './triggers';
 
 function projectileHeading(projectile: Projectile): Vector2D {
@@ -78,6 +81,65 @@ function dispatchProjectileTriggers(
     if (filter && !filter(node)) continue;
     dispatchTriggerNode(interp, node, ctx, world);
   }
+}
+
+function nodeRequiresTarget(node: TriggerNode): boolean {
+  const check = (actions: ActionPayload[]): boolean =>
+    actions.some((a) => 'target' in a && a.target === 'TARGET');
+  if (check(node.actions)) return true;
+  if (node.ifFalseActions && check(node.ifFalseActions)) return true;
+  return false;
+}
+
+function dispatchHostTicks(
+  interp: Interpreter,
+  host: TriggerHost,
+  world: PhysicsWorld,
+  dt: number,
+  buildCtx: () => TriggerContext | null,
+  shouldSkipNode?: (node: TriggerNode, ctx: TriggerContext | null) => boolean,
+): void {
+  const tickNodes = host.getTriggers('ON_TICK');
+  if (tickNodes.length === 0) return;
+
+  let ctx: TriggerContext | null | undefined;
+  for (let i = 0; i < tickNodes.length; i++) {
+    const node = tickNodes[i];
+    const interval = Math.max(16, node.tickIntervalMs ?? 100);
+    const elapsed = (host.tickAccumulatorsMs.get(i) ?? 0) + dt * 1000;
+    if (elapsed < interval) {
+      host.tickAccumulatorsMs.set(i, elapsed);
+      continue;
+    }
+    host.tickAccumulatorsMs.set(i, elapsed % interval);
+    if (ctx === undefined) ctx = buildCtx();
+    if (shouldSkipNode?.(node, ctx ?? null)) continue;
+    if (ctx) dispatchTriggerNode(interp, node, ctx, world);
+  }
+}
+
+function buildSummonContext(summon: Summon, world: PhysicsWorld): TriggerContext | null {
+  const owner = world.getEntityById(summon.ownerId);
+  if (!owner || summon.depth >= MAX_DEPTH) return null;
+
+  const target = summon.findNearestEnemy(world, summon.config.targetingRange);
+  const heading = target
+    ? safeNormalize(target.pos.sub(summon.pos))
+    : Vector2D.fromAngle(summon.facingAngle);
+
+  if (target) {
+    summon.facingAngle = Math.atan2(heading.y, heading.x);
+  }
+
+  return {
+    origin: summon.pos.clone(),
+    heading,
+    caster: owner,
+    sourceEntity: summon,
+    targetEntity: target ?? undefined,
+    depth: summon.depth + 1,
+    ability: { archetype: summon.spellArchetype, name: summon.abilityName },
+  };
 }
 
 /** Broadcasts ON_RECAST to every live, root-cast projectile the caster owns for this ability
@@ -186,33 +248,9 @@ export function processLifecycleEvents(
 
   for (const projectile of world.projectiles) {
     if (projectile.isDead) continue;
-    const tickNodes = projectile.getTriggers('ON_TICK');
-    if (tickNodes.length > 0) {
-      // Throttled per-node: each ON_TICK node fires independently once its own
-      // tickIntervalMs elapses, instead of every physics frame (~16ms), to prevent
-      // attached-field/entity-count flooding on long-lived projectiles.
-      let ctx: TriggerContext | null | undefined;
-      for (let i = 0; i < tickNodes.length; i++) {
-        const node = tickNodes[i];
-        const interval = Math.max(16, node.tickIntervalMs ?? 100);
-        const elapsed = (projectile.tickAccumulatorsMs.get(i) ?? 0) + dt * 1000;
-        if (elapsed < interval) {
-          projectile.tickAccumulatorsMs.set(i, elapsed);
-          continue;
-        }
-        projectile.tickAccumulatorsMs.set(i, elapsed % interval);
-        if (ctx === undefined) {
-          ctx = buildLifecycleContext(
-            projectile,
-            null,
-            projectile.pos,
-            projectile.depth,
-            world,
-          );
-        }
-        if (ctx) dispatchTriggerNode(interp, node, ctx, world);
-      }
-    }
+    dispatchHostTicks(interp, projectile, world, dt, () =>
+      buildLifecycleContext(projectile, null, projectile.pos, projectile.depth, world),
+    );
 
     const distNodes = projectile.getTriggers('ON_DISTANCE_TRAVELED');
     if (distNodes.length > 0) {
@@ -276,6 +314,18 @@ export function processLifecycleEvents(
       }
       projectile.lastTrailPos.copyFrom(projectile.pos);
     }
+  }
+
+  for (const summon of world.summons) {
+    if (summon.isDead) continue;
+    dispatchHostTicks(
+      interp,
+      summon,
+      world,
+      dt,
+      () => buildSummonContext(summon, world),
+      (node, ctx) => !ctx?.targetEntity && nodeRequiresTarget(node),
+    );
   }
 }
 

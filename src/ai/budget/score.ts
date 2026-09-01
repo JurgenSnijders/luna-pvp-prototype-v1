@@ -76,7 +76,22 @@ function scoreAction(action: ActionPayload, depth: number): number {
     case 'SPAWN_ACTOR': {
       const actor = action.actor;
       const turretBonus = actor.archetype === 'TURRET' ? 4 : 0;
-      return (actor.durationMs / 1000) * 6 + actor.health / 50 + turretBonus;
+      let score = (actor.durationMs / 1000) * 6 + actor.health / 50 + turretBonus;
+      if (actor.triggers) {
+        for (const node of actor.triggers) {
+          const nodeScore = scoreTriggerNode(node, depth + 1);
+          if (node.trigger === 'ON_TICK') {
+            const ticks = Math.min(
+              60,
+              actor.durationMs / Math.max(16, node.tickIntervalMs ?? 100),
+            );
+            score += nodeScore * ticks;
+          } else {
+            score += nodeScore;
+          }
+        }
+      }
+      return score;
     }
   }
 }

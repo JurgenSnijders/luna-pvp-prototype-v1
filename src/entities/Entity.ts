@@ -109,7 +109,11 @@ export class Entity {
     this.forceAccumulatorScale = 1.0;
   }
 
-  integrate(dt: number): void {
+  isImmovable(): boolean {
+    return false;
+  }
+
+  tickStatusTimers(dt: number): void {
     if (this.morphRemainingMs > 0) {
       this.morphRemainingMs = Math.max(0, this.morphRemainingMs - dt * 1000);
       if (this.morphRemainingMs <= 0) {
@@ -127,8 +131,12 @@ export class Entity {
       if (this.stasisRemainingMs <= 0) {
         this.dischargeStasis();
       }
-      return;
     }
+  }
+
+  integrate(dt: number): void {
+    this.tickStatusTimers(dt);
+    if (this.stasisRemainingMs > 0) return;
 
     this.prevPos.copyFrom(this.pos);
     this.vel.addScaledMut(this.accel, dt);

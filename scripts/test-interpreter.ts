@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { Dummy } from '../src/entities/Dummy';
 import { Player } from '../src/entities/Player';
 import { Vector2D } from '../src/math/Vector2D';
 import { Interpreter } from '../src/primitives/Interpreter';
@@ -60,9 +61,91 @@ function castPreset(presetName: string, schema: AbilitySchema): CastCounts {
   return countLiveEntities(world);
 }
 
+function testDeployableNestedTriggerSelfHit(): string | null {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  const caster = new Player(new Vector2D(0, 0));
+  const dummy = new Dummy(new Vector2D(200, 0));
+  world.addPlayer(caster);
+  world.addDummy(dummy);
+
+  const schema: AbilitySchema = {
+    id: 'test_deployable_turret',
+    name: 'Test Deployable Turret',
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: {
+              archetype: 'TURRET',
+              health: 80,
+              durationMs: 8000,
+              triggers: [
+                {
+                  trigger: 'ON_TICK',
+                  tickIntervalMs: 100,
+                  actions: [
+                    {
+                      type: 'SPAWN_PROJECTILE',
+                      projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const interpreter = new Interpreter();
+  interpreter.executeAbility(
+    schema,
+    {
+      origin: caster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster,
+      depth: 0,
+      ability: schema,
+    },
+    world,
+  );
+
+  if (world.summons.length !== 1 || world.summons[0].isDead) {
+    return 'deployable nested trigger: summon was not spawned';
+  }
+  const summon = world.summons[0];
+
+  const dt = 0.2;
+  interpreter.updateTrajectories(world, dt);
+  world.step(dt);
+  interpreter.processLifecycleEvents(world, dt);
+
+  const liveProjectiles = world.projectiles.filter((p) => !p.isDead);
+  if (liveProjectiles.length === 0) {
+    return 'deployable nested trigger: no live projectile after tick';
+  }
+
+  const spawned = liveProjectiles.find((p) => p.hitEntityIds.has(summon.id));
+  if (!spawned) {
+    return 'deployable nested trigger: projectile missing summon self-hit guard';
+  }
+
+  return null;
+}
+
 function run(): void {
   const counts: Record<string, CastCounts> = {};
   const failures: string[] = [];
+
+  const deployableFailure = testDeployableNestedTriggerSelfHit();
+  if (deployableFailure) failures.push(deployableFailure);
 
   for (const name of CAST_PRESETS) {
     const preset = PRESETS[name];

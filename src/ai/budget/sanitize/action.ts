@@ -284,7 +284,7 @@ export function sanitizeAction(
     case 'SPAWN_ACTOR': {
       const action: Extract<ActionPayload, { type: 'SPAWN_ACTOR' }> = {
         type: 'SPAWN_ACTOR',
-        actor: sanitizeActorConfig(raw.actor),
+        actor: sanitizeActorConfig(raw.actor, depth, category),
       };
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

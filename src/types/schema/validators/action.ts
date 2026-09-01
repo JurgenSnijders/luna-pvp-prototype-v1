@@ -231,7 +231,7 @@ export function validateActionPayload(value: unknown, depth = 0): ActionPayload 
     }
 
     case 'SPAWN_ACTOR': {
-      const actor = validateActorConfig(value.actor);
+      const actor = validateActorConfig(value.actor, depth);
       if (!actor) return null;
       const action: SpawnActorAction = { type: 'SPAWN_ACTOR', actor };
       const target = parseActionTarget(value.target);

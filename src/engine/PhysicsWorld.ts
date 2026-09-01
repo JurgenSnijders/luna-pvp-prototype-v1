@@ -479,6 +479,7 @@ export class PhysicsWorld {
     for (const summon of this.summons) {
       if (summon.isDead) continue;
       summon.update(dt, this);
+      if (summon.config.anchored === false) summon.integrate(dt);
     }
     for (const entity of this.projectiles) {
       if (entity.isDead) continue;
@@ -523,10 +524,10 @@ export class PhysicsWorld {
     const aRatio = b.effectiveMass / totalMass;
     const bRatio = a.effectiveMass / totalMass;
 
-    if (!aStasis) {
+    if (!aStasis && !a.isImmovable()) {
       a.pos = a.pos.sub(normal.scale(overlap * aRatio));
     }
-    if (!bStasis) {
+    if (!bStasis && !b.isImmovable()) {
       b.pos = b.pos.add(normal.scale(overlap * bRatio));
     }
 
@@ -594,12 +595,18 @@ export class PhysicsWorld {
     for (const entity of this.dummies) {
       if (!entity.isDead) this.clampEntityToHex(entity);
     }
+    for (const summon of this.summons) {
+      if (!summon.isDead && summon.config.anchored === false) this.clampEntityToHex(summon);
+    }
 
     for (const entity of this.players) {
       if (!entity.isDead) this.updateLavaTag(entity, dt);
     }
     for (const entity of this.dummies) {
       if (!entity.isDead) this.updateLavaTag(entity, dt);
+    }
+    for (const summon of this.summons) {
+      if (!summon.isDead) this.updateLavaTag(summon, dt);
     }
     for (const entity of this.projectiles) {
       if (!entity.isDead) this.updateLavaTag(entity, dt);
@@ -613,6 +620,9 @@ export class PhysicsWorld {
     }
     for (const entity of this.dummies) {
       if (!entity.isDead) this.clampToViewport(entity);
+    }
+    for (const summon of this.summons) {
+      if (!summon.isDead && summon.config.anchored === false) this.clampToViewport(summon);
     }
     for (const entity of this.projectiles) {
       if (!entity.isDead) this.resolveProjectileViewport(entity);

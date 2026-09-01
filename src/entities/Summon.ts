@@ -1,40 +1,83 @@
 import { Vector2D } from '../math/Vector2D';
-import type { ActorConfig } from '../types/schema';
+import type { ActorConfig, SpellArchetype, TriggerNode, VisualDescriptor } from '../types/schema';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { buildTriggerMap } from '../primitives/interpreter/helpers';
 import { Entity, generateEntityId } from './Entity';
 import { Projectile } from './Projectile';
 
 const TURRET_FIRE_INTERVAL_MS = 1000;
 const TURRET_TRAJECTORY = { type: 'LINEAR' as const, speed: 400, maxRange: 500 };
 
+export interface SummonSpawnOptions {
+  depth?: number;
+  spellArchetype?: SpellArchetype;
+  abilityName?: string;
+  visuals?: VisualDescriptor | null;
+}
+
 export class Summon extends Entity {
   ownerId: string;
   config: ActorConfig;
   remainingDurationMs: number;
   fireCooldownMs: number;
+  triggerMap: Map<string, TriggerNode[]>;
+  tickAccumulatorsMs: Map<number, number>;
+  depth: number;
+  visuals: VisualDescriptor | null;
+  spellArchetype?: SpellArchetype;
+  abilityName: string;
+  facingAngle: number;
 
-  constructor(pos: Vector2D, config: ActorConfig, ownerId: string) {
+  constructor(
+    pos: Vector2D,
+    config: ActorConfig,
+    ownerId: string,
+    options: SummonSpawnOptions = {},
+  ) {
+    const anchored = config.anchored !== false;
+    const radius = config.radius ?? 15;
+    const mass = config.mass ?? 50;
+    const tags = anchored ? ['kinematic', 'summon'] : ['summon', 'combatant'];
+
     super(generateEntityId('summon'), pos, {
-      radius: 15,
-      mass: 50,
+      radius,
+      mass,
       health: config.health,
       maxHealth: config.health,
-      tags: ['kinematic', 'summon'],
+      tags,
     });
     this.ownerId = ownerId;
     this.config = config;
     this.remainingDurationMs = config.durationMs;
     this.fireCooldownMs = 0;
+    this.triggerMap = buildTriggerMap(config.triggers ?? []);
+    this.tickAccumulatorsMs = new Map();
+    this.depth = options.depth ?? 0;
+    this.visuals = options.visuals ?? config.visuals ?? null;
+    this.spellArchetype = options.spellArchetype;
+    this.abilityName = options.abilityName ?? '';
+    this.facingAngle = 0;
+  }
+
+  override isImmovable(): boolean {
+    return this.config.anchored !== false;
+  }
+
+  getTriggers(trigger: string): TriggerNode[] {
+    return this.triggerMap.get(trigger) ?? [];
   }
 
   override update(dt: number, world?: PhysicsWorld): void {
+    this.tickStatusTimers(dt);
     this.remainingDurationMs = Math.max(0, this.remainingDurationMs - dt * 1000);
     if (this.remainingDurationMs <= 0 || this.health <= 0) {
       this.isDead = true;
       return;
     }
 
-    if (this.config.archetype !== 'TURRET' || !world) return;
+    if (this.getTriggers('ON_TICK').length > 0 || this.config.archetype !== 'TURRET' || !world) {
+      return;
+    }
 
     this.fireCooldownMs = Math.max(0, this.fireCooldownMs - dt * 1000);
     if (this.fireCooldownMs > 0) return;
@@ -46,26 +89,31 @@ export class Summon extends Entity {
     if (dir.magSq() < 0.01) return;
 
     const aimAngle = Math.atan2(dir.y, dir.x);
+    this.facingAngle = aimAngle;
     const projectile = new Projectile(
       this.pos.clone(),
       TURRET_TRAJECTORY,
       this.ownerId,
       aimAngle,
     );
+    projectile.registerHit(this.id);
     world.addProjectile(projectile);
     this.fireCooldownMs = TURRET_FIRE_INTERVAL_MS;
   }
 
-  private findNearestEnemy(world: PhysicsWorld): Entity | null {
+  findNearestEnemy(world: PhysicsWorld, maxRange?: number): Entity | null {
     let nearest: Entity | null = null;
     let nearestDistSq = Infinity;
+    const maxRangeSq = maxRange !== undefined ? maxRange * maxRange : Infinity;
 
     for (const combatant of world.getCombatants()) {
       if (combatant.id === this.ownerId) continue;
+      if (combatant.tags.has('summon')) continue;
       if (combatant.isStealthed()) continue;
       if (combatant.isDead) continue;
 
       const distSq = this.pos.distSq(combatant.pos);
+      if (distSq > maxRangeSq) continue;
       if (distSq < nearestDistSq) {
         nearestDistSq = distSq;
         nearest = combatant;

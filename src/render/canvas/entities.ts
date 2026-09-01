@@ -79,15 +79,17 @@ export function drawSummons(
   for (const summon of world.summons) {
     if (summon.isDead) continue;
     const pos = lerpPos(summon, alpha);
-    const half = summon.radius;
+    const half = summon.config.radius ?? summon.radius;
+    const turretColor = summon.config.visuals?.color ?? '#88aa44';
+    const decoyColor = summon.config.visuals?.color ?? '#aa6688';
 
     if (summon.config.archetype === 'TURRET') {
-      ctx.fillStyle = '#88aa44';
+      ctx.fillStyle = turretColor;
       ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
       ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
       ctx.strokeRect(pos.x - half - 2, pos.y - half - 2, half * 2 + 4, half * 2 + 4);
     } else {
-      ctx.fillStyle = '#aa6688';
+      ctx.fillStyle = decoyColor;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
       ctx.fill();

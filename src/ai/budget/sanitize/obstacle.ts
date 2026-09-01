@@ -1,3 +1,4 @@
+import type { SkillCategory } from '../../../types/cards';
 import type {
   ActorConfig,
   ActorArchetype,
@@ -8,6 +9,8 @@ import type {
   TerrainType,
 } from '../../../types/schema';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
+import { sanitizeTriggerNode } from './trigger';
+import { sanitizeVisuals } from './visuals';
 
 export function sanitizeObstacleConfig(raw: unknown): ObstacleConfig {
   const obj = isObject(raw) ? raw : {};
@@ -62,16 +65,42 @@ export function sanitizeMorphConfig(raw: unknown): MorphConfig {
   return config;
 }
 
-export function sanitizeActorConfig(raw: unknown): ActorConfig {
+export function sanitizeActorConfig(
+  raw: unknown,
+  depth = 0,
+  category: SkillCategory = 'SECONDARY',
+): ActorConfig {
   const obj = isObject(raw) ? raw : {};
   const archetypeRaw = typeof obj.archetype === 'string' ? obj.archetype.toUpperCase() : 'DECOY';
   const archetype = (
     ['TURRET', 'DECOY'].includes(archetypeRaw) ? archetypeRaw : 'DECOY'
   ) as ActorArchetype;
 
-  return {
+  const config: ActorConfig = {
     archetype,
     health: clamp(ensureFiniteNumber(obj.health, 50), 1, 500),
     durationMs: clamp(ensureFiniteNumber(obj.durationMs, 5000), 500, 30000),
+    anchored: obj.anchored === false ? false : true,
   };
+
+  if (obj.radius !== undefined) {
+    config.radius = clamp(ensureFiniteNumber(obj.radius, 15), 8, 48);
+  }
+  if (obj.mass !== undefined) {
+    config.mass = clamp(ensureFiniteNumber(obj.mass, 50), 10, 500);
+  }
+  if (obj.targetingRange !== undefined) {
+    config.targetingRange = clamp(ensureFiniteNumber(obj.targetingRange, 400), 100, 800);
+  }
+  if (obj.visuals !== undefined) {
+    config.visuals = sanitizeVisuals(obj.visuals);
+  }
+  if (Array.isArray(obj.triggers)) {
+    const triggers = obj.triggers
+      .map((t) => sanitizeTriggerNode(t, depth, category))
+      .filter((n): n is NonNullable<typeof n> => n !== null);
+    if (triggers.length > 0) config.triggers = triggers;
+  }
+
+  return config;
 }

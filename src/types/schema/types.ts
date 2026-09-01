@@ -310,6 +310,12 @@ export interface ActorConfig {
   archetype: ActorArchetype;
   health: number;
   durationMs: number;
+  anchored?: boolean;
+  radius?: number;
+  mass?: number;
+  targetingRange?: number;
+  triggers?: TriggerNode[];
+  visuals?: VisualDescriptor;
 }
 
 export interface MorphEntityAction {

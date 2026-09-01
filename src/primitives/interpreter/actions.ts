@@ -96,6 +96,7 @@ export function executeEmitter(
       projectile.orbitAngle = theta;
     }
 
+    if (ctx.sourceEntity) projectile.registerHit(ctx.sourceEntity.id);
     world.addProjectile(projectile);
   }
 
@@ -344,7 +345,12 @@ export function dispatchAction(
     case 'SPAWN_ACTOR': {
       const t = resolveActionTarget(action.target, ctx);
       const pos = t ? t.pos.clone() : ctx.origin.clone();
-      const summon = new Summon(pos, action.actor, ctx.caster.id);
+      const summon = new Summon(pos, action.actor, ctx.caster.id, {
+        depth: ctx.depth,
+        spellArchetype: ctx.ability?.archetype,
+        abilityName: ctx.ability?.name,
+        visuals: action.actor.visuals ?? ctx.ability?.visuals ?? null,
+      });
       world.addSummon(summon);
       break;
     }
