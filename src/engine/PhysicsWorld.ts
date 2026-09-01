@@ -1,4 +1,4 @@
-import { isInsideHex } from '../math/HexMath';
+import { clampToHex, getClosestEdgeNormal, isInsideHex } from '../math/HexMath';
 import { Vector2D } from '../math/Vector2D';
 import { Dummy } from '../entities/Dummy';
 import { ConstraintJoint } from '../entities/ConstraintJoint';
@@ -26,11 +26,12 @@ const LAVA_DRAG = 0.15;
 const COLLISION_RESTITUTION = 0.3;
 const OBSTACLE_PROJECTILE_DAMAGE = 25;
 const RAMMING_SPEED_THRESHOLD = 350;
-const RAMMING_RECOIL_FACTOR = 0.3;
-const RAMMING_INSTABILITY_SCALE = 0.05;
-const RAMMING_INSTABILITY_CAP = 40;
+const RAMMING_IMPULSE_FACTOR = 0.6;
+const RAMMING_RECOIL_FACTOR = 0.35;
+const RAMMING_INSTABILITY_SCALE = 0.06;
+const RAMMING_INSTABILITY_CAP = 45;
 const SLAM_SPEED_THRESHOLD = 400;
-const SLAM_INSTABILITY_SCALE = 0.06;
+const SLAM_INSTABILITY_SCALE = 0.07;
 const SLAM_INSTABILITY_CAP = 50;
 
 interface PenetrationResult {
@@ -300,7 +301,7 @@ export class PhysicsWorld {
     rammer: Entity,
     target: Entity,
     closingSpeed: number,
-  ): void {
+  ): { J: number; knockDir: Vector2D } {
     const knockDelta = target.pos.sub(rammer.pos);
     const knockDir =
       knockDelta.magSq() > 0 ? knockDelta.normalize() : Vector2D.fromAngle(0);
@@ -308,7 +309,7 @@ export class PhysicsWorld {
     const reducedMass =
       (rammer.effectiveMass * target.effectiveMass) /
       (rammer.effectiveMass + target.effectiveMass);
-    const J = closingSpeed * 0.5 * reducedMass;
+    const J = closingSpeed * RAMMING_IMPULSE_FACTOR * reducedMass;
 
     this.applyVelocityImpulse(target, knockDir.scale(J / target.effectiveMass));
     this.applyVelocityImpulse(
@@ -321,6 +322,8 @@ export class PhysicsWorld {
       (closingSpeed - RAMMING_SPEED_THRESHOLD) * RAMMING_INSTABILITY_SCALE,
     );
     this.addInstability(target, rammingInstability);
+
+    return { J, knockDir };
   }
 
   private applySlamInstability(entity: Entity, impactSpeed: number): void {
@@ -468,9 +471,9 @@ export class PhysicsWorld {
     const dist = delta.mag();
     const minDist = a.effectiveRadius + b.effectiveRadius;
 
-    if (dist >= minDist || dist === 0) return;
+    if (dist >= minDist) return;
 
-    const normal = delta.scale(1 / dist);
+    const normal = dist === 0 ? Vector2D.fromAngle(0) : delta.scale(1 / dist);
     const overlap = minDist - dist;
     const totalMass = a.effectiveMass + b.effectiveMass;
     const aRatio = b.effectiveMass / totalMass;
@@ -494,7 +497,13 @@ export class PhysicsWorld {
       const bApproach = b.vel.dot(normal.scale(-1));
       const rammer = aApproach >= bApproach ? a : b;
       const target = rammer === a ? b : a;
-      this.applyRammingImpulse(rammer, target, closingSpeed);
+      const { J, knockDir } = this.applyRammingImpulse(rammer, target, closingSpeed);
+      if (this.debugPhysicsEnabled && J > 0) {
+        const contact = rammer.pos.add(target.pos).scale(0.5);
+        this.recordDebugVector(
+          makeDebugVector(contact, knockDir, J, DEBUG_VECTOR_COLORS.COLLISION, 'ram'),
+        );
+      }
       return;
     }
 
@@ -536,6 +545,13 @@ export class PhysicsWorld {
     this.resolveViewportBoundaries();
 
     for (const entity of this.players) {
+      if (!entity.isDead) this.clampEntityToHex(entity);
+    }
+    for (const entity of this.dummies) {
+      if (!entity.isDead) this.clampEntityToHex(entity);
+    }
+
+    for (const entity of this.players) {
       if (!entity.isDead) this.updateLavaTag(entity, dt);
     }
     for (const entity of this.dummies) {
@@ -556,6 +572,26 @@ export class PhysicsWorld {
     }
     for (const entity of this.projectiles) {
       if (!entity.isDead) this.resolveProjectileViewport(entity);
+    }
+  }
+
+  private clampEntityToHex(entity: Entity): void {
+    if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) return;
+
+    const normal = getClosestEdgeNormal(entity.pos, this.hexCenter, this.hexRadius);
+    const vImpact = entity.vel.dot(normal.scale(-1));
+
+    if (vImpact > SLAM_SPEED_THRESHOLD) {
+      this.applySlamInstability(entity, vImpact);
+      entity.pos = clampToHex(entity.pos, this.hexCenter, this.hexRadius);
+      const vn = entity.vel.dot(normal);
+      if (vn > 0) entity.vel = entity.vel.sub(normal.scale(vn));
+      if (this.debugPhysicsEnabled) {
+        this.recordDebugVector(
+          makeDebugVector(entity.pos, normal, vImpact, DEBUG_VECTOR_COLORS.COLLISION, 'hex'),
+        );
+      }
+      this.pendingWallImpacts.push(entity.pos.clone());
     }
   }
 

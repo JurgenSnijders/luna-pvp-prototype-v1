@@ -33,6 +33,7 @@ export interface SimulationTelemetry {
   peakTargetSpeed: number;
   targetInstabilityDelta: number;
   targetHealthDelta: number;
+  maxTargetDisplacement: number;
   fieldTicksApplied: number;
   obstaclesSpawned: number;
   orbitBandFrameCount: number;
@@ -67,14 +68,23 @@ export function runHeadlessSimulation(
   ticks = 60,
   dt = 1 / 60,
   targetDistance = 200,
+  options: { casterKinematic?: boolean; casterNoFriction?: boolean; dummyMass?: number } = {},
 ): SimulationTelemetry {
   const world = new PhysicsWorld(Vector2D.zero(), 400);
   world.setViewportBounds(2000, 2000);
 
   const casterRadius = world.getCombatantRadius();
   const caster = new Player(new Vector2D(casterRadius + 1, 0));
-  caster.tags.add('kinematic');
-  const target = new Dummy(new Vector2D(casterRadius + 1 + targetDistance, 0), { mass: 100 });
+  if (options.casterKinematic !== false) {
+    caster.tags.add('kinematic');
+  }
+  if (options.casterNoFriction) {
+    caster.friction = 0;
+    caster.linearDrag = 0;
+  }
+  const target = new Dummy(new Vector2D(casterRadius + 1 + targetDistance, 0), {
+    mass: options.dummyMass ?? 100,
+  });
 
   world.addPlayer(caster);
   world.addDummy(target);
@@ -84,6 +94,7 @@ export function runHeadlessSimulation(
   const initialDistance = caster.pos.dist(target.pos);
   const initialInstability = target.instabilityPct;
   const initialHealth = target.health;
+  const initialTargetPos = target.pos.clone();
 
   interpreter.executeAbility(
     schema,
@@ -99,6 +110,7 @@ export function runHeadlessSimulation(
   let minDistance = initialDistance;
   let maxDistance = initialDistance;
   let peakTargetSpeed = 0;
+  let maxTargetDisplacement = 0;
   let fieldTicksApplied = 0;
   let obstaclesSpawned = 0;
   let orbitBandFrameCount = 0;
@@ -114,6 +126,7 @@ export function runHeadlessSimulation(
     minDistance = Math.min(minDistance, dist);
     maxDistance = Math.max(maxDistance, dist);
     peakTargetSpeed = Math.max(peakTargetSpeed, target.vel.mag());
+    maxTargetDisplacement = Math.max(maxTargetDisplacement, target.pos.dist(initialTargetPos));
 
     if (dist >= 40 && dist <= 120) {
       orbitBandFrameCount++;
@@ -143,6 +156,7 @@ export function runHeadlessSimulation(
     peakTargetSpeed,
     targetInstabilityDelta: target.instabilityPct - initialInstability,
     targetHealthDelta: target.health - initialHealth,
+    maxTargetDisplacement,
     fieldTicksApplied,
     obstaclesSpawned,
     orbitBandFrameCount,
@@ -151,7 +165,7 @@ export function runHeadlessSimulation(
 
 // ── Invariant checkers ──────────────────────────────────────────────────────
 
-export type InvariantType = 'PULL' | 'PUSH' | 'HAZARD_DOT' | 'ORBIT' | 'OBSTACLE';
+export type InvariantType = 'PULL' | 'PUSH' | 'HAZARD_DOT' | 'ORBIT' | 'OBSTACLE' | 'RAM';
 
 export function assertInvariant(
   _name: string,
@@ -219,6 +233,18 @@ export function assertInvariant(
       return {
         pass: false,
         reason: `obstaclesSpawned=0, need > 0`,
+      };
+    }
+    case 'RAM': {
+      if (telemetry.maxTargetDisplacement >= 40 && telemetry.targetInstabilityDelta >= 15) {
+        return {
+          pass: true,
+          reason: `displacement=${telemetry.maxTargetDisplacement.toFixed(1)}, Δinstab=${telemetry.targetInstabilityDelta.toFixed(1)}`,
+        };
+      }
+      return {
+        pass: false,
+        reason: `displacement=${telemetry.maxTargetDisplacement.toFixed(1)} (need >= 40), Δinstab=${telemetry.targetInstabilityDelta.toFixed(1)} (need >= 15)`,
       };
     }
   }
@@ -339,11 +365,36 @@ const DASH_RAM: AbilitySchema = {
   ],
 };
 
+const BODY_RAM_COLLISION: AbilitySchema = {
+  id: 'bench_body_ram',
+  name: 'Dash Ram (Body Collision)',
+  archetype: 'KINETIC',
+  cooldownMs: 800,
+  recoilKick: 0,
+  visuals: { ...DEFAULT_VISUALS, color: '#ffaa44' },
+  triggers: [
+    {
+      trigger: 'ON_CAST',
+      actions: [
+        {
+          type: 'APPLY_IMPULSE',
+          target: 'CASTER',
+          baseForce: 1200,
+          directionMode: 'CUSTOM',
+          direction: { x: 1, y: 0 },
+        },
+      ],
+    },
+  ],
+};
+
 interface BenchmarkCase {
   name: string;
   schema: AbilitySchema;
   invariant: InvariantType;
   targetDistance?: number;
+  ticks?: number;
+  simOptions?: { casterKinematic?: boolean; casterNoFriction?: boolean; dummyMass?: number };
 }
 
 function buildBenchmarkSuite(): BenchmarkCase[] {
@@ -364,6 +415,14 @@ function buildBenchmarkSuite(): BenchmarkCase[] {
     { name: 'Ice Barrier', schema: iceBarrier, invariant: 'OBSTACLE' },
     { name: 'Orbiting Halos', schema: ORBITING_HALOS, invariant: 'ORBIT', targetDistance: 120 },
     { name: 'Dash Ram', schema: DASH_RAM, invariant: 'PUSH' },
+    {
+      name: 'Dash Ram (Body Collision)',
+      schema: BODY_RAM_COLLISION,
+      invariant: 'RAM',
+      targetDistance: 200,
+      ticks: 120,
+      simOptions: { casterKinematic: false, casterNoFriction: true, dummyMass: 1 },
+    },
   ];
 }
 
@@ -389,7 +448,13 @@ function run(): void {
   for (const bench of suite) {
     let telemetry: SimulationTelemetry;
     try {
-      telemetry = runHeadlessSimulation(bench.schema, 60, 1 / 60, bench.targetDistance);
+      telemetry = runHeadlessSimulation(
+        bench.schema,
+        bench.ticks ?? 60,
+        1 / 60,
+        bench.targetDistance,
+        bench.simOptions,
+      );
     } catch (err) {
       console.log(`${RED}[FAIL]${RESET} ${bench.name} (${bench.invariant})`);
       console.log(`  ${DIM}runtime error: ${err}${RESET}`);
