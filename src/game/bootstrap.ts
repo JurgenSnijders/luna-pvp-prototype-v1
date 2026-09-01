@@ -16,6 +16,8 @@ import { CanvasRenderer } from '../render/CanvasRenderer';
 import { MatchHUD } from '../render/MatchHUD';
 import { ParticleSystem } from '../render/ParticleSystem';
 import { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
+import { CombatLogger } from '../telemetry/CombatLogger';
+import { TelemetryModal } from '../telemetry/TelemetryModal';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
 import { handleCastInput } from './input';
@@ -119,6 +121,13 @@ function init(app: GameApp): void {
     },
   });
 
+  app.telemetryModal = new TelemetryModal({
+    onOpenChange: (open) => {
+      if (app.loop) app.loop.setPaused(open);
+    },
+    onCopyJson: (ms) => app.copyCombatLog(ms),
+  });
+
   app.inspector = new InspectorUI(
     document.getElementById('inspector-root')!,
     {
@@ -157,6 +166,12 @@ function init(app: GameApp): void {
   );
 
   window.addEventListener('keydown', (e) => {
+    if (e.code === 'F8' || (e.code === 'F2' && e.shiftKey)) {
+      e.preventDefault();
+      app.toggleTelemetryInspector();
+      return;
+    }
+
     if (e.code === 'F2') {
       e.preventDefault();
       app.copyCombatLog().then((count) => {
@@ -245,7 +260,7 @@ function init(app: GameApp): void {
       app.world.hexCenter = getHexCenter();
 
       if (app.matchManager.mode === 'SANDBOX') {
-        if (app.draftModal.isOpen()) return;
+        if (app.draftModal.isOpen() || app.telemetryModal.isOpened()) return;
         runSimulationStep(app, dt);
         return;
       }
@@ -306,6 +321,15 @@ function init(app: GameApp): void {
   });
 
   app.loop.start();
+
+  window.combatLog = {
+    dump: (ms?, type?) => CombatLogger.getInstance().dumpConsoleTable(ms, type),
+    json: (ms?) => CombatLogger.getInstance().getRecentEvents(ms),
+    summary: (ms?) => CombatLogger.getInstance().getEventSummary(ms),
+    clear: () => CombatLogger.getInstance().clear(),
+    copy: (ms?) => app.copyCombatLog(ms ?? 10_000),
+    exportAscii: (ms?) => console.log(CombatLogger.getInstance().exportAsciiTable(ms)),
+  };
 }
 
 export function startGame(): void {

@@ -14,8 +14,10 @@ import type { MatchHUD } from '../render/MatchHUD';
 import type { ParticleSystem } from '../render/ParticleSystem';
 import type { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
 import { CombatLogger } from '../telemetry/CombatLogger';
+import type { TelemetryModal } from '../telemetry/TelemetryModal';
 
 export class GameApp {
+  static instance: GameApp | null = null;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   world!: PhysicsWorld;
@@ -34,6 +36,7 @@ export class GameApp {
   botController!: BotController;
   matchHUD!: MatchHUD;
   physicsDebugLayer!: PhysicsDebugLayer;
+  telemetryModal!: TelemetryModal;
   intermissionHandled = false;
   isIntermissionDraft = false;
   keys = new Set<string>();
@@ -46,6 +49,7 @@ export class GameApp {
   constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
     this.canvas = canvas;
     this.ctx = ctx;
+    GameApp.instance = this;
   }
 
   togglePhysicsDebug(): void {
@@ -62,5 +66,9 @@ export class GameApp {
     const json = logger.exportJson(durationMs);
     await navigator.clipboard.writeText(json);
     return events.length;
+  }
+
+  toggleTelemetryInspector(): void {
+    this.telemetryModal.toggle();
   }
 }

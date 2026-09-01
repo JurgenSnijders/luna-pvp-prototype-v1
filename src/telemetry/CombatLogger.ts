@@ -1,10 +1,18 @@
 import type {
   AbilityCastEvent,
   CombatEvent,
+  CombatEventSummary,
   FieldTickEvent,
   ImpulseAppliedEvent,
   RamCollisionEvent,
   SlamCollisionEvent,
+} from '../types/telemetry';
+import {
+  formatEventParams,
+  formatEventRowAscii,
+  formatInstability,
+  formatKinematicDelta,
+  getEventEndpoints,
 } from '../types/telemetry';
 
 type RecordableEvent =
@@ -57,11 +65,67 @@ export class CombatLogger {
     this.buffer.push(fullEvent);
   }
 
+  getAllEvents(): CombatEvent[] {
+    return [...this.buffer];
+  }
+
   getRecentEvents(durationMs = 10000, currentTimeMs?: number): CombatEvent[] {
     if (this.buffer.length === 0) return [];
+    if (!Number.isFinite(durationMs)) return this.getAllEvents();
     const latestTime = currentTimeMs ?? this.buffer[this.buffer.length - 1].timeMs;
     const threshold = latestTime - durationMs;
     return this.buffer.filter((e) => e.timeMs >= threshold);
+  }
+
+  getEventSummary(durationMs = 10000): CombatEventSummary {
+    const events = this.getRecentEvents(durationMs);
+    const counts: Partial<Record<CombatEvent['type'], number>> = {};
+    let peakImpulse = 0;
+    let highestInstability = 0;
+
+    for (const e of events) {
+      counts[e.type] = (counts[e.type] ?? 0) + 1;
+      if (e.type === 'RAM_COLLISION') {
+        peakImpulse = Math.max(peakImpulse, e.impulseMagnitude);
+        highestInstability = Math.max(
+          highestInstability,
+          e.targetInstabDelta,
+          e.targetInstabTotal,
+        );
+      }
+      if (e.type === 'SLAM_COLLISION') {
+        highestInstability = Math.max(highestInstability, e.instabDelta, e.instabTotal);
+      }
+    }
+
+    return { counts, total: events.length, peakImpulse, highestInstability };
+  }
+
+  dumpConsoleTable(durationMs = 10000, filterType?: CombatEvent['type']): void {
+    let events = this.getRecentEvents(durationMs);
+    if (filterType) {
+      events = events.filter((e) => e.type === filterType);
+    }
+
+    const rows = events.map((e) => {
+      const { source, target } = getEventEndpoints(e);
+      const kinematic = formatKinematicDelta(e);
+      const instab = formatInstability(e);
+      const deltaState = instab !== '—' ? `${kinematic} | ${instab}` : kinematic;
+      return {
+        'Time(s)': (e.timeMs / 1000).toFixed(2),
+        Frame: e.frame,
+        Type: e.type,
+        Source: source,
+        Target: target,
+        'Key Parameters': formatEventParams(e),
+        'Delta / State': deltaState,
+      };
+    });
+
+    const windowLabel = Number.isFinite(durationMs) ? `${durationMs / 1000}s` : 'ALL';
+    console.log(`[CombatLogger] ${rows.length} events (last ${windowLabel})`);
+    console.table(rows);
   }
 
   exportJson(durationMs = 10000): string {
@@ -74,43 +138,8 @@ export class CombatLogger {
       'Frame  Time(ms)  Event Type         Source -> Target      Key Parameters                    State Delta';
     const divider =
       '-----  --------  -----------------  --------------------  --------------------------------  --------------------------------';
-    const rows = events.map((e) => this.formatEventRow(e));
+    const rows = events.map((e) => formatEventRowAscii(e));
     return [header, divider, ...rows].join('\n');
-  }
-
-  private formatEventRow(e: CombatEvent): string {
-    const frame = String(e.frame).padStart(5);
-    const time = e.timeMs.toFixed(1).padStart(8);
-    const type = e.type.padEnd(17);
-
-    switch (e.type) {
-      case 'ABILITY_CAST':
-        return `${frame}  ${time}  ${type}  ${e.casterId.padEnd(20)}  aim=(${e.aimDirection.x.toFixed(1)},${e.aimDirection.y.toFixed(1)}) recoil=${e.recoilKick.toFixed(0)}  cd=${e.cooldownMs}ms`;
-      case 'IMPULSE_APPLIED': {
-        const pair = `${e.sourceId}->${e.targetId}`.padEnd(20);
-        const params = `F=${e.baseForce.toFixed(0)} mode=${e.directionMode} m=${e.targetMass.toFixed(1)}`.padEnd(32);
-        const delta = `dv=(${e.deltaVelocity.x.toFixed(1)},${e.deltaVelocity.y.toFixed(1)})`;
-        return `${frame}  ${time}  ${type}  ${pair}  ${params}  ${delta}`;
-      }
-      case 'FIELD_ACCEL_TICK': {
-        const pair = `${e.zoneId}->${e.targetId}`.padEnd(20);
-        const params = `${e.fieldType} d=${e.distance.toFixed(0)} str=${e.strength.toFixed(0)}`.padEnd(32);
-        const delta = `a=(${e.acceleration.x.toFixed(1)},${e.acceleration.y.toFixed(1)})`;
-        return `${frame}  ${time}  ${type}  ${pair}  ${params}  ${delta}`;
-      }
-      case 'RAM_COLLISION': {
-        const pair = `${e.rammerId}->${e.targetId}`.padEnd(20);
-        const params = `v_n=${e.relativeVelocityNormal.toFixed(1)} J=${e.impulseMagnitude.toFixed(1)} mu=${e.reducedMass.toFixed(1)}`.padEnd(32);
-        const delta = `instab+${e.targetInstabDelta.toFixed(1)} tot=${e.targetInstabTotal.toFixed(1)}`;
-        return `${frame}  ${time}  ${type}  ${pair}  ${params}  ${delta}`;
-      }
-      case 'SLAM_COLLISION': {
-        const pair = `${e.entityId}@${e.surfaceType}`.padEnd(20);
-        const params = `v_imp=${e.impactSpeed.toFixed(1)} n=(${e.surfaceNormal.x.toFixed(2)},${e.surfaceNormal.y.toFixed(2)})`.padEnd(32);
-        const delta = `instab+${e.instabDelta.toFixed(1)} tot=${e.instabTotal.toFixed(1)}`;
-        return `${frame}  ${time}  ${type}  ${pair}  ${params}  ${delta}`;
-      }
-    }
   }
 
   clear(): void {
