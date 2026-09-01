@@ -9,6 +9,11 @@ import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
 import type { TerrainMutationConfig, TerrainType } from '../types/schema';
+import {
+  DEBUG_VECTOR_COLORS,
+  makeDebugVector,
+  type DebugForceVector,
+} from '../types/debug';
 
 export const MAX_ENTITIES = 256;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
@@ -77,10 +82,24 @@ export class PhysicsWorld {
   private entityRegistry = new Map<string, Entity>();
   private combatantRadius: number = DEFAULT_COMBATANT_RADIUS;
 
+  debugPhysicsEnabled = false;
+  debugVectors: DebugForceVector[] = [];
+
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
     this.hexRadius = hexRadius;
     this.baseHexRadius = hexRadius;
+  }
+
+  /** Clears per-frame debug vectors at the start of a simulation tick (before field forces). */
+  beginDebugFrame(): void {
+    if (!this.debugPhysicsEnabled) return;
+    this.debugVectors.length = 0;
+  }
+
+  recordDebugVector(vec: DebugForceVector): void {
+    if (!this.debugPhysicsEnabled) return;
+    this.debugVectors.push(vec);
   }
 
   /** Updates the hard screen-edge collision perimeter (called on init and window resize). */
@@ -205,7 +224,7 @@ export class PhysicsWorld {
 
   updateConstraints(dt: number): void {
     for (const c of this.constraints) {
-      if (!c.isDead) c.update(dt);
+      if (!c.isDead) c.update(dt, this);
     }
     this.constraints = this.constraints.filter((c) => !c.isDead);
   }
@@ -238,9 +257,19 @@ export class PhysicsWorld {
       target.stashedMomentum = target.stashedMomentum.add(
         impulse.scale(target.forceAccumulatorScale),
       );
+      if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
+        this.recordDebugVector(
+          makeDebugVector(target.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
+        );
+      }
       return;
     }
     target.vel = target.vel.add(impulse);
+    if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
+      this.recordDebugVector(
+        makeDebugVector(target.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
+      );
+    }
   }
 
   private addInstability(entity: Entity, amount: number): void {
@@ -252,9 +281,19 @@ export class PhysicsWorld {
       entity.stashedMomentum = entity.stashedMomentum.add(
         impulse.scale(entity.forceAccumulatorScale),
       );
+      if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
+        this.recordDebugVector(
+          makeDebugVector(entity.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
+        );
+      }
       return;
     }
     entity.vel = entity.vel.add(impulse);
+    if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
+      this.recordDebugVector(
+        makeDebugVector(entity.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
+      );
+    }
   }
 
   private applyRammingImpulse(
@@ -295,6 +334,12 @@ export class PhysicsWorld {
   private reflectVelocityAlongNormal(entity: Entity, normal: Vector2D): void {
     const vn = entity.vel.dot(normal);
     if (vn >= 0) return;
+    const bounceMag = Math.abs((1 + COLLISION_RESTITUTION) * vn);
+    if (this.debugPhysicsEnabled) {
+      this.recordDebugVector(
+        makeDebugVector(entity.pos, normal, bounceMag, DEBUG_VECTOR_COLORS.COLLISION, 'bounce'),
+      );
+    }
     entity.vel = entity.vel.sub(normal.scale((1 + COLLISION_RESTITUTION) * vn));
   }
 
@@ -353,6 +398,24 @@ export class PhysicsWorld {
     for (const dummy of this.dummies) {
       if (!dummy.isDead) {
         dummy.chaseVector = dummy.getChaseVector(this.players);
+      }
+    }
+
+    if (this.debugPhysicsEnabled) {
+      for (const player of this.players) {
+        if (player.isDead) continue;
+        if (player.inputMove.magSq() > 0) {
+          const steerDir = player.inputMove.normalize();
+          this.recordDebugVector(
+            makeDebugVector(
+              player.pos,
+              steerDir,
+              player.moveSpeed,
+              DEBUG_VECTOR_COLORS.STEERING,
+              'steer',
+            ),
+          );
+        }
       }
     }
 
@@ -446,6 +509,27 @@ export class PhysicsWorld {
     if (!bStasis) {
       b.vel = b.vel.add(impulse.scale(1 / b.effectiveMass));
     }
+
+    if (this.debugPhysicsEnabled && impulseMag > 0) {
+      this.recordDebugVector(
+        makeDebugVector(
+          b.pos,
+          normal,
+          impulseMag / b.effectiveMass,
+          DEBUG_VECTOR_COLORS.COLLISION,
+          'circle',
+        ),
+      );
+      this.recordDebugVector(
+        makeDebugVector(
+          a.pos,
+          normal.scale(-1),
+          impulseMag / a.effectiveMass,
+          DEBUG_VECTOR_COLORS.COLLISION,
+          'circle',
+        ),
+      );
+    }
   }
 
   private resolveHexBoundaries(dt: number): void {
@@ -493,6 +577,18 @@ export class PhysicsWorld {
       if (impactSpeed > SLAM_SPEED_THRESHOLD) {
         this.applySlamInstability(entity, impactSpeed);
       }
+      if (this.debugPhysicsEnabled && impactSpeed > 0) {
+        const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
+        this.recordDebugVector(
+          makeDebugVector(
+            entity.pos,
+            wallNormal,
+            impactSpeed,
+            DEBUG_VECTOR_COLORS.COLLISION,
+            'wall',
+          ),
+        );
+      }
       entity.pos.x = clampedX;
       entity.vel.x = 0;
     }
@@ -500,6 +596,18 @@ export class PhysicsWorld {
       const impactSpeed = Math.abs(entity.vel.y);
       if (impactSpeed > SLAM_SPEED_THRESHOLD) {
         this.applySlamInstability(entity, impactSpeed);
+      }
+      if (this.debugPhysicsEnabled && impactSpeed > 0) {
+        const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
+        this.recordDebugVector(
+          makeDebugVector(
+            entity.pos,
+            wallNormal,
+            impactSpeed,
+            DEBUG_VECTOR_COLORS.COLLISION,
+            'wall',
+          ),
+        );
       }
       entity.pos.y = clampedY;
       entity.vel.y = 0;

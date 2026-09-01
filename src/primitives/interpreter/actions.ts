@@ -122,6 +122,7 @@ export function dispatchAction(
       const implicitSpike = (action.baseForce * 0.02) * tuning.impactInstabilityScale * scale;
       t.instabilityPct = Math.min(500, t.instabilityPct + implicitSpike);
       const dir = resolveRelationalDirection(action.directionMode, ctx, t, action.direction);
+      // Debug impulse vectors are recorded in PhysicsWorld.applyKnockback.
       world.applyKnockback(t, dir, action.baseForce * scale);
       interp.particles?.burstSparks(ctx.origin, 8, interp.activeCastVisuals?.color ?? '#ffaa44');
       break;

@@ -12,6 +12,7 @@ import type { ActionBarHUD } from '../render/ActionBarHUD';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import type { MatchHUD } from '../render/MatchHUD';
 import type { ParticleSystem } from '../render/ParticleSystem';
+import type { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
 
 export class GameApp {
   canvas: HTMLCanvasElement;
@@ -31,6 +32,7 @@ export class GameApp {
   arenaShrink!: ArenaShrink;
   botController!: BotController;
   matchHUD!: MatchHUD;
+  physicsDebugLayer!: PhysicsDebugLayer;
   intermissionHandled = false;
   isIntermissionDraft = false;
   keys = new Set<string>();
@@ -43,5 +45,13 @@ export class GameApp {
   constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
     this.canvas = canvas;
     this.ctx = ctx;
+  }
+
+  togglePhysicsDebug(): void {
+    this.world.debugPhysicsEnabled = !this.world.debugPhysicsEnabled;
+    if (!this.world.debugPhysicsEnabled) {
+      this.world.debugVectors.length = 0;
+    }
+    console.log('[DEBUG] Physics Overlay:', this.world.debugPhysicsEnabled);
   }
 }

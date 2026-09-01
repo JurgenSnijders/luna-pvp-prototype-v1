@@ -2,13 +2,32 @@ import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
+import { DEBUG_VECTOR_COLORS, makeDebugVector } from '../types/debug';
 import { ARCHETYPE_TUNING } from './interpreter/constants';
+
+function recordFieldForce(
+  world: PhysicsWorld,
+  entity: Entity,
+  zone: SpatialZone,
+  force: Vector2D,
+): void {
+  if (!world.debugPhysicsEnabled || force.magSq() === 0) return;
+  world.recordDebugVector(
+    makeDebugVector(
+      entity.pos,
+      force,
+      force.mag(),
+      DEBUG_VECTOR_COLORS.FIELD,
+      `${zone.config.fieldType}:${Math.round(zone.config.strength)}`,
+    ),
+  );
+}
 
 export function applyField(
   zone: SpatialZone,
   entity: Entity,
   dt: number,
-  _world: PhysicsWorld,
+  world: PhysicsWorld,
 ): void {
   if (entity.tags.has('projectile') || entity.tags.has('zone')) return;
   if (!entity.tags.has('combatant')) return;
@@ -35,6 +54,7 @@ export function applyField(
         .scale(Math.abs(zone.config.strength) * falloff * sign)
         .scale(forceScale);
       entity.accel = entity.accel.add(force);
+      recordFieldForce(world, entity, zone, force);
       break;
     }
     case 'VORTEX_TANGENT': {
@@ -53,7 +73,9 @@ export function applyField(
       const inward = radialDir
         .scale(-Math.abs(zone.config.strength) * falloff * 0.2)
         .scale(forceScale);
-      entity.accel = entity.accel.add(tangentForce).add(inward);
+      const combined = tangentForce.add(inward);
+      entity.accel = entity.accel.add(combined);
+      recordFieldForce(world, entity, zone, combined);
       break;
     }
     case 'FRICTION_OVERRIDE':
@@ -73,6 +95,7 @@ export function applyField(
         .scale((zone.config.strength / distSq) * falloff)
         .scale(forceScale);
       entity.accel = entity.accel.add(pull);
+      recordFieldForce(world, entity, zone, pull);
       break;
     }
   }

@@ -1,5 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import type { ConstraintConfig } from '../types/schema';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { DEBUG_VECTOR_COLORS, makeDebugVector } from '../types/debug';
 import type { Entity } from './Entity';
 import { generateEntityId } from './Entity';
 
@@ -27,7 +29,7 @@ export class ConstraintJoint {
     this.isDead = false;
   }
 
-  update(dt: number): void {
+  update(dt: number, world?: PhysicsWorld): void {
     this.remainingDurationMs -= dt * 1000;
     if (this.remainingDurationMs <= 0) {
       this.isDead = true;
@@ -76,6 +78,17 @@ export class ConstraintJoint {
         this.bodyA.vel.addMut(impulse.scale(1 / this.bodyA.mass));
         if (this.bodyB) {
           this.bodyB.vel.subMut(impulse.scale(1 / this.bodyB.mass));
+        }
+        if (world?.debugPhysicsEnabled && impulse.magSq() > 0) {
+          world.recordDebugVector(
+            makeDebugVector(
+              this.bodyA.pos,
+              impulse,
+              impulse.mag(),
+              DEBUG_VECTOR_COLORS.CONSTRAINT,
+              'spring',
+            ),
+          );
         }
         break;
       }

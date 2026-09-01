@@ -86,5 +86,6 @@ export class CanvasRenderer {
     if (debug.showVectors || debug.showRadii || debug.showIds) {
       drawDebugOverlay(ctx, world, alpha, debug);
     }
+
   }
 }

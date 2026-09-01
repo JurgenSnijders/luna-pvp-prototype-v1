@@ -32,6 +32,7 @@ export function applySpatialFields(app: GameApp, dt: number): void {
 
 export function runSimulationStep(app: GameApp, dt: number): void {
   app.particles.beginFrame(dt);
+  app.world.beginDebugFrame();
   syncArenaRadius(app, dt);
   applyPlayerInput(app);
   app.player.updateSlotInputs(dt, (slotIndex, overrides, isChannelTick) =>

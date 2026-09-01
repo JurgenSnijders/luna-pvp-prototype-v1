@@ -15,6 +15,7 @@ import { ActionBarHUD } from '../render/ActionBarHUD';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { MatchHUD } from '../render/MatchHUD';
 import { ParticleSystem } from '../render/ParticleSystem';
+import { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
 import { handleCastInput } from './input';
@@ -52,6 +53,8 @@ function init(app: GameApp): void {
 
   app.interpreter = new Interpreter();
   app.particles = new ParticleSystem(document.body);
+  app.physicsDebugLayer = new PhysicsDebugLayer();
+  app.physicsDebugLayer.resize(window.innerWidth, window.innerHeight);
   const glCtx = app.particles.getGlContext();
   if (glCtx) {
     (window as unknown as { __lunaGlCtx?: typeof glCtx }).__lunaGlCtx = glCtx;
@@ -154,7 +157,14 @@ function init(app: GameApp): void {
   );
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'F3') {
+    if (e.code === 'F3' || e.code === 'Backquote') {
+      e.preventDefault();
+      app.togglePhysicsDebug();
+      return;
+    }
+
+    if (e.code === 'F4') {
+      e.preventDefault();
       perfMonitor.toggleOverlay();
       return;
     }
@@ -278,6 +288,8 @@ function init(app: GameApp): void {
       if (perfMonitor.isOverlayVisible()) {
         drawPerfOverlay(app);
       }
+
+      app.physicsDebugLayer.render(app.world, alpha, shake.x, shake.y);
 
       app.inspector.updateTelemetry();
       app.actionBarHUD.update(app.player);
