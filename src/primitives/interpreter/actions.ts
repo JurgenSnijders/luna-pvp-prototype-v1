@@ -74,8 +74,11 @@ export function executeEmitter(
     }
 
     const fireDir = Vector2D.fromAngle(theta);
+    const muzzle = ctx.sourceEntity ?? ctx.caster;
+    const muzzleOffset = muzzle.radius + Math.max(4, vfx.size ?? 8);
+    const spawnPos = ctx.origin.add(fireDir.scale(muzzleOffset));
     const projectile = new Projectile(
-      ctx.origin.clone(),
+      spawnPos,
       structuredClone(trajectory),
       ctx.caster.id,
       theta,
@@ -198,6 +201,7 @@ export function dispatchAction(
       const inheritedVisuals =
         action.visuals ??
         (ctx.sourceEntity instanceof Projectile ? ctx.sourceEntity.visuals : null) ??
+        (ctx.sourceEntity instanceof Summon ? ctx.sourceEntity.visuals : null) ??
         interp.activeCastVisuals ??
         DEFAULT_VISUALS;
       executeEmitter(
@@ -344,7 +348,12 @@ export function dispatchAction(
     }
     case 'SPAWN_ACTOR': {
       const t = resolveActionTarget(action.target, ctx);
-      const pos = t ? t.pos.clone() : ctx.origin.clone();
+      let pos = t ? t.pos.clone() : ctx.origin.clone();
+      if (ctx.heading.magSq() > 0.01) {
+        const actorRadius = action.actor.radius ?? 15;
+        const hostRadius = t?.radius ?? ctx.caster.radius;
+        pos = pos.add(ctx.heading.normalize().scale(hostRadius + actorRadius + 4));
+      }
       const summon = new Summon(pos, action.actor, ctx.caster.id, {
         depth: ctx.depth,
         spellArchetype: ctx.ability?.archetype,

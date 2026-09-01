@@ -8,6 +8,7 @@ import type {
   SpawnActorAction,
   TriggerNode,
 } from '../../types/schema';
+import { walkActionList, walkActions } from '../../types/schema';
 
 const PULL_KEYWORDS =
   /\b(pull|inward|attract|gravity|singularity|drag|vacuum|harpoon|black hole|suck|reel|implosion)\b/;
@@ -102,12 +103,15 @@ function hasOrbitAnchorProjectileOnCast(schema: AbilitySchema): boolean {
 
 function findThrownSpawnActor(schema: AbilitySchema): SpawnActorAction | null {
   let found: SpawnActorAction | null = null;
-  walkTriggerNodes(schema.triggers, (node, action) => {
+  walkActions(schema, (v) => {
+    if (found) return;
     if (
-      (node.trigger === 'ON_HIT' || node.trigger === 'ON_EXPIRY') &&
-      action.type === 'SPAWN_ACTOR'
+      v.host === 'ROOT' &&
+      v.node &&
+      (v.node.trigger === 'ON_HIT' || v.node.trigger === 'ON_EXPIRY') &&
+      v.action.type === 'SPAWN_ACTOR'
     ) {
-      found = action;
+      found = v.action;
     }
   });
   return found;
@@ -133,7 +137,11 @@ function hasSpawnActorOnCast(schema: AbilitySchema): boolean {
 }
 
 function hasInstabilityAction(schema: AbilitySchema): boolean {
-  return collectAllActions(schema.triggers).some((a) => a.type === 'ADD_INSTABILITY');
+  let found = false;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'ADD_INSTABILITY') found = true;
+  });
+  return found;
 }
 
 function repairImpulseSemantics(
@@ -219,54 +227,10 @@ function repairTriggersSemantics(
   }));
 }
 
-function collectAllActions(nodes: TriggerNode[]): ActionPayload[] {
-  const all: ActionPayload[] = [];
-  const collect = (triggerNodes: TriggerNode[]): void => {
-    for (const node of triggerNodes) {
-      all.push(...node.actions);
-      if (node.ifFalseActions) all.push(...node.ifFalseActions);
-      if (node.children) collect(node.children);
-      for (const action of node.actions) {
-        if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-          collect(action.triggers);
-        }
-        if (action.type === 'CAST_CHILD_PAYLOAD') {
-          collect(action.payload.triggers);
-        }
-      }
-    }
-  };
-  collect(nodes);
-  return all;
-}
-
-function walkTriggerNodes(
-  nodes: TriggerNode[],
-  visit: (node: TriggerNode, action: ActionPayload) => void,
-): void {
-  for (const node of nodes) {
-    for (const action of node.actions) {
-      visit(node, action);
-      if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-        walkTriggerNodes(action.triggers, visit);
-      }
-      if (action.type === 'CAST_CHILD_PAYLOAD') {
-        walkTriggerNodes(action.payload.triggers, visit);
-      }
-    }
-    if (node.ifFalseActions) {
-      for (const action of node.ifFalseActions) {
-        visit(node, action);
-      }
-    }
-    if (node.children) walkTriggerNodes(node.children, visit);
-  }
-}
-
 function hasFieldType(schema: AbilitySchema, types: FieldType[]): boolean {
   let found = false;
-  walkTriggerNodes(schema.triggers, (_node, action) => {
-    if (action.type === 'SPAWN_FIELD' && types.includes(action.field.fieldType)) {
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' && types.includes(v.action.field.fieldType)) {
       found = true;
     }
   });
@@ -275,8 +239,8 @@ function hasFieldType(schema: AbilitySchema, types: FieldType[]): boolean {
 
 function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
   let found = false;
-  walkTriggerNodes(schema.triggers, (_node, action) => {
-    if (action.type === 'SPAWN_FIELD' || action.type === 'MUTATE_TERRAIN') {
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' || v.action.type === 'MUTATE_TERRAIN') {
       found = true;
     }
   });
@@ -284,7 +248,11 @@ function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
 }
 
 function hasSpawnObstacle(schema: AbilitySchema): boolean {
-  return collectAllActions(schema.triggers).some((a) => a.type === 'SPAWN_OBSTACLE');
+  let found = false;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_OBSTACLE') found = true;
+  });
+  return found;
 }
 
 function findOnCastProjectile(schema: AbilitySchema): {
@@ -653,47 +621,41 @@ function applyRuleD_ChanneledStream(schema: AbilitySchema, text: string): void {
 }
 
 function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
-  for (const action of actions) {
-    if (action.type === 'APPLY_IMPULSE') return true;
-    if (action.type === 'SPAWN_FIELD') {
-      const ft = action.field.fieldType;
-      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') return true;
+  let found = false;
+  walkActionList(actions, (v) => {
+    if (found) return;
+    if (v.action.type === 'APPLY_IMPULSE') {
+      found = true;
+      return;
     }
-    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-      if (triggersProvideDisplacement(action.triggers)) return true;
+    if (v.action.type === 'SPAWN_FIELD') {
+      const ft = v.action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') found = true;
+      return;
     }
-    if (action.type === 'CAST_CHILD_PAYLOAD') {
-      if (abilityProvidesDisplacement(action.payload)) return true;
+    if (v.action.type === 'CAST_CHILD_PAYLOAD') {
+      if (abilityProvidesDisplacement(v.action.payload)) found = true;
     }
-  }
-  return false;
+  });
+  return found;
 }
 
 function actionsProvideLifecycleDisplacement(actions: ActionPayload[]): boolean {
-  for (const action of actions) {
-    if (action.type === 'SPAWN_FIELD') {
-      const ft = action.field.fieldType;
+  let found = false;
+  walkActionList(actions, (v) => {
+    if (found) return;
+    if (v.action.type === 'SPAWN_FIELD') {
+      const ft = v.action.field.fieldType;
       if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR' || ft === 'VORTEX_TANGENT') {
-        return true;
+        found = true;
       }
+      return;
     }
-    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-      if (triggersProvideLifecycleDisplacement(action.triggers)) return true;
+    if (v.action.type === 'CAST_CHILD_PAYLOAD') {
+      if (hasLifecycleFieldDisplacement(v.action.payload)) found = true;
     }
-    if (action.type === 'CAST_CHILD_PAYLOAD') {
-      if (hasLifecycleFieldDisplacement(action.payload)) return true;
-    }
-  }
-  return false;
-}
-
-function triggersProvideLifecycleDisplacement(nodes: TriggerNode[]): boolean {
-  for (const node of nodes) {
-    if (actionsProvideLifecycleDisplacement(node.actions)) return true;
-    if (node.ifFalseActions && actionsProvideLifecycleDisplacement(node.ifFalseActions)) return true;
-    if (node.children && triggersProvideLifecycleDisplacement(node.children)) return true;
-  }
-  return false;
+  });
+  return found;
 }
 
 const LIFECYCLE_DISPLACEMENT_TRIGGERS = new Set([
@@ -705,13 +667,22 @@ const LIFECYCLE_DISPLACEMENT_TRIGGERS = new Set([
 
 function hasLifecycleFieldDisplacement(schema: AbilitySchema): boolean {
   if (!schema.trajectory) return false;
-  for (const node of schema.triggers) {
-    if (!LIFECYCLE_DISPLACEMENT_TRIGGERS.has(node.trigger)) continue;
-    if (actionsProvideLifecycleDisplacement(node.actions)) return true;
-    if (node.ifFalseActions && actionsProvideLifecycleDisplacement(node.ifFalseActions)) return true;
-    if (node.children && triggersProvideLifecycleDisplacement(node.children)) return true;
-  }
-  return false;
+  let found = false;
+  walkActions(schema, (v) => {
+    if (found) return;
+    if (!v.node || !LIFECYCLE_DISPLACEMENT_TRIGGERS.has(v.node.trigger)) return;
+    if (v.action.type === 'SPAWN_FIELD') {
+      const ft = v.action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR' || ft === 'VORTEX_TANGENT') {
+        found = true;
+      }
+      return;
+    }
+    if (v.action.type === 'CAST_CHILD_PAYLOAD') {
+      if (hasLifecycleFieldDisplacement(v.action.payload)) found = true;
+    }
+  });
+  return found;
 }
 
 function isStasisOnlyOnHit(schema: AbilitySchema): boolean {
@@ -722,23 +693,31 @@ function isStasisOnlyOnHit(schema: AbilitySchema): boolean {
   );
 }
 
-function triggersProvideDisplacement(nodes: TriggerNode[]): boolean {
-  for (const node of nodes) {
-    if (actionsProvideDisplacement(node.actions)) return true;
-    if (node.ifFalseActions && actionsProvideDisplacement(node.ifFalseActions)) return true;
-    if (node.children && triggersProvideDisplacement(node.children)) return true;
-  }
-  return false;
-}
-
 function abilityProvidesDisplacement(schema: AbilitySchema): boolean {
-  return triggersProvideDisplacement(schema.triggers);
+  let found = false;
+  walkActions(schema, (v) => {
+    if (found) return;
+    if (v.action.type === 'APPLY_IMPULSE') {
+      found = true;
+      return;
+    }
+    if (v.action.type === 'SPAWN_FIELD') {
+      const ft = v.action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') found = true;
+      return;
+    }
+    if (v.action.type === 'CAST_CHILD_PAYLOAD') {
+      if (abilityProvidesDisplacement(v.action.payload)) found = true;
+    }
+  });
+  return found;
 }
 
 function isPureSpatialUtility(schema: AbilitySchema): boolean {
   if (schema.trajectory) return false;
 
-  const allActions = collectAllActions(schema.triggers);
+  const allActions: ActionPayload[] = [];
+  walkActions(schema, (v) => allActions.push(v.action));
   if (allActions.length === 0) return false;
 
   return allActions.every(
@@ -765,21 +744,20 @@ function ensureProjectileTriggerDisplacement(
   text: string,
   isHeadlessMode: boolean,
 ): void {
-  for (const node of schema.triggers) {
-    if (node.trigger !== 'ON_CAST') continue;
-    for (const action of node.actions) {
-      if (action.type !== 'SPAWN_PROJECTILE') continue;
-      if (!action.triggers) action.triggers = [];
-      let onHit = action.triggers.find((t) => t.trigger === 'ON_HIT');
-      if (!onHit) {
-        onHit = { trigger: 'ON_HIT', actions: [] };
-        action.triggers.push(onHit);
-      }
-      if (!actionsProvideDisplacement(onHit.actions)) {
-        onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text, isHeadlessMode));
-      }
+  walkActions(schema, (v) => {
+    if (v.host !== 'ROOT' || v.node?.trigger !== 'ON_CAST') return;
+    if (v.action.type !== 'SPAWN_PROJECTILE') return;
+    const action = v.action;
+    if (!action.triggers) action.triggers = [];
+    let onHit = action.triggers.find((t) => t.trigger === 'ON_HIT');
+    if (!onHit) {
+      onHit = { trigger: 'ON_HIT', actions: [] };
+      action.triggers.push(onHit);
     }
-  }
+    if (!actionsProvideDisplacement(onHit.actions)) {
+      onHit.actions.push(defaultKnockbackImpulse(schema.archetype, text, isHeadlessMode));
+    }
+  });
 }
 
 function defaultKnockbackImpulse(
@@ -866,13 +844,13 @@ function ensureDisplacementSemantics(
 }
 
 function clampContinuousFieldStrength(schema: AbilitySchema): void {
-  walkTriggerNodes(schema.triggers, (_node, action) => {
-    if (action.type !== 'SPAWN_FIELD') return;
-    const ft = action.field.fieldType;
+  walkActions(schema, (v) => {
+    if (v.action.type !== 'SPAWN_FIELD') return;
+    const ft = v.action.field.fieldType;
     if (ft !== 'MASS_ATTRACTOR' && ft !== 'VORTEX_TANGENT') return;
-    if (Math.abs(action.field.strength) < CONTINUOUS_FIELD_STRENGTH_FLOOR) {
-      action.field.strength =
-        Math.sign(action.field.strength || 1) * CONTINUOUS_FIELD_STRENGTH_CLAMP;
+    if (Math.abs(v.action.field.strength) < CONTINUOUS_FIELD_STRENGTH_FLOOR) {
+      v.action.field.strength =
+        Math.sign(v.action.field.strength || 1) * CONTINUOUS_FIELD_STRENGTH_CLAMP;
     }
   });
 }
@@ -909,7 +887,11 @@ export function repairAbilitySemantics(
 
 /** Returns true if the schema contains any APPLY_IMPULSE action (for tests). */
 export function schemaHasApplyImpulse(schema: AbilitySchema): boolean {
-  return collectAllActions(schema.triggers).some((a) => a.type === 'APPLY_IMPULSE');
+  let found = false;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'APPLY_IMPULSE') found = true;
+  });
+  return found;
 }
 
 /** Returns true if any APPLY_IMPULSE uses the given direction mode (for tests). */
@@ -917,20 +899,22 @@ export function schemaHasImpulseDirection(
   schema: AbilitySchema,
   mode: ApplyImpulseAction['directionMode'],
 ): boolean {
-  return collectAllActions(schema.triggers).some(
-    (a) => a.type === 'APPLY_IMPULSE' && a.directionMode === mode,
-  );
+  let found = false;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'APPLY_IMPULSE' && v.action.directionMode === mode) found = true;
+  });
+  return found;
 }
 
 /** Returns true if schema has a fan emitter with count >= minCount (for tests). */
 export function schemaHasFanEmitter(schema: AbilitySchema, minCount = 3): boolean {
   let found = false;
-  walkTriggerNodes(schema.triggers, (_node, action) => {
+  walkActions(schema, (v) => {
     if (
-      action.type === 'SPAWN_PROJECTILE' &&
-      action.emitter &&
-      action.emitter.count >= minCount &&
-      action.emitter.distribution === 'FAN'
+      v.action.type === 'SPAWN_PROJECTILE' &&
+      v.action.emitter &&
+      v.action.emitter.count >= minCount &&
+      v.action.emitter.distribution === 'FAN'
     ) {
       found = true;
     }

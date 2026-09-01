@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { PRESETS } from '../src/devtools/Presets';
-import type { AbilitySchema, ActionPayload, TriggerNode } from '../src/types/schema';
-import { validateAbilitySchema } from '../src/types/schema';
+import type { AbilitySchema, ValidationIssue } from '../src/types/schema';
+import { validateAbilitySchema, walkActions } from '../src/types/schema';
+import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_PATH = join(__dirname, 'schema-scores.snapshot.json');
@@ -20,47 +21,24 @@ function hasOnHitImpulse(schema: AbilitySchema): boolean {
   return onHit?.actions.some((a) => a.type === 'APPLY_IMPULSE') ?? false;
 }
 
-function collectAllActions(nodes: TriggerNode[]): ActionPayload[] {
-  const all: ActionPayload[] = [];
-  const collect = (triggerNodes: TriggerNode[]): void => {
-    for (const node of triggerNodes) {
-      all.push(...node.actions);
-      if (node.ifFalseActions) all.push(...node.ifFalseActions);
-      if (node.children) collect(node.children);
-    }
-  };
-  collect(nodes);
-  return all;
-}
-
-function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
-  for (const action of actions) {
-    if (action.type === 'APPLY_IMPULSE') return true;
-    if (action.type === 'SPAWN_FIELD') {
-      const ft = action.field.fieldType;
-      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') return true;
-    }
-    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-      if (triggersProvideDisplacement(action.triggers)) return true;
-    }
-    if (action.type === 'CAST_CHILD_PAYLOAD') {
-      if (abilityProvidesDisplacement(action.payload)) return true;
-    }
-  }
-  return false;
-}
-
-function triggersProvideDisplacement(nodes: TriggerNode[]): boolean {
-  for (const node of nodes) {
-    if (actionsProvideDisplacement(node.actions)) return true;
-    if (node.ifFalseActions && actionsProvideDisplacement(node.ifFalseActions)) return true;
-    if (node.children && triggersProvideDisplacement(node.children)) return true;
-  }
-  return false;
-}
-
 function abilityProvidesDisplacement(schema: AbilitySchema): boolean {
-  return triggersProvideDisplacement(schema.triggers);
+  let found = false;
+  walkActions(schema, (v) => {
+    if (found) return;
+    if (v.action.type === 'APPLY_IMPULSE') {
+      found = true;
+      return;
+    }
+    if (v.action.type === 'SPAWN_FIELD') {
+      const ft = v.action.field.fieldType;
+      if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR') found = true;
+      return;
+    }
+    if (v.action.type === 'CAST_CHILD_PAYLOAD') {
+      if (abilityProvidesDisplacement(v.action.payload)) found = true;
+    }
+  });
+  return found;
 }
 
 function isStasisOnlyOnHit(schema: AbilitySchema): boolean {
@@ -99,23 +77,11 @@ function runDisplacementAssertions(): string[] {
 
 function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
   let found = false;
-  const walk = (nodes: TriggerNode[]): void => {
-    for (const node of nodes) {
-      for (const action of node.actions) {
-        if (action.type === 'SPAWN_FIELD' || action.type === 'MUTATE_TERRAIN') {
-          found = true;
-        }
-        if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-          walk(action.triggers);
-        }
-        if (action.type === 'CAST_CHILD_PAYLOAD') {
-          walk(action.payload.triggers);
-        }
-      }
-      if (node.children) walk(node.children);
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' || v.action.type === 'MUTATE_TERRAIN') {
+      found = true;
     }
-  };
-  walk(schema.triggers);
+  });
   return found;
 }
 
@@ -197,23 +163,18 @@ function runSemanticRepairAssertions(): string[] {
 }
 
 function actorHasMassAttractorTick(schema: AbilitySchema): boolean {
-  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
-  if (!onCast) return false;
-  for (const action of onCast.actions) {
-    if (action.type !== 'SPAWN_ACTOR' || !action.actor.triggers) continue;
-    for (const node of action.actor.triggers) {
-      if (node.trigger !== 'ON_TICK') continue;
-      for (const tickAction of node.actions) {
-        if (
-          tickAction.type === 'SPAWN_FIELD' &&
-          tickAction.field.fieldType === 'MASS_ATTRACTOR'
-        ) {
-          return true;
-        }
-      }
+  let found = false;
+  walkActions(schema, (v) => {
+    if (
+      v.host === 'ACTOR' &&
+      v.node?.trigger === 'ON_TICK' &&
+      v.action.type === 'SPAWN_FIELD' &&
+      v.action.field.fieldType === 'MASS_ATTRACTOR'
+    ) {
+      found = true;
     }
-  }
-  return false;
+  });
+  return found;
 }
 
 function runDeployableRepairAssertions(): string[] {
@@ -246,6 +207,99 @@ function runDeployableRepairAssertions(): string[] {
     failures.push(
       'deployable black hole trap: expected actor.triggers ON_TICK MASS_ATTRACTOR after repair',
     );
+  }
+
+  const rootOnCastField = repaired.triggers
+    .find((t) => t.trigger === 'ON_CAST')
+    ?.actions.some((a) => a.type === 'SPAWN_FIELD');
+  if (rootOnCastField) {
+    failures.push('deployable black hole trap: must not have root ON_CAST SPAWN_FIELD after repair');
+  }
+
+  const nestedFieldFixture: AbilitySchema = {
+    id: 'nested_field_clamp',
+    name: 'Nested Field Clamp',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            actor: {
+              archetype: 'TURRET',
+              health: 100,
+              durationMs: 5000,
+              anchored: true,
+              triggers: [
+                {
+                  trigger: 'ON_TICK',
+                  tickIntervalMs: 100,
+                  actions: [
+                    {
+                      type: 'SPAWN_FIELD',
+                      field: {
+                        fieldType: 'MASS_ATTRACTOR',
+                        radius: 100,
+                        strength: 600,
+                        durationMs: 200,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const clamped = repairAbilitySemantics(nestedFieldFixture, '', true);
+  let nestedStrength = 0;
+  walkActions(clamped, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' && v.action.field.fieldType === 'MASS_ATTRACTOR') {
+      nestedStrength = v.action.field.strength;
+    }
+  });
+  if (Math.abs(nestedStrength) < 3500) {
+    failures.push(
+      `nested field clamp: expected strength >= 3500, got ${nestedStrength}`,
+    );
+  }
+
+  const validationIssues: ValidationIssue[] = [];
+  const brokenActor = validateAbilitySchema(
+    {
+      id: 'broken_actor',
+      name: 'Broken Actor',
+      cooldownMs: 1000,
+      recoilKick: 0,
+      triggers: [
+        {
+          trigger: 'ON_CAST',
+          actions: [
+            {
+              type: 'SPAWN_ACTOR',
+              actor: { archetype: 'FROST', health: 100, durationMs: 5000 },
+            },
+          ],
+        },
+      ],
+    },
+    0,
+    validationIssues,
+  );
+  if (brokenActor) {
+    failures.push('broken actor: expected validation failure');
+  }
+  if (!validationIssues.some((issue) => issue.path.includes('actor'))) {
+    failures.push('broken actor: expected issue path containing actor');
+  }
+
+  const iceTurretBadges = extractMechanicBadgesFromAbility(PRESETS['Ice Turret']);
+  if (!iceTurretBadges.some((badge) => badge.label === '[TURRET]')) {
+    failures.push('Ice Turret: expected [TURRET] badge');
   }
 
   return failures;

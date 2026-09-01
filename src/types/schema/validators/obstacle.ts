@@ -15,6 +15,8 @@ import {
   isObject,
   isString,
   MAX_VALIDATION_DEPTH,
+  type ValidationIssue,
+  validationFail,
 } from './helpers';
 import { validateVisualDescriptor } from './visuals';
 
@@ -85,12 +87,23 @@ export function validateMorphConfig(value: unknown): MorphConfig | null {
   return config;
 }
 
-export function validateActorConfig(value: unknown, depth = 0): ActorConfig | null {
-  if (!isObject(value)) return null;
+export function validateActorConfig(
+  value: unknown,
+  depth = 0,
+  issues?: ValidationIssue[],
+  path = 'actor',
+): ActorConfig | null {
+  if (!isObject(value)) return validationFail(issues, path, 'expected object');
   const archetypeRaw = isString(value.archetype) ? value.archetype.toUpperCase() : '';
-  if (!ACTOR_ARCHETYPES.has(archetypeRaw)) return null;
-  if (!isNumber(value.health) || value.health <= 0) return null;
-  if (!isNumber(value.durationMs) || value.durationMs <= 0) return null;
+  if (!ACTOR_ARCHETYPES.has(archetypeRaw)) {
+    return validationFail(issues, `${path}.archetype`, `invalid actor archetype: ${archetypeRaw || '(missing)'}`);
+  }
+  if (!isNumber(value.health) || value.health <= 0) {
+    return validationFail(issues, `${path}.health`, 'invalid health');
+  }
+  if (!isNumber(value.durationMs) || value.durationMs <= 0) {
+    return validationFail(issues, `${path}.durationMs`, 'invalid durationMs');
+  }
 
   const config: ActorConfig = {
     archetype: archetypeRaw as ActorArchetype,
@@ -99,32 +112,45 @@ export function validateActorConfig(value: unknown, depth = 0): ActorConfig | nu
   };
 
   if (value.anchored !== undefined) {
-    if (typeof value.anchored !== 'boolean') return null;
+    if (typeof value.anchored !== 'boolean') {
+      return validationFail(issues, `${path}.anchored`, 'invalid anchored');
+    }
     config.anchored = value.anchored;
   }
   if (value.radius !== undefined) {
-    if (!isNumber(value.radius) || value.radius <= 0) return null;
+    if (!isNumber(value.radius) || value.radius <= 0) {
+      return validationFail(issues, `${path}.radius`, 'invalid radius');
+    }
     config.radius = value.radius;
   }
   if (value.mass !== undefined) {
-    if (!isNumber(value.mass) || value.mass <= 0) return null;
+    if (!isNumber(value.mass) || value.mass <= 0) {
+      return validationFail(issues, `${path}.mass`, 'invalid mass');
+    }
     config.mass = value.mass;
   }
   if (value.targetingRange !== undefined) {
-    if (!isNumber(value.targetingRange) || value.targetingRange <= 0) return null;
+    if (!isNumber(value.targetingRange) || value.targetingRange <= 0) {
+      return validationFail(issues, `${path}.targetingRange`, 'invalid targetingRange');
+    }
     config.targetingRange = value.targetingRange;
   }
   if (value.visuals !== undefined) {
     const visuals = validateVisualDescriptor(value.visuals);
-    if (!visuals) return null;
+    if (!visuals) return validationFail(issues, `${path}.visuals`, 'invalid visuals');
     config.visuals = visuals;
   }
   if (value.triggers !== undefined) {
-    if (depth >= MAX_VALIDATION_DEPTH) return null;
-    if (!Array.isArray(value.triggers)) return null;
+    if (depth >= MAX_VALIDATION_DEPTH) {
+      return validationFail(issues, `${path}.triggers`, 'max validation depth exceeded');
+    }
+    if (!Array.isArray(value.triggers)) {
+      return validationFail(issues, `${path}.triggers`, 'triggers must be an array');
+    }
     const triggers: TriggerNode[] = [];
-    for (const t of value.triggers) {
-      const node = validateTriggerNode(t, depth);
+    for (let i = 0; i < value.triggers.length; i++) {
+      const triggerPath = `${path}.triggers[${i}]`;
+      const node = validateTriggerNode(value.triggers[i], depth, issues, triggerPath);
       if (!node) return null;
       triggers.push(node);
     }

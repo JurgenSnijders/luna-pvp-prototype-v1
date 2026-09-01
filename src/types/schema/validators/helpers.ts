@@ -6,6 +6,28 @@ import type { ActionTarget, ImpulseDirectionMode } from '../types';
 
 export const MAX_VALIDATION_DEPTH = 3;
 
+export interface ValidationIssue {
+  path: string;
+  reason: string;
+}
+
+export function pushValidationIssue(
+  issues: ValidationIssue[] | undefined,
+  path: string,
+  reason: string,
+): void {
+  if (issues) issues.push({ path, reason });
+}
+
+export function validationFail(
+  issues: ValidationIssue[] | undefined,
+  path: string,
+  reason: string,
+): null {
+  pushValidationIssue(issues, path, reason);
+  return null;
+}
+
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

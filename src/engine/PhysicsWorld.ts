@@ -8,6 +8,7 @@ import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
+import { isAlliedTo, isOwnerSummonPair } from './allegiance';
 import type { TerrainMutationConfig, TerrainType } from '../types/schema';
 import {
   DEBUG_VECTOR_COLORS,
@@ -129,6 +130,7 @@ export class PhysicsWorld {
   setCombatantRadius(radius: number): void {
     this.combatantRadius = Math.max(MIN_COMBATANT_RADIUS, Math.min(MAX_COMBATANT_RADIUS, radius));
     for (const combatant of this.getCombatants()) {
+      if (combatant instanceof Summon) continue;
       combatant.radius = this.combatantRadius;
     }
   }
@@ -508,6 +510,7 @@ export class PhysicsWorld {
   }
 
   private resolveCirclePair(a: Entity, b: Entity): void {
+    if (isOwnerSummonPair(a, b)) return;
     const aStasis = a.stasisRemainingMs > 0;
     const bStasis = b.stasisRemainingMs > 0;
     if (aStasis && bStasis) return;
@@ -937,7 +940,7 @@ export class PhysicsWorld {
       if (projectile.isDead) continue;
 
       for (const target of combatants) {
-        if (target.id === projectile.sourceEntityId) continue;
+        if (isAlliedTo(projectile.sourceEntityId, target)) continue;
         if (target.isStealthed()) continue;
 
         const minDist = projectile.radius + target.effectiveRadius;

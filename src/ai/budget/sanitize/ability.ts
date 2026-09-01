@@ -1,5 +1,5 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { AbilitySchema, SpellArchetype, TriggerNode } from '../../../types/schema';
+import type { AbilitySchema, SpellArchetype, TriggerNode, ValidationIssue } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET, validateAbilitySchema } from '../../../types/schema';
 import { repairAbilitySemantics } from '../repair';
 import { ensureFiniteNumber, isObject } from '../helpers';
@@ -86,8 +86,16 @@ export function sanitizeAbilitySchema(
     schema.trajectory = sanitizeTrajectory(obj.trajectory);
   }
 
-  const validated = validateAbilitySchema(schema);
+  const issues: ValidationIssue[] = [];
+  const validated = validateAbilitySchema(schema, 0, issues);
   if (!validated) {
+    const hadActor = JSON.stringify(raw).includes('"SPAWN_ACTOR"');
+    console.warn('[Sanitizer] Validation failed. Collapsing to LINEAR fallback.', {
+      id,
+      name,
+      hadActor,
+      issues,
+    });
     return {
       id,
       name,

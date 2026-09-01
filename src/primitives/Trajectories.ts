@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import { isAlliedTo } from '../engine/allegiance';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { Projectile } from '../entities/Projectile';
 
@@ -145,7 +146,7 @@ function updateHomingSlerp(
   let nearestPos: Vector2D | null = null;
 
   for (const target of combatants) {
-    if (target.id === proj.sourceEntityId) continue;
+    if (isAlliedTo(proj.sourceEntityId, target)) continue;
     if (target.isStealthed()) continue;
     const distSq = proj.pos.distSq(target.pos);
     if (distSq < nearestDistSq) {

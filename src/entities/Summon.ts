@@ -1,6 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import type { ActorConfig, SpellArchetype, TriggerNode, VisualDescriptor } from '../types/schema';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { isAlliedTo } from '../engine/allegiance';
 import { buildTriggerMap } from '../primitives/interpreter/helpers';
 import { Entity, generateEntityId } from './Entity';
 import { Projectile } from './Projectile';
@@ -90,11 +91,18 @@ export class Summon extends Entity {
 
     const aimAngle = Math.atan2(dir.y, dir.x);
     this.facingAngle = aimAngle;
+    const heading = dir.normalize();
+    const spawnPos = this.pos.add(heading.scale(this.radius + 8));
     const projectile = new Projectile(
-      this.pos.clone(),
+      spawnPos,
       TURRET_TRAJECTORY,
       this.ownerId,
       aimAngle,
+      new Map(),
+      this.depth + 1,
+      this.visuals,
+      this.abilityName,
+      this.spellArchetype,
     );
     projectile.registerHit(this.id);
     world.addProjectile(projectile);
@@ -107,8 +115,7 @@ export class Summon extends Entity {
     const maxRangeSq = maxRange !== undefined ? maxRange * maxRange : Infinity;
 
     for (const combatant of world.getCombatants()) {
-      if (combatant.id === this.ownerId) continue;
-      if (combatant.tags.has('summon')) continue;
+      if (isAlliedTo(this.ownerId, combatant)) continue;
       if (combatant.isStealthed()) continue;
       if (combatant.isDead) continue;
 

@@ -1,5 +1,6 @@
 import type { DraftCard } from '../types/cards';
-import type { AbilitySchema, ActionPayload, TriggerNode } from '../types/schema';
+import type { AbilitySchema, ActionPayload } from '../types/schema';
+import { walkActions } from '../types/schema';
 
 export type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
 
@@ -44,16 +45,9 @@ export function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
   return span;
 }
 
-function collectDeployableActions(nodes: TriggerNode[]): ActionPayload[] {
+function collectDeployableActions(schema: AbilitySchema): ActionPayload[] {
   const all: ActionPayload[] = [];
-  const collect = (triggerNodes: TriggerNode[]): void => {
-    for (const node of triggerNodes) {
-      all.push(...node.actions);
-      if (node.ifFalseActions) all.push(...node.ifFalseActions);
-      if (node.children) collect(node.children);
-    }
-  };
-  collect(nodes);
+  walkActions(schema, (v) => all.push(v.action));
   return all;
 }
 
@@ -111,36 +105,12 @@ export function extractMechanicBadgesFromAbility(
       const label = actionBadges[action.type];
       if (label) pushBadge(label, 'trigger');
     }
-
-    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-      collectActions(action.triggers);
-    }
-    if (action.type === 'CAST_CHILD_PAYLOAD') {
-      collectActions(action.payload.triggers);
-    }
-    if (action.type === 'SPAWN_ACTOR' && action.actor.triggers) {
-      collectActions(action.actor.triggers);
-    }
   };
 
-  const collectActions = (nodes: AbilitySchema['triggers']): void => {
-    for (const node of nodes) {
-      for (const action of node.actions) {
-        visitAction(action);
-      }
-      if (node.ifFalseActions) {
-        for (const action of node.ifFalseActions) {
-          visitAction(action);
-        }
-      }
-      if (node.children) collectActions(node.children);
-    }
-  };
-
-  collectActions(s.triggers);
+  walkActions(s, (v) => visitAction(v.action));
 
   if (!s.trajectory) {
-    const deployActions = collectDeployableActions(s.triggers);
+    const deployActions = collectDeployableActions(s);
     const hasStationaryDeploy = deployActions.some(
       (a) => a.type === 'SPAWN_ACTOR' || a.type === 'SPAWN_OBSTACLE',
     );
