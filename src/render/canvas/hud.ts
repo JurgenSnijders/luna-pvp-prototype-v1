@@ -11,7 +11,7 @@ export function drawOverheadHUD(
   const entities = [...world.players, ...world.dummies, ...world.summons].filter(
     (e) => !e.isDead && !e.isStealthed(),
   );
-  ctx.font = canvasFont(11);
+  ctx.font = canvasFont(13);
   ctx.textAlign = 'center';
 
   const barWidth = 40;
@@ -43,7 +43,7 @@ export function drawOverheadHUD(
     const pct = entity.instabilityPct;
     ctx.fillStyle = instabilityColor(pct);
     ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
-    ctx.fillText(`${Math.round(pct)}%`, pos.x, pos.y - entity.effectiveRadius - 4);
+    ctx.fillText(`${Math.round(pct)}%`, pos.x, pos.y - entity.effectiveRadius - 6);
     ctx.globalAlpha = 1;
   }
 }

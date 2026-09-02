@@ -1,12 +1,13 @@
 export const FONTS = {
   mono: "'Fixedsys', 'FixedSys', 'Courier New', monospace",
   size: {
-    xs: '10px',
-    sm: '12px',
-    md: '14px',
-    lg: '16px',
-    xl: '20px',
-    title: '24px',
+    badge: '12px',
+    sm: '13px',
+    body: '14px',
+    md: '16px',
+    lg: '18px',
+    xl: '22px',
+    title: '26px',
   },
 };
 
@@ -45,8 +46,17 @@ export function retroPanelStyle(glowColor: 'cyan' | 'magenta' = 'cyan'): string 
   return `background: ${RETRO_COLORS.panelBg}; border: 1px solid ${border}; box-shadow: ${glow}; backdrop-filter: blur(8px); border-radius: 4px;`;
 }
 
+export function fontStyle(size: keyof typeof FONTS.size, extra = ''): string {
+  return `font-family:${FONTS.mono};font-size:${FONTS.size[size]};${extra}`;
+}
+
 export function canvasFont(sizePx: number): string {
   return `${sizePx}px ${FONTS.mono}`;
+}
+
+export function canvasFontToken(size: keyof typeof FONTS.size): string {
+  const px = parseInt(FONTS.size[size], 10);
+  return canvasFont(px);
 }
 
 export { getActiveColors } from './palette';

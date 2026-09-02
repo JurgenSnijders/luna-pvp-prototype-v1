@@ -159,7 +159,7 @@ export class FloatingCombatTextManager {
 
     for (const p of this.particles) {
       const alpha = Math.max(0, p.lifeMs / p.maxLifeMs);
-      const fontSize = Math.round(14 * p.scale);
+      const fontSize = Math.round(16 * p.scale);
       ctx.font = canvasFont(fontSize);
       ctx.globalAlpha = alpha;
       ctx.lineWidth = 3;

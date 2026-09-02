@@ -148,10 +148,10 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const actionList = actionTypes.length > 0 ? escapeHtml(formatEnumLabel(actionTypes.join(', '))) : '—';
   const flavorBlock = [
     ability.tagline
-      ? `<div style="font-size:11px;color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
+      ? `<div style="font-size:${FONTS.size.sm};color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
       : '',
     ability.description
-      ? `<div style="font-size:11px;color:#aaa;line-height:1.3;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);">${escapeHtml(ability.description)}</div>`
+      ? `<div style="font-size:${FONTS.size.body};color:#aaa;line-height:1.3;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);">${escapeHtml(ability.description)}</div>`
       : '',
   ].join('');
   const visuals = ability.visuals;
@@ -160,8 +160,8 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const resourceCost = ability.resourceCost;
   const resourceLine = resourceCost
     ? `<div style="margin-bottom:8px;">
-        <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Resource</div>
-        <div style="font-size:11px;">${escapeHtml(formatEnumLabel(resourceCost.type))} · cost ${resourceCost.cost}${
+        <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Resource</div>
+        <div style="font-size:${FONTS.size.body};">${escapeHtml(formatEnumLabel(resourceCost.type))} · cost ${resourceCost.cost}${
           resourceCost.maxCapacity !== undefined ? ` · cap ${resourceCost.maxCapacity}` : ''
         }${
           resourceCost.rechargeRate !== undefined ? ` · ${resourceCost.rechargeRate}/s` : ''
@@ -172,30 +172,30 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   return `
     <div style="font-family:${FONTS.mono};">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
-      <span style="font-weight:700; font-size:13px; color:${accentColor};">${escapeHtml(ability.name)}</span>
-      <span style="font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
+      <span style="font-weight:700; font-size:${FONTS.size.md}; color:${accentColor};">${escapeHtml(ability.name)}</span>
+      <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
     </div>
     ${flavorBlock}
-    <div style="font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
-    <div style="display:flex; gap:10px; margin-bottom:8px; font-size:11px;">
+    <div style="font-size:${FONTS.size.badge}; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
+    <div style="display:flex; gap:10px; margin-bottom:8px; font-size:${FONTS.size.body};">
       <div><span style="color:${RETRO_COLORS.textMuted};">CD</span> ${cooldown}</div>
       <div><span style="color:${RETRO_COLORS.textMuted};">Recoil</span> ${ability.recoilKick}px/s</div>
       <div><span style="color:${RETRO_COLORS.textMuted};">Instab</span> ${instability}</div>
     </div>
     <div style="margin-bottom:8px;">
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
-      <div style="font-size:11px;">${trajectoryLine}</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
+      <div style="font-size:${FONTS.size.body};">${trajectoryLine}</div>
     </div>
     <div style="margin-bottom:8px;">
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
-      <div style="font-size:11px;">${triggerList}</div>
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:9px; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
-      <div style="font-size:11px;">${actionList}</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
+      <div style="font-size:${FONTS.size.body};">${triggerList}</div>
+      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
+      <div style="font-size:${FONTS.size.body};">${actionList}</div>
     </div>
     ${resourceLine}
     <div style="display:flex; align-items:center; gap:6px;">
       <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
-      <span style="font-size:10px; color:#cbd5e1;">${projectileStyle}</span>
+      <span style="font-size:${FONTS.size.badge}; color:#cbd5e1;">${projectileStyle}</span>
     </div>
     </div>
   `;
@@ -238,7 +238,7 @@ export class ActionBarHUD {
       padding: 10px 12px;
       box-shadow: ${RETRO_GLOW.boxCyan};
       backdrop-filter: blur(8px); font-family: ${FONTS.mono};
-      color: ${RETRO_COLORS.textPrimary}; font-size: 12px; line-height: 1.4; opacity: 0;
+      color: ${RETRO_COLORS.textPrimary}; font-size: ${FONTS.size.body}; line-height: 1.4; opacity: 0;
       transition: opacity 0.15s ease, transform 0.15s ease;
     `;
     document.body.appendChild(this.tooltipEl);
@@ -250,7 +250,7 @@ export class ActionBarHUD {
     const accent = BADGE_STYLES[key];
     const root = document.createElement('div');
     root.style.cssText = `
-      width: 60px; height: 60px; position: relative; overflow: hidden;
+      width: 84px; height: 80px; position: relative; overflow: hidden;
       backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
       border: 1px solid ${RETRO_COLORS.borderNeon}40; border-radius: 4px;
       box-shadow: ${RETRO_GLOW.boxCyan};
@@ -261,15 +261,15 @@ export class ActionBarHUD {
     badge.textContent = key;
     badge.style.cssText = `
       position: absolute; top: 3px; left: 3px;
-      font-size: ${key === 'SPACE' ? '8px' : '9px'}; font-weight: 700; color: ${accent.color};
-      background: ${accent.bg}; padding: 1px 4px; border-radius: 4px;
+      font-size: ${FONTS.size.badge}; font-weight: 700; color: ${accent.color};
+      background: ${accent.bg}; padding: 1px 3px; border-radius: 4px;
     `;
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
     label.style.cssText = `
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      padding: 14px 3px 3px; font-size: 8px; color: #666; text-align: center;
+      padding: 16px 3px 3px; font-size: ${FONTS.size.badge}; color: #666; text-align: center;
       line-height: 1.2; word-break: break-word;
     `;
 
@@ -312,7 +312,7 @@ export class ActionBarHUD {
     const resourceBadge = document.createElement('div');
     resourceBadge.style.cssText = `
       position: absolute; top: 3px; right: 3px; display: none;
-      font-size: 8px; font-weight: 700; color: #e2e8f0;
+      font-size: ${FONTS.size.badge}; font-weight: 700; color: #e2e8f0;
       background: rgba(0, 0, 0, 0.55); padding: 1px 4px; border-radius: 4px;
       pointer-events: none; line-height: 1.2;
     `;
@@ -322,13 +322,13 @@ export class ActionBarHUD {
       position: absolute; inset: 0; display: none; pointer-events: none;
       align-items: center; justify-content: center; flex-direction: column;
       background: rgba(120, 0, 0, 0.55); color: #ffcccc;
-      font-size: 8px; font-weight: 700; text-align: center; line-height: 1.2;
+      font-size: ${FONTS.size.badge}; font-weight: 700; text-align: center; line-height: 1.2;
     `;
 
     const countdown = document.createElement('div');
     countdown.style.cssText = `
       position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,0.8);
+      font-size: ${FONTS.size.lg}; font-weight: 700; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,0.8);
       pointer-events: none;
     `;
 
@@ -446,11 +446,11 @@ export class ActionBarHUD {
 
       if (ability) {
         slot.root.dataset.hasAbility = 'true';
-        slot.label.textContent = ability.name.length > 10
-          ? `${ability.name.slice(0, 9)}…`
+        slot.label.textContent = ability.name.length > 14
+          ? `${ability.name.slice(0, 13)}…`
           : ability.name;
         slot.label.style.color = '#ccc';
-        slot.label.style.fontSize = '8px';
+        slot.label.style.fontSize = FONTS.size.badge;
         slot.root.style.borderStyle = 'solid';
       } else {
         slot.root.dataset.hasAbility = 'false';
@@ -472,13 +472,13 @@ export class ActionBarHUD {
         slot.root.style.boxShadow = `0 0 ${8 + pulse * 8}px rgba(255, 191, 0, ${0.35 + pulse * 0.35})`;
 
         slot.countdown.style.display = 'flex';
-        slot.countdown.style.fontSize = '8px';
+        slot.countdown.style.fontSize = FONTS.size.badge;
         slot.countdown.textContent = 'COMPILING…';
         continue;
       }
 
       slot.compileOverlay.style.display = 'none';
-      slot.countdown.style.fontSize = '13px';
+      slot.countdown.style.fontSize = FONTS.size.lg;
 
       const resourceCost = ability?.resourceCost;
       const usesResourceCooldown =
@@ -508,7 +508,7 @@ export class ActionBarHUD {
           const lockoutRatio = player.getSlotLockoutRatio(i);
           slot.lockoutOverlay.style.display = 'flex';
           slot.lockoutOverlay.style.background = `rgba(0, 0, 0, ${0.35 + lockoutRatio * 0.35})`;
-          slot.lockoutOverlay.innerHTML = `RELOADING...<br><span style="font-size:7px">${Math.ceil(player.getSlotLockoutRemainingMs(i))}ms</span>`;
+          slot.lockoutOverlay.innerHTML = `RELOADING...<br><span style="font-size:${FONTS.size.badge}">${Math.ceil(player.getSlotLockoutRemainingMs(i))}ms</span>`;
         }
       } else if (resourceCost?.type === 'HEALTH_PCT') {
         slot.resourceBadge.style.display = 'block';
@@ -546,7 +546,7 @@ export class ActionBarHUD {
 
       if (player.isSlotOverheated(i) || player.isSlotReloading(i)) {
         slot.countdown.style.display = 'flex';
-        slot.countdown.style.fontSize = '8px';
+        slot.countdown.style.fontSize = FONTS.size.badge;
         const lockoutRemaining = player.getSlotLockoutRemainingMs(i);
         slot.countdown.textContent = lockoutRemaining >= 1000
           ? `${(lockoutRemaining / 1000).toFixed(1)}s`

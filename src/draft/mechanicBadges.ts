@@ -40,7 +40,7 @@ export function renderBadge(label: string, kind?: BadgeKind): HTMLSpanElement {
   const span = document.createElement('span');
   span.textContent = label;
   span.style.cssText = `
-    font-size:9px;padding:2px 6px;border-radius:2px;
+    font-size:${FONTS.size.badge};line-height:1.2;padding:2px 6px;border-radius:2px;
     font-family:${FONTS.mono};text-transform:uppercase;letter-spacing:0.04em;
     border:1px solid ${RETRO_COLORS.borderSubtle};
     background:${colors.bg};color:${colors.text};white-space:nowrap;

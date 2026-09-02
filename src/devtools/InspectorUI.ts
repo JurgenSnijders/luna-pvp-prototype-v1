@@ -69,7 +69,7 @@ export class InspectorUI {
       margin: 12px;
       ${retroPanelStyle('cyan')}
       font-family: ${FONTS.mono};
-      font-size: 13px;
+      font-size: ${FONTS.size.body};
       color: ${RETRO_COLORS.textPrimary};
     `;
 
@@ -81,7 +81,7 @@ export class InspectorUI {
     const title = document.createElement('span');
     title.textContent = 'DEVTOOLS';
     title.style.cssText =
-      `font-size: 11px; font-weight: 700; color: ${RETRO_COLORS.textMuted}; letter-spacing: 0.05em; text-shadow: ${RETRO_GLOW.cyan};`;
+      `font-size: ${FONTS.size.badge}; font-weight: 700; color: ${RETRO_COLORS.textMuted}; letter-spacing: 0.05em; text-shadow: ${RETRO_GLOW.cyan};`;
 
     this.toggleBtn = document.createElement('button');
     this.toggleBtn.type = 'button';
@@ -131,7 +131,7 @@ export class InspectorUI {
 
     this.telemetryEl = document.createElement('div');
     this.telemetryEl.style.cssText =
-      'margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:11px;color:#888;';
+      `margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);font-size:${FONTS.size.sm};color:#888;`;
 
     this.bodyEl.appendChild(tabBar);
     this.bodyEl.appendChild(content);

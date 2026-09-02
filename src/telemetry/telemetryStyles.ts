@@ -26,11 +26,11 @@ export function injectTelemetryStyles(): void {
       background: ${RETRO_COLORS.panelBgOpaque};
     }
     .telemetry-title {
-      font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
+      font-size: ${FONTS.size.md}; font-weight: 700; letter-spacing: 0.08em;
       color: ${RETRO_COLORS.textPrimary}; margin-right: 8px;
     }
     .telemetry-badge-count {
-      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
+      font-size: ${FONTS.size.sm}; font-weight: 600; padding: 3px 8px; border-radius: 4px;
       background: rgba(0, 229, 255, 0.15); color: ${RETRO_COLORS.neonCyan};
       border: 1px solid ${RETRO_COLORS.borderSubtle};
     }
@@ -48,7 +48,7 @@ export function injectTelemetryStyles(): void {
     }
     .telemetry-pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
     .telemetry-pill {
-      padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+      padding: 5px 10px; border-radius: 4px; font-size: ${FONTS.size.sm}; font-weight: 600;
       letter-spacing: 0.04em; cursor: pointer; border: 1px solid ${RETRO_COLORS.borderSubtle};
       background: ${RETRO_COLORS.panelBg}; color: ${RETRO_COLORS.textMuted};
       transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -59,14 +59,14 @@ export function injectTelemetryStyles(): void {
     }
     .telemetry-search {
       flex: 1; min-width: 160px; max-width: 280px;
-      padding: 6px 10px; border-radius: 4px; font-size: 12px;
+      padding: 6px 10px; border-radius: 4px; font-size: ${FONTS.size.body};
       border: 1px solid ${RETRO_COLORS.borderSubtle}; background: rgba(0,0,0,0.35);
       color: ${RETRO_COLORS.textPrimary}; outline: none; font-family: ${FONTS.mono};
     }
     .telemetry-search:focus { border-color: rgba(0, 229, 255, 0.5); }
     .telemetry-actions { display: flex; gap: 6px; margin-left: auto; }
     .telemetry-btn {
-      padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600;
+      padding: 6px 12px; border-radius: 4px; font-size: ${FONTS.size.sm}; font-weight: 600;
       cursor: pointer; border: 1px solid ${RETRO_COLORS.borderSubtle};
       background: ${RETRO_COLORS.panelBg}; color: ${RETRO_COLORS.textPrimary};
       font-family: ${FONTS.mono};
@@ -79,14 +79,14 @@ export function injectTelemetryStyles(): void {
       flex: 1; overflow: auto; padding: 0 12px 12px;
     }
     .telemetry-table {
-      width: 100%; border-collapse: collapse; font-size: 12px;
+      width: 100%; border-collapse: collapse; font-size: ${FONTS.size.body};
     }
     .telemetry-table thead th {
       position: sticky; top: 0; z-index: 1;
       text-align: left; padding: 10px 8px;
       background: ${RETRO_COLORS.panelBgOpaque};
       border-bottom: 1px solid ${RETRO_COLORS.borderSubtle};
-      color: ${RETRO_COLORS.textMuted}; font-weight: 600; font-size: 10px;
+      color: ${RETRO_COLORS.textMuted}; font-weight: 600; font-size: ${FONTS.size.badge};
       letter-spacing: 0.06em; text-transform: uppercase;
     }
     .telemetry-row {
@@ -99,14 +99,14 @@ export function injectTelemetryStyles(): void {
     .telemetry-row.expanded { background: rgba(0, 229, 255, 0.06); }
     .telemetry-row td { padding: 8px; vertical-align: top; }
     .telemetry-time { font-variant-numeric: tabular-nums; }
-    .telemetry-time-sub { font-size: 10px; color: ${RETRO_COLORS.textMuted}; }
-    .telemetry-endpoint { font-size: 11px; color: ${RETRO_COLORS.textPrimary}; }
-    .telemetry-params { font-size: 11px; color: ${RETRO_COLORS.textMuted}; max-width: 280px; }
-    .telemetry-delta { font-size: 11px; color: #a5b4fc; font-variant-numeric: tabular-nums; }
-    .telemetry-instab { font-size: 11px; color: #f97316; }
+    .telemetry-time-sub { font-size: ${FONTS.size.badge}; color: ${RETRO_COLORS.textMuted}; }
+    .telemetry-endpoint { font-size: ${FONTS.size.sm}; color: ${RETRO_COLORS.textPrimary}; }
+    .telemetry-params { font-size: ${FONTS.size.sm}; color: ${RETRO_COLORS.textMuted}; max-width: 280px; }
+    .telemetry-delta { font-size: ${FONTS.size.sm}; color: #a5b4fc; font-variant-numeric: tabular-nums; }
+    .telemetry-instab { font-size: ${FONTS.size.sm}; color: #f97316; }
     .telemetry-badge {
       display: inline-block; padding: 2px 8px; border-radius: 4px;
-      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      font-size: ${FONTS.size.badge}; font-weight: 700; letter-spacing: 0.06em;
     }
     .telemetry-badge--cast { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.35); }
     .telemetry-badge--impulse { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.35); }
@@ -115,7 +115,7 @@ export function injectTelemetryStyles(): void {
     .telemetry-badge--slam { background: rgba(244,63,94,0.15); color: #f43f5e; border: 1px solid rgba(244,63,94,0.35); }
     .telemetry-vec {
       font-family: ${FONTS.mono};
-      font-size: 11px; color: ${RETRO_COLORS.textMuted};
+      font-size: ${FONTS.size.sm}; color: ${RETRO_COLORS.textMuted};
     }
     .telemetry-detail td {
       padding: 0 8px 12px 8px;
@@ -125,11 +125,11 @@ export function injectTelemetryStyles(): void {
     .telemetry-detail pre {
       margin: 0; padding: 10px; border-radius: 4px;
       background: ${RETRO_COLORS.panelBgOpaque}; border: 1px solid ${RETRO_COLORS.borderSubtle};
-      font-size: 11px; color: ${RETRO_COLORS.textPrimary}; overflow-x: auto;
+      font-size: ${FONTS.size.sm}; color: ${RETRO_COLORS.textPrimary}; overflow-x: auto;
       font-family: ${FONTS.mono};
     }
     .telemetry-empty {
-      padding: 48px; text-align: center; color: ${RETRO_COLORS.textMuted}; font-size: 14px;
+      padding: 48px; text-align: center; color: ${RETRO_COLORS.textMuted}; font-size: ${FONTS.size.body};
     }
   `;
   document.head.appendChild(style);

@@ -10,6 +10,7 @@ import { Dummy } from '../../entities/Dummy';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import type { InspectorContext } from '../InspectorUI';
+import { FONTS } from '../../ui/tokens';
 import { buttonStyle, inputStyle, sectionDivider, sectionHeader } from './domHelpers';
 
 export function randomHexPosition(ctx: InspectorContext): Vector2D {
@@ -136,7 +137,7 @@ export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): voi
     if (ctx.arenaShrink) {
       const shrinkRow = document.createElement('label');
       shrinkRow.style.cssText =
-        'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:8px;';
+        `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
       shrinkCheckbox = document.createElement('input');
       shrinkCheckbox.type = 'checkbox';
       shrinkCheckbox.checked = ctx.arenaShrink.enabled;
@@ -188,7 +189,7 @@ export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): voi
     if (ctx.botController) {
       const aiToggleRow = document.createElement('label');
       aiToggleRow.style.cssText =
-        'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-top:4px;';
+        `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-top:4px;`;
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = ctx.botController.enabled;

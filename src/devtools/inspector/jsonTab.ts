@@ -3,7 +3,7 @@ import { repairAbilityPayload } from '../../ai/synthesizer/llmRepair';
 import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../../types/cards';
 import { normalizeAbilityPayload, validateAbilitySchema } from '../../types/schema';
 import type { InspectorContext } from '../InspectorUI';
-import { RETRO_COLORS } from '../../ui/tokens';
+import { FONTS, RETRO_COLORS } from '../../ui/tokens';
 import { buttonStyle, inputStyle } from './domHelpers';
 
 export interface JsonTabRefs {
@@ -68,7 +68,7 @@ async function copyText(text: string, textarea: HTMLTextAreaElement): Promise<bo
 export function buildJsonTab(parent: HTMLElement, ctx: InspectorContext): JsonTabRefs {
   const errorBanner = document.createElement('div');
   errorBanner.style.cssText =
-    'display:none;padding:8px;margin-bottom:8px;background:rgba(255,50,50,0.2);border-radius:6px;color:#ff6666;font-size:12px;';
+    `display:none;padding:8px;margin-bottom:8px;background:rgba(255,50,50,0.2);border-radius:6px;color:#ff6666;font-size:${FONTS.size.body};`;
 
   const slotSelect = document.createElement('select');
   slotSelect.style.cssText = inputStyle();
@@ -76,14 +76,14 @@ export function buildJsonTab(parent: HTMLElement, ctx: InspectorContext): JsonTa
 
   const helperText = document.createElement('div');
   helperText.textContent = 'Editing equipped spell for selected action-bar slot.';
-  helperText.style.cssText = `font-size:10px;color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
+  helperText.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
 
   const jsonTextarea = document.createElement('textarea');
   jsonTextarea.style.cssText = `
       width: 100%;
       height: 200px;
       font-family: monospace;
-      font-size: 11px;
+      font-size: ${FONTS.size.body};
       background: ${RETRO_COLORS.panelBgOpaque};
       color: ${RETRO_COLORS.textPrimary};
       border: 1px solid ${RETRO_COLORS.borderSubtle};

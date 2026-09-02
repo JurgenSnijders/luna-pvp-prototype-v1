@@ -129,18 +129,18 @@ export class DraftModal {
       'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;gap:10px;';
     const title = document.createElement('h2');
     title.textContent = 'Synthesizer Workshop';
-    title.style.cssText = 'margin:0;font-size:18px;letter-spacing:0.02em;flex-shrink:0;';
+    title.style.cssText = `margin:0;font-size:${FONTS.size.title};letter-spacing:0.02em;flex-shrink:0;`;
 
     this.apiStatusPill = document.createElement('div');
     this.apiStatusPill.style.cssText = `
-      margin-left:auto;margin-right:8px;padding:4px 10px;border-radius:999px;font-size:11px;
+      margin-left:auto;margin-right:8px;padding:4px 10px;border-radius:999px;font-size:${FONTS.size.sm};
       border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.04);color:#aaa;
       white-space:nowrap;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;max-width:280px;
     `;
 
     this.latencyBadgeEl = document.createElement('span');
     this.latencyBadgeEl.style.cssText = `
-      font-size:11px;font-family:${FONTS.mono};color:${RETRO_COLORS.textMuted};background:rgba(255,255,255,0.05);
+      font-size:${FONTS.size.sm};font-family:${FONTS.mono};color:${RETRO_COLORS.textMuted};background:rgba(255,255,255,0.05);
       padding:2px 8px;border-radius:4px;border:1px solid ${RETRO_COLORS.borderSubtle};
       display:none;flex-shrink:0;margin-right:8px;
     `;
@@ -158,13 +158,13 @@ export class DraftModal {
     this.apiWarningBanner.style.cssText = `
       display:none;margin-bottom:8px;padding:8px 12px;border-radius:8px;flex-shrink:0;
       background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);
-      color:#fcd34d;font-size:12px;line-height:1.35;
+      color:#fcd34d;font-size:${FONTS.size.body};line-height:1.35;
     `;
 
     const overviewLabel = document.createElement('div');
     overviewLabel.textContent = 'ARSENAL DOCK';
     overviewLabel.style.cssText =
-      'font-size:10px;letter-spacing:0.08em;color:#889;margin-bottom:6px;font-weight:600;flex-shrink:0;';
+      `font-size:${FONTS.size.badge};letter-spacing:0.08em;color:#889;margin-bottom:6px;font-weight:600;flex-shrink:0;`;
 
     this.loadoutBar = document.createElement('div');
     this.loadoutBar.style.cssText =
@@ -191,7 +191,7 @@ export class DraftModal {
     this.promptInput.placeholder = 'Describe your ability... (e.g. "ice vortex boomerang")';
     this.promptInput.style.cssText = `
       flex:1;padding:8px 12px;border-radius:4px;border:1px solid ${RETRO_COLORS.borderSubtle};
-      background:${RETRO_COLORS.panelBgOpaque};color:${RETRO_COLORS.textPrimary};font-size:13px;
+      background:${RETRO_COLORS.panelBgOpaque};color:${RETRO_COLORS.textPrimary};font-size:${FONTS.size.body};
       font-family:${FONTS.mono};
     `;
     this.promptInput.addEventListener('keydown', (e) => {
@@ -231,7 +231,7 @@ export class DraftModal {
     this.loadingEl = document.createElement('div');
     this.loadingEl.textContent = 'Synthesizing...';
     this.loadingEl.style.cssText =
-      'display:none;text-align:center;color:#888;margin-bottom:6px;flex-shrink:0;font-size:12px;';
+      `display:none;text-align:center;color:#888;margin-bottom:6px;flex-shrink:0;font-size:${FONTS.size.body};`;
 
     this.cardsContainer = document.createElement('div');
     this.cardsContainer.style.cssText = `
@@ -433,7 +433,7 @@ export class DraftModal {
 
       const slotLabel = document.createElement('div');
       slotLabel.textContent = `${key} · ${getCategoryLabel(category)}`;
-      slotLabel.style.cssText = `font-size:10px;color:${accent};font-weight:600;flex-shrink:0;`;
+      slotLabel.style.cssText = `font-size:${FONTS.size.badge};color:${accent};font-weight:600;flex-shrink:0;`;
 
       const actions = document.createElement('div');
       actions.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
@@ -442,7 +442,7 @@ export class DraftModal {
       evolveBtn.textContent = 'Evolve';
       evolveBtn.disabled = !ability;
       evolveBtn.style.cssText =
-        btnStyle(true) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
+        btnStyle(true) + 'padding:3px 6px;line-height:1.2;';
       if (!ability) evolveBtn.style.opacity = '0.4';
       evolveBtn.onclick = () => {
         if (!ability) return;
@@ -463,7 +463,7 @@ export class DraftModal {
       const replaceBtn = document.createElement('button');
       replaceBtn.textContent = 'Replace';
       replaceBtn.style.cssText =
-        btnStyle(false) + 'font-size:10px;padding:3px 6px;line-height:1.2;';
+        btnStyle(false) + 'padding:3px 6px;line-height:1.2;';
       replaceBtn.onclick = () => {
         this.invalidatePrefetch();
         this.presetSlot = key;
@@ -483,7 +483,7 @@ export class DraftModal {
       const name = document.createElement('div');
       name.textContent = ability?.name ?? 'Empty';
       name.style.cssText = `
-        font-size:12px;font-weight:bold;color:${ability ? '#eee' : '#666'};
+        font-size:${FONTS.size.sm};font-weight:bold;color:${ability ? '#eee' : '#666'};
         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
       `;
 
@@ -493,10 +493,10 @@ export class DraftModal {
       const stats = document.createElement('div');
       if (ability) {
         stats.textContent = `CD ${ability.cooldownMs}ms · Recoil ${ability.recoilKick}`;
-        stats.style.cssText = 'font-size:9px;color:#888;';
+        stats.style.cssText = `font-size:${FONTS.size.badge};color:#888;`;
       } else {
         stats.textContent = 'No ability equipped';
-        stats.style.cssText = 'font-size:9px;color:#555;';
+        stats.style.cssText = `font-size:${FONTS.size.badge};color:#555;`;
       }
 
       const badges = document.createElement('div');
@@ -559,7 +559,7 @@ export class DraftModal {
       this.evolutionBanner.innerHTML = '';
 
       const text = document.createElement('div');
-      text.style.cssText = 'font-size:12px;flex-shrink:0;';
+      text.style.cssText = `font-size:${FONTS.size.body};flex-shrink:0;`;
       text.innerHTML = `Evolving <strong>${this.evolutionContext.baseAbility.name}</strong> · ${this.evolutionContext.slotKey} (${getCategoryLabel(this.evolutionContext.category)})`;
 
       const badgeRow = document.createElement('div');
@@ -570,7 +570,7 @@ export class DraftModal {
 
       const change = document.createElement('button');
       change.textContent = 'Change Base';
-      change.style.cssText = btnStyle(false) + 'font-size:10px;padding:4px 8px;flex-shrink:0;';
+      change.style.cssText = btnStyle(false) + 'padding:4px 8px;flex-shrink:0;';
       change.onclick = () => {
         this.invalidatePrefetch();
         this.evolutionContext = null;
@@ -585,7 +585,7 @@ export class DraftModal {
       this.evolutionBanner.innerHTML = '';
       const text = document.createElement('div');
       text.textContent = 'Select a filled slot above and click Evolve to choose a base spell.';
-      text.style.cssText = 'font-size:12px;color:#aaa;';
+      text.style.cssText = `font-size:${FONTS.size.body};color:#aaa;`;
       this.evolutionBanner.appendChild(text);
     } else {
       this.evolutionBanner.style.display = 'none';
@@ -777,24 +777,24 @@ export class DraftModal {
 
       const rarityBadge = document.createElement('div');
       rarityBadge.textContent = 'FORGING...';
-      rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
+      rarityBadge.style.cssText = `font-size:${FONTS.size.badge};color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
 
       const title = document.createElement('div');
       title.className = 'card-title';
       title.textContent = 'Forging Spell...';
       title.style.cssText =
-        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:forgePulse 1.4s ease-in-out infinite;';
+        `font-size:${FONTS.size.lg};font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:forgePulse 1.4s ease-in-out infinite;`;
 
       const tagline = document.createElement('div');
       tagline.className = 'card-tagline';
       tagline.textContent = 'Synthesizing concept...';
-      tagline.style.cssText = 'font-size:11px;color:#666;margin-bottom:6px;flex-shrink:0;';
+      tagline.style.cssText = `font-size:${FONTS.size.sm};color:#666;margin-bottom:6px;flex-shrink:0;`;
 
       const desc = document.createElement('div');
       desc.className = 'card-desc';
       desc.textContent = '';
       desc.style.cssText = `
-        font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
+        font-size:${FONTS.size.body};color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
         display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
       `;
 
@@ -925,7 +925,7 @@ export class DraftModal {
           const diffEl = document.createElement('div');
           diffEl.className = 'card-stat-diff';
           diffEl.textContent = diff;
-          diffEl.style.cssText = 'font-size:10px;color:#4f8;margin-bottom:8px;';
+          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:#4f8;margin-bottom:8px;`;
           slot.power.before(diffEl);
         }
       }
@@ -977,21 +977,21 @@ export class DraftModal {
 
       const rarityBadge = document.createElement('div');
       rarityBadge.textContent = card.rarity;
-      rarityBadge.style.cssText = `font-size:10px;color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
+      rarityBadge.style.cssText = `font-size:${FONTS.size.badge};color:${color};font-weight:bold;margin-bottom:2px;flex-shrink:0;`;
 
       const cardTitle = document.createElement('div');
       cardTitle.textContent = card.title;
       cardTitle.style.cssText =
-        'font-size:15px;font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        `font-size:${FONTS.size.lg};font-weight:bold;margin-bottom:2px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
 
       const tagline = document.createElement('div');
       tagline.textContent = card.tagline;
-      tagline.style.cssText = 'font-size:11px;color:#888;margin-bottom:6px;flex-shrink:0;';
+      tagline.style.cssText = `font-size:${FONTS.size.sm};color:#888;margin-bottom:6px;flex-shrink:0;`;
 
       const desc = document.createElement('div');
       desc.textContent = card.description;
       desc.style.cssText = `
-        font-size:12px;color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
+        font-size:${FONTS.size.body};color:#aaa;margin-bottom:8px;line-height:1.35;flex-shrink:0;
         display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
       `;
 
@@ -1011,7 +1011,7 @@ export class DraftModal {
       if (card.evolutionDiff && card.evolutionDiff.length > 0) {
         const diffList = document.createElement('div');
         diffList.style.cssText =
-          'font-size:10px;color:#6cf;margin-bottom:6px;line-height:1.35;flex-shrink:0;';
+          `font-size:${FONTS.size.sm};color:#6cf;margin-bottom:6px;line-height:1.35;flex-shrink:0;`;
         diffList.textContent = card.evolutionDiff.join(' · ');
         el.appendChild(diffList);
       }
@@ -1033,7 +1033,7 @@ export class DraftModal {
         if (diff) {
           const diffEl = document.createElement('div');
           diffEl.textContent = diff;
-          diffEl.style.cssText = 'font-size:10px;color:#4f8;margin-bottom:8px;';
+          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:#4f8;margin-bottom:8px;`;
           footer.appendChild(diffEl);
         }
 

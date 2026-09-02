@@ -13,7 +13,7 @@ import {
 import { STYLE_PRESET_IDS, STYLE_PRESETS, isStylePresetId } from '../../render/presets/stylePresets';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
-import { RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
+import { FONTS, RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
 import {
   buttonStyle,
   sectionDivider,
@@ -33,7 +33,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   perfSection.appendChild(sectionHeader('Graphics & Performance'));
 
   const perfBox = document.createElement('pre');
-  perfBox.style.cssText = `font-size:10px;line-height:1.35;background:${RETRO_COLORS.panelBgOpaque};padding:8px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;border:1px solid ${RETRO_COLORS.borderSubtle};`;
+  perfBox.style.cssText = `font-size:${FONTS.size.sm};line-height:1.35;background:${RETRO_COLORS.panelBgOpaque};padding:8px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;border:1px solid ${RETRO_COLORS.borderSubtle};`;
   const refreshPerf = (): void => {
     const caps = perfMonitor.getCapabilities();
     perfBox.textContent = [
@@ -55,7 +55,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   const caps = perfMonitor.getCapabilities();
   if (caps) {
     const capLine = document.createElement('div');
-    capLine.style.cssText = `font-size:10px;color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
+    capLine.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
     capLine.textContent = `Extensions: ${caps.extensions.length}`;
     perfSection.appendChild(capLine);
   }
@@ -69,7 +69,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
     if (typeof settings[key] === 'boolean') {
       const row = document.createElement('label');
       row.style.cssText =
-        'display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;margin-bottom:8px;';
+        `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = settings[key] as boolean;

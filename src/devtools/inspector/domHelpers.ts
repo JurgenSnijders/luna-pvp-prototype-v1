@@ -8,7 +8,7 @@ export function buttonStyle(active: boolean): string {
       color: ${RETRO_COLORS.textPrimary};
       border-radius: 4px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: ${FONTS.size.body};
       font-family: ${FONTS.mono};
     `;
 }
@@ -16,7 +16,7 @@ export function buttonStyle(active: boolean): string {
 export function sectionHeader(title: string): HTMLDivElement {
   const el = document.createElement('div');
   el.textContent = title;
-  el.style.cssText = `font-weight:bold;margin-bottom:8px;font-size:12px;font-family:${FONTS.mono};color:${RETRO_COLORS.textPrimary};letter-spacing:0.04em;`;
+  el.style.cssText = `font-weight:bold;margin-bottom:8px;font-size:${FONTS.size.md};font-family:${FONTS.mono};color:${RETRO_COLORS.textPrimary};letter-spacing:0.04em;`;
   return el;
 }
 
@@ -39,6 +39,7 @@ export function sliderRow(
   const lbl = document.createElement('label');
   lbl.style.display = 'block';
   lbl.style.marginBottom = '4px';
+  lbl.style.fontSize = FONTS.size.sm;
   const input = document.createElement('input');
   input.type = 'range';
   input.min = String(min);
@@ -69,7 +70,7 @@ export function inputStyle(): string {
       width:100%;padding:8px;margin-bottom:6px;box-sizing:border-box;
       background:${RETRO_COLORS.panelBgOpaque};color:${RETRO_COLORS.textPrimary};
       border:1px solid ${RETRO_COLORS.borderSubtle};
-      border-radius:4px;font-size:12px;font-family:${FONTS.mono};
+      border-radius:4px;font-size:${FONTS.size.body};font-family:${FONTS.mono};
     `;
 }
 
@@ -83,7 +84,7 @@ export function selectRow(
   const row = document.createElement('div');
   row.style.marginBottom = '10px';
   const lbl = document.createElement('label');
-  lbl.style.cssText = `display:block;margin-bottom:4px;font-size:12px;color:${RETRO_COLORS.textMuted};`;
+  lbl.style.cssText = `display:block;margin-bottom:4px;font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};`;
   lbl.textContent = label;
   const select = document.createElement('select');
   select.style.cssText = inputStyle();
