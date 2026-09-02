@@ -1,67 +1,41 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { Camera2D } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
-import type { CanvasRenderCtx } from './renderCtx';
 
 export function drawLavaSea(
   ctx: CanvasRenderingContext2D,
-  state: CanvasRenderCtx,
   world: PhysicsWorld,
-  width: number,
-  height: number,
+  camera: Camera2D,
 ): void {
+  const rect = camera.getVisibleWorldRect();
   const { hexCenter: center } = world;
-  const key = `${width}|${height}|${Math.round(center.x)}|${Math.round(center.y)}`;
+  const gradRadius = Math.hypot(rect.width, rect.height) * 0.55;
 
-  if (!state.bgCacheCanvas || state.bgCacheKey !== key) {
-    buildBackgroundCache(state, width, height, center.x, center.y);
-    state.bgCacheKey = key;
-  }
-
-  ctx.drawImage(state.bgCacheCanvas!, 0, 0);
-}
-
-/** Bakes the full-screen lava gradient once; rebuilt only on resize or center change. */
-function buildBackgroundCache(
-  state: CanvasRenderCtx,
-  width: number,
-  height: number,
-  centerX: number,
-  centerY: number,
-): void {
-  if (!state.bgCacheCanvas) {
-    state.bgCacheCanvas = document.createElement('canvas');
-  }
-  const canvas = state.bgCacheCanvas;
-  canvas.width = Math.max(1, width);
-  canvas.height = Math.max(1, height);
-  const bctx = canvas.getContext('2d')!;
-
-  const gradRadius = Math.hypot(width, height) * 0.55;
-  const gradient = bctx.createRadialGradient(
-    centerX,
-    centerY,
+  const gradient = ctx.createRadialGradient(
+    center.x,
+    center.y,
     0,
-    centerX,
-    centerY,
+    center.x,
+    center.y,
     gradRadius,
   );
   gradient.addColorStop(0, 'rgba(210, 50, 0, 1.0)');
   gradient.addColorStop(0.45, 'rgba(130, 20, 0, 1.0)');
   gradient.addColorStop(1, 'rgba(40, 5, 0, 1.0)');
 
-  bctx.fillStyle = gradient;
-  bctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(rect.minX, rect.minY, rect.width, rect.height);
 }
 
 export function drawLavaHeatWaves(
   ctx: CanvasRenderingContext2D,
   world: PhysicsWorld,
-  width: number,
-  height: number,
+  camera: Camera2D,
 ): void {
   const { hexCenter: center, hexRadius } = world;
+  const rect = camera.getVisibleWorldRect();
   const now = performance.now() * 0.0015;
-  const maxR = Math.hypot(width, height) * 0.6;
+  const maxR = Math.hypot(rect.width, rect.height) * 0.6;
 
   for (let i = 0; i < 8; i++) {
     const rippleR =
@@ -86,8 +60,8 @@ export function drawLavaHeatWaves(
 
   for (let i = 0; i < 4; i++) {
     const phase = now + i * 1.7;
-    const startX = (width * (0.1 + i * 0.2) + Math.sin(phase) * 40) % width;
-    const startY = (height * (0.2 + i * 0.15) + Math.cos(phase * 0.7) * 30) % height;
+    const startX = rect.minX + (rect.width * (0.1 + i * 0.2) + Math.sin(phase) * 40);
+    const startY = rect.minY + (rect.height * (0.2 + i * 0.15) + Math.cos(phase * 0.7) * 30);
     ctx.strokeStyle = 'rgba(255, 90, 20, 0.08)';
     ctx.lineWidth = 2;
     ctx.beginPath();

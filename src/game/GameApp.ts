@@ -1,3 +1,4 @@
+import type { Camera2D } from '../camera/Camera2D';
 import type { InspectorUI } from '../devtools/InspectorUI';
 import type { SpellLibrary } from '../devtools/SpellLibrary';
 import type { DraftModal } from '../draft/DraftModal';
@@ -20,6 +21,7 @@ export class GameApp {
   static instance: GameApp | null = null;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
+  camera!: Camera2D;
   world!: PhysicsWorld;
   player!: Player;
   bot!: Player;

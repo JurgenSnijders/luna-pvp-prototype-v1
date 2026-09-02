@@ -1,3 +1,4 @@
+import type { CameraView } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx } from '../../types/schema';
 import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsSettings';
@@ -105,7 +106,7 @@ export class WebGLBackend implements ParticleBackend {
     }
   }
 
-  render(width: number, height: number): VfxCounters {
+  render(width: number, height: number, view: CameraView): VfxCounters {
     const gl = this.glCtx.gl;
     if (!gl || this.glCtx.isLost()) return EMPTY_COUNTERS;
 
@@ -117,7 +118,7 @@ export class WebGLBackend implements ParticleBackend {
     this.postFx.beginScene();
 
     gl.enable(gl.BLEND);
-    const stats = this.renderer.drawSorted(width, height);
+    const stats = this.renderer.drawSorted(width, height, view);
 
     const chroma = limits.bloomPasses >= 2 && limits.refraction ? 0.002 : 0;
     this.postFx.endSceneAndComposite(
@@ -280,7 +281,7 @@ export class WebGLBackend implements ParticleBackend {
   }
 
   spawnAmbientEmber(
-    bounds: { width: number; height: number },
+    bounds: { minX: number; minY: number; width: number; height: number },
     safeCenter: Vector2D,
     safeRadius: number,
   ): void {

@@ -1,3 +1,4 @@
+import type { CameraView } from '../camera/Camera2D';
 import { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx } from '../types/schema';
 import { createParticleBackend } from './backends/createParticleBackend';
@@ -32,9 +33,9 @@ export class ParticleSystem {
     this.director.update(dt);
   }
 
-  render(width: number, height: number) {
+  render(width: number, height: number, view: CameraView) {
     this.director.resize(width, height);
-    return this.director.render(width, height);
+    return this.director.render(width, height, view);
   }
 
   resize(width: number, height: number): void {
@@ -68,7 +69,7 @@ export class ParticleSystem {
   }
 
   spawnAmbientEmber(
-    bounds: { width: number; height: number },
+    bounds: { minX: number; minY: number; width: number; height: number },
     safeCenter: Vector2D,
     safeRadius: number,
   ): void {

@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { Camera2D } from '../../camera/Camera2D';
 import type { Entity } from '../../entities/Entity';
 import { getClosestEdgeNormal, getHexVertices } from '../../math/HexMath';
 import type { DebugForceVector } from '../../types/debug';
@@ -115,6 +116,7 @@ export function drawDebugOverlay(
   world: PhysicsWorld,
   alpha: number,
   debug: DebugOptions,
+  camera: Camera2D,
 ): void {
   const all: Entity[] = [
     ...world.players,
@@ -123,11 +125,11 @@ export function drawDebugOverlay(
   ].filter((e) => !e.isDead);
 
   if (debug.showRadii) {
-    const { width: vw, height: vh } = world.viewportBounds;
+    const view = camera.getVisibleWorldRect();
     ctx.strokeStyle = 'rgba(255, 170, 0, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
-    ctx.strokeRect(0, 0, vw, vh);
+    ctx.strokeRect(view.minX, view.minY, view.width, view.height);
     ctx.setLineDash([]);
 
     const hexVerts = getHexVertices(world.hexCenter, world.hexRadius);

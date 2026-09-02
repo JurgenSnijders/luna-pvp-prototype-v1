@@ -33,11 +33,77 @@ import {
   saveHitFeedbackConfig,
   type HitFeedbackConfig,
 } from '../../render/hitFeedbackConfig';
+import type { InspectorContext } from '../InspectorUI';
 
-export function buildGraphicsTab(parent: HTMLElement): void {
+export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): void {
   const settings = getGraphicsSettings();
   const perfCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
   const retroCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+
+  // --- CAMERA & VIEWPORT ---
+  const cameraSection = document.createElement('div');
+  cameraSection.style.cssText = sectionDivider();
+  cameraSection.appendChild(sectionHeader('CAMERA & VIEWPORT'));
+
+  const cameraHelper = document.createElement('div');
+  cameraHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
+  cameraHelper.textContent =
+    'Y/C toggle lock/free · MMB drag pan · wheel zoom · Space = slot 4';
+  cameraSection.appendChild(cameraHelper);
+
+  const modeRow = document.createElement('div');
+  modeRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+  const modeButtons: Record<'LOCKED' | 'FREE', HTMLButtonElement> = {
+    LOCKED: document.createElement('button'),
+    FREE: document.createElement('button'),
+  };
+  modeButtons.LOCKED.textContent = 'LOCKED';
+  modeButtons.FREE.textContent = 'FREE';
+  const syncModeButtons = (): void => {
+    for (const mode of ['LOCKED', 'FREE'] as const) {
+      modeButtons[mode].style.cssText = buttonStyle(ctx.camera.mode === mode);
+    }
+  };
+  for (const mode of ['LOCKED', 'FREE'] as const) {
+    const btn = modeButtons[mode];
+    btn.onclick = () => {
+      ctx.camera.mode = mode;
+      syncModeButtons();
+    };
+    modeRow.appendChild(btn);
+  }
+  syncModeButtons();
+  cameraSection.appendChild(modeRow);
+
+  const zoomSlider = sliderRow(
+    cameraSection,
+    'Zoom Level',
+    0.4,
+    2.0,
+    0.05,
+    () => ctx.camera.targetZoom,
+    (v) => ctx.camera.setZoom(v),
+    'x',
+  );
+
+  const resetCameraBtn = document.createElement('button');
+  resetCameraBtn.textContent = 'Reset Camera (Center & 1.0x)';
+  resetCameraBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetCameraBtn.onclick = () => {
+    ctx.camera.mode = 'LOCKED';
+    ctx.camera.setZoom(1);
+    ctx.camera.snapTo(ctx.player.pos.x, ctx.player.pos.y);
+    syncModeButtons();
+    zoomSlider.refresh();
+  };
+  cameraSection.appendChild(resetCameraBtn);
+
+  parent.appendChild(cameraSection);
+
+  setInterval(() => {
+    syncModeButtons();
+    zoomSlider.refresh();
+  }, 250);
 
   // --- Graphics & Performance ---
   const perfSection = document.createElement('div');

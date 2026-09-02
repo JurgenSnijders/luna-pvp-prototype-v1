@@ -1,4 +1,5 @@
 import type { MatchManager } from '../game/MatchManager';
+import type { Camera2D } from '../camera/Camera2D';
 import type { ArenaShrink } from '../game/ArenaShrink';
 import type { BotController } from '../entities/BotController';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
@@ -25,6 +26,7 @@ export interface InspectorContext {
   player: Player;
   bot?: Player;
   world: PhysicsWorld;
+  camera: Camera2D;
   interpreter: Interpreter;
   renderer: CanvasRenderer;
   getDebugOptions: () => DebugOptions;
@@ -133,7 +135,7 @@ export class InspectorUI {
             this.jsonTabRefs = buildJsonTab(content, this.ctx);
             break;
           case 'Graphics':
-            buildGraphicsTab(content);
+            buildGraphicsTab(content, this.ctx);
             break;
           case 'Harness':
             buildHarnessTab(content, this.ctx);

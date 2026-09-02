@@ -125,7 +125,7 @@ export class PhysicsWorld {
     this.debugVectors.push(vec);
   }
 
-  /** Updates the hard screen-edge collision perimeter (called on init and window resize). */
+  /** Stores viewport dimensions for debug overlays; does not constrain entity motion. */
   setViewportBounds(width: number, height: number): void {
     this.viewportBounds = { width, height };
   }
@@ -698,8 +698,6 @@ export class PhysicsWorld {
   }
 
   private resolveHexBoundaries(dt: number): void {
-    this.resolveViewportBoundaries();
-
     for (const entity of this.players) {
       if (!entity.isDead) this.clampEntityToHex(entity);
     }
@@ -721,22 +719,6 @@ export class PhysicsWorld {
     }
     for (const entity of this.projectiles) {
       if (!entity.isDead) this.updateLavaTag(entity, dt);
-    }
-  }
-
-  /** Hard screen-edge perimeter: combatants are clamped in place, projectiles die on exit. */
-  private resolveViewportBoundaries(): void {
-    for (const entity of this.players) {
-      if (!entity.isDead) this.clampToViewport(entity);
-    }
-    for (const entity of this.dummies) {
-      if (!entity.isDead) this.clampToViewport(entity);
-    }
-    for (const summon of this.summons) {
-      if (!summon.isDead && summon.config.anchored === false) this.clampToViewport(summon);
-    }
-    for (const entity of this.projectiles) {
-      if (!entity.isDead) this.resolveProjectileViewport(entity);
     }
   }
 
@@ -764,108 +746,6 @@ export class PhysicsWorld {
         );
       }
       this.pendingWallImpacts.push(entity.pos.clone());
-    }
-  }
-
-  private applyViewportBounce(entity: Entity, axis: 'x' | 'y'): void {
-    const bounce = entity.getEffectiveBounciness();
-    if (bounce > 1) {
-      if (axis === 'x') {
-        entity.vel.x = -entity.vel.x * bounce;
-      } else {
-        entity.vel.y = -entity.vel.y * bounce;
-      }
-    } else if (axis === 'x') {
-      entity.vel.x = 0;
-    } else {
-      entity.vel.y = 0;
-    }
-  }
-
-  private clampToViewport(entity: Entity): void {
-    if (entity.isIntangible()) return;
-
-    const { width, height } = this.viewportBounds;
-    const r = entity.effectiveRadius;
-    const minX = r;
-    const maxX = Math.max(minX, width - r);
-    const minY = r;
-    const maxY = Math.max(minY, height - r);
-
-    const clampedX = Math.max(minX, Math.min(maxX, entity.pos.x));
-    const clampedY = Math.max(minY, Math.min(maxY, entity.pos.y));
-    const hitX = clampedX !== entity.pos.x;
-    const hitY = clampedY !== entity.pos.y;
-
-    if (hitX) {
-      const impactSpeed = Math.abs(entity.vel.x);
-      if (impactSpeed > SLAM_SPEED_THRESHOLD) {
-        const velBefore = entity.vel.clone();
-        const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
-        const instabDelta = this.applySlamInstability(entity, impactSpeed);
-        entity.pos.x = clampedX;
-        this.applyViewportBounce(entity, 'x');
-        this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
-      } else {
-        entity.pos.x = clampedX;
-        this.applyViewportBounce(entity, 'x');
-      }
-      if (this.debugPhysicsEnabled && impactSpeed > 0) {
-        const wallNormal = new Vector2D(entity.pos.x > clampedX ? 1 : -1, 0);
-        this.recordDebugVector(
-          makeDebugVector(
-            entity.pos,
-            wallNormal,
-            impactSpeed,
-            DEBUG_VECTOR_COLORS.COLLISION,
-            'wall',
-          ),
-        );
-      }
-    }
-    if (hitY) {
-      const impactSpeed = Math.abs(entity.vel.y);
-      if (impactSpeed > SLAM_SPEED_THRESHOLD) {
-        const velBefore = entity.vel.clone();
-        const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
-        const instabDelta = this.applySlamInstability(entity, impactSpeed);
-        entity.pos.y = clampedY;
-        this.applyViewportBounce(entity, 'y');
-        this.recordSlamCollision(entity, 'VIEWPORT', impactSpeed, wallNormal, velBefore, instabDelta);
-      } else {
-        entity.pos.y = clampedY;
-        this.applyViewportBounce(entity, 'y');
-      }
-      if (this.debugPhysicsEnabled && impactSpeed > 0) {
-        const wallNormal = new Vector2D(0, entity.pos.y > clampedY ? 1 : -1);
-        this.recordDebugVector(
-          makeDebugVector(
-            entity.pos,
-            wallNormal,
-            impactSpeed,
-            DEBUG_VECTOR_COLORS.COLLISION,
-            'wall',
-          ),
-        );
-      }
-    }
-    if (hitX || hitY) {
-      this.pendingWallImpacts.push(entity.pos.clone());
-    }
-  }
-
-  /** Screen edges are a hard kill zone for projectiles rather than a bounce surface. */
-  private resolveProjectileViewport(proj: Projectile): void {
-    const { width, height } = this.viewportBounds;
-    const r = proj.radius;
-    if (
-      proj.pos.x < -r ||
-      proj.pos.x > width + r ||
-      proj.pos.y < -r ||
-      proj.pos.y > height + r
-    ) {
-      proj.isDead = true;
-      proj.expiryReason = 'wall';
     }
   }
 

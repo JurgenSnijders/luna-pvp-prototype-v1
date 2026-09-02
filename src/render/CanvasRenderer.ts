@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import type { Camera2D } from '../camera/Camera2D';
 import { getGraphicsSettings } from '../devtools/graphicsSettings';
 import type { ParticleSystem } from './ParticleSystem';
 import { drawHexPlatform } from './canvas/arena';
@@ -70,8 +71,7 @@ export class CanvasRenderer {
     _particles: ParticleSystem,
     alpha: number,
     debug: DebugOptions,
-    width: number,
-    height: number,
+    camera: Camera2D,
     shrinkProgress = 0,
     isShrinking = false,
     aimingPlayer: Player | null = null,
@@ -100,9 +100,9 @@ export class CanvasRenderer {
     this.ringRotation += 0.02;
     const state = this.getRenderCtx();
 
-    drawLavaSea(ctx, state, world, width, height);
+    drawLavaSea(ctx, world, camera);
     if (getGraphicsSettings().lavaHeatWaves) {
-      drawLavaHeatWaves(ctx, world, width, height);
+      drawLavaHeatWaves(ctx, world, camera);
     }
     drawHexPlatform(ctx, state, world, shrinkProgress, isShrinking);
     drawTerrainPatches(ctx, world);
@@ -125,7 +125,7 @@ export class CanvasRenderer {
     this.syncStateFromCtx(state);
 
     if (debug.showVectors || debug.showRadii || debug.showIds) {
-      drawDebugOverlay(ctx, world, alpha, debug);
+      drawDebugOverlay(ctx, world, alpha, debug, camera);
     }
 
   }

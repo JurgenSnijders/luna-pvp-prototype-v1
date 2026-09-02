@@ -276,13 +276,13 @@ export function ember(ctx: WebGLSpawnCtx, pos: Vector2D): void {
 
 export function spawnAmbientEmber(
   ctx: WebGLSpawnCtx,
-  bounds: { width: number; height: number },
+  bounds: { minX: number; minY: number; width: number; height: number },
   safeCenter: Vector2D,
   safeRadius: number,
 ): void {
   for (let attempt = 0; attempt < 6; attempt++) {
-    const x = Math.random() * bounds.width;
-    const y = Math.random() * bounds.height;
+    const x = bounds.minX + Math.random() * bounds.width;
+    const y = bounds.minY + Math.random() * bounds.height;
     const pos = new Vector2D(x, y);
     if (isInsideHex(pos, safeCenter, safeRadius)) continue;
     ember(ctx, pos);

@@ -1,3 +1,4 @@
+import type { CameraView } from '../../camera/Camera2D';
 import type { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx } from '../../types/schema';
 
@@ -15,7 +16,7 @@ export interface ParticleBackend {
   readonly name: string;
   beginFrame(dt: number): void;
   update(dt: number): void;
-  render(width: number, height: number): VfxCounters;
+  render(width: number, height: number, view: CameraView): VfxCounters;
   /** Canvas2D fallback path. */
   draw?(ctx: CanvasRenderingContext2D): void;
   resize(width: number, height: number): void;
@@ -83,7 +84,7 @@ export interface ParticleBackend {
   neonRibbon(pos: Vector2D, color: string): void;
   ember(pos: Vector2D): void;
   spawnAmbientEmber(
-    bounds: { width: number; height: number },
+    bounds: { minX: number; minY: number; width: number; height: number },
     safeCenter: Vector2D,
     safeRadius: number,
   ): void;

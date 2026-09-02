@@ -1,3 +1,4 @@
+import type { CameraView } from '../../camera/Camera2D';
 import {
   BYTES_PER_INSTANCE,
   FLOATS_PER_INSTANCE,
@@ -26,6 +27,9 @@ export class InstancedQuadRenderer {
   private normalCount = 0;
   private additiveCount = 0;
   private locResolution: WebGLUniformLocation;
+  private locCamPos: WebGLUniformLocation;
+  private locZoom: WebGLUniformLocation;
+  private locShake: WebGLUniformLocation;
   private locTime: WebGLUniformLocation;
   private locNoise: WebGLUniformLocation;
   private time = 0;
@@ -79,6 +83,9 @@ export class InstancedQuadRenderer {
     this.noiseTex = createNoiseTexture(gl);
 
     this.locResolution = gl.getUniformLocation(this.program, 'u_resolution')!;
+    this.locCamPos = gl.getUniformLocation(this.program, 'u_camPos')!;
+    this.locZoom = gl.getUniformLocation(this.program, 'u_zoom')!;
+    this.locShake = gl.getUniformLocation(this.program, 'u_shake')!;
     this.locTime = gl.getUniformLocation(this.program, 'u_time')!;
     this.locNoise = gl.getUniformLocation(this.program, 'u_noise')!;
   }
@@ -134,7 +141,7 @@ export class InstancedQuadRenderer {
     return byteLen;
   }
 
-  drawSorted(width: number, height: number): RenderStats {
+  drawSorted(width: number, height: number, view: CameraView): RenderStats {
     const gl = this.gl;
     const total = this.normalCount + this.additiveCount;
     if (total === 0) {
@@ -145,6 +152,9 @@ export class InstancedQuadRenderer {
 
     gl.useProgram(this.program);
     gl.uniform2f(this.locResolution, width, height);
+    gl.uniform2f(this.locCamPos, view.camX, view.camY);
+    gl.uniform1f(this.locZoom, view.zoom);
+    gl.uniform2f(this.locShake, view.shakeX, view.shakeY);
     gl.uniform1f(this.locTime, this.time);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);

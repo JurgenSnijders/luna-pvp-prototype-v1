@@ -78,9 +78,10 @@ export function runSimulationStep(app: GameApp, dt: number): void {
     }
   }
   if (getGraphicsSettings().ambientEmbers) {
+    const viewRect = app.camera.getVisibleWorldRect();
     for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
       app.particles.spawnAmbientEmber(
-        { width: window.innerWidth, height: window.innerHeight },
+        viewRect,
         app.world.hexCenter,
         app.world.hexRadius,
       );

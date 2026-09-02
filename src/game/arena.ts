@@ -4,7 +4,7 @@ import type { GameApp } from './GameApp';
 import { getStoredHexRadius } from './settings';
 
 export function getHexCenter(): Vector2D {
-  return new Vector2D(window.innerWidth / 2, window.innerHeight / 2);
+  return new Vector2D(0, 0);
 }
 
 export function resize(app: GameApp): void {
@@ -14,6 +14,7 @@ export function resize(app: GameApp): void {
   app.canvas.style.width = `${window.innerWidth}px`;
   app.canvas.style.height = `${window.innerHeight}px`;
   app.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  app.camera?.setViewport(window.innerWidth, window.innerHeight);
   app.world?.setViewportBounds(window.innerWidth, window.innerHeight);
   app.arenaShrink?.resize(getStoredHexRadius());
   app.particles?.resize(window.innerWidth, window.innerHeight);

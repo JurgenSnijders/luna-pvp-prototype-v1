@@ -1,3 +1,4 @@
+import { Camera2D } from '../camera/Camera2D';
 import { InspectorUI } from '../devtools/InspectorUI';
 import { SpellLibrary } from '../devtools/SpellLibrary';
 import { perfMonitor } from '../devtools/PerfMonitor';
@@ -10,7 +11,6 @@ import { Player } from '../entities/Player';
 import { ArenaShrink } from './ArenaShrink';
 import { MatchManager, type GameMode, type MatchState } from './MatchManager';
 import { Interpreter } from '../primitives/Interpreter';
-import { Vector2D } from '../math/Vector2D';
 import { ActionBarHUD } from '../render/ActionBarHUD';
 import { CanvasRenderer } from '../render/CanvasRenderer';
 import { MatchHUD } from '../render/MatchHUD';
@@ -20,7 +20,8 @@ import { CombatLogger } from '../telemetry/CombatLogger';
 import { TelemetryModal } from '../telemetry/TelemetryModal';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
-import { handleCastInput, cancelPlayerAiming, updatePlayerAimTarget } from './input';
+import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
+import { handleCastInput, cancelPlayerAiming } from './input';
 import { assignDefaultLoadout } from './loadout';
 import { SpellInventoryManager } from './SpellInventory';
 import { ACTION_SLOT_KEYS } from '../types/cards';
@@ -45,9 +46,12 @@ import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
+import { lerpPos } from '../render/canvas/helpers';
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
+  app.camera = new Camera2D();
+  app.camera.setViewport(window.innerWidth, window.innerHeight);
   resize(app);
   window.addEventListener('resize', () => resize(app));
   applyCooldownPacingSettings();
@@ -66,6 +70,7 @@ function init(app: GameApp): void {
   app.world.addPlayer(app.bot);
   app.world.setCombatantRadius(getStoredCombatantRadius());
   applyMovementSettings(app.player, app.bot, app.world);
+  app.camera.snapTo(app.player.pos.x, app.player.pos.y);
 
   app.interpreter = new Interpreter();
   app.particles = new ParticleSystem(document.body);
@@ -168,6 +173,7 @@ function init(app: GameApp): void {
       player: app.player,
       bot: app.bot,
       world: app.world,
+      camera: app.camera,
       interpreter: app.interpreter,
       renderer: app.renderer,
       getDebugOptions: () => app.debugOptions,
@@ -199,9 +205,19 @@ function init(app: GameApp): void {
     app.arenaShrink,
     getHexCenter(),
   );
+  app.camera.snapTo(app.player.pos.x, app.player.pos.y);
 
   let pendingAimMouse: { x: number; y: number } | null = null;
   let aimMouseRafPending = false;
+  let middleMouseDown = false;
+  let lastPanX = 0;
+  let lastPanY = 0;
+
+  const updatePointerState = (e: MouseEvent): void => {
+    app.camera.pointerScreenX = e.clientX;
+    app.camera.pointerScreenY = e.clientY;
+    app.camera.pointerOverGame = !isCameraInputBlocked(e.target);
+  };
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'F8' || (e.code === 'F2' && e.shiftKey)) {
@@ -245,6 +261,18 @@ function init(app: GameApp): void {
 
     app.keys.add(e.key.toLowerCase());
 
+    if (
+      !e.repeat &&
+      !isCameraInputBlocked(e.target) &&
+      !app.draftModal.isOpen() &&
+      !app.telemetryModal.isOpened()
+    ) {
+      if (e.code === 'KeyY' || e.code === 'KeyC') {
+        app.camera.toggleMode();
+        return;
+      }
+    }
+
     if (!canCombatInput(app)) return;
 
     if (e.code === 'Escape') {
@@ -274,6 +302,17 @@ function init(app: GameApp): void {
   });
 
   window.addEventListener('mousemove', (e) => {
+    updatePointerState(e);
+
+    if (middleMouseDown) {
+      const dx = e.clientX - lastPanX;
+      const dy = e.clientY - lastPanY;
+      lastPanX = e.clientX;
+      lastPanY = e.clientY;
+      app.camera.mode = 'FREE';
+      app.camera.panBy(-dx / app.camera.zoom, -dy / app.camera.zoom);
+    }
+
     if (app.matchManager.mode !== 'SANDBOX' && app.matchManager.state !== 'ROUND_ACTIVE') {
       return;
     }
@@ -283,18 +322,41 @@ function init(app: GameApp): void {
       requestAnimationFrame(() => {
         aimMouseRafPending = false;
         if (pendingAimMouse) {
-          updatePlayerAimTarget(app, pendingAimMouse);
+          updatePlayerAimFromScreen(app, pendingAimMouse.x, pendingAimMouse.y);
         }
       });
     }
   });
 
+  window.addEventListener('wheel', (e) => {
+    if (isCameraInputBlocked(e.target)) return;
+    e.preventDefault();
+    const delta = -Math.sign(e.deltaY) * app.camera.getZoomSpeed();
+    if (app.camera.mode === 'FREE') {
+      app.camera.setZoomAtScreen(app.camera.targetZoom + delta, e.clientX, e.clientY);
+    } else {
+      app.camera.setZoom(app.camera.targetZoom + delta);
+    }
+  }, { passive: false });
+
   app.canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      middleMouseDown = true;
+      lastPanX = e.clientX;
+      lastPanY = e.clientY;
+      app.camera.mode = 'FREE';
+      return;
+    }
     if (!canCombatInput(app)) return;
     if (e.button === 0) handleCastInput(app, 0, true);
     if (e.button === 2) handleCastInput(app, 1, true);
   });
   window.addEventListener('mouseup', (e) => {
+    if (e.button === 1) {
+      middleMouseDown = false;
+      return;
+    }
     if (!canCombatInput(app)) return;
     if (e.button === 0) handleCastInput(app, 0, false);
     if (e.button === 2) handleCastInput(app, 1, false);
@@ -341,30 +403,38 @@ function init(app: GameApp): void {
     },
     onRender(alpha) {
       const shake = screenShake.update(1 / 60);
+      const followPos = lerpPos(app.player, alpha);
+      app.camera.update(1 / 60, followPos);
+
       app.ctx.save();
-      app.ctx.translate(shake.x, shake.y);
+      app.camera.applyTransform(app.ctx, shake.x, shake.y);
       app.renderer.render(
         app.world,
         app.particles,
         alpha,
         app.debugOptions,
-        window.innerWidth,
-        window.innerHeight,
+        app.camera,
         app.arenaShrink.getShrinkProgress(),
         app.arenaShrink.isShrinking,
         app.player,
       );
+      if (!app.particles.isWebGL()) {
+        app.particles.draw(app.ctx);
+      }
       app.ctx.restore();
 
       const isWebGL = app.particles.isWebGL();
       const showPerfOverlay = perfMonitor.isOverlayVisible();
-      // The CRT pass snapshots #game-canvas during the particle render and
-      // presents it opaquely, so the overlay has to be on the canvas by then.
       if (isWebGL && showPerfOverlay) {
         drawPerfOverlay(app);
       }
 
-      const vfxStats = app.particles.render(window.innerWidth, window.innerHeight);
+      const cameraView = app.camera.getView(shake.x, shake.y);
+      const vfxStats = app.particles.render(
+        window.innerWidth,
+        window.innerHeight,
+        cameraView,
+      );
       perfMonitor.setCounters({
         liveParticles: vfxStats.liveParticles,
         livePrimitives: vfxStats.livePrimitives,
@@ -373,14 +443,11 @@ function init(app: GameApp): void {
         uploadBytes: vfxStats.uploadBytes,
       });
 
-      if (!isWebGL) {
-        app.particles.draw(app.ctx);
-        if (showPerfOverlay) {
-          drawPerfOverlay(app);
-        }
+      if (!isWebGL && showPerfOverlay) {
+        drawPerfOverlay(app);
       }
 
-      app.physicsDebugLayer.render(app.world, alpha, shake.x, shake.y);
+      app.physicsDebugLayer.render(app.world, app.camera, alpha, shake.x, shake.y);
 
       app.inspector.updateTelemetry();
       app.actionBarHUD.update(app.player);

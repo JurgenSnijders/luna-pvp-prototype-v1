@@ -1,3 +1,4 @@
+import type { CameraView } from '../../camera/Camera2D';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx } from '../../types/schema';
@@ -58,7 +59,7 @@ export class Canvas2DBackend implements ParticleBackend {
     }
   }
 
-  render(_width: number, _height: number): VfxCounters {
+  render(_width: number, _height: number, _view: CameraView): VfxCounters {
     return {
       liveParticles: this.getLiveParticleCount(),
       livePrimitives: 0,
@@ -313,12 +314,15 @@ export class Canvas2DBackend implements ParticleBackend {
   }
 
   spawnAmbientEmber(
-    bounds: { width: number; height: number },
+    bounds: { minX: number; minY: number; width: number; height: number },
     safeCenter: Vector2D,
     safeRadius: number,
   ): void {
     for (let attempt = 0; attempt < 6; attempt++) {
-      const pos = new Vector2D(Math.random() * bounds.width, Math.random() * bounds.height);
+      const pos = new Vector2D(
+        bounds.minX + Math.random() * bounds.width,
+        bounds.minY + Math.random() * bounds.height,
+      );
       if (isInsideHex(pos, safeCenter, safeRadius)) continue;
       this.ember(pos);
       return;

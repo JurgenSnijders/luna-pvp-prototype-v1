@@ -418,7 +418,7 @@ function buildBenchmarkSuite(): BenchmarkCase[] {
     { name: 'Kinetic Railgun', schema: railgun, invariant: 'PUSH' },
     { name: 'Napalm Field', schema: NAPALM_FIELD, invariant: 'HAZARD_DOT' },
     { name: 'Ice Barrier', schema: iceBarrier, invariant: 'OBSTACLE' },
-    { name: 'Orbiting Halos', schema: ORBITING_HALOS, invariant: 'ORBIT', targetDistance: 120 },
+    { name: 'Orbiting Halos', schema: ORBITING_HALOS, invariant: 'ORBIT', targetDistance: 120, ticks: 90 },
     { name: 'Dash Ram', schema: DASH_RAM, invariant: 'PUSH' },
     {
       name: 'Dash Ram (Body Collision)',

@@ -10,6 +10,9 @@ layout(location = 5) in float a_shapeId;
 layout(location = 6) in vec4 a_params;
 
 uniform vec2 u_resolution;
+uniform vec2 u_camPos;
+uniform float u_zoom;
+uniform vec2 u_shake;
 uniform float u_time;
 
 out vec2 v_uv;
@@ -21,9 +24,10 @@ out float v_birthTime;
 void main() {
   float c = cos(a_rotation);
   float s = sin(a_rotation);
-  vec2 corner = a_corner * a_size;
+  vec2 corner = a_corner * a_size * u_zoom;
   vec2 rotated = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
-  vec2 clip = ((a_pos + rotated) / u_resolution) * 2.0 - 1.0;
+  vec2 screen = (a_pos - u_camPos) * u_zoom + 0.5 * u_resolution + u_shake + rotated;
+  vec2 clip = (screen / u_resolution) * 2.0 - 1.0;
   clip.y = -clip.y;
   gl_Position = vec4(clip, 0.0, 1.0);
   v_uv = a_corner;

@@ -1,3 +1,4 @@
+import type { CameraView } from '../camera/Camera2D';
 import type { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx } from '../types/schema';
 import type { ParticleBackend, SpawnPriority } from './backends/ParticleBackend';
@@ -36,8 +37,8 @@ export class VfxDirector {
     this.backend.update(dt);
   }
 
-  render(width: number, height: number) {
-    return this.backend.render(width, height);
+  render(width: number, height: number, view: CameraView) {
+    return this.backend.render(width, height, view);
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -108,7 +109,7 @@ export class VfxDirector {
   }
 
   spawnAmbientEmber(
-    bounds: { width: number; height: number },
+    bounds: { minX: number; minY: number; width: number; height: number },
     safeCenter: Vector2D,
     safeRadius: number,
   ): void {

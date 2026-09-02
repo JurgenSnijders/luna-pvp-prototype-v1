@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import type { Camera2D } from '../camera/Camera2D';
 import { getEffectiveDprCap } from '../devtools/graphicsSettings';
 import { drawPhysicsDebugBadge, drawPhysicsDebugOverlay } from './canvas/debug';
 
@@ -24,17 +25,23 @@ export class PhysicsDebugLayer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  render(world: PhysicsWorld, alpha: number, shakeX: number, shakeY: number): void {
+  render(
+    world: PhysicsWorld,
+    camera: Camera2D,
+    alpha: number,
+    shakeX: number,
+    shakeY: number,
+  ): void {
     if (!world.debugPhysicsEnabled) {
       this.canvas.style.display = 'none';
       return;
     }
 
     this.canvas.style.display = 'block';
-    this.ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    this.ctx.clearRect(0, 0, camera.viewportWidth, camera.viewportHeight);
 
     this.ctx.save();
-    this.ctx.translate(shakeX, shakeY);
+    camera.applyTransform(this.ctx, shakeX, shakeY);
     drawPhysicsDebugOverlay(this.ctx, world, alpha);
     this.ctx.restore();
 
