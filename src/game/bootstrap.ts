@@ -237,6 +237,8 @@ function init(app: GameApp): void {
       }
     }
 
+    if (e.repeat) return;
+
     if (e.code === 'KeyQ') handleCastInput(app, 2, true);
     if (e.code === 'KeyE') handleCastInput(app, 3, true);
 
@@ -281,10 +283,6 @@ function init(app: GameApp): void {
     if (e.button === 2) handleCastInput(app, 1, false);
   });
   app.canvas.addEventListener('contextmenu', (e) => {
-    if (cancelPlayerAiming(app)) {
-      e.preventDefault();
-      return;
-    }
     e.preventDefault();
   });
 

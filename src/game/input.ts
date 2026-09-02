@@ -56,23 +56,28 @@ export function handleCastInput(app: GameApp, slot: number, isDown: boolean): vo
   const onCast = castCallback(app);
 
   if (isDown) {
-    if (slot === 1 && player.activeAimingState) {
+    const aiming = player.activeAimingState;
+
+    // Already holding this slot — ignore key-repeat / extra downs.
+    if (aiming?.slotIndex === slot) return;
+
+    // LMB confirms a held keyboard/RMB telegraph.
+    if (slot === 0 && aiming) {
+      if (player.isSlotReady(aiming.slotIndex)) {
+        player.confirmAimCast(onCast);
+      }
+      return;
+    }
+
+    // RMB cancels a telegraph that was started with a different control.
+    if (slot === 1 && aiming) {
       player.cancelAiming();
       return;
     }
 
-    if (slot === 0 && player.activeAimingState) {
-      if (player.isSlotReady(player.activeAimingState.slotIndex)) {
-        player.confirmAimCast(onCast);
-      }
-      return;
-    }
-
-    if (player.activeAimingState?.slotIndex === slot) {
-      if (player.isSlotReady(slot)) {
-        player.confirmAimCast(onCast);
-      }
-      return;
+    // Switching to another aimed slot replaces the current telegraph.
+    if (aiming) {
+      player.cancelAiming();
     }
 
     const ability = player.getAbility(slot);
@@ -91,6 +96,20 @@ export function handleCastInput(app: GameApp, slot: number, isDown: boolean): vo
 
     player.setSlotInput(slot, isDown, onCast);
     return;
+  }
+
+  // Release of the held activation dismisses the telegraph without casting,
+  // except LMB: the same button is the confirm control, so release fires.
+  if (player.activeAimingState?.slotIndex === slot) {
+    if (slot === 0) {
+      if (player.isSlotReady(slot)) {
+        player.confirmAimCast(onCast);
+      } else {
+        player.cancelAiming();
+      }
+    } else {
+      player.cancelAiming();
+    }
   }
 
   player.setSlotInput(slot, isDown, onCast);
