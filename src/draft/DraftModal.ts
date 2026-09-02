@@ -48,9 +48,19 @@ import {
   hexToRgba,
   injectStyles,
   renderPowerBar,
+  roleBadgeStyle,
   showQuickEquipMenu,
 } from './workshopStyles';
 import { SpellInventoryManager } from '../game/SpellInventory';
+import {
+  getSpellRoleLabel,
+  getSpellRoles,
+  SPELL_ROLES,
+  spellMatchesMetaFilter,
+  spellMatchesRoleFilter,
+  type SpellRole,
+  type VaultMetaFilter,
+} from '../game/spellRoles';
 import {
   attachDockSlotDrag,
   attachInventoryDropZone,
@@ -80,6 +90,8 @@ export class DraftModal {
   private vaultTabBtn!: HTMLButtonElement;
   private forgeTabBtn!: HTMLButtonElement;
   private vaultSearchInput!: HTMLInputElement;
+  private vaultRoleFilterRow!: HTMLElement;
+  private vaultMetaFilterRow!: HTMLElement;
   private spellGrid!: HTMLElement;
   private modeRow: HTMLElement;
   private categoryRow: HTMLElement;
@@ -121,6 +133,8 @@ export class DraftModal {
   private presetSlot: ActionSlotKey | null = null;
   private activeTab: WorkshopTab = 'VAULT';
   private vaultSearchQuery = '';
+  private vaultRoleFilters = new Set<SpellRole>();
+  private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
@@ -476,9 +490,106 @@ export class DraftModal {
 
     this.vaultRoot.appendChild(toolbar);
 
+    this.vaultRoleFilterRow = document.createElement('div');
+    this.vaultRoleFilterRow.className = 'vault-filter-row';
+    this.vaultRoot.appendChild(this.vaultRoleFilterRow);
+
+    this.vaultMetaFilterRow = document.createElement('div');
+    this.vaultMetaFilterRow.className = 'vault-filter-row';
+    this.vaultRoot.appendChild(this.vaultMetaFilterRow);
+
+    this.buildVaultFilterChips();
+
     this.spellGrid = document.createElement('div');
     this.spellGrid.className = 'spell-grid';
     this.vaultRoot.appendChild(this.spellGrid);
+  }
+
+  private buildVaultFilterChips(): void {
+    this.vaultRoleFilterRow.innerHTML = '';
+    this.vaultMetaFilterRow.innerHTML = '';
+
+    const allRolesBtn = document.createElement('button');
+    allRolesBtn.type = 'button';
+    allRolesBtn.textContent = 'All';
+    allRolesBtn.style.cssText = chipStyle(this.vaultRoleFilters.size === 0);
+    allRolesBtn.addEventListener('click', () => {
+      this.vaultRoleFilters.clear();
+      this.refreshVaultFilterChips();
+      this.renderVaultGrid();
+    });
+    this.vaultRoleFilterRow.appendChild(allRolesBtn);
+
+    for (const role of SPELL_ROLES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = getSpellRoleLabel(role);
+      btn.style.cssText = chipStyle(this.vaultRoleFilters.has(role));
+      btn.addEventListener('click', () => {
+        if (this.vaultRoleFilters.has(role)) {
+          this.vaultRoleFilters.delete(role);
+        } else {
+          this.vaultRoleFilters.add(role);
+        }
+        this.refreshVaultFilterChips();
+        this.renderVaultGrid();
+      });
+      this.vaultRoleFilterRow.appendChild(btn);
+    }
+
+    const metaFilters: { id: VaultMetaFilter; label: string }[] = [
+      { id: 'EQUIPPED', label: 'Equipped' },
+      { id: 'NEW', label: 'New' },
+      { id: 'CUSTOM', label: 'Custom' },
+    ];
+
+    for (const meta of metaFilters) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = meta.label;
+      btn.style.cssText = chipStyle(this.vaultMetaFilters.has(meta.id));
+      btn.addEventListener('click', () => {
+        if (this.vaultMetaFilters.has(meta.id)) {
+          this.vaultMetaFilters.delete(meta.id);
+        } else {
+          this.vaultMetaFilters.add(meta.id);
+        }
+        this.refreshVaultFilterChips();
+        this.renderVaultGrid();
+      });
+      this.vaultMetaFilterRow.appendChild(btn);
+    }
+  }
+
+  private refreshVaultFilterChips(): void {
+    const roleButtons = [...this.vaultRoleFilterRow.querySelectorAll('button')];
+    const allRolesBtn = roleButtons[0];
+    if (allRolesBtn) {
+      allRolesBtn.style.cssText = chipStyle(this.vaultRoleFilters.size === 0);
+    }
+    for (let i = 0; i < SPELL_ROLES.length; i++) {
+      const btn = roleButtons[i + 1];
+      if (btn) {
+        btn.style.cssText = chipStyle(this.vaultRoleFilters.has(SPELL_ROLES[i]));
+      }
+    }
+
+    const metaButtons = [...this.vaultMetaFilterRow.querySelectorAll('button')];
+    const metaIds: VaultMetaFilter[] = ['EQUIPPED', 'NEW', 'CUSTOM'];
+    for (let i = 0; i < metaIds.length; i++) {
+      const btn = metaButtons[i];
+      if (btn) {
+        btn.style.cssText = chipStyle(this.vaultMetaFilters.has(metaIds[i]));
+      }
+    }
+  }
+
+  private hasVaultFiltersActive(): boolean {
+    return (
+      this.vaultSearchQuery.trim().length > 0 ||
+      this.vaultRoleFilters.size > 0 ||
+      this.vaultMetaFilters.size > 0
+    );
   }
 
   private renderVaultGrid(): void {
@@ -486,15 +597,36 @@ export class DraftModal {
     this.spellGrid.innerHTML = '';
 
     const q = this.vaultSearchQuery.trim().toLowerCase();
+    const loadout = SpellInventoryManager.getLoadout();
+    const loadoutSpellIds = new Set(
+      Object.values(loadout).filter((id): id is string => id !== null),
+    );
+    const metaContext = {
+      loadoutSpellIds,
+      isNewSpell: (id: string) => SpellInventoryManager.isNewSpell(id),
+      isPresetSpell: (id: string) => SpellInventoryManager.isPresetSpell(id),
+    };
+
     const spells = SpellInventoryManager.getAllSpells().filter((spell) => {
-      if (!q) return true;
-      const archetype = (spell.archetype ?? '').toLowerCase();
-      return spell.name.toLowerCase().includes(q) || archetype.includes(q);
+      if (q) {
+        const archetype = (spell.archetype ?? '').toLowerCase();
+        const tagline = (spell.tagline ?? '').toLowerCase();
+        const matchesText =
+          spell.name.toLowerCase().includes(q) ||
+          archetype.includes(q) ||
+          tagline.includes(q);
+        if (!matchesText) return false;
+      }
+      if (!spellMatchesRoleFilter(spell, this.vaultRoleFilters)) return false;
+      if (!spellMatchesMetaFilter(spell, this.vaultMetaFilters, metaContext)) return false;
+      return true;
     });
 
     if (spells.length === 0) {
       const empty = document.createElement('div');
-      empty.textContent = q ? 'No spells match your search.' : 'No spells in inventory.';
+      empty.textContent = this.hasVaultFiltersActive()
+        ? 'No spells match your filters.'
+        : 'No spells in inventory.';
       empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};`;
       this.spellGrid.appendChild(empty);
       return;
@@ -531,9 +663,30 @@ export class DraftModal {
     stats.className = 'card-stats';
     stats.textContent = `CD ${spell.cooldownMs}ms`;
 
+    const roles = getSpellRoles(spell);
+    const roleRow = document.createElement('div');
+    roleRow.className = 'card-role-row';
+    roleRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;';
+    const visibleRoles = roles.slice(0, 3);
+    for (const role of visibleRoles) {
+      const pill = document.createElement('span');
+      pill.textContent = getSpellRoleLabel(role);
+      pill.style.cssText = roleBadgeStyle(role);
+      roleRow.appendChild(pill);
+    }
+    if (roles.length > 3) {
+      const more = document.createElement('span');
+      more.textContent = `+${roles.length - 3}`;
+      more.style.cssText = `font-size:${FONTS.size.badge};color:${RETRO_COLORS.textMuted};`;
+      roleRow.appendChild(more);
+    }
+
     details.appendChild(title);
     details.appendChild(archetype);
     details.appendChild(stats);
+    if (roles.length > 0) {
+      details.appendChild(roleRow);
+    }
 
     card.appendChild(iconContainer);
     card.appendChild(details);

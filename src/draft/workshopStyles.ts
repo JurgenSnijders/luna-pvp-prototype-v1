@@ -1,3 +1,4 @@
+import type { SpellRole } from '../game/spellRoles';
 import type { ActionSlotKey, CardRarity } from '../types/cards';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 
@@ -144,6 +145,14 @@ export function injectStyles(): void {
       display: flex;
       gap: 8px;
       align-items: center;
+    }
+
+    .vault-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-shrink: 0;
     }
 
     .vault-search {
@@ -456,6 +465,26 @@ export function btnStyleRarity(rarity: CardRarity): string {
     padding:7px 12px;border-radius:4px;cursor:pointer;font-size:${FONTS.size.body};
     font-family:${FONTS.mono};
     border:1px solid ${theme.border};background:${theme.bg};color:${RETRO_COLORS.textPrimary};
+  `;
+}
+
+export const SPELL_ROLE_COLORS: Record<SpellRole, { bg: string; text: string }> = {
+  MOBILITY: { bg: 'rgba(52,211,153,0.15)', text: '#6ee7b7' },
+  DAMAGE: { bg: 'rgba(248,113,113,0.15)', text: '#fca5a5' },
+  HEALING: { bg: 'rgba(74,222,128,0.15)', text: '#86efac' },
+  CC: { bg: 'rgba(245,158,11,0.15)', text: '#fcd34d' },
+  DEFENSE: { bg: 'rgba(96,165,250,0.15)', text: '#93c5fd' },
+  SUMMON: { bg: 'rgba(192,132,252,0.15)', text: '#d8b4fe' },
+  TERRAIN: { bg: 'rgba(251,146,60,0.15)', text: '#fdba74' },
+};
+
+export function roleBadgeStyle(role: SpellRole): string {
+  const colors = SPELL_ROLE_COLORS[role];
+  return `
+    font-size:${FONTS.size.badge};line-height:1.2;padding:2px 6px;border-radius:2px;
+    font-family:${FONTS.mono};letter-spacing:0.04em;
+    border:1px solid ${RETRO_COLORS.borderSubtle};
+    background:${colors.bg};color:${colors.text};white-space:nowrap;
   `;
 }
 

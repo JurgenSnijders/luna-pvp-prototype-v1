@@ -88,12 +88,10 @@ export class Player extends Entity {
   static globalCooldownScale = 1.5;
   static globalCooldownDurationMs = 350;
 
-  moveSpeed: number;
   baseMoveSpeed: number;
   baseAcceleration: number;
   brakeAccel: number;
   turnAccel: number;
-  maxSpeed: number;
   stopThreshold: number;
   inputSmoothingMs: number;
   smoothedInputMove: Vector2D;
@@ -651,7 +649,7 @@ export class Player extends Entity {
     const moveDir =
       this.smoothedInputMove.magSq() > 0 ? this.smoothedInputMove.normalize() : Vector2D.zero();
     const speedMultiplier = this.activeMorph?.speedMultiplier ?? 1;
-    const targetVel = moveDir.scale(this.moveSpeed * speedMultiplier);
+    const targetVel = moveDir.scale(this.getEffectiveMoveSpeed() * speedMultiplier);
     const velDiff = targetVel.sub(this.vel);
 
     if (moveDir.magSq() === 0) {

@@ -54,6 +54,8 @@ export class Entity {
   stealthRemainingMs: number;
   stealthRevealOnCast: boolean;
   activeStatuses: Map<SpellArchetype, StatusEffect>;
+  moveSpeed: number;
+  maxSpeed: number;
   friction: number;
   chronoSnapshot?: { pos: Vector2D; vel: Vector2D };
   arcaneBuffer?: Vector2D;
@@ -105,6 +107,8 @@ export class Entity {
     this.stealthRemainingMs = 0;
     this.stealthRevealOnCast = true;
     this.activeStatuses = new Map();
+    this.moveSpeed = 0;
+    this.maxSpeed = Number.POSITIVE_INFINITY;
     this.friction = 0;
     this.voidDistanceAcc = 0;
     this.ghostInstability = this.instabilityPct;
@@ -173,7 +177,7 @@ export class Entity {
   getEffectiveLinearDrag(): number {
     let drag = this.linearDrag;
     if (this.activeStatuses.has('EARTH')) drag *= 2.0;
-    if (this.activeStatuses.has('FROST')) drag *= 0.1;
+    if (this.activeStatuses.has('FROST')) drag *= 1.25;
     if (this.activeStatuses.has('AERO')) drag *= 0.5;
     if (this.activeStatuses.has('KINETIC')) drag *= 0.2;
     return drag;
@@ -181,9 +185,20 @@ export class Entity {
 
   getEffectiveFriction(): number {
     let friction = this.friction;
-    if (this.activeStatuses.has('FROST')) friction *= 0.1;
     if (this.activeStatuses.has('AERO')) friction = 0;
     return friction;
+  }
+
+  getEffectiveMoveSpeed(): number {
+    let speed = this.moveSpeed;
+    if (this.activeStatuses.has('FROST')) speed *= 0.5;
+    return speed;
+  }
+
+  getEffectiveMaxSpeed(): number {
+    let maxSpeed = this.maxSpeed;
+    if (this.activeStatuses.has('FROST')) maxSpeed *= 0.5;
+    return maxSpeed;
   }
 
   getEffectiveBounciness(): number {

@@ -4,7 +4,6 @@ import type { Player } from './Player';
 
 export class Dummy extends Entity {
   isAiActive: boolean;
-  moveSpeed: number;
   /** Set by PhysicsWorld before update when AI is active. */
   chaseVector: Vector2D;
 
@@ -48,7 +47,7 @@ export class Dummy extends Entity {
   override update(dt: number): void {
     if (this.chaseVector.magSq() === 0) return;
 
-    const targetVel = this.chaseVector.scale(this.moveSpeed);
+    const targetVel = this.chaseVector.scale(this.getEffectiveMoveSpeed());
     const velDiff = targetVel.sub(this.vel);
     const accelMag = 600 * dt;
     const steeringAccel =

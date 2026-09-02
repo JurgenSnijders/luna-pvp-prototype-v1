@@ -1,4 +1,5 @@
 import { PRESETS } from '../devtools/Presets';
+import { inferSpellRoles } from './spellRoles';
 import {
   ACTION_SLOT_KEYS,
   type ActionSlotKey,
@@ -217,6 +218,10 @@ class SpellInventoryStore {
     if (this.needsUniqueId(stored.id)) {
       stored.id = mintSpellId();
     }
+    stored.metadata = {
+      ...stored.metadata,
+      roles: inferSpellRoles(stored),
+    };
     this.inventory.set(stored.id, stored);
     if (isNewlyForged) {
       this.newSpellIds.add(stored.id);
@@ -228,6 +233,10 @@ class SpellInventoryStore {
 
   isNewSpell(id: string): boolean {
     return this.newSpellIds.has(id);
+  }
+
+  isPresetSpell(id: string): boolean {
+    return this.presetIds.has(id);
   }
 
   clearNewSpellTag(id: string): void {

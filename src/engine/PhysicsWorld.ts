@@ -564,7 +564,7 @@ export class PhysicsWorld {
             makeDebugVector(
               player.pos,
               steerDir,
-              player.moveSpeed,
+              player.getEffectiveMoveSpeed(),
               DEBUG_VECTOR_COLORS.STEERING,
               'steer',
             ),
