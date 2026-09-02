@@ -6,6 +6,8 @@ import type {
   TrajectoryConfig,
   TriggerNode,
 } from '../../types/schema';
+import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
+import { sampleAbilityTrajectory, type TrajectoryTrace } from './trajectoryTracer';
 
 const LOGICAL_SIZE = 48;
 
@@ -507,7 +509,192 @@ function drawArchetypeAccents(ctx: CanvasRenderingContext2D, icon: IconContext):
   }
 }
 
-export function generateSpellIcon(ability: AbilitySchema, sizePx = 48): HTMLCanvasElement {
+function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
+  const icon = buildIconContext(ability);
+  drawBackground(ctx);
+  drawDeliveryLayer(ctx, icon);
+  drawPayloadLayer(ctx, icon);
+  drawArchetypeAccents(ctx, icon);
+}
+
+interface NormalizedTrace {
+  segments: Array<Array<{ x: number; y: number }>>;
+  fields: Array<{ x: number; y: number; radius: number; fieldType: string }>;
+  startPoint: { x: number; y: number };
+  endPoint: { x: number; y: number };
+  hasReturn: boolean;
+}
+
+function normalizeTrace(trace: TrajectoryTrace, logicalSize: number, padding: number): NormalizedTrace {
+  const flipY = (p: { x: number; y: number }) => ({ x: p.x, y: -p.y });
+
+  const rawSegments: Array<Array<{ x: number; y: number }>> = [];
+  let current: Array<{ x: number; y: number }> = [];
+  for (const p of trace.points) {
+    if (Number.isNaN(p.x)) {
+      if (current.length > 0) {
+        rawSegments.push(current);
+        current = [];
+      }
+      continue;
+    }
+    current.push(flipY(p));
+  }
+  if (current.length > 0) rawSegments.push(current);
+
+  const allPoints = rawSegments.flat();
+  const allFields = trace.fields.map((f) => ({ ...flipY(f), radius: f.radius, fieldType: f.fieldType }));
+
+  if (allPoints.length === 0) {
+    const center = logicalSize / 2;
+    return {
+      segments: [[{ x: center, y: center }]],
+      fields: allFields.map((f) => ({ ...f, x: center, y: center, radius: f.radius * 0.05 })),
+      startPoint: { x: center, y: center },
+      endPoint: { x: center, y: center },
+      hasReturn: trace.hasReturn,
+    };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const p of allPoints) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  for (const f of allFields) {
+    minX = Math.min(minX, f.x - f.radius);
+    minY = Math.min(minY, f.y - f.radius);
+    maxX = Math.max(maxX, f.x + f.radius);
+    maxY = Math.max(maxY, f.y + f.radius);
+  }
+
+  const bw = maxX - minX || 1;
+  const bh = maxY - minY || 1;
+  const avail = logicalSize - padding * 2;
+  const scale = Math.min(avail / bw, avail / bh);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const center = logicalSize / 2;
+
+  const mapPoint = (p: { x: number; y: number }) => ({
+    x: center + (p.x - cx) * scale,
+    y: center + (p.y - cy) * scale,
+  });
+
+  const segments = rawSegments.map((seg) => seg.map(mapPoint));
+
+  return {
+    segments,
+    fields: allFields.map((f) => ({
+      ...mapPoint(f),
+      radius: f.radius * scale,
+      fieldType: f.fieldType,
+    })),
+    startPoint: mapPoint(flipY(trace.startPoint)),
+    endPoint: mapPoint(flipY(trace.endPoint)),
+    hasReturn: trace.hasReturn,
+  };
+}
+
+function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
+  const archetype = ability.archetype ?? 'KINETIC';
+  const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
+  const trace = sampleAbilityTrajectory(ability);
+  const normalized = normalizeTrace(trace, LOGICAL_SIZE, 6);
+
+  drawBackground(ctx);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(LOGICAL_SIZE / 2 - 4, LOGICAL_SIZE / 2);
+  ctx.lineTo(LOGICAL_SIZE / 2 + 4, LOGICAL_SIZE / 2);
+  ctx.moveTo(LOGICAL_SIZE / 2, LOGICAL_SIZE / 2 - 4);
+  ctx.lineTo(LOGICAL_SIZE / 2, LOGICAL_SIZE / 2 + 4);
+  ctx.stroke();
+
+  for (const field of normalized.fields) {
+    ctx.strokeStyle = archetypeColor;
+    ctx.shadowColor = archetypeColor;
+    ctx.shadowBlur = 4;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(field.x, field.y, Math.max(3, field.radius), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.strokeStyle = archetypeColor;
+  ctx.shadowColor = archetypeColor;
+  ctx.shadowBlur = 10;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  for (const segment of normalized.segments) {
+    if (segment.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(segment[0].x, segment[0].y);
+    for (let j = 1; j < segment.length; j++) {
+      ctx.lineTo(segment[j].x, segment[j].y);
+    }
+    ctx.stroke();
+
+    if (normalized.hasReturn && segment.length >= 4) {
+      const returnStart = Math.floor(segment.length * 0.55);
+      ctx.setLineDash([3, 2]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(segment[returnStart].x, segment[returnStart].y);
+      for (let j = returnStart + 1; j < segment.length; j++) {
+        ctx.lineTo(segment[j].x, segment[j].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+    }
+  }
+
+  ctx.shadowBlur = 0;
+
+  const { startPoint, endPoint } = normalized;
+
+  ctx.fillStyle = archetypeColor;
+  ctx.shadowColor = archetypeColor;
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(startPoint.x, startPoint.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const r = 4;
+  ctx.strokeStyle = archetypeColor;
+  ctx.shadowColor = archetypeColor;
+  ctx.shadowBlur = 6;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(endPoint.x, endPoint.y - r);
+  ctx.lineTo(endPoint.x + r, endPoint.y);
+  ctx.lineTo(endPoint.x, endPoint.y + r);
+  ctx.lineTo(endPoint.x - r, endPoint.y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+export function generateSpellIcon(
+  ability: AbilitySchema,
+  sizePx = 48,
+  forcedStyle?: IconRenderStyle,
+): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   const dpr = 2;
   canvas.width = sizePx * dpr;
@@ -522,12 +709,12 @@ export function generateSpellIcon(ability: AbilitySchema, sizePx = 48): HTMLCanv
   const scale = sizePx / LOGICAL_SIZE;
   ctx.scale(dpr * scale, dpr * scale);
 
-  const icon = buildIconContext(ability);
-
-  drawBackground(ctx);
-  drawDeliveryLayer(ctx, icon);
-  drawPayloadLayer(ctx, icon);
-  drawArchetypeAccents(ctx, icon);
+  const style = forcedStyle ?? getIconRenderStyle();
+  if (style === 'SIMULATION_TRACE') {
+    drawSimulationTrace(ctx, ability);
+  } else {
+    drawSemanticGlyph(ctx, ability);
+  }
 
   return canvas;
 }

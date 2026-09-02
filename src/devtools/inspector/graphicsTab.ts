@@ -15,6 +15,11 @@ import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
 import {
+  getIconRenderStyle,
+  setIconRenderStyle,
+  type IconRenderStyle,
+} from '../../render/gl/retroVfxConfig';
+import {
   buttonStyle,
   sectionDivider,
   sectionHeader,
@@ -161,6 +166,39 @@ export function buildGraphicsTab(parent: HTMLElement): void {
 
   addToggle(retroSection, retroCheckboxes, 'crtEnabled', 'CRT Post-Processing');
   addToggle(retroSection, retroCheckboxes, 'arcadeBezel', 'Arcade Bezel');
+
+  const iconStyleLabel = document.createElement('div');
+  iconStyleLabel.textContent = 'Icon Style';
+  iconStyleLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:8px 0 4px;`;
+  retroSection.appendChild(iconStyleLabel);
+
+  const iconStyleRow = document.createElement('div');
+  iconStyleRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+
+  const iconStyleButtons: Record<IconRenderStyle, HTMLButtonElement> = {
+    SEMANTIC_GLYPH: document.createElement('button'),
+    SIMULATION_TRACE: document.createElement('button'),
+  };
+  iconStyleButtons.SEMANTIC_GLYPH.textContent = 'Semantic Glyph';
+  iconStyleButtons.SIMULATION_TRACE.textContent = 'Simulation Trace';
+
+  const syncIconStyleButtons = (): void => {
+    const active = getIconRenderStyle();
+    for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
+      iconStyleButtons[style].style.cssText = buttonStyle(active === style);
+    }
+  };
+
+  for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
+    const btn = iconStyleButtons[style];
+    btn.onclick = () => {
+      setIconRenderStyle(style);
+      syncIconStyleButtons();
+    };
+    iconStyleRow.appendChild(btn);
+  }
+  syncIconStyleButtons();
+  retroSection.appendChild(iconStyleRow);
 
   const presetOptions = STYLE_PRESET_IDS.map((id) => ({
     value: id,

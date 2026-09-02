@@ -4,6 +4,7 @@ import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
+import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -26,6 +27,7 @@ interface SlotElements {
   accent: string;
   archetypeColor: string;
   lastAbilityId: string | null;
+  lastIconStyle: IconRenderStyle | null;
 }
 
 const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
@@ -248,6 +250,12 @@ export class ActionBarHUD {
     document.body.appendChild(this.tooltipEl);
 
     document.body.appendChild(this.root);
+
+    window.addEventListener('iconstylechanged', () => {
+      for (const slot of this.slots) {
+        slot.lastAbilityId = null;
+      }
+    });
   }
 
   private createSlot(slotIndex: number, key: ActionSlotKey): SlotElements {
@@ -416,16 +424,19 @@ export class ActionBarHUD {
       accent: accent.color,
       archetypeColor: accent.color,
       lastAbilityId: null,
+      lastIconStyle: null,
     };
   }
 
   private updateSlotIcon(slotIndex: number, ability: AbilitySchema | null): void {
     const slot = this.slots[slotIndex];
     const nextId = ability?.id ?? null;
-    if (nextId === slot.lastAbilityId) return;
+    const nextStyle = getIconRenderStyle();
+    if (nextId === slot.lastAbilityId && nextStyle === slot.lastIconStyle) return;
 
     slot.iconContainer.replaceChildren();
     slot.lastAbilityId = nextId;
+    slot.lastIconStyle = nextStyle;
 
     if (ability) {
       slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
