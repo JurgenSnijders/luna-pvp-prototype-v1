@@ -1,8 +1,10 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { ActiveStatusTimer } from '../../entities/Entity';
 import { Entity } from '../../entities/Entity';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
+import { getArchetypeColor } from './SpellIconGenerator';
 import { canvasFont } from '../../ui/tokens';
 
 export const OVERHEAD_BAR_TOP_OFFSET = 14;
@@ -11,6 +13,10 @@ export const OVERHEAD_INSTABILITY_BAR_HEIGHT = 3;
 export const OVERHEAD_INSTABILITY_BAR_GAP = 2;
 const OVERHEAD_INSTABILITY_LABEL_GAP = 6;
 const OVERHEAD_INSTABILITY_FONT_SIZE = 16;
+const OVERHEAD_STATUS_BAR_GAP = 6;
+const OVERHEAD_STATUS_BAR_HEIGHT = 3;
+const OVERHEAD_STATUS_BAR_TOTAL_WIDTH = 48;
+const OVERHEAD_STATUS_BAR_SPACING = 2;
 export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
   OVERHEAD_BAR_TOP_OFFSET +
   OVERHEAD_BAR_HEIGHT +
@@ -20,6 +26,43 @@ export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
 
 function getInstabilityBarCap(): number {
   return Math.max(1, Entity.maxInstability);
+}
+
+function drawStatusDurationBars(
+  ctx: CanvasRenderingContext2D,
+  statuses: ActiveStatusTimer[],
+  startX: number,
+  startY: number,
+): void {
+  const count = statuses.length;
+  if (count === 0) return;
+
+  const segmentWidth = Math.max(
+    4,
+    Math.floor(
+      (OVERHEAD_STATUS_BAR_TOTAL_WIDTH - OVERHEAD_STATUS_BAR_SPACING * (count - 1)) / count,
+    ),
+  );
+
+  let x = startX;
+  for (const status of statuses) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(x, startY, segmentWidth, OVERHEAD_STATUS_BAR_HEIGHT);
+
+    const fillW = Math.max(0, Math.round(segmentWidth * status.progress));
+    const color = getArchetypeColor(status.archetype);
+    if (fillW > 0) {
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 4;
+      ctx.fillRect(x, startY, fillW, OVERHEAD_STATUS_BAR_HEIGHT);
+      ctx.shadowBlur = 0;
+    }
+
+    x += segmentWidth + OVERHEAD_STATUS_BAR_SPACING;
+  }
+
+  ctx.shadowColor = 'transparent';
 }
 
 export function drawOverheadHUD(
@@ -110,5 +153,13 @@ export function drawOverheadHUD(
       pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET,
     );
     ctx.globalAlpha = 1;
+
+    const activeStatuses = entity.getActiveStatusTimers();
+    if (activeStatuses.length > 0) {
+      const statusStartY =
+        pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET + OVERHEAD_STATUS_BAR_GAP;
+      const statusStartX = pos.x - OVERHEAD_STATUS_BAR_TOTAL_WIDTH / 2;
+      drawStatusDurationBars(ctx, activeStatuses, statusStartX, statusStartY);
+    }
   }
 }

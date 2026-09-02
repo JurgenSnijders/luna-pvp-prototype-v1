@@ -7,8 +7,17 @@ let nextEntityId = 1;
 
 export interface StatusEffect {
   durationMs: number;
+  maxDurationMs: number;
   stacks: number;
   sourceId?: string;
+}
+
+export interface ActiveStatusTimer {
+  archetype: SpellArchetype;
+  remainingMs: number;
+  maxDurationMs: number;
+  progress: number;
+  stacks: number;
 }
 
 const MAX_STATUS_STACKS = 5;
@@ -287,10 +296,12 @@ export class Entity {
     const existing = this.activeStatuses.get(archetype);
     if (existing) {
       existing.durationMs = Math.max(existing.durationMs, durationMs);
+      existing.maxDurationMs = Math.max(existing.maxDurationMs, existing.durationMs);
       existing.stacks = Math.min(MAX_STATUS_STACKS, existing.stacks + stacks);
     } else {
       this.activeStatuses.set(archetype, {
         durationMs,
+        maxDurationMs: durationMs,
         stacks,
         ...(sourceId ? { sourceId } : {}),
       });
@@ -305,6 +316,22 @@ export class Entity {
         });
       }
     }
+  }
+
+  getActiveStatusTimers(): ActiveStatusTimer[] {
+    const result: ActiveStatusTimer[] = [];
+    for (const [archetype, data] of this.activeStatuses) {
+      if (data.durationMs <= 0) continue;
+      const maxDurationMs = data.maxDurationMs || 2000;
+      result.push({
+        archetype,
+        remainingMs: data.durationMs,
+        maxDurationMs,
+        progress: Math.max(0, Math.min(1, data.durationMs / maxDurationMs)),
+        stacks: data.stacks || 1,
+      });
+    }
+    return result;
   }
 
   isStealthed(): boolean {

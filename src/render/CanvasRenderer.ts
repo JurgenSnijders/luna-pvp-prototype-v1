@@ -82,8 +82,8 @@ export class CanvasRenderer {
     this.lastRenderMs = now;
 
     for (const event of world.drainCombatVisualEvents()) {
-      const { text, type, color } = combatEventToFct(event);
-      this.fctManager.spawn(text, event.pos, type, color);
+      const { text, type, color, value } = combatEventToFct(event);
+      this.fctManager.spawn(text, event.pos, type, color, value);
     }
 
     if (aimingPlayer) {

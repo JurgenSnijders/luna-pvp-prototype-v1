@@ -20,6 +20,7 @@ export interface FloatingTextParticle {
   baseScale: number;
   lifeMs: number;
   maxLifeMs: number;
+  isLinearUpward: boolean;
 }
 
 interface QueuedCombatText {
@@ -28,6 +29,7 @@ interface QueuedCombatText {
   type: FCTType;
   colorOverride?: string;
   scale: number;
+  isLinearUpward: boolean;
 }
 
 interface SpatialFctLane {
@@ -58,12 +60,26 @@ const LANE_MIN_STAGGER_MS = 35;
 const GRAVITY_PX_S2 = 420;
 const SCALE_PUNCH_MS = 120;
 const FADE_OUT_MS = 250;
+const LINEAR_UPWARD_LIFE_MS = 1100;
+const LINEAR_UPWARD_VEL_Y = -75;
 let nextParticleId = 1;
 
 const isHeadless = typeof document === 'undefined';
 
 function getLaneKey(pos: { x: number; y: number }): string {
   return `${Math.floor(pos.x / SPATIAL_CELL_SIZE)}_${Math.floor(pos.y / SPATIAL_CELL_SIZE)}`;
+}
+
+function computeFctBaseScale(type: FCTType, text: string, value?: number): number {
+  if (type === 'STATUS_APPLIED' || type === 'STATUS_EXPIRED') {
+    if (text === 'DETONATION!') return 2.2;
+    return 1.15;
+  }
+
+  const val = Math.max(1, value ?? 1);
+  let scale = 0.85 + Math.log10(val) * 0.55;
+  if (type === 'CRIT') scale *= 1.3;
+  return Math.min(2.3, Math.max(0.75, scale));
 }
 
 export function archetypeFctColor(archetype: SpellArchetype): string {
@@ -91,6 +107,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
   text: string;
   type: FCTType;
   color: string;
+  value?: number;
 } {
   switch (event.type) {
     case 'DAMAGE':
@@ -98,12 +115,14 @@ export function combatEventToFct(event: CombatVisualEvent): {
         text: `-${Math.round(event.value ?? 0)}`,
         type: 'DAMAGE',
         color: FCT_COLORS.LAVA_DAMAGE,
+        value: event.value,
       };
     case 'INSTABILITY':
       return {
         text: `${Math.round(event.value ?? 0)}`,
         type: 'INSTABILITY',
         color: FCT_COLORS.INSTABILITY,
+        value: event.value,
       };
     case 'STATUS_APPLIED':
       if (event.label) {
@@ -140,12 +159,12 @@ export class FloatingCombatTextManager {
     pos: { x: number; y: number },
     type: FCTType,
     colorOverride?: string,
+    value?: number,
   ): void {
     if (isHeadless) return;
 
-    let baseScale = 1.0;
-    if (type === 'CRIT') baseScale = 1.35;
-    if (text === 'DETONATION!') baseScale = 1.45;
+    const isLinearUpward = type === 'STATUS_APPLIED' || type === 'STATUS_EXPIRED';
+    const baseScale = computeFctBaseScale(type, text, value);
 
     const laneKey = getLaneKey(pos);
     let lane = this.lanes.get(laneKey);
@@ -160,6 +179,7 @@ export class FloatingCombatTextManager {
       type,
       colorOverride,
       scale: baseScale,
+      isLinearUpward,
     });
 
     if (lane.cooldownMs <= 0 && lane.queue.length === 1) {
@@ -170,6 +190,23 @@ export class FloatingCombatTextManager {
   }
 
   private emitParticle(item: QueuedCombatText, lane: SpatialFctLane): void {
+    if (item.isLinearUpward) {
+      this.particles.push({
+        id: `fct_${nextParticleId++}`,
+        text: item.text,
+        pos: { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET },
+        vel: { x: 0, y: LINEAR_UPWARD_VEL_Y },
+        gravity: 0,
+        color: item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE,
+        scale: item.scale,
+        baseScale: item.scale,
+        lifeMs: LINEAR_UPWARD_LIFE_MS,
+        maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+        isLinearUpward: true,
+      });
+      return;
+    }
+
     const maxLifeMs = 950 + Math.random() * 250;
     const lateralVel = lane.alternateSign * (50 + Math.random() * 35);
     lane.alternateSign *= -1;
@@ -188,6 +225,7 @@ export class FloatingCombatTextManager {
       baseScale: item.scale,
       lifeMs: maxLifeMs,
       maxLifeMs,
+      isLinearUpward: false,
     });
   }
 
@@ -219,12 +257,14 @@ export class FloatingCombatTextManager {
       p.pos.x += p.vel.x * dt;
       p.pos.y += p.vel.y * dt;
 
-      const elapsedMs = p.maxLifeMs - p.lifeMs;
-      if (elapsedMs < SCALE_PUNCH_MS) {
-        const t = elapsedMs / SCALE_PUNCH_MS;
-        p.scale = p.baseScale * 1.35 + (p.baseScale - p.baseScale * 1.35) * t;
-      } else {
-        p.scale = p.baseScale;
+      if (!p.isLinearUpward) {
+        const elapsedMs = p.maxLifeMs - p.lifeMs;
+        if (elapsedMs < SCALE_PUNCH_MS) {
+          const t = elapsedMs / SCALE_PUNCH_MS;
+          p.scale = p.baseScale * 1.35 + (p.baseScale - p.baseScale * 1.35) * t;
+        } else {
+          p.scale = p.baseScale;
+        }
       }
 
       p.lifeMs -= dtMs;
