@@ -92,6 +92,10 @@ export interface ParticleBackend {
   spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void;
   zoneVortexTick(pos: Vector2D, radius: number, color: string): void;
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void;
+  statusFrost(pos: Vector2D, radius: number): void;
+  statusThermal(pos: Vector2D, radius: number, intensity: number): void;
+  statusVoid(pos: Vector2D, radius: number): void;
+  statusKinetic(pos: Vector2D, velocity: Vector2D): void;
 }
 
 export function parseColor(hex: string): [number, number, number] {

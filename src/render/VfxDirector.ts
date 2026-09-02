@@ -144,4 +144,20 @@ export class VfxDirector {
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
     this.backend.zoneHazardPulse(pos, radius, color);
   }
+
+  statusFrost(pos: Vector2D, radius: number): void {
+    this.backend.statusFrost(pos, radius);
+  }
+
+  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+    this.backend.statusThermal(pos, radius, intensity);
+  }
+
+  statusVoid(pos: Vector2D, radius: number): void {
+    this.backend.statusVoid(pos, radius);
+  }
+
+  statusKinetic(pos: Vector2D, velocity: Vector2D): void {
+    this.backend.statusKinetic(pos, velocity);
+  }
 }

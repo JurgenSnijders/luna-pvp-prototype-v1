@@ -351,3 +351,105 @@ export function zoneHazardPulse(
     'SECONDARY',
   );
 }
+
+export function statusFrostOrbit(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  radius: number,
+): void {
+  const count = 1 + Math.floor(Math.random() * 2);
+  const color = '#00e5ff';
+  const [r, g, b] = parseColor(color);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const edge = pos.add(Vector2D.fromAngle(angle, radius * (0.9 + Math.random() * 0.15)));
+    const tangent = new Vector2D(-Math.sin(angle), Math.cos(angle));
+    const speed = 80 + Math.random() * 40;
+    const vel = tangent.scale(speed);
+    ctx.spawnParticle(
+      makeParticle({
+        posX: edge.x,
+        posY: edge.y,
+        velX: vel.x,
+        velY: vel.y,
+        life: 0.35,
+        size: 3 + Math.random() * 2,
+        rot: angle,
+        angVel: 4,
+        drag: 0.96,
+        gravity: 0,
+        shapeId: ShapeId.SHARD,
+        r,
+        g,
+        b,
+        peakAlpha: 0.85,
+        additive: true,
+      }),
+      'SECONDARY',
+    );
+  }
+}
+
+export function statusThermalSparks(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  radius: number,
+  intensity: number,
+): void {
+  const maxSpawns = Math.min(3, Math.ceil(intensity * 3));
+  for (let i = 0; i < maxSpawns; i++) {
+    if (Math.random() > intensity) continue;
+    const color = Math.random() > 0.5 ? '#ff4400' : '#ffaa00';
+    const [r, g, b] = parseColor(color);
+    const angle = Math.random() * Math.PI * 2;
+    const spawn = pos.add(Vector2D.fromAngle(angle, radius * 0.3 * Math.random()));
+    ctx.spawnParticle(
+      makeParticle({
+        posX: spawn.x,
+        posY: spawn.y,
+        velX: (Math.random() - 0.5) * 20,
+        velY: -20 - Math.random() * 30,
+        life: 0.4,
+        size: 2 + Math.random() * 2,
+        rot: 0,
+        angVel: 0,
+        drag: 0.97,
+        gravity: -8,
+        shapeId: ShapeId.GLOW,
+        r,
+        g,
+        b,
+        peakAlpha: 0.9,
+        additive: true,
+      }),
+      'SECONDARY',
+    );
+  }
+}
+
+export function statusVoidCollapse(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  radius: number,
+): void {
+  const count = 1 + Math.floor(Math.random() * 2);
+  const color = '#bf00ff';
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const edge = pos.add(Vector2D.fromAngle(angle, radius * 1.5));
+    const inward = pos.sub(edge).normalize().scale(70 + Math.random() * 30);
+    spawnStreak(ctx, edge, inward, 8 + Math.random() * 4, color, 0.75, 0.3, 'SECONDARY');
+  }
+}
+
+export function statusKineticSlipstream(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  velocity: Vector2D,
+): void {
+  if (velocity.magSq() <= 50 * 50) return;
+  const back = velocity.normalize().scale(-1);
+  const slipPos = pos.add(back.scale(8));
+  const slipVel = back.scale(velocity.mag() * 0.15);
+  spawnStreak(ctx, slipPos, slipVel, 12, '#e0f8ff', 0.7, 0.2, 'SECONDARY');
+}

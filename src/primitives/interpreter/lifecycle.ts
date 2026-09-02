@@ -53,6 +53,7 @@ const DIRECTIONAL_RING_ARCHETYPES = new Set<SpellArchetype>(['KINETIC', 'SONIC',
 
 const stampedZoneIds = new Set<string>();
 let zoneVfxFrame = 0;
+let statusVfxFrame = 0;
 
 function stampImpactDecal(
   hit: { projectile: Projectile; hitPos: Vector2D },
@@ -132,6 +133,36 @@ function processZoneParticleTicks(interp: Interpreter, world: PhysicsWorld): voi
       interp.particles?.zoneHazardPulse(zone.pos, zone.config.radius, color);
     } else if (Math.abs(zone.config.strength) >= 2000) {
       interp.particles?.ember(zone.pos);
+    }
+  }
+}
+
+function processStatusParticleTicks(interp: Interpreter, world: PhysicsWorld): void {
+  statusVfxFrame++;
+  if (statusVfxFrame % 5 !== 0) return;
+  if (!getGraphicsSettings().particleTrails) return;
+
+  for (const entity of world.getCombatants()) {
+    if (entity.isDead || entity.isStealthed()) continue;
+    const pos = entity.pos;
+    const r = entity.effectiveRadius;
+
+    if (entity.activeStatuses.has('FROST')) {
+      interp.particles?.statusFrost(pos, r);
+    }
+    if (entity.activeStatuses.has('FIRE') || entity.activeStatuses.has('PLASMA')) {
+      const intensity = entity.activeStatuses.has('PLASMA')
+        ? Math.min(1, entity.instabilityPct / 100)
+        : Math.min(1, entity.vel.mag() / 250);
+      if (intensity > 0.08) {
+        interp.particles?.statusThermal(pos, r, intensity);
+      }
+    }
+    if (entity.activeStatuses.has('VOID') || entity.activeStatuses.has('GRAVITY')) {
+      interp.particles?.statusVoid(pos, r);
+    }
+    if (entity.activeStatuses.has('KINETIC') && entity.vel.mag() > 50) {
+      interp.particles?.statusKinetic(pos, entity.vel);
     }
   }
 }
@@ -505,6 +536,7 @@ export function processLifecycleEvents(
   stampZoneExpirationDecals(world);
   processObstacleDestructions(interp, world);
   processZoneParticleTicks(interp, world);
+  processStatusParticleTicks(interp, world);
 }
 
 export function updateTrajectories(

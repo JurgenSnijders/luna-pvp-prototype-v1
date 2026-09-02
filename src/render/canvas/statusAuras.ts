@@ -22,64 +22,47 @@ function intensityAlpha(progress: number, base = 0.6): number {
 function drawFrostAura(a: AuraCtx): void {
   const { ctx, entity, pos, nowMs, progress } = a;
   const radius = entity.effectiveRadius;
-  const ringAlpha = intensityAlpha(progress, 0.6);
+  const ringAlpha = intensityAlpha(progress, 0.4);
   const ringR = radius + 4;
   const rotation = nowMs * 0.001;
 
   ctx.strokeStyle = `rgba(0, 229, 255, ${ringAlpha})`;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.25;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, ringR, 0, Math.PI * 2);
   ctx.stroke();
 
-  for (let i = 0; i < 6; i++) {
-    const angle = rotation + (i * Math.PI * 2) / 6;
-    const inner = ringR - 3;
-    const outer = ringR + 5;
+  for (let i = 0; i < 4; i++) {
+    const angle = rotation + (i * Math.PI * 2) / 4;
+    const inner = ringR - 2;
+    const outer = ringR + 4;
     ctx.beginPath();
     ctx.moveTo(pos.x + Math.cos(angle) * inner, pos.y + Math.sin(angle) * inner);
     ctx.lineTo(pos.x + Math.cos(angle) * outer, pos.y + Math.sin(angle) * outer);
     ctx.stroke();
   }
-
-  if (entity.vel.magSq() > 100) {
-    const back = entity.vel.normalize().scale(-1);
-    const treadStart = pos.add(back.scale(radius * 0.6));
-    const treadEnd = treadStart.add(back.scale(18));
-    ctx.strokeStyle = `rgba(180, 240, 255, ${ringAlpha * 0.5})`;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(treadStart.x, treadStart.y);
-    ctx.lineTo(treadEnd.x, treadEnd.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
 }
 
 function drawKineticAura(a: AuraCtx): void {
-  const { ctx, entity, pos } = a;
+  const { ctx, entity, pos, progress } = a;
   if (entity.vel.magSq() <= 200) return;
   const radius = entity.effectiveRadius;
   const back = entity.vel.normalize().scale(-1);
-  const perp = new Vector2D(-back.y, back.x);
-  const base = pos.add(back.scale(radius * 0.5));
-  for (const off of [-3, 3]) {
-    const start = base.add(perp.scale(off));
-    const end = start.add(back.scale(24));
-    ctx.strokeStyle = off < 0 ? 'rgba(224, 248, 255, 0.85)' : 'rgba(0, 229, 255, 0.75)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
-    ctx.stroke();
-  }
+  const alpha = intensityAlpha(progress, 0.5);
+  const start = pos.add(back.scale(radius * 0.5));
+  const end = start.add(back.scale(20));
+  ctx.strokeStyle = `rgba(0, 229, 255, ${alpha})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  ctx.lineTo(end.x, end.y);
+  ctx.stroke();
 }
 
 function drawEarthAura(a: AuraCtx): void {
   const { ctx, entity, pos, progress } = a;
   const radius = entity.effectiveRadius;
-  const alpha = intensityAlpha(progress, 0.75);
+  const alpha = intensityAlpha(progress, 0.6);
   const bracketR = radius + 6;
   ctx.strokeStyle = `rgba(212, 163, 115, ${alpha})`;
   ctx.lineWidth = 2.5;
@@ -145,15 +128,15 @@ function drawFireAura(a: AuraCtx): void {
   const back = entity.vel.magSq() > 0 ? entity.vel.normalize().scale(-1) : Vector2D.fromAngle(Math.PI, 1);
   const flareStart = pos.add(back.scale(radius));
   const flareEnd = flareStart.add(back.scale(8 + speedFactor * 22));
-  ctx.strokeStyle = `rgba(255, 68, 0, ${0.35 + speedFactor * 0.55})`;
-  ctx.lineWidth = 2 + speedFactor * 3;
+  ctx.strokeStyle = `rgba(255, 68, 0, ${0.25 + speedFactor * 0.4})`;
+  ctx.lineWidth = 1 + speedFactor * 1.5;
   ctx.beginPath();
   ctx.moveTo(flareStart.x, flareStart.y);
   ctx.lineTo(flareEnd.x, flareEnd.y);
   ctx.stroke();
 
-  ctx.strokeStyle = `rgba(255, 170, 0, ${0.25 + speedFactor * 0.4})`;
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = `rgba(255, 170, 0, ${0.18 + speedFactor * 0.28})`;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, radius + 2 + speedFactor * 4, 0, Math.PI * 2);
   ctx.stroke();
@@ -163,16 +146,16 @@ function drawPlasmaAura(a: AuraCtx): void {
   const { ctx, entity, pos, nowMs } = a;
   if (entity.instabilityPct < 70) return;
   const radius = entity.effectiveRadius;
-  const sparkAlpha = 0.5 + 0.5 * Math.sin(nowMs * 0.02);
+  const sparkAlpha = 0.35 + 0.35 * Math.sin(nowMs * 0.02);
   ctx.strokeStyle = `rgba(255, 0, 127, ${sparkAlpha})`;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1;
   for (let i = 0; i < 4; i++) {
     const edgeAngle = (nowMs * 0.003 + i * Math.PI * 0.5) % (Math.PI * 2);
     const edgeX = pos.x + Math.cos(edgeAngle) * radius;
     const edgeY = pos.y + Math.sin(edgeAngle) * radius;
     ctx.beginPath();
     ctx.moveTo(edgeX, edgeY);
-    ctx.lineTo(edgeX + (Math.random() - 0.5) * 8, pos.y + radius + 6 + Math.random() * 10);
+    ctx.lineTo(edgeX + (Math.random() - 0.5) * 5, pos.y + radius + 4 + Math.random() * 6);
     ctx.stroke();
   }
 }
@@ -370,16 +353,16 @@ function drawLightningAura(a: AuraCtx): void {
 
 function drawVoidAura(a: AuraCtx): void {
   const { ctx, entity, pos, progress } = a;
-  const alpha = intensityAlpha(progress, 0.55);
+  const alpha = intensityAlpha(progress, 0.45);
   const radius = entity.effectiveRadius + 3;
   const speed = Math.min(1, entity.vel.mag() / 300);
   ctx.strokeStyle = `rgba(204, 68, 255, ${alpha})`;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.25;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
   ctx.stroke();
 
-  const tickCount = 6 + Math.floor(speed * 4);
+  const tickCount = 6;
   for (let i = 0; i < tickCount; i++) {
     const angle = (i * Math.PI * 2) / tickCount;
     const outerX = pos.x + Math.cos(angle) * (radius + 6);

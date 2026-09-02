@@ -7,6 +7,35 @@ import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 import { drawStatusAuras } from './statusAuras';
 
+export function drawEntityContactShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  elevation = 0,
+): void {
+  const shadowRadius = radius * 1.25 * (1 - elevation * 0.2);
+  const shadowY = y + radius * 0.25 + elevation * 4;
+  const grad = ctx.createRadialGradient(
+    x,
+    shadowY,
+    shadowRadius * 0.2,
+    x,
+    shadowY,
+    shadowRadius,
+  );
+  grad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
+  grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.25)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+  ctx.save();
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(x, shadowY, shadowRadius, shadowRadius * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function lerpColor(a: string, b: string, t: number): string {
   const parse = (hex: string): [number, number, number] => {
     const h = hex.replace('#', '');
@@ -68,10 +97,17 @@ function drawCombatantBody(
   const hasGravity = entity.activeStatuses.has('GRAVITY');
   const gravityBob = hasGravity ? Math.sin(nowMs * 0.006) * 3 : 0;
   const visualPos = physicsPos.add(new Vector2D(0, gravityBob));
+  const elevation = hasGravity ? Math.abs(gravityBob) / 3 : 0;
+
+  const radius = entity.effectiveRadius;
+  const shadowAlpha = entity.isStealthed() ? ctx.globalAlpha * 0.35 : ctx.globalAlpha;
+  ctx.save();
+  ctx.globalAlpha = shadowAlpha;
+  drawEntityContactShadow(ctx, physicsPos.x, physicsPos.y, radius, elevation);
+  ctx.restore();
 
   drawStatusAuras(ctx, entity, visualPos, nowMs, physicsPos, world);
 
-  const radius = entity.effectiveRadius;
   const drawColor = entity.activeMorph ? '#6a7a8a' : fillColor;
 
   let drawPos = visualPos;
@@ -174,6 +210,8 @@ export function drawSummons(
     const half = summon.config.radius ?? summon.radius;
     const turretColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#88aa44';
     const decoyColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#aa6688';
+
+    drawEntityContactShadow(ctx, pos.x, pos.y, half);
 
     if (summon.config.actorArchetype === 'TURRET') {
       ctx.fillStyle = turretColor;

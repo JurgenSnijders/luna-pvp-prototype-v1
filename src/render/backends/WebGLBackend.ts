@@ -36,6 +36,10 @@ import {
   triggerMuzzleFlash as triggerMuzzleFlashImpl,
   zoneHazardPulse as zoneHazardPulseImpl,
   zoneVortexTick as zoneVortexTickImpl,
+  statusFrostOrbit as statusFrostOrbitImpl,
+  statusKineticSlipstream as statusKineticSlipstreamImpl,
+  statusThermalSparks as statusThermalSparksImpl,
+  statusVoidCollapse as statusVoidCollapseImpl,
 } from './webgl/vfxRecipes';
 
 const EMPTY_COUNTERS: VfxCounters = {
@@ -387,5 +391,21 @@ export class WebGLBackend implements ParticleBackend {
 
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
     zoneHazardPulseImpl(this.spawnCtx(), pos, radius, color);
+  }
+
+  statusFrost(pos: Vector2D, radius: number): void {
+    statusFrostOrbitImpl(this.spawnCtx(), pos, radius);
+  }
+
+  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+    statusThermalSparksImpl(this.spawnCtx(), pos, radius, intensity);
+  }
+
+  statusVoid(pos: Vector2D, radius: number): void {
+    statusVoidCollapseImpl(this.spawnCtx(), pos, radius);
+  }
+
+  statusKinetic(pos: Vector2D, velocity: Vector2D): void {
+    statusKineticSlipstreamImpl(this.spawnCtx(), pos, velocity);
   }
 }

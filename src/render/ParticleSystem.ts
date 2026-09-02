@@ -111,4 +111,20 @@ export class ParticleSystem {
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
     this.director.zoneHazardPulse(pos, radius, color);
   }
+
+  statusFrost(pos: Vector2D, radius: number): void {
+    this.director.statusFrost(pos, radius);
+  }
+
+  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+    this.director.statusThermal(pos, radius, intensity);
+  }
+
+  statusVoid(pos: Vector2D, radius: number): void {
+    this.director.statusVoid(pos, radius);
+  }
+
+  statusKinetic(pos: Vector2D, velocity: Vector2D): void {
+    this.director.statusKinetic(pos, velocity);
+  }
 }

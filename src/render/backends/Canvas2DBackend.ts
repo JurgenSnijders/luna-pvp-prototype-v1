@@ -360,4 +360,30 @@ export class Canvas2DBackend implements ParticleBackend {
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
     this.spawnRing(pos, radius * 0.9, 2, color, 0.5, 0.4, 'SECONDARY');
   }
+
+  statusFrost(pos: Vector2D, radius: number): void {
+    const angle = Math.random() * Math.PI * 2;
+    const edge = pos.add(Vector2D.fromAngle(angle, radius));
+    const tangent = new Vector2D(-Math.sin(angle), Math.cos(angle)).scale(70);
+    this.spawnStreak(edge, tangent, 6, '#00e5ff', 0.75, 0.35, 'SECONDARY');
+  }
+
+  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+    if (Math.random() > intensity) return;
+    const spawn = pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, radius * 0.2));
+    this.spawn(spawn, new Vector2D((Math.random() - 0.5) * 15, -25), 0.4, '#ff6600', 3);
+  }
+
+  statusVoid(pos: Vector2D, radius: number): void {
+    const angle = Math.random() * Math.PI * 2;
+    const edge = pos.add(Vector2D.fromAngle(angle, radius * 1.5));
+    const inward = pos.sub(edge).normalize().scale(60);
+    this.spawnStreak(edge, inward, 8, '#bf00ff', 0.7, 0.3, 'SECONDARY');
+  }
+
+  statusKinetic(pos: Vector2D, velocity: Vector2D): void {
+    if (velocity.magSq() <= 50 * 50) return;
+    const back = velocity.normalize().scale(-1);
+    this.spawnStreak(pos.add(back.scale(6)), back.scale(40), 10, '#e0f8ff', 0.65, 0.2, 'SECONDARY');
+  }
 }
