@@ -335,7 +335,7 @@ function init(app: GameApp): void {
         window.innerHeight,
         app.arenaShrink.getShrinkProgress(),
         app.arenaShrink.isShrinking,
-        app.player.activeAimingState,
+        app.player,
       );
       app.ctx.restore();
 

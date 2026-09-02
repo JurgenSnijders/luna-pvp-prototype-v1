@@ -186,12 +186,33 @@ export class Player extends Entity {
       mode,
       origin: { x: this.pos.x, y: this.pos.y },
       target: { x: target.x, y: target.y },
+      cursor: { x: this.aimTarget.x, y: this.aimTarget.y },
       angle,
       range: params.range,
       width: params.width,
       radialRadius: params.radialRadius,
       playerRadius: this.radius,
     };
+  }
+
+  private syncAimFromCursor(): void {
+    const state = this.activeAimingState;
+    if (!state) return;
+
+    const ox = this.pos.x;
+    const oy = this.pos.y;
+    const dx = state.cursor.x - ox;
+    const dy = state.cursor.y - oy;
+    const dist = Math.hypot(dx, dy);
+    const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+    const clampedDist =
+      state.mode === 'directional' ? Math.min(dist, state.range) : dist;
+    const targetX = ox + Math.cos(angle) * clampedDist;
+    const targetY = oy + Math.sin(angle) * clampedDist;
+
+    state.angle = angle;
+    state.target = { x: targetX, y: targetY };
+    this.aimTarget = new Vector2D(targetX, targetY);
   }
 
   startAiming(slotIndex: number): boolean {
@@ -206,29 +227,14 @@ export class Player extends Entity {
     if (!mode) return false;
 
     this.activeAimingState = this.buildAimingState(slotIndex, ability);
-    this.updateAimTarget({ x: this.aimTarget.x, y: this.aimTarget.y });
+    this.syncAimFromCursor();
     return true;
   }
 
   updateAimTarget(mouseWorldPos: { x: number; y: number }): void {
     if (!this.activeAimingState) return;
-
-    const state = this.activeAimingState;
-    const ox = this.pos.x;
-    const oy = this.pos.y;
-    const dx = mouseWorldPos.x - ox;
-    const dy = mouseWorldPos.y - oy;
-    const dist = Math.hypot(dx, dy);
-    const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
-    const clampedDist =
-      state.mode === 'directional' ? Math.min(dist, state.range) : dist;
-    const targetX = ox + Math.cos(angle) * clampedDist;
-    const targetY = oy + Math.sin(angle) * clampedDist;
-
-    state.target = { x: targetX, y: targetY };
-    state.angle = angle;
-    state.origin = { x: ox, y: oy };
-    this.aimTarget = new Vector2D(targetX, targetY);
+    this.activeAimingState.cursor = { x: mouseWorldPos.x, y: mouseWorldPos.y };
+    this.syncAimFromCursor();
   }
 
   confirmAimCast(onCast: SlotCastCallback): void {
@@ -598,16 +604,7 @@ export class Player extends Entity {
     }
 
     if (this.activeAimingState) {
-      const s = this.activeAimingState;
-      const dist = Math.hypot(s.target.x - s.origin.x, s.target.y - s.origin.y);
-      s.origin = { x: this.pos.x, y: this.pos.y };
-      if (dist > 0.01) {
-        s.target = {
-          x: this.pos.x + Math.cos(s.angle) * dist,
-          y: this.pos.y + Math.sin(s.angle) * dist,
-        };
-        this.aimTarget = new Vector2D(s.target.x, s.target.y);
-      }
+      this.syncAimFromCursor();
     }
 
     const rawMove = this.inputMove;

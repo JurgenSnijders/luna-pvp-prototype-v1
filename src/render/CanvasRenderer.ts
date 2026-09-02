@@ -11,9 +11,10 @@ import {
   combatEventToFct,
   FloatingCombatTextManager,
 } from './canvas/FloatingCombatText';
-import type { AimingState } from './canvas/AimingIndicator';
 import { AimingIndicatorRenderer } from './canvas/AimingIndicator';
+import { lerpPos } from './canvas/helpers';
 import type { CanvasRenderCtx } from './canvas/renderCtx';
+import type { Player } from '../entities/Player';
 import { SpriteCache } from './canvas/SpriteCache';
 import {
   drawConstraints,
@@ -71,7 +72,7 @@ export class CanvasRenderer {
     height: number,
     shrinkProgress = 0,
     isShrinking = false,
-    aimingState: AimingState | null = null,
+    aimingPlayer: Player | null = null,
   ): void {
     const ctx = this.ctx;
     const now = performance.now();
@@ -98,8 +99,10 @@ export class CanvasRenderer {
     drawSummons(ctx, world, alpha);
     drawConstraints(ctx, world);
     drawProjectiles(ctx, state, world, alpha);
-    if (aimingState) {
-      this.aimingRenderer.render(ctx, aimingState);
+    const aimingState = aimingPlayer?.activeAimingState ?? null;
+    if (aimingState && aimingPlayer) {
+      const origin = lerpPos(aimingPlayer, alpha);
+      this.aimingRenderer.render(ctx, aimingState, origin);
     }
     drawOverheadHUD(ctx, world, alpha);
 

@@ -13,11 +13,34 @@ export interface AimingState {
   mode: AimingMode;
   origin: { x: number; y: number };
   target: { x: number; y: number };
+  /** Unclamped mouse world position; overlay length/angle is rebuilt from this at draw time. */
+  cursor: { x: number; y: number };
   angle: number;
   range: number;
   width: number;
   radialRadius: number;
   playerRadius: number;
+}
+
+export function layoutAimingVisual(
+  state: AimingState,
+  origin: { x: number; y: number },
+): AimingState {
+  const dx = state.cursor.x - origin.x;
+  const dy = state.cursor.y - origin.y;
+  const dist = Math.hypot(dx, dy);
+  const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+  const clampedDist =
+    state.mode === 'directional' ? Math.min(dist, state.range) : dist;
+  return {
+    ...state,
+    origin: { x: origin.x, y: origin.y },
+    angle,
+    target: {
+      x: origin.x + Math.cos(angle) * clampedDist,
+      y: origin.y + Math.sin(angle) * clampedDist,
+    },
+  };
 }
 
 const DIRECTIONAL_TYPES: TrajectoryType[] = [
@@ -386,12 +409,17 @@ export function drawAoERadial(
 }
 
 export class AimingIndicatorRenderer {
-  render(ctx: CanvasRenderingContext2D, state: AimingState): void {
+  render(
+    ctx: CanvasRenderingContext2D,
+    state: AimingState,
+    origin?: { x: number; y: number },
+  ): void {
+    const visual = origin ? layoutAimingVisual(state, origin) : state;
     const now = performance.now();
-    if (state.mode === 'directional') {
-      drawSkillshotArrow(ctx, state, now);
+    if (visual.mode === 'directional') {
+      drawSkillshotArrow(ctx, visual, now);
     } else {
-      drawAoERadial(ctx, state, now);
+      drawAoERadial(ctx, visual, now);
     }
   }
 }
