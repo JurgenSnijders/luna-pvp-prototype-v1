@@ -5,7 +5,8 @@ import {
   CRT_SHADER,
   FULLSCREEN_VERTEX,
   OPAQUE_COMPOSITE_SHADER,
-} from './shaders';
+  PERSISTENCE_SHADER,
+} from './postShaders';
 import {
   compileShader,
   createFramebuffer,
@@ -28,6 +29,14 @@ export interface CrtPresentParams {
   brightness: number;
   time: number;
   effectUniforms: Record<string, number>;
+  persistence: {
+    enabled: boolean;
+    decay: number;
+    threshold: number;
+    reprojectU: number;
+    reprojectV: number;
+    reset: boolean;
+  };
 }
 
 export class PostFX {
@@ -36,17 +45,22 @@ export class PostFX {
   private compositeProgram: WebGLProgram;
   private opaqueCompositeProgram: WebGLProgram;
   private crtProgram: WebGLProgram;
+  private persistProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
   private bloomFboA: FramebufferTarget | null = null;
   private bloomFboB: FramebufferTarget | null = null;
   private vfxCompositeFbo: FramebufferTarget | null = null;
+  private persistFboA: FramebufferTarget | null = null;
+  private persistFboB: FramebufferTarget | null = null;
+  private persistIndex = 0;
+  private persistValid = false;
   private worldTexture: WebGLTexture | null = null;
   private worldTexW = 0;
   private worldTexH = 0;
   private width = 0;
   private height = 0;
-  private crtUniformCache = new Map<string, WebGLUniformLocation | null>();
+  private uniformCache = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
 
   constructor(private gl: WebGL2RenderingContext) {
     const vs = compileShader(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX);
@@ -55,31 +69,42 @@ export class PostFX {
     const fsC = compileShader(gl, gl.FRAGMENT_SHADER, COMPOSITE_SHADER);
     const fsOpaque = compileShader(gl, gl.FRAGMENT_SHADER, OPAQUE_COMPOSITE_SHADER);
     const fsCrt = compileShader(gl, gl.FRAGMENT_SHADER, CRT_SHADER);
+    const fsPersist = compileShader(gl, gl.FRAGMENT_SHADER, PERSISTENCE_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
     this.opaqueCompositeProgram = linkProgram(gl, vs, fsOpaque);
     this.crtProgram = linkProgram(gl, vs, fsCrt);
+    this.persistProgram = linkProgram(gl, vs, fsPersist);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
     gl.deleteShader(fsC);
     gl.deleteShader(fsOpaque);
     gl.deleteShader(fsCrt);
+    gl.deleteShader(fsPersist);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
   }
 
   rebuild(): void {
     this.destroyFbos();
-    this.crtUniformCache.clear();
+    this.uniformCache.clear();
     this.width = 0;
     this.height = 0;
+    this.persistValid = false;
   }
 
   private destroyFbos(): void {
     const gl = this.gl;
-    for (const fbo of [this.sceneFbo, this.bloomFboA, this.bloomFboB, this.vfxCompositeFbo]) {
+    for (const fbo of [
+      this.sceneFbo,
+      this.bloomFboA,
+      this.bloomFboB,
+      this.vfxCompositeFbo,
+      this.persistFboA,
+      this.persistFboB,
+    ]) {
       if (!fbo) continue;
       gl.deleteFramebuffer(fbo.fbo);
       gl.deleteTexture(fbo.texture);
@@ -88,6 +113,9 @@ export class PostFX {
     this.bloomFboA = null;
     this.bloomFboB = null;
     this.vfxCompositeFbo = null;
+    this.persistFboA = null;
+    this.persistFboB = null;
+    this.persistIndex = 0;
     if (this.worldTexture) {
       gl.deleteTexture(this.worldTexture);
       this.worldTexture = null;
@@ -100,6 +128,7 @@ export class PostFX {
     if (width === this.width && height === this.height && this.sceneFbo) return;
     this.width = width;
     this.height = height;
+    this.persistValid = false;
     const bw = Math.max(1, Math.floor(width * bloomRes));
     const bh = Math.max(1, Math.floor(height * bloomRes));
     if (!this.sceneFbo) {
@@ -112,6 +141,10 @@ export class PostFX {
       resizeFramebuffer(this.gl, this.bloomFboA!, bw, bh);
       resizeFramebuffer(this.gl, this.bloomFboB!, bw, bh);
       resizeFramebuffer(this.gl, this.vfxCompositeFbo!, width, height);
+    }
+    if (this.persistFboA) {
+      resizeFramebuffer(this.gl, this.persistFboA, width, height);
+      resizeFramebuffer(this.gl, this.persistFboB!, width, height);
     }
   }
 
@@ -157,12 +190,15 @@ export class PostFX {
     gl.useProgram(this.compositeProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_scene')!, 0);
+    gl.uniform1i(this.uniform(this.compositeProgram, 'u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.bloomFboA!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_bloom')!, 1);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_bloomIntensity')!, bloomIntensity);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_chroma')!, chroma);
+    gl.uniform1i(this.uniform(this.compositeProgram, 'u_bloom')!, 1);
+    gl.uniform1f(
+      this.uniform(this.compositeProgram, 'u_bloomIntensity')!,
+      bloomIntensity,
+    );
+    gl.uniform1f(this.uniform(this.compositeProgram, 'u_chroma')!, chroma);
     this.drawFullscreen();
   }
 
@@ -192,15 +228,22 @@ export class PostFX {
     gl.useProgram(this.opaqueCompositeProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
-    gl.uniform1i(gl.getUniformLocation(this.opaqueCompositeProgram, 'u_world')!, 0);
+    gl.uniform1i(this.uniform(this.opaqueCompositeProgram, 'u_world')!, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
-    gl.uniform1i(gl.getUniformLocation(this.opaqueCompositeProgram, 'u_vfx')!, 1);
+    gl.uniform1i(this.uniform(this.opaqueCompositeProgram, 'u_vfx')!, 1);
     this.drawFullscreen();
+
+    let sourceTex = target.texture;
+    if (params.persistence.enabled) {
+      sourceTex = this.applyPersistence(target.texture, bufferWidth, bufferHeight, params);
+    } else {
+      this.releasePersistTargets();
+    }
 
     const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
     if (hasBloom) {
-      this.extractBloom(target.texture, params.bloomPasses, params.bloomThreshold);
+      this.extractBloom(sourceTex, params.bloomPasses, params.bloomThreshold);
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -211,40 +254,113 @@ export class PostFX {
 
     gl.useProgram(this.crtProgram);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    gl.uniform1i(this.crtUniform('u_scene')!, 0);
+    gl.bindTexture(gl.TEXTURE_2D, sourceTex);
+    gl.uniform1i(this.uniform(this.crtProgram, 'u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, hasBloom ? this.bloomFboA!.texture : target.texture);
-    gl.uniform1i(this.crtUniform('u_bloom')!, 1);
-    gl.uniform1f(this.crtUniform('u_hasBloom')!, hasBloom ? 1 : 0);
-    gl.uniform1f(this.crtUniform('u_bloomIntensity')!, params.bloomIntensity);
-    gl.uniform2f(this.crtUniform('u_effectResolution')!, effectWidth, effectHeight);
-    gl.uniform1f(this.crtUniform('u_scanline')!, params.scanline);
-    gl.uniform1f(this.crtUniform('u_curvature')!, params.curvature);
-    gl.uniform1f(this.crtUniform('u_vignette')!, params.vignette);
-    gl.uniform1f(this.crtUniform('u_phosphor')!, params.phosphor);
+    gl.bindTexture(gl.TEXTURE_2D, hasBloom ? this.bloomFboA!.texture : sourceTex);
+    gl.uniform1i(this.uniform(this.crtProgram, 'u_bloom')!, 1);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_hasBloom')!, hasBloom ? 1 : 0);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_bloomIntensity')!, params.bloomIntensity);
+    gl.uniform2f(this.uniform(this.crtProgram, 'u_effectResolution')!, effectWidth, effectHeight);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_scanline')!, params.scanline);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_curvature')!, params.curvature);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_vignette')!, params.vignette);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_phosphor')!, params.phosphor);
     gl.uniform3f(
-      this.crtUniform('u_tintColor')!,
+      this.uniform(this.crtProgram, 'u_tintColor')!,
       params.tintColor[0],
       params.tintColor[1],
       params.tintColor[2],
     );
-    gl.uniform1f(this.crtUniform('u_tintAmount')!, params.tintAmount);
-    gl.uniform1f(this.crtUniform('u_brightness')!, params.brightness);
-    gl.uniform1f(this.crtUniform('u_time')!, params.time);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_tintAmount')!, params.tintAmount);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_brightness')!, params.brightness);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_time')!, params.time);
     for (const [name, value] of Object.entries(params.effectUniforms)) {
-      gl.uniform1f(this.crtUniform(name)!, value);
+      gl.uniform1f(this.uniform(this.crtProgram, name)!, value);
     }
     this.drawFullscreen();
   }
 
-  private crtUniform(name: string): WebGLUniformLocation | null {
-    let loc = this.crtUniformCache.get(name);
+  private uniform(program: WebGLProgram, name: string): WebGLUniformLocation | null {
+    let byName = this.uniformCache.get(program);
+    if (!byName) {
+      byName = new Map();
+      this.uniformCache.set(program, byName);
+    }
+    let loc = byName.get(name);
     if (loc === undefined) {
-      loc = this.gl.getUniformLocation(this.crtProgram, name);
-      this.crtUniformCache.set(name, loc);
+      loc = this.gl.getUniformLocation(program, name);
+      byName.set(name, loc);
     }
     return loc;
+  }
+
+  private ensurePersistTargets(width: number, height: number): void {
+    if (!this.persistFboA) {
+      this.persistFboA = createFramebuffer(this.gl, width, height);
+      this.persistFboB = createFramebuffer(this.gl, width, height);
+      this.persistIndex = 0;
+      this.persistValid = false;
+      return;
+    }
+    if (this.persistFboA.width !== width || this.persistFboA.height !== height) {
+      resizeFramebuffer(this.gl, this.persistFboA, width, height);
+      resizeFramebuffer(this.gl, this.persistFboB!, width, height);
+      this.persistValid = false;
+    }
+  }
+
+  private releasePersistTargets(): void {
+    if (!this.persistFboA) return;
+    const gl = this.gl;
+    gl.deleteFramebuffer(this.persistFboA.fbo);
+    gl.deleteTexture(this.persistFboA.texture);
+    gl.deleteFramebuffer(this.persistFboB!.fbo);
+    gl.deleteTexture(this.persistFboB!.texture);
+    this.persistFboA = null;
+    this.persistFboB = null;
+    this.persistIndex = 0;
+    this.persistValid = false;
+  }
+
+  private applyPersistence(
+    srcTex: WebGLTexture,
+    width: number,
+    height: number,
+    params: CrtPresentParams,
+  ): WebGLTexture {
+    this.ensurePersistTargets(width, height);
+    const gl = this.gl;
+    const readFbo = this.persistIndex === 0 ? this.persistFboA! : this.persistFboB!;
+    const writeFbo = this.persistIndex === 0 ? this.persistFboB! : this.persistFboA!;
+    const needsReset = !this.persistValid || params.persistence.reset;
+    const decay = needsReset ? 0 : params.persistence.decay;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo.fbo);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.persistProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(this.uniform(this.persistProgram, 'u_current')!, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, readFbo.texture);
+    gl.uniform1i(this.uniform(this.persistProgram, 'u_history')!, 1);
+    gl.uniform1f(this.uniform(this.persistProgram, 'u_decay')!, decay);
+    gl.uniform1f(
+      this.uniform(this.persistProgram, 'u_persistThreshold')!,
+      params.persistence.threshold,
+    );
+    gl.uniform2f(
+      this.uniform(this.persistProgram, 'u_reproject')!,
+      params.persistence.reprojectU,
+      params.persistence.reprojectV,
+    );
+    this.drawFullscreen();
+
+    this.persistIndex = 1 - this.persistIndex;
+    this.persistValid = true;
+    return writeFbo.texture;
   }
 
   private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {
@@ -257,8 +373,8 @@ export class PostFX {
     gl.useProgram(this.thresholdProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, source);
-    gl.uniform1i(gl.getUniformLocation(this.thresholdProgram, 'u_source')!, 0);
-    gl.uniform1f(gl.getUniformLocation(this.thresholdProgram, 'u_threshold')!, bloomThreshold);
+    gl.uniform1i(this.uniform(this.thresholdProgram, 'u_source')!, 0);
+    gl.uniform1f(this.uniform(this.thresholdProgram, 'u_threshold')!, bloomThreshold);
     this.drawFullscreen();
 
     for (let pass = 0; pass < bloomPasses; pass++) {
@@ -292,14 +408,14 @@ export class PostFX {
     gl.useProgram(this.blurProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, srcTex);
-    gl.uniform1i(gl.getUniformLocation(this.blurProgram, 'u_source')!, 0);
+    gl.uniform1i(this.uniform(this.blurProgram, 'u_source')!, 0);
     gl.uniform2f(
-      gl.getUniformLocation(this.blurProgram, 'u_direction')!,
+      this.uniform(this.blurProgram, 'u_direction')!,
       horizontal ? 1 : 0,
       horizontal ? 0 : 1,
     );
     gl.uniform2f(
-      gl.getUniformLocation(this.blurProgram, 'u_texelSize')!,
+      this.uniform(this.blurProgram, 'u_texelSize')!,
       1 / dst.width,
       1 / dst.height,
     );
@@ -311,12 +427,12 @@ export class PostFX {
     gl.useProgram(this.compositeProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_scene')!, 0);
+    gl.uniform1i(this.uniform(this.compositeProgram, 'u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(gl.getUniformLocation(this.compositeProgram, 'u_bloom')!, 1);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_bloomIntensity')!, 0);
-    gl.uniform1f(gl.getUniformLocation(this.compositeProgram, 'u_chroma')!, 0);
+    gl.uniform1i(this.uniform(this.compositeProgram, 'u_bloom')!, 1);
+    gl.uniform1f(this.uniform(this.compositeProgram, 'u_bloomIntensity')!, 0);
+    gl.uniform1f(this.uniform(this.compositeProgram, 'u_chroma')!, 0);
     this.drawFullscreen();
   }
 

@@ -7,7 +7,7 @@ import type {
   TriggerNode,
 } from '../../types/schema';
 import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
-import { sampleAbilityTrajectory, type TrajectoryTrace } from './trajectoryTracer';
+import { resolveIconTrajectoryPaths } from './trajectoryTracer';
 
 const LOGICAL_SIZE = 48;
 
@@ -311,99 +311,205 @@ function drawDeliveryLayer(ctx: CanvasRenderingContext2D, icon: IconContext): vo
   drawLinearShaft(ctx, archetypeColor);
 }
 
-function drawShuriken(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-  strokeWithGlow(ctx, color, () => {
-    ctx.lineWidth = 1.5;
-    const r = 6;
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawPayloadGlyph(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  style: ProjectileStyle,
+  color: string,
+  markerSize: number,
+): void {
+  const r = markerSize * 0.5;
+  const s = markerSize * 0.8;
+
+  switch (style) {
+    case 'SHURIKEN':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const angle = (Math.PI / 2) * i + Math.PI / 4;
+          const px = x + Math.cos(angle) * r;
+          const py = y + Math.sin(angle) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      });
+      break;
+    case 'BEAM':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.5, y + s * 0.5);
+        ctx.lineTo(x + s * 0.5, y - s * 0.5);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.25, y + s * 0.75);
+        ctx.lineTo(x + s * 0.75, y - s * 0.25);
+        ctx.stroke();
+      });
+      break;
+    case 'PULSING_ORB':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      break;
+    case 'CHAOS_LIGHTNING':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.5, y + s * 0.75);
+        ctx.lineTo(x - s * 0.125, y + s * 0.125);
+        ctx.lineTo(x - s * 0.375, y - s * 0.125);
+        ctx.lineTo(x + s * 0.125, y - s * 0.75);
+        ctx.lineTo(x + s * 0.375, y - s * 0.25);
+        ctx.lineTo(x + s * 0.625, y - s * 0.625);
+        ctx.stroke();
+      });
+      break;
+    default:
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r, y);
+        ctx.closePath();
+        ctx.stroke();
+      });
+      break;
+  }
+}
+
+function drawPathChevrons(
+  ctx: CanvasRenderingContext2D,
+  points: { x: number; y: number }[],
+  color: string,
+  logicalSize: number,
+): void {
+  if (points.length < 2) return;
+
+  const start = points[0];
+  const end = points[points.length - 1];
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  const minLength = logicalSize * 0.25;
+  if (length < minLength) return;
+
+  const angle = Math.atan2(dy, dx);
+  const ux = dx / length;
+  const uy = dy / length;
+  const chevronSpacing = logicalSize * 0.2;
+  const chevronSize = logicalSize * 0.08;
+  const startDist = logicalSize * 0.15;
+  const endMargin = logicalSize * 0.12;
+
+  ctx.save();
+  ctx.lineWidth = 1.5;
+
+  for (let dist = startDist; dist < length - endMargin; dist += chevronSpacing) {
+    const t = (dist - startDist) / Math.max(1, length - startDist - endMargin);
+    const alpha = 0.3 + t * 0.55;
+    const cx = start.x + ux * dist;
+    const cy = start.y + uy * dist;
+    ctx.strokeStyle = hexToRgba(color, alpha);
     ctx.beginPath();
-    for (let i = 0; i < 4; i++) {
-      const angle = (Math.PI / 2) * i + Math.PI / 4;
-      const px = x + Math.cos(angle) * r;
-      const py = y + Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+    ctx.moveTo(
+      cx - Math.cos(angle) * chevronSize * 0.3 - Math.sin(angle) * chevronSize * 0.5,
+      cy - Math.sin(angle) * chevronSize * 0.3 + Math.cos(angle) * chevronSize * 0.5,
+    );
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(
+      cx - Math.cos(angle) * chevronSize * 0.3 + Math.sin(angle) * chevronSize * 0.5,
+      cy - Math.sin(angle) * chevronSize * 0.3 - Math.cos(angle) * chevronSize * 0.5,
+    );
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawIconTrajectoryNetwork(
+  ctx: CanvasRenderingContext2D,
+  ability: AbilitySchema,
+  archetypeColor: string,
+  payloadStyle: ProjectileStyle,
+): boolean {
+  const result = resolveIconTrajectoryPaths(ability, LOGICAL_SIZE, 8);
+  if (result.paths.length === 0) return false;
+
+  const markerSize = LOGICAL_SIZE * 0.1;
+  const originRadius = Math.max(2, LOGICAL_SIZE * 0.04);
+  const lineWidth = Math.max(1.5, LOGICAL_SIZE * 0.035);
+
+  ctx.fillStyle = hexToRgba(archetypeColor, 0.6);
+  ctx.beginPath();
+  ctx.arc(result.origin.x, result.origin.y, originRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (const path of result.paths) {
+    if (path.points.length < 2) continue;
+
+    const start = path.points[0];
+    const end = path.points[path.points.length - 1];
+    const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+    gradient.addColorStop(0, hexToRgba(archetypeColor, 0.15));
+    gradient.addColorStop(0.7, hexToRgba(archetypeColor, 0.7));
+    gradient.addColorStop(1, hexToRgba(archetypeColor, 1));
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = lineWidth;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = archetypeColor;
+    ctx.shadowBlur = 4;
+
+    ctx.beginPath();
+    ctx.moveTo(path.points[0].x, path.points[0].y);
+    for (let i = 1; i < path.points.length; i++) {
+      ctx.lineTo(path.points[i].x, path.points[i].y);
     }
-    ctx.closePath();
+    if (path.isClosed) {
+      ctx.closePath();
+    }
     ctx.stroke();
-  });
-}
+    ctx.shadowBlur = 0;
 
-function drawBeamRails(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-  strokeWithGlow(ctx, color, () => {
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x - 4, y + 4);
-    ctx.lineTo(x + 4, y - 4);
-    ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x - 2, y + 6);
-    ctx.lineTo(x + 6, y - 2);
-    ctx.stroke();
-  });
-}
+    if (result.trajectoryType === 'LINEAR') {
+      drawPathChevrons(ctx, path.points, archetypeColor, LOGICAL_SIZE);
+    }
+  }
 
-function drawPulsingOrb(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-  strokeWithGlow(ctx, color, () => {
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-}
+  for (const endpoint of result.endpoints) {
+    drawPayloadGlyph(ctx, endpoint.x, endpoint.y, payloadStyle, archetypeColor, markerSize);
+  }
 
-function drawChaosLightning(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-  strokeWithGlow(ctx, color, () => {
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(x - 4, y + 6);
-    ctx.lineTo(x - 1, y + 1);
-    ctx.lineTo(x - 3, y - 1);
-    ctx.lineTo(x + 1, y - 6);
-    ctx.lineTo(x + 3, y - 2);
-    ctx.lineTo(x + 5, y - 5);
-    ctx.stroke();
-  });
-}
-
-function drawDiscDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-  strokeWithGlow(ctx, color, () => {
-    ctx.lineWidth = 1.5;
-    const r = 5;
-    ctx.beginPath();
-    ctx.moveTo(x, y - r);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x, y + r);
-    ctx.lineTo(x - r, y);
-    ctx.closePath();
-    ctx.stroke();
-  });
+  return true;
 }
 
 function drawPayloadLayer(ctx: CanvasRenderingContext2D, icon: IconContext): void {
   const { projectileStyle, archetypeColor, terminus } = icon;
   const { x, y } = terminus;
-
-  switch (projectileStyle) {
-    case 'SHURIKEN':
-      drawShuriken(ctx, x, y, archetypeColor);
-      break;
-    case 'BEAM':
-      drawBeamRails(ctx, x, y, archetypeColor);
-      break;
-    case 'PULSING_ORB':
-      drawPulsingOrb(ctx, x, y, archetypeColor);
-      break;
-    case 'CHAOS_LIGHTNING':
-      drawChaosLightning(ctx, x, y, archetypeColor);
-      break;
-    default:
-      drawDiscDiamond(ctx, x, y, archetypeColor);
-      break;
-  }
+  drawPayloadGlyph(ctx, x, y, projectileStyle, archetypeColor, LOGICAL_SIZE * 0.1);
 }
 
 function drawFrostAccents(ctx: CanvasRenderingContext2D, color: string): void {
@@ -512,101 +618,23 @@ function drawArchetypeAccents(ctx: CanvasRenderingContext2D, icon: IconContext):
 function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const icon = buildIconContext(ability);
   drawBackground(ctx);
-  drawDeliveryLayer(ctx, icon);
-  drawPayloadLayer(ctx, icon);
+  const drewNetwork = drawIconTrajectoryNetwork(
+    ctx,
+    ability,
+    icon.archetypeColor,
+    icon.projectileStyle,
+  );
+  if (!drewNetwork) {
+    drawDeliveryLayer(ctx, icon);
+    drawPayloadLayer(ctx, icon);
+  }
   drawArchetypeAccents(ctx, icon);
-}
-
-interface NormalizedTrace {
-  segments: Array<Array<{ x: number; y: number }>>;
-  fields: Array<{ x: number; y: number; radius: number; fieldType: string }>;
-  startPoint: { x: number; y: number };
-  endPoint: { x: number; y: number };
-  hasReturn: boolean;
-}
-
-function normalizeTrace(trace: TrajectoryTrace, logicalSize: number, padding: number): NormalizedTrace {
-  const flipY = (p: { x: number; y: number }) => ({ x: p.x, y: -p.y });
-
-  const rawSegments: Array<Array<{ x: number; y: number }>> = [];
-  let current: Array<{ x: number; y: number }> = [];
-  for (const p of trace.points) {
-    if (Number.isNaN(p.x)) {
-      if (current.length > 0) {
-        rawSegments.push(current);
-        current = [];
-      }
-      continue;
-    }
-    current.push(flipY(p));
-  }
-  if (current.length > 0) rawSegments.push(current);
-
-  const allPoints = rawSegments.flat();
-  const allFields = trace.fields.map((f) => ({ ...flipY(f), radius: f.radius, fieldType: f.fieldType }));
-
-  if (allPoints.length === 0) {
-    const center = logicalSize / 2;
-    return {
-      segments: [[{ x: center, y: center }]],
-      fields: allFields.map((f) => ({ ...f, x: center, y: center, radius: f.radius * 0.05 })),
-      startPoint: { x: center, y: center },
-      endPoint: { x: center, y: center },
-      hasReturn: trace.hasReturn,
-    };
-  }
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const p of allPoints) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  for (const f of allFields) {
-    minX = Math.min(minX, f.x - f.radius);
-    minY = Math.min(minY, f.y - f.radius);
-    maxX = Math.max(maxX, f.x + f.radius);
-    maxY = Math.max(maxY, f.y + f.radius);
-  }
-
-  const bw = maxX - minX || 1;
-  const bh = maxY - minY || 1;
-  const avail = logicalSize - padding * 2;
-  const scale = Math.min(avail / bw, avail / bh);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const center = logicalSize / 2;
-
-  const mapPoint = (p: { x: number; y: number }) => ({
-    x: center + (p.x - cx) * scale,
-    y: center + (p.y - cy) * scale,
-  });
-
-  const segments = rawSegments.map((seg) => seg.map(mapPoint));
-
-  return {
-    segments,
-    fields: allFields.map((f) => ({
-      ...mapPoint(f),
-      radius: f.radius * scale,
-      fieldType: f.fieldType,
-    })),
-    startPoint: mapPoint(flipY(trace.startPoint)),
-    endPoint: mapPoint(flipY(trace.endPoint)),
-    hasReturn: trace.hasReturn,
-  };
 }
 
 function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const archetype = ability.archetype ?? 'KINETIC';
-  const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
-  const trace = sampleAbilityTrajectory(ability);
-  const normalized = normalizeTrace(trace, LOGICAL_SIZE, 6);
+  const color = getArchetypeColor(archetype, ability.visuals?.color);
+  const payloadStyle = ability.visuals?.projectileStyle ?? 'DISC';
 
   drawBackground(ctx);
 
@@ -619,75 +647,10 @@ function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySche
   ctx.lineTo(LOGICAL_SIZE / 2, LOGICAL_SIZE / 2 + 4);
   ctx.stroke();
 
-  for (const field of normalized.fields) {
-    ctx.strokeStyle = archetypeColor;
-    ctx.shadowColor = archetypeColor;
-    ctx.shadowBlur = 4;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    ctx.arc(field.x, field.y, Math.max(3, field.radius), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.shadowBlur = 0;
+  const drewNetwork = drawIconTrajectoryNetwork(ctx, ability, color, payloadStyle);
+  if (!drewNetwork) {
+    drawDeliveryLayer(ctx, buildIconContext(ability));
   }
-
-  ctx.strokeStyle = archetypeColor;
-  ctx.shadowColor = archetypeColor;
-  ctx.shadowBlur = 10;
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  for (const segment of normalized.segments) {
-    if (segment.length < 2) continue;
-    ctx.beginPath();
-    ctx.moveTo(segment[0].x, segment[0].y);
-    for (let j = 1; j < segment.length; j++) {
-      ctx.lineTo(segment[j].x, segment[j].y);
-    }
-    ctx.stroke();
-
-    if (normalized.hasReturn && segment.length >= 4) {
-      const returnStart = Math.floor(segment.length * 0.55);
-      ctx.setLineDash([3, 2]);
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(segment[returnStart].x, segment[returnStart].y);
-      for (let j = returnStart + 1; j < segment.length; j++) {
-        ctx.lineTo(segment[j].x, segment[j].y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.lineWidth = 2;
-    }
-  }
-
-  ctx.shadowBlur = 0;
-
-  const { startPoint, endPoint } = normalized;
-
-  ctx.fillStyle = archetypeColor;
-  ctx.shadowColor = archetypeColor;
-  ctx.shadowBlur = 6;
-  ctx.beginPath();
-  ctx.arc(startPoint.x, startPoint.y, 2.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  const r = 4;
-  ctx.strokeStyle = archetypeColor;
-  ctx.shadowColor = archetypeColor;
-  ctx.shadowBlur = 6;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(endPoint.x, endPoint.y - r);
-  ctx.lineTo(endPoint.x + r, endPoint.y);
-  ctx.lineTo(endPoint.x, endPoint.y + r);
-  ctx.lineTo(endPoint.x - r, endPoint.y);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.shadowBlur = 0;
 }
 
 export function generateSpellIcon(

@@ -96,6 +96,7 @@ export interface EffectiveCrtSettings {
   tintAmount: number;
   brightness: number;
   effectUniforms: Record<string, number>;
+  persistence: { enabled: boolean; decay: number; threshold: number };
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -268,6 +269,7 @@ export function getEffectUniforms(): Record<string, number> {
   const out: Record<string, number> = {};
   for (const id of POST_EFFECT_IDS) {
     const def = POST_EFFECTS[id];
+    if ((def.pass ?? 'CRT') !== 'CRT') continue;
     const active = isPostEffectEnabled(id);
     for (const param of def.params) {
       if (!param.uniform) continue;
@@ -303,6 +305,15 @@ function resolveTintAmount(presetAmount: number): number {
   return presetAmount;
 }
 
+function resolvePersistence(): { enabled: boolean; decay: number; threshold: number } {
+  const enabled = isPostEffectEnabled('PERSISTENCE');
+  return {
+    enabled,
+    decay: enabled ? getPostEffectParam('PERSISTENCE', 'decay') : 0.85,
+    threshold: enabled ? getPostEffectParam('PERSISTENCE', 'threshold') : 0,
+  };
+}
+
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
@@ -313,6 +324,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const tintAmount = resolveTintAmount(presetCrt.tintAmount);
   const brightness = s.crtBrightness;
   const effectUniforms = s.crtEnabled ? getEffectUniforms() : {};
+  const persistenceOff = { enabled: false, decay: 0.85, threshold: 0 };
 
   if (!s.crtEnabled) {
     return {
@@ -330,6 +342,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       tintAmount: 0,
       brightness: 1,
       effectUniforms: {},
+      persistence: persistenceOff,
     };
   }
 
@@ -350,6 +363,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       tintAmount,
       brightness,
       effectUniforms: {},
+      persistence: persistenceOff,
     };
   }
 
@@ -368,6 +382,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     tintAmount,
     brightness,
     effectUniforms,
+    persistence: resolvePersistence(),
   };
 }
 

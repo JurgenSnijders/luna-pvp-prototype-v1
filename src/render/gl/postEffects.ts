@@ -6,6 +6,7 @@ export type PostEffectId =
   | 'CURVATURE'
   | 'VIGNETTE'
   | 'TINT'
+  | 'PERSISTENCE'
   | 'ROLL_BAR'
   | 'VHS_JITTER'
   | 'GRAIN'
@@ -34,6 +35,8 @@ export interface PostEffectParam {
 
 export type PostEffectGroup = 'CRT' | 'ANALOG' | 'RETRO' | 'REACTIVE' | 'GRADE';
 
+export type PostEffectPass = 'CRT' | 'PERSISTENCE';
+
 export interface PostEffectDef {
   id: PostEffectId;
   label: string;
@@ -43,6 +46,7 @@ export interface PostEffectDef {
   costHint: number;
   defaultEnabled: boolean;
   masterParam?: string;
+  pass?: PostEffectPass;
   params: PostEffectParam[];
 }
 
@@ -136,6 +140,39 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     costHint: 1,
     defaultEnabled: true,
     params: [],
+  },
+  PERSISTENCE: {
+    id: 'PERSISTENCE',
+    label: 'Phosphor Persistence',
+    group: 'CRT',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 2,
+    defaultEnabled: false,
+    masterParam: 'decay',
+    pass: 'PERSISTENCE',
+    params: [
+      {
+        key: 'decay',
+        label: 'Decay',
+        min: 0.5,
+        max: 0.98,
+        step: 0.01,
+        defaultValue: 0.85,
+        storage: { kind: 'effect' },
+        uniform: 'u_decay',
+      },
+      {
+        key: 'threshold',
+        label: 'Threshold',
+        min: 0,
+        max: 0.5,
+        step: 0.01,
+        defaultValue: 0,
+        storage: { kind: 'effect' },
+        uniform: 'u_persistThreshold',
+      },
+    ],
   },
   ROLL_BAR: {
     id: 'ROLL_BAR',

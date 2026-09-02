@@ -350,6 +350,89 @@ export function resolveLiveAimingPaths(
   );
 }
 
+export interface IconTrajectoryResult {
+  origin: { x: number; y: number };
+  paths: { points: { x: number; y: number }[]; isClosed: boolean }[];
+  endpoints: { x: number; y: number }[];
+  trajectoryType: TrajectoryType;
+}
+
+function mapIconPoint(
+  p: Point,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+): Point {
+  return { x: p.x * scale + offsetX, y: p.y * scale + offsetY };
+}
+
+export function resolveIconTrajectoryPaths(
+  ability: AbilitySchema,
+  logicalSize: number,
+  padding = 8,
+): IconTrajectoryResult {
+  const center = logicalSize / 2;
+  const emptyResult: IconTrajectoryResult = {
+    origin: { x: center, y: center },
+    paths: [],
+    endpoints: [],
+    trajectoryType: 'LINEAR',
+  };
+
+  const config = resolveLiveCastConfig(ability);
+  if (!config) return emptyResult;
+
+  const canonicalAngle =
+    config.trajectory.type === 'ORBIT_ANCHOR' ? 0 : -Math.PI / 4;
+  const rawPaths = resolveLiveAimingPaths(
+    ability,
+    { x: 0, y: 0 },
+    canonicalAngle,
+    0,
+  );
+  if (rawPaths.length === 0) return emptyResult;
+
+  let minX = 0;
+  let minY = 0;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (const path of rawPaths) {
+    for (const p of path.points) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+
+  const boxW = Math.max(maxX - minX, 1);
+  const boxH = Math.max(maxY - minY, 1);
+  const avail = logicalSize - padding * 2;
+  const scale = Math.min(avail / boxW, avail / boxH);
+  const offsetX = padding - minX * scale;
+  const offsetY = padding - minY * scale;
+
+  const paths = rawPaths.map((path) => ({
+    points: path.points.map((p) => mapIconPoint(p, scale, offsetX, offsetY)),
+    isClosed: path.isClosed,
+  }));
+
+  const origin = mapIconPoint({ x: 0, y: 0 }, scale, offsetX, offsetY);
+  const endpoints: Point[] = [];
+  for (const path of paths) {
+    if (path.isClosed || path.points.length === 0) continue;
+    endpoints.push(path.points[path.points.length - 1]);
+  }
+
+  return {
+    origin,
+    paths,
+    endpoints,
+    trajectoryType: config.trajectory.type,
+  };
+}
+
 function collectOnCastProjectiles(
   ability: AbilitySchema,
 ): Array<{ trajectory: TrajectoryConfig; aimOffsetDeg: number }> {

@@ -50,6 +50,12 @@ export class WebGLBackend implements ParticleBackend {
   private postFx: PostFX;
   private primitives: PrimitiveLayer;
   private elapsed = 0;
+  private lastRenderTime = 0;
+  private prevCamX = 0;
+  private prevCamY = 0;
+  private prevZoom = 1;
+  private prevShakeX = 0;
+  private prevShakeY = 0;
 
   constructor(
     private glCtx: GLContext,
@@ -137,6 +143,21 @@ export class WebGLBackend implements ParticleBackend {
       ? (document.getElementById('game-canvas') as HTMLCanvasElement | null)
       : null;
     if (worldCanvas) {
+      const now = performance.now();
+      const frameDt = this.lastRenderTime
+        ? Math.min((now - this.lastRenderTime) / 1000, 0.1)
+        : 1 / 60;
+      this.lastRenderTime = now;
+
+      const moveX =
+        -(view.camX - this.prevCamX) * view.zoom + (view.shakeX - this.prevShakeX);
+      const moveY =
+        -(view.camY - this.prevCamY) * view.zoom + (view.shakeY - this.prevShakeY);
+      const zoomChanged =
+        this.prevZoom > 0 &&
+        Math.abs(view.zoom - this.prevZoom) / this.prevZoom > 0.02;
+      const decay = Math.pow(crt.persistence.decay, frameDt * 60);
+
       this.postFx.presentCrt(
         worldCanvas,
         {
@@ -152,18 +173,35 @@ export class WebGLBackend implements ParticleBackend {
           brightness: crt.brightness,
           time: this.elapsed,
           effectUniforms: crt.effectUniforms,
+          persistence: {
+            enabled: crt.persistence.enabled,
+            decay,
+            threshold: crt.persistence.threshold,
+            reprojectU: -moveX / width,
+            reprojectV: moveY / height,
+            reset: zoomChanged,
+          },
         },
         bufferW,
         bufferH,
         width,
         height,
       );
+
+      this.prevCamX = view.camX;
+      this.prevCamY = view.camY;
+      this.prevZoom = view.zoom;
+      this.prevShakeX = view.shakeX;
+      this.prevShakeY = view.shakeY;
     }
 
     return {
       liveParticles: this.particles.length,
       livePrimitives: this.primitives.getActive().length,
-      drawCalls: stats.drawCalls + (limits.bloomPasses > 0 ? 3 : 0),
+      drawCalls:
+        stats.drawCalls +
+        (limits.bloomPasses > 0 ? 3 : 0) +
+        (crt.persistence.enabled ? 1 : 0),
       instanceCount: stats.instanceCount,
       uploadBytes: stats.uploadBytes,
     };
