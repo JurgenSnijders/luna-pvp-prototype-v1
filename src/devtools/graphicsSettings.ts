@@ -97,6 +97,13 @@ export interface EffectiveCrtSettings {
   brightness: number;
   effectUniforms: Record<string, number>;
   persistence: { enabled: boolean; decay: number; threshold: number };
+  retro: {
+    enabled: boolean;
+    pixelSize: number;
+    paletteId: number;
+    paletteMix: number;
+    dither: number;
+  };
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -314,6 +321,25 @@ function resolvePersistence(): { enabled: boolean; decay: number; threshold: num
   };
 }
 
+function resolveRetro(): {
+  enabled: boolean;
+  pixelSize: number;
+  paletteId: number;
+  paletteMix: number;
+  dither: number;
+} {
+  const pixelate = isPostEffectEnabled('PIXELATE');
+  const palette = isPostEffectEnabled('PALETTE');
+  const ditherOn = isPostEffectEnabled('DITHER');
+  return {
+    enabled: pixelate || palette || ditherOn,
+    pixelSize: pixelate ? getPostEffectParam('PIXELATE', 'size') : 1,
+    paletteId: getPostEffectParam('PALETTE', 'id'),
+    paletteMix: palette ? getPostEffectParam('PALETTE', 'mix') : 0,
+    dither: ditherOn ? getPostEffectParam('DITHER', 'amount') : 0,
+  };
+}
+
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
@@ -325,6 +351,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const brightness = s.crtBrightness;
   const effectUniforms = s.crtEnabled ? getEffectUniforms() : {};
   const persistenceOff = { enabled: false, decay: 0.85, threshold: 0 };
+  const retroOff = { enabled: false, pixelSize: 1, paletteId: 0, paletteMix: 0, dither: 0 };
 
   if (!s.crtEnabled) {
     return {
@@ -343,6 +370,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       brightness: 1,
       effectUniforms: {},
       persistence: persistenceOff,
+      retro: retroOff,
     };
   }
 
@@ -364,6 +392,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       brightness,
       effectUniforms: {},
       persistence: persistenceOff,
+      retro: retroOff,
     };
   }
 
@@ -383,6 +412,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     brightness,
     effectUniforms,
     persistence: resolvePersistence(),
+    retro: resolveRetro(),
   };
 }
 

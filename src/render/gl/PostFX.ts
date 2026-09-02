@@ -6,7 +6,9 @@ import {
   FULLSCREEN_VERTEX,
   OPAQUE_COMPOSITE_SHADER,
   PERSISTENCE_SHADER,
+  RETRO_SHADER,
 } from './postShaders';
+import { getPaletteSize, packPaletteUniform } from './retroPalettes';
 import {
   compileShader,
   createFramebuffer,
@@ -37,6 +39,13 @@ export interface CrtPresentParams {
     reprojectV: number;
     reset: boolean;
   };
+  retro: {
+    enabled: boolean;
+    pixelSize: number;
+    paletteId: number;
+    paletteMix: number;
+    dither: number;
+  };
 }
 
 export class PostFX {
@@ -46,6 +55,7 @@ export class PostFX {
   private opaqueCompositeProgram: WebGLProgram;
   private crtProgram: WebGLProgram;
   private persistProgram: WebGLProgram;
+  private retroProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
   private bloomFboA: FramebufferTarget | null = null;
@@ -55,6 +65,8 @@ export class PostFX {
   private persistFboB: FramebufferTarget | null = null;
   private persistIndex = 0;
   private persistValid = false;
+  private retroFbo: FramebufferTarget | null = null;
+  private paletteUniformData = new Float32Array(16 * 3);
   private worldTexture: WebGLTexture | null = null;
   private worldTexW = 0;
   private worldTexH = 0;
@@ -70,12 +82,14 @@ export class PostFX {
     const fsOpaque = compileShader(gl, gl.FRAGMENT_SHADER, OPAQUE_COMPOSITE_SHADER);
     const fsCrt = compileShader(gl, gl.FRAGMENT_SHADER, CRT_SHADER);
     const fsPersist = compileShader(gl, gl.FRAGMENT_SHADER, PERSISTENCE_SHADER);
+    const fsRetro = compileShader(gl, gl.FRAGMENT_SHADER, RETRO_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
     this.opaqueCompositeProgram = linkProgram(gl, vs, fsOpaque);
     this.crtProgram = linkProgram(gl, vs, fsCrt);
     this.persistProgram = linkProgram(gl, vs, fsPersist);
+    this.retroProgram = linkProgram(gl, vs, fsRetro);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
@@ -83,6 +97,7 @@ export class PostFX {
     gl.deleteShader(fsOpaque);
     gl.deleteShader(fsCrt);
     gl.deleteShader(fsPersist);
+    gl.deleteShader(fsRetro);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
   }
@@ -104,6 +119,7 @@ export class PostFX {
       this.vfxCompositeFbo,
       this.persistFboA,
       this.persistFboB,
+      this.retroFbo,
     ]) {
       if (!fbo) continue;
       gl.deleteFramebuffer(fbo.fbo);
@@ -116,6 +132,7 @@ export class PostFX {
     this.persistFboA = null;
     this.persistFboB = null;
     this.persistIndex = 0;
+    this.retroFbo = null;
     if (this.worldTexture) {
       gl.deleteTexture(this.worldTexture);
       this.worldTexture = null;
@@ -145,6 +162,9 @@ export class PostFX {
     if (this.persistFboA) {
       resizeFramebuffer(this.gl, this.persistFboA, width, height);
       resizeFramebuffer(this.gl, this.persistFboB!, width, height);
+    }
+    if (this.retroFbo) {
+      resizeFramebuffer(this.gl, this.retroFbo, width, height);
     }
   }
 
@@ -239,6 +259,19 @@ export class PostFX {
       sourceTex = this.applyPersistence(target.texture, bufferWidth, bufferHeight, params);
     } else {
       this.releasePersistTargets();
+    }
+
+    if (params.retro.enabled) {
+      sourceTex = this.applyRetro(
+        sourceTex,
+        bufferWidth,
+        bufferHeight,
+        effectWidth,
+        effectHeight,
+        params,
+      );
+    } else {
+      this.releaseRetroTargets();
     }
 
     const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
@@ -361,6 +394,65 @@ export class PostFX {
     this.persistIndex = 1 - this.persistIndex;
     this.persistValid = true;
     return writeFbo.texture;
+  }
+
+  private ensureRetroTarget(width: number, height: number): void {
+    if (!this.retroFbo) {
+      this.retroFbo = createFramebuffer(this.gl, width, height);
+      return;
+    }
+    if (this.retroFbo.width !== width || this.retroFbo.height !== height) {
+      resizeFramebuffer(this.gl, this.retroFbo, width, height);
+    }
+  }
+
+  private releaseRetroTargets(): void {
+    if (!this.retroFbo) return;
+    const gl = this.gl;
+    gl.deleteFramebuffer(this.retroFbo.fbo);
+    gl.deleteTexture(this.retroFbo.texture);
+    this.retroFbo = null;
+  }
+
+  private applyRetro(
+    srcTex: WebGLTexture,
+    width: number,
+    height: number,
+    effectWidth: number,
+    effectHeight: number,
+    params: CrtPresentParams,
+  ): WebGLTexture {
+    this.ensureRetroTarget(width, height);
+    const gl = this.gl;
+    const target = this.retroFbo!;
+    const palettePacked = packPaletteUniform(params.retro.paletteId);
+    this.paletteUniformData.set(palettePacked);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.retroProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(this.uniform(this.retroProgram, 'u_source')!, 0);
+    gl.uniform2f(
+      this.uniform(this.retroProgram, 'u_effectResolution')!,
+      effectWidth,
+      effectHeight,
+    );
+    gl.uniform1f(this.uniform(this.retroProgram, 'u_pixelSize')!, params.retro.pixelSize);
+    gl.uniform1f(this.uniform(this.retroProgram, 'u_paletteMix')!, params.retro.paletteMix);
+    gl.uniform1i(
+      this.uniform(this.retroProgram, 'u_paletteSize')!,
+      getPaletteSize(params.retro.paletteId),
+    );
+    gl.uniform3fv(
+      this.uniform(this.retroProgram, 'u_palette[0]')!,
+      this.paletteUniformData,
+    );
+    gl.uniform1f(this.uniform(this.retroProgram, 'u_dither')!, params.retro.dither);
+    this.drawFullscreen();
+    return target.texture;
   }
 
   private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {

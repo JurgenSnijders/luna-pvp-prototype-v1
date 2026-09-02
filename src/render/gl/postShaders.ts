@@ -89,6 +89,46 @@ void main() {
 }
 `;
 
+export const RETRO_SHADER = `#version 300 es
+precision highp float;
+in vec2 v_texCoord;
+uniform sampler2D u_source;
+uniform vec2 u_effectResolution;
+uniform float u_pixelSize;
+uniform float u_paletteMix;
+uniform int u_paletteSize;
+uniform vec3 u_palette[16];
+uniform float u_dither;
+out vec4 fragColor;
+
+float bayer4(ivec2 p) {
+  int m = (p.x & 3) * 4 + (p.y & 3);
+  float[16] t = float[16](
+    0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+    3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (t[m] + 0.5) / 16.0;
+}
+
+void main() {
+  vec2 grid = u_effectResolution / max(u_pixelSize, 1.0);
+  vec2 snapped = (floor(v_texCoord * grid) + 0.5) / grid;
+  vec3 col = texture(u_source, snapped).rgb;
+  ivec2 px = ivec2(floor(v_texCoord * grid));
+  col += (bayer4(px) - 0.5) * u_dither * 0.15;
+  if (u_paletteMix > 0.0 && u_paletteSize > 0) {
+    vec3 best = u_palette[0];
+    float bestD = 1e10;
+    for (int i = 0; i < 16; i++) {
+      if (i >= u_paletteSize) break;
+      float d = dot(col - u_palette[i], col - u_palette[i]);
+      if (d < bestD) { bestD = d; best = u_palette[i]; }
+    }
+    col = mix(col, best, u_paletteMix);
+  }
+  fragColor = vec4(col, 1.0);
+}
+`;
+
 export const CRT_SHADER = `#version 300 es
 precision highp float;
 in vec2 v_texCoord;

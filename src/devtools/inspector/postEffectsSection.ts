@@ -13,7 +13,7 @@ import {
   type PostEffectId,
 } from '../../render/gl/postEffects';
 import { FONTS, RETRO_COLORS } from '../../ui/tokens';
-import { helperText, sliderRow, toggleRow } from './domHelpers';
+import { helperText, selectRow, sliderRow, toggleRow } from './domHelpers';
 
 const GROUP_LABELS: Record<PostEffectGroup, string> = {
   CRT: 'CRT Effects',
@@ -67,18 +67,32 @@ export function buildPostEffectsSection(parent: HTMLElement): { sync: () => void
         },
       );
 
-      const paramSliders: { refresh: () => void }[] = [];
+      const paramControls: { refresh: () => void }[] = [];
       for (const param of def.params) {
-        const slider = sliderRow(
-          paramsContainer,
-          param.label,
-          param.min,
-          param.max,
-          param.step,
-          () => getPostEffectParam(id, param.key),
-          (v) => setPostEffectParam(id, param.key, v),
-        );
-        paramSliders.push(slider);
+        if (param.widget === 'select' && param.options) {
+          const control = selectRow(
+            paramsContainer,
+            param.label,
+            param.options.map((option) => ({
+              value: String(option.value),
+              label: option.label,
+            })),
+            () => String(getPostEffectParam(id, param.key)),
+            (v) => setPostEffectParam(id, param.key, parseInt(v, 10)),
+          );
+          paramControls.push(control);
+        } else {
+          const control = sliderRow(
+            paramsContainer,
+            param.label,
+            param.min,
+            param.max,
+            param.step,
+            () => getPostEffectParam(id, param.key),
+            (v) => setPostEffectParam(id, param.key, v),
+          );
+          paramControls.push(control);
+        }
       }
 
       const syncEffect = (): void => {
@@ -89,7 +103,7 @@ export function buildPostEffectsSection(parent: HTMLElement): { sync: () => void
         toggle.refresh();
         const enabled = getPostEffectUserEnabled(id) && !disabled;
         paramsContainer.style.display = enabled && def.params.length > 0 ? 'block' : 'none';
-        for (const slider of paramSliders) slider.refresh();
+        for (const control of paramControls) control.refresh();
       };
 
       toggle.checkbox.onchange = () => {

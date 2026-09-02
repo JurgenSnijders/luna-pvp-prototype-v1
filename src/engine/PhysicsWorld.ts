@@ -719,9 +719,6 @@ export class PhysicsWorld {
     for (const summon of this.summons) {
       if (!summon.isDead) this.updateLavaTag(summon, dt);
     }
-    for (const entity of this.projectiles) {
-      if (!entity.isDead) this.updateLavaTag(entity, dt);
-    }
   }
 
   private clampEntityToHex(entity: Entity): void {

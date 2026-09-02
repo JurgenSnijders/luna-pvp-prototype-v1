@@ -1,4 +1,10 @@
 import type { QualityTier } from '../../devtools/graphicsSettings';
+import { RETRO_PALETTES } from './retroPalettes';
+
+const PALETTE_SELECT_OPTIONS = RETRO_PALETTES.map((palette, index) => ({
+  value: index,
+  label: palette.label,
+}));
 
 export type PostEffectId =
   | 'SCANLINES'
@@ -7,6 +13,9 @@ export type PostEffectId =
   | 'VIGNETTE'
   | 'TINT'
   | 'PERSISTENCE'
+  | 'PIXELATE'
+  | 'PALETTE'
+  | 'DITHER'
   | 'ROLL_BAR'
   | 'VHS_JITTER'
   | 'GRAIN'
@@ -31,11 +40,13 @@ export interface PostEffectParam {
   defaultValue: number;
   storage: ParamStorage;
   uniform?: string;
+  widget?: 'slider' | 'select';
+  options?: { value: number; label: string }[];
 }
 
 export type PostEffectGroup = 'CRT' | 'ANALOG' | 'RETRO' | 'REACTIVE' | 'GRADE';
 
-export type PostEffectPass = 'CRT' | 'PERSISTENCE';
+export type PostEffectPass = 'CRT' | 'PERSISTENCE' | 'RETRO';
 
 export interface PostEffectDef {
   id: PostEffectId;
@@ -171,6 +182,83 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
         defaultValue: 0,
         storage: { kind: 'effect' },
         uniform: 'u_persistThreshold',
+      },
+    ],
+  },
+  PIXELATE: {
+    id: 'PIXELATE',
+    label: 'Pixelate',
+    group: 'RETRO',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'size',
+    pass: 'RETRO',
+    params: [
+      {
+        key: 'size',
+        label: 'Pixel Size',
+        min: 2,
+        max: 16,
+        step: 1,
+        defaultValue: 4,
+        storage: { kind: 'effect' },
+      },
+    ],
+  },
+  PALETTE: {
+    id: 'PALETTE',
+    label: 'Palette Quantise',
+    group: 'RETRO',
+    minTier: 'MEDIUM',
+    conflictsWith: ['PHOSPHOR'],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'mix',
+    pass: 'RETRO',
+    params: [
+      {
+        key: 'mix',
+        label: 'Mix',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 1,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'id',
+        label: 'Palette',
+        min: 0,
+        max: PALETTE_SELECT_OPTIONS.length - 1,
+        step: 1,
+        defaultValue: 0,
+        storage: { kind: 'effect' },
+        widget: 'select',
+        options: PALETTE_SELECT_OPTIONS,
+      },
+    ],
+  },
+  DITHER: {
+    id: 'DITHER',
+    label: 'Ordered Dither',
+    group: 'RETRO',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    pass: 'RETRO',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.35,
+        storage: { kind: 'effect' },
       },
     ],
   },

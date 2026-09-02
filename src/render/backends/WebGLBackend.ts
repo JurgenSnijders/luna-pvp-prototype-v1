@@ -181,6 +181,7 @@ export class WebGLBackend implements ParticleBackend {
             reprojectV: moveY / height,
             reset: zoomChanged,
           },
+          retro: crt.retro,
         },
         bufferW,
         bufferH,
@@ -201,7 +202,8 @@ export class WebGLBackend implements ParticleBackend {
       drawCalls:
         stats.drawCalls +
         (limits.bloomPasses > 0 ? 3 : 0) +
-        (crt.persistence.enabled ? 1 : 0),
+        (crt.persistence.enabled ? 1 : 0) +
+        (crt.retro.enabled ? 1 : 0),
       instanceCount: stats.instanceCount,
       uploadBytes: stats.uploadBytes,
     };
