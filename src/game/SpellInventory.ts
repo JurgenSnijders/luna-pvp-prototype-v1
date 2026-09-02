@@ -12,6 +12,7 @@ export type { LoadoutMap };
 
 const STORAGE_KEY_INVENTORY = 'spells_inventory_v1';
 const STORAGE_KEY_LOADOUT = 'equipped_loadout_v1';
+const STORAGE_KEY_NEW = 'spells_new_ids_v1';
 
 const GENERIC_IDS = new Set(['sanitized_ability', 'fallback_linear']);
 
@@ -117,9 +118,11 @@ class SpellInventoryStore {
     }
 
     this.loadCustomSpellsFromStorage();
+    this.loadNewSpellIdsFromStorage();
     this.loadout = this.loadLoadoutFromStorage();
     this.persistLoadout();
     this.persistCustomSpells();
+    this.persistNewSpellIds();
 
     this.initialized = true;
   }
@@ -197,6 +200,31 @@ class SpellInventoryStore {
     localStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(customs));
   }
 
+  private persistNewSpellIds(): void {
+    if (!canUseStorage()) return;
+    localStorage.setItem(STORAGE_KEY_NEW, JSON.stringify([...this.newSpellIds]));
+  }
+
+  private loadNewSpellIdsFromStorage(): void {
+    if (!canUseStorage()) return;
+
+    const raw = localStorage.getItem(STORAGE_KEY_NEW);
+    if (!raw) return;
+
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      this.newSpellIds.clear();
+      for (const id of parsed) {
+        if (typeof id !== 'string' || !id.trim()) continue;
+        if (!this.inventory.has(id) || this.presetIds.has(id)) continue;
+        this.newSpellIds.add(id);
+      }
+    } catch {
+      // Ignore corrupt storage.
+    }
+  }
+
   private persistLoadout(): void {
     if (!canUseStorage()) return;
     localStorage.setItem(STORAGE_KEY_LOADOUT, JSON.stringify(this.loadout));
@@ -235,6 +263,7 @@ class SpellInventoryStore {
     }
     if (isNewlyForged) {
       this.newSpellIds.add(stored.id);
+      this.persistNewSpellIds();
     }
     this.persistCustomSpells();
     this.dispatchInventoryUpdated();
@@ -249,8 +278,12 @@ class SpellInventoryStore {
     return this.presetIds.has(id);
   }
 
-  clearNewSpellTag(id: string): void {
+  markSpellInspected(id: string): boolean {
+    if (!this.newSpellIds.has(id)) return false;
     this.newSpellIds.delete(id);
+    this.persistNewSpellIds();
+    this.dispatchInventoryUpdated();
+    return true;
   }
 
   unequipSlot(slotKey: ActionSlotKey): void {

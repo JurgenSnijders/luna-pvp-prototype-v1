@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v9';
+export const STYLE_ID = 'luna-workshop-styles-v10';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -694,6 +694,18 @@ export function injectStyles(): void {
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
     }
 
+    .spell-tile.tile-new {
+      border-color: var(--retro-neon-cyan, #00e5ff) !important;
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.55), 0 0 18px rgba(0, 229, 255, 0.28);
+      animation: newTilePulse 1.8s ease-in-out infinite;
+    }
+
+    .spell-tile.tile-new.tile-selected {
+      animation: none;
+      border-color: #ffffff !important;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    }
+
     .spell-tile.is-dragging {
       opacity: 0.4;
       transform: scale(0.98);
@@ -725,16 +737,19 @@ export function injectStyles(): void {
       pointer-events: none;
     }
 
-    .tile-new-dot {
+    .tile-new-badge {
       position: absolute;
-      top: 3px;
-      right: 3px;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--retro-neon-magenta, #ff007f);
-      box-shadow: 0 0 6px var(--retro-neon-magenta, #ff007f);
-      animation: newBadgePulse 1s ease-in-out infinite alternate;
+      top: 2px;
+      right: 2px;
+      padding: 1px 3px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 9px;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid var(--retro-neon-cyan, #00e5ff);
+      color: var(--retro-neon-cyan, #00e5ff);
+      border-radius: 2px;
       z-index: 3;
       pointer-events: none;
     }
@@ -777,14 +792,12 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
-    @keyframes newBadgePulse {
+    @keyframes newTilePulse {
       0%, 100% {
-        box-shadow: 0 0 6px rgba(255, 0, 127, 0.4);
-        opacity: 0.85;
+        box-shadow: 0 0 6px rgba(0, 229, 255, 0.4), 0 0 12px rgba(0, 229, 255, 0.18);
       }
       50% {
-        box-shadow: 0 0 12px rgba(255, 0, 127, 0.85);
-        opacity: 1;
+        box-shadow: 0 0 12px rgba(0, 229, 255, 0.85), 0 0 22px rgba(0, 229, 255, 0.4);
       }
     }
 

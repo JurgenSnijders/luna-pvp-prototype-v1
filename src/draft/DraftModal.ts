@@ -1051,7 +1051,6 @@ export class DraftModal {
       }
       btn.addEventListener('click', () => {
         SpellInventoryManager.equipSpell(slotKey, spell.id);
-        SpellInventoryManager.clearNewSpellTag(spell.id);
       });
       equipButtons.appendChild(btn);
     }
@@ -1092,9 +1091,11 @@ export class DraftModal {
     }
 
     if (SpellInventoryManager.isNewSpell(spell.id)) {
-      const dot = document.createElement('div');
-      dot.className = 'tile-new-dot';
-      tile.appendChild(dot);
+      tile.classList.add('tile-new');
+      const badge = document.createElement('div');
+      badge.className = 'tile-new-badge';
+      badge.textContent = 'NEW';
+      tile.appendChild(badge);
     }
 
     const iconWrap = document.createElement('div');
@@ -1104,7 +1105,7 @@ export class DraftModal {
 
     tile.addEventListener('mouseenter', () => {
       this.hoveredSpellId = spell.id;
-      if (!tile.classList.contains('tile-selected')) {
+      if (!tile.classList.contains('tile-selected') && !tile.classList.contains('tile-new')) {
         tile.style.boxShadow = `0 0 8px ${archetypeColor}66`;
       }
       this.renderTacticalInspector();
@@ -1120,6 +1121,9 @@ export class DraftModal {
 
     tile.addEventListener('click', () => {
       this.selectedSpellId = spell.id;
+      if (SpellInventoryManager.markSpellInspected(spell.id)) {
+        return;
+      }
       for (const sibling of this.spellGrid.querySelectorAll('.spell-tile')) {
         sibling.classList.remove('tile-selected');
         (sibling as HTMLElement).style.boxShadow = '';
@@ -1135,7 +1139,6 @@ export class DraftModal {
         label: `[${slotKey}] ${getCategoryLabel(SLOT_CATEGORY_MAP[slotKey])}`,
         onSelect: () => {
           SpellInventoryManager.equipSpell(slotKey, spell.id);
-          SpellInventoryManager.clearNewSpellTag(spell.id);
         },
       }));
       showQuickEquipMenu(e.clientX, e.clientY, items);
