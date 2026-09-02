@@ -22,7 +22,7 @@ import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
 import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
 import { handleCastInput, cancelPlayerAiming } from './input';
-import { assignDefaultLoadout } from './loadout';
+import { assignDefaultLoadout, storeForgedSpell } from './loadout';
 import { SpellInventoryManager } from './SpellInventory';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import {
@@ -153,6 +153,7 @@ function init(app: GameApp): void {
       passives: app.player.passives,
     }),
     onEquip: (selection) => handleEquip(app, selection),
+    onStoreSpell: (ability) => storeForgedSpell(app, ability),
     onOpenChange: (open) => {
       if (
         app.matchManager.mode === 'SANDBOX' ||

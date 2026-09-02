@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v7';
+export const STYLE_ID = 'luna-workshop-styles-v8';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -215,6 +215,67 @@ export function injectStyles(): void {
       color: var(--retro-text-secondary, #9ba8c7);
       flex: 1 1 auto;
       overflow-y: auto;
+    }
+
+    .inspector-actions-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-top: 1px solid var(--retro-border-subtle);
+      padding-top: 10px;
+      margin-top: 8px;
+    }
+
+    .inspector-upgrade-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid var(--retro-neon-cyan);
+      color: var(--retro-neon-cyan);
+      border-radius: 3px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.15s ease;
+      box-shadow: 0 0 6px rgba(0, 229, 255, 0.2);
+    }
+
+    .inspector-upgrade-btn:hover {
+      background: rgba(0, 229, 255, 0.25);
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .forge-evolving-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: rgba(255, 170, 0, 0.1);
+      border: 1px solid #ffaa00;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      color: #ffaa00;
+    }
+
+    .forge-evolving-cancel {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: var(--retro-text-muted);
+      cursor: pointer;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+    }
+    .forge-evolving-cancel:hover {
+      color: #ffffff;
     }
 
     .inspector-equip-section {

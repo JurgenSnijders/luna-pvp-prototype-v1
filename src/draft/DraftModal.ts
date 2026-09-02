@@ -1,5 +1,6 @@
 import {
   DEFAULT_MODEL,
+  compileAbilityPayload,
   getAiSettings,
   getApiConnectionStatus,
   getLastSynthesisMeta,
@@ -14,11 +15,9 @@ import type {
   SkillCategory,
 } from '../types/cards';
 import {
-  ACTION_SLOT_INDEX,
   ACTION_SLOT_KEYS,
   CATEGORY_SLOT_MAP,
   getCategoryLabel,
-  SKILL_CATEGORIES,
   SLOT_CATEGORY_MAP,
 } from '../types/cards';
 import type {
@@ -31,7 +30,6 @@ import type {
 } from '../types/schema';
 import {
   extractMechanicBadges,
-  extractMechanicBadgesFromAbility,
   renderBadge,
   renderStreamBadges,
 } from './mechanicBadges';
@@ -151,6 +149,7 @@ function formatCooldown(ms: number): string {
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
   onEquip: (selection: DraftSelection) => void;
+  onStoreSpell: (ability: AbilitySchema) => AbilitySchema;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -208,7 +207,7 @@ export class DraftModal {
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
   private evolutionContext: EvolutionContext | null = null;
-  private presetSlot: ActionSlotKey | null = null;
+  private evolvingBaseSpellId: string | null = null;
   private activeTab: WorkshopTab = 'VAULT';
   private vaultSearchQuery = '';
   private vaultRoleFilters = new Set<SpellRole>();
@@ -436,7 +435,7 @@ export class DraftModal {
     this.intermissionMode = false;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;
-    this.presetSlot = null;
+    this.evolvingBaseSpellId = null;
     this.cards = [];
     this.clearSynthesisWarning();
     this.open_ = true;
@@ -473,7 +472,7 @@ export class DraftModal {
     this.intermissionMode = true;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;
-    this.presetSlot = null;
+    this.evolvingBaseSpellId = null;
     this.cards = cards;
     this.clearSynthesisWarning();
     this.open_ = true;
@@ -490,26 +489,48 @@ export class DraftModal {
   private setMode(mode: WorkshopMode): void {
     this.invalidatePrefetch();
     this.mode = mode;
-    if (mode === 'FORGE_NEW' && !this.presetSlot) {
+    if (mode === 'FORGE_NEW' || mode === 'PASSIVE_UPGRADES') {
       this.evolutionContext = null;
+      this.evolvingBaseSpellId = null;
     }
-    if (mode === 'EVOLVE_EXISTING' && !this.evolutionContext) {
-      const loadout = this.callbacks.getLoadout();
-      for (const key of ACTION_SLOT_KEYS) {
-        const idx = ACTION_SLOT_INDEX[key];
-        const ability = loadout.abilities[idx];
-        if (ability) {
-          this.evolutionContext = {
-            baseAbility: structuredClone(ability),
-            slotKey: key,
-            category: SLOT_CATEGORY_MAP[key],
-          };
-          this.presetSlot = key;
-          this.selectedCategory = SLOT_CATEGORY_MAP[key];
-          break;
-        }
+    this.refreshUI();
+    this.startPrefetch();
+  }
+
+  private startEvolution(spellId: string): void {
+    const baseSpell = SpellInventoryManager.getSpell(spellId);
+    if (!baseSpell) return;
+
+    this.invalidatePrefetch();
+    this.evolvingBaseSpellId = spellId;
+
+    const loadout = SpellInventoryManager.getLoadout();
+    let slotKey: ActionSlotKey = 'RMB';
+    let category: SkillCategory = 'SECONDARY';
+    for (const key of ACTION_SLOT_KEYS) {
+      if (loadout[key] === spellId) {
+        slotKey = key;
+        category = SLOT_CATEGORY_MAP[key];
+        break;
       }
     }
+
+    this.evolutionContext = {
+      baseAbility: structuredClone(baseSpell),
+      slotKey,
+      category,
+    };
+    this.mode = 'EVOLVE_EXISTING';
+    this.selectedCategory = category;
+    this.setActiveTab('FORGE');
+    this.startPrefetch();
+  }
+
+  private cancelEvolution(): void {
+    this.invalidatePrefetch();
+    this.evolvingBaseSpellId = null;
+    this.evolutionContext = null;
+    this.mode = 'FORGE_NEW';
     this.refreshUI();
     this.startPrefetch();
   }
@@ -845,6 +866,17 @@ export class DraftModal {
     const flavor = spell.tagline || spell.description || '';
     desc.textContent = flavor ? `${archetypeNote}\n\n${flavor}` : archetypeNote;
 
+    const actionsSection = document.createElement('div');
+    actionsSection.className = 'inspector-actions-section';
+    const upgradeBtn = document.createElement('button');
+    upgradeBtn.type = 'button';
+    upgradeBtn.className = 'inspector-upgrade-btn';
+    upgradeBtn.innerHTML = '<span>✦</span> UPGRADE / EVOLVE SPELL';
+    upgradeBtn.addEventListener('click', () => {
+      this.startEvolution(spell.id);
+    });
+    actionsSection.appendChild(upgradeBtn);
+
     const equipSection = document.createElement('div');
     equipSection.className = 'inspector-equip-section';
 
@@ -878,6 +910,7 @@ export class DraftModal {
     panel.appendChild(telemetryGrid);
     panel.appendChild(tagsRow);
     panel.appendChild(desc);
+    panel.appendChild(actionsSection);
     panel.appendChild(equipSection);
     this.inspectorPane.appendChild(panel);
   }
@@ -1016,11 +1049,12 @@ export class DraftModal {
   private renderBottomLoadoutBay(): void {
     this.bottomLoadoutBay.innerHTML = '';
     const equipped = SpellInventoryManager.getEquippedAbilities();
+    const loadout = SpellInventoryManager.getLoadout();
 
     for (const key of ACTION_SLOT_KEYS) {
       const spell = equipped[key];
       const isEvolveSource =
-        this.mode === 'EVOLVE_EXISTING' && this.evolutionContext?.slotKey === key;
+        this.evolvingBaseSpellId !== null && loadout[key] === this.evolvingBaseSpellId;
 
       const slot = document.createElement('div');
       slot.className = 'bottom-slot drop-zone';
@@ -1061,9 +1095,9 @@ export class DraftModal {
 
   private renderSynthesisControls(): void {
     this.modeRow.innerHTML = '';
+    this.modeRow.style.display = this.evolvingBaseSpellId ? 'none' : 'flex';
     const modes: { id: WorkshopMode; label: string }[] = [
       { id: 'FORGE_NEW', label: 'Forge New Spell' },
-      { id: 'EVOLVE_EXISTING', label: 'Evolve Existing' },
       { id: 'PASSIVE_UPGRADES', label: 'Passive Upgrades' },
     ];
     for (const m of modes) {
@@ -1075,69 +1109,39 @@ export class DraftModal {
     }
 
     this.categoryRow.innerHTML = '';
-    this.categoryRow.style.display = this.mode === 'FORGE_NEW' ? 'flex' : 'none';
-    if (this.mode === 'FORGE_NEW') {
-      for (const cat of SKILL_CATEGORIES) {
-        const btn = document.createElement('button');
-        btn.textContent = getCategoryLabel(cat);
-        btn.style.cssText = chipStyle(this.selectedCategory === cat);
-        btn.onclick = () => {
-          this.invalidatePrefetch();
-          this.selectedCategory = cat;
-          this.presetSlot = CATEGORY_SLOT_MAP[cat];
-          this.refreshUI();
-          this.startPrefetch();
-        };
-        this.categoryRow.appendChild(btn);
-      }
-    }
+    this.categoryRow.style.display = 'none';
 
-    if (this.mode === 'EVOLVE_EXISTING' && this.evolutionContext) {
+    if (this.evolvingBaseSpellId) {
+      const baseSpell = SpellInventoryManager.getSpell(this.evolvingBaseSpellId);
+      this.evolutionBanner.className = 'forge-evolving-banner';
       this.evolutionBanner.style.display = 'flex';
-      this.evolutionBanner.style.alignItems = 'center';
-      this.evolutionBanner.style.gap = '10px';
-      this.evolutionBanner.style.flexWrap = 'wrap';
       this.evolutionBanner.innerHTML = '';
 
-      const text = document.createElement('div');
-      text.style.cssText = `font-size:${FONTS.size.body};flex-shrink:0;`;
-      text.innerHTML = `Evolving <strong>${this.evolutionContext.baseAbility.name}</strong> · ${this.evolutionContext.slotKey} (${getCategoryLabel(this.evolutionContext.category)})`;
+      const text = document.createElement('span');
+      text.textContent = `UPGRADING BASE: [${baseSpell?.name ?? 'Unknown'}]`;
 
-      const badgeRow = document.createElement('div');
-      badgeRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;flex:1;';
-      for (const b of extractMechanicBadgesFromAbility(this.evolutionContext.baseAbility).slice(0, 5)) {
-        badgeRow.appendChild(renderBadge(b.label, b.kind));
-      }
-
-      const change = document.createElement('button');
-      change.textContent = 'Change Base';
-      change.style.cssText = btnStyle(false) + 'padding:4px 8px;flex-shrink:0;';
-      change.onclick = () => {
-        this.invalidatePrefetch();
-        this.evolutionContext = null;
-        this.refreshUI();
-      };
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'forge-evolving-cancel';
+      cancel.textContent = 'Cancel';
+      cancel.onclick = () => this.cancelEvolution();
 
       this.evolutionBanner.appendChild(text);
-      this.evolutionBanner.appendChild(badgeRow);
-      this.evolutionBanner.appendChild(change);
-    } else if (this.mode === 'EVOLVE_EXISTING' && !this.evolutionContext) {
-      this.evolutionBanner.style.display = 'block';
-      this.evolutionBanner.innerHTML = '';
-      const text = document.createElement('div');
-      text.textContent = 'Equip a spell in the loadout bay below, then describe your mutation.';
-      text.style.cssText = `font-size:${FONTS.size.body};color:#aaa;`;
-      this.evolutionBanner.appendChild(text);
+      this.evolutionBanner.appendChild(cancel);
     } else {
+      this.evolutionBanner.className = '';
       this.evolutionBanner.style.display = 'none';
       this.evolutionBanner.innerHTML = '';
     }
 
+    this.chipsRow.style.display =
+      this.evolvingBaseSpellId || this.mode === 'PASSIVE_UPGRADES' ? 'none' : 'flex';
+
     if (this.mode === 'PASSIVE_UPGRADES') {
       this.promptInput.placeholder = 'Describe a passive upgrade... (e.g. "faster movement")';
-    } else if (this.mode === 'EVOLVE_EXISTING') {
+    } else if (this.evolvingBaseSpellId) {
       this.promptInput.placeholder =
-        'Describe the mutation... (e.g. "split into 3 gravity bomblets")';
+        "Describe mutation or upgrade (e.g. 'Add cluster bomblets on impact and reduce cooldown')...";
     } else {
       this.promptInput.placeholder = 'Describe your ability... (e.g. "ice vortex boomerang")';
     }
@@ -1275,7 +1279,9 @@ export class DraftModal {
       }
 
       this.renderApiStatusPill();
-      if (useStreaming && this.streamingSlots) {
+      if (this.shouldAutoStoreToVault()) {
+        await this.storeSynthesizedCardsToVault();
+      } else if (useStreaming && this.streamingSlots) {
         this.finalizeStreamingCards();
       } else {
         this.renderResultCards();
@@ -1292,13 +1298,65 @@ export class DraftModal {
     }
   }
 
+  private shouldAutoStoreToVault(): boolean {
+    return !this.intermissionMode && this.mode !== 'PASSIVE_UPGRADES';
+  }
+
+  private mintSpellId(): string {
+    return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `spell_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private clearVaultFilters(): void {
+    this.vaultSearchQuery = '';
+    if (this.vaultBuilt) {
+      this.vaultSearchInput.value = '';
+    }
+    this.vaultRoleFilters.clear();
+    this.vaultMetaFilters.clear();
+    this.refreshVaultFilterChips();
+  }
+
+  private async storeSynthesizedCardsToVault(): Promise<void> {
+    const storedSpells: AbilitySchema[] = [];
+    const category = this.resolveSynthesisCategory();
+
+    for (const card of this.cards) {
+      if (card.type !== 'ACTIVE_ABILITY') continue;
+
+      let ability: AbilitySchema;
+      if (card.abilityPayload) {
+        ability = structuredClone(card.abilityPayload);
+      } else {
+        ability = await compileAbilityPayload(card, this.evolutionContext?.baseAbility);
+      }
+
+      ability.id = this.mintSpellId();
+      ability.name = card.title || ability.name;
+      ability.tagline = card.tagline;
+      ability.description = card.description;
+
+      storedSpells.push(this.callbacks.onStoreSpell(ability));
+    }
+
+    this.cards = [];
+    this.cardsContainer.innerHTML = '';
+    this.streamingSlots = null;
+    this.evolvingBaseSpellId = null;
+    this.evolutionContext = null;
+    this.mode = 'FORGE_NEW';
+    this.selectedCategory = category;
+    this.hoveredSpellId = null;
+    this.clearVaultFilters();
+    this.selectedSpellId = storedSpells[0]?.id ?? null;
+    this.showSynthesisWarning('SPELL SYNTHESIZED AND STORED IN VAULT');
+    this.setActiveTab('VAULT');
+  }
+
   private resolveEquipTarget(card?: DraftCard): DraftSelection['slot'] | null {
     if (this.intermissionMode) return null;
-    const targetSlot =
-      this.evolutionContext?.slotKey ??
-      this.presetSlot ??
-      (card?.category ? CATEGORY_SLOT_MAP[card.category] : null);
-    return targetSlot;
+    return card?.category ? CATEGORY_SLOT_MAP[card.category] : null;
   }
 
   private renderStreamingSkeletons(): void {
@@ -1578,10 +1636,7 @@ export class DraftModal {
           footer.appendChild(diffEl);
         }
 
-        const targetSlot =
-          this.evolutionContext?.slotKey ??
-          this.presetSlot ??
-          (card.category ? CATEGORY_SLOT_MAP[card.category] : null);
+        const targetSlot = card.category ? CATEGORY_SLOT_MAP[card.category] : null;
 
         if (targetSlot && !this.intermissionMode) {
           const equipBtn = document.createElement('button');
@@ -1617,9 +1672,6 @@ export class DraftModal {
 
   private getCompareAbility(loadout: PlayerLoadout): AbilitySchema | null {
     if (this.evolutionContext) return this.evolutionContext.baseAbility;
-    if (this.presetSlot) {
-      return loadout.abilities[ACTION_SLOT_INDEX[this.presetSlot]] ?? null;
-    }
     return loadout.abilities[0];
   }
 

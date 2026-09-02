@@ -3,6 +3,7 @@ import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
+import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
@@ -255,6 +256,7 @@ export function processLifecycleEvents(
     hit.target.plasmaDetonatedThisFrame = false;
     const instabDelta = hit.target.instabilityPct - instabBefore;
     const isHeavy = instabDelta >= 25 || detonated;
+    reactiveFx.pulse(hit.hitPos.x, hit.hitPos.y, isHeavy ? 1 : 0.45);
 
     if (hitFeedbackConfig.microHitstop && isHeavy) {
       requestHitstop(2);

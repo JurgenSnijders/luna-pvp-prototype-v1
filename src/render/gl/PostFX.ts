@@ -6,6 +6,7 @@ import {
   FULLSCREEN_VERTEX,
   OPAQUE_COMPOSITE_SHADER,
   PERSISTENCE_SHADER,
+  REACTIVE_SHADER,
   RETRO_SHADER,
 } from './postShaders';
 import { getPaletteSize, packPaletteUniform } from './retroPalettes';
@@ -46,6 +47,18 @@ export interface CrtPresentParams {
     paletteMix: number;
     dither: number;
   };
+  reactive: {
+    active: boolean;
+    blur: number;
+    glitch: number;
+    glitchSlices: number;
+    glitchChroma: number;
+    shock: number;
+    shockRadius: number;
+    shockWidth: number;
+    shockU: number;
+    shockV: number;
+  };
 }
 
 export class PostFX {
@@ -56,6 +69,7 @@ export class PostFX {
   private crtProgram: WebGLProgram;
   private persistProgram: WebGLProgram;
   private retroProgram: WebGLProgram;
+  private reactiveProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
   private bloomFboA: FramebufferTarget | null = null;
@@ -66,6 +80,7 @@ export class PostFX {
   private persistIndex = 0;
   private persistValid = false;
   private retroFbo: FramebufferTarget | null = null;
+  private reactiveFbo: FramebufferTarget | null = null;
   private paletteUniformData = new Float32Array(16 * 3);
   private worldTexture: WebGLTexture | null = null;
   private worldTexW = 0;
@@ -83,6 +98,7 @@ export class PostFX {
     const fsCrt = compileShader(gl, gl.FRAGMENT_SHADER, CRT_SHADER);
     const fsPersist = compileShader(gl, gl.FRAGMENT_SHADER, PERSISTENCE_SHADER);
     const fsRetro = compileShader(gl, gl.FRAGMENT_SHADER, RETRO_SHADER);
+    const fsReactive = compileShader(gl, gl.FRAGMENT_SHADER, REACTIVE_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
@@ -90,6 +106,7 @@ export class PostFX {
     this.crtProgram = linkProgram(gl, vs, fsCrt);
     this.persistProgram = linkProgram(gl, vs, fsPersist);
     this.retroProgram = linkProgram(gl, vs, fsRetro);
+    this.reactiveProgram = linkProgram(gl, vs, fsReactive);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
@@ -98,6 +115,7 @@ export class PostFX {
     gl.deleteShader(fsCrt);
     gl.deleteShader(fsPersist);
     gl.deleteShader(fsRetro);
+    gl.deleteShader(fsReactive);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
   }
@@ -120,6 +138,7 @@ export class PostFX {
       this.persistFboA,
       this.persistFboB,
       this.retroFbo,
+      this.reactiveFbo,
     ]) {
       if (!fbo) continue;
       gl.deleteFramebuffer(fbo.fbo);
@@ -133,6 +152,7 @@ export class PostFX {
     this.persistFboB = null;
     this.persistIndex = 0;
     this.retroFbo = null;
+    this.reactiveFbo = null;
     if (this.worldTexture) {
       gl.deleteTexture(this.worldTexture);
       this.worldTexture = null;
@@ -165,6 +185,9 @@ export class PostFX {
     }
     if (this.retroFbo) {
       resizeFramebuffer(this.gl, this.retroFbo, width, height);
+    }
+    if (this.reactiveFbo) {
+      resizeFramebuffer(this.gl, this.reactiveFbo, width, height);
     }
   }
 
@@ -272,6 +295,12 @@ export class PostFX {
       );
     } else {
       this.releaseRetroTargets();
+    }
+
+    if (params.reactive.active) {
+      sourceTex = this.applyReactive(sourceTex, bufferWidth, bufferHeight, params);
+    } else {
+      this.releaseReactiveTargets();
     }
 
     const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
@@ -451,6 +480,56 @@ export class PostFX {
       this.paletteUniformData,
     );
     gl.uniform1f(this.uniform(this.retroProgram, 'u_dither')!, params.retro.dither);
+    this.drawFullscreen();
+    return target.texture;
+  }
+
+  private ensureReactiveTarget(width: number, height: number): void {
+    if (!this.reactiveFbo) {
+      this.reactiveFbo = createFramebuffer(this.gl, width, height);
+      return;
+    }
+    if (this.reactiveFbo.width !== width || this.reactiveFbo.height !== height) {
+      resizeFramebuffer(this.gl, this.reactiveFbo, width, height);
+    }
+  }
+
+  private releaseReactiveTargets(): void {
+    if (!this.reactiveFbo) return;
+    const gl = this.gl;
+    gl.deleteFramebuffer(this.reactiveFbo.fbo);
+    gl.deleteTexture(this.reactiveFbo.texture);
+    this.reactiveFbo = null;
+  }
+
+  private applyReactive(
+    srcTex: WebGLTexture,
+    width: number,
+    height: number,
+    params: CrtPresentParams,
+  ): WebGLTexture {
+    this.ensureReactiveTarget(width, height);
+    const gl = this.gl;
+    const target = this.reactiveFbo!;
+    const reactive = params.reactive;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.reactiveProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(this.uniform(this.reactiveProgram, 'u_source')!, 0);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_time')!, params.time);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_blur')!, reactive.blur);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_glitch')!, reactive.glitch);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_glitchSlices')!, reactive.glitchSlices);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_glitchChroma')!, reactive.glitchChroma);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shock')!, reactive.shock);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shockRadius')!, reactive.shockRadius);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shockWidth')!, reactive.shockWidth);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shockU')!, reactive.shockU);
+    gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shockV')!, reactive.shockV);
     this.drawFullscreen();
     return target.texture;
   }

@@ -104,6 +104,16 @@ export interface EffectiveCrtSettings {
     paletteMix: number;
     dither: number;
   };
+  reactive: {
+    enabled: boolean;
+    blurAmount: number;
+    shockStrength: number;
+    shockSpeed: number;
+    shockWidth: number;
+    glitchAmount: number;
+    glitchSlices: number;
+    glitchChroma: number;
+  };
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -340,6 +350,31 @@ function resolveRetro(): {
   };
 }
 
+function resolveReactive(): {
+  enabled: boolean;
+  blurAmount: number;
+  shockStrength: number;
+  shockSpeed: number;
+  shockWidth: number;
+  glitchAmount: number;
+  glitchSlices: number;
+  glitchChroma: number;
+} {
+  const blurOn = isPostEffectEnabled('RADIAL_BLUR');
+  const shockOn = isPostEffectEnabled('SHOCKWAVE');
+  const glitchOn = isPostEffectEnabled('HIT_GLITCH');
+  return {
+    enabled: blurOn || shockOn || glitchOn,
+    blurAmount: blurOn ? getPostEffectParam('RADIAL_BLUR', 'amount') : 0,
+    shockStrength: shockOn ? getPostEffectParam('SHOCKWAVE', 'strength') : 0,
+    shockSpeed: getPostEffectParam('SHOCKWAVE', 'speed'),
+    shockWidth: getPostEffectParam('SHOCKWAVE', 'width'),
+    glitchAmount: glitchOn ? getPostEffectParam('HIT_GLITCH', 'amount') : 0,
+    glitchSlices: getPostEffectParam('HIT_GLITCH', 'slices'),
+    glitchChroma: getPostEffectParam('HIT_GLITCH', 'chroma'),
+  };
+}
+
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
@@ -352,6 +387,16 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const effectUniforms = s.crtEnabled ? getEffectUniforms() : {};
   const persistenceOff = { enabled: false, decay: 0.85, threshold: 0 };
   const retroOff = { enabled: false, pixelSize: 1, paletteId: 0, paletteMix: 0, dither: 0 };
+  const reactiveOff = {
+    enabled: false,
+    blurAmount: 0,
+    shockStrength: 0,
+    shockSpeed: 1.1,
+    shockWidth: 0.06,
+    glitchAmount: 0,
+    glitchSlices: 12,
+    glitchChroma: 0.5,
+  };
 
   if (!s.crtEnabled) {
     return {
@@ -371,6 +416,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       effectUniforms: {},
       persistence: persistenceOff,
       retro: retroOff,
+      reactive: reactiveOff,
     };
   }
 
@@ -393,6 +439,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       effectUniforms: {},
       persistence: persistenceOff,
       retro: retroOff,
+      reactive: reactiveOff,
     };
   }
 
@@ -413,6 +460,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     effectUniforms,
     persistence: resolvePersistence(),
     retro: resolveRetro(),
+    reactive: resolveReactive(),
   };
 }
 

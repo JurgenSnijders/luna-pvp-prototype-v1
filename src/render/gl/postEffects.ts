@@ -16,6 +16,9 @@ export type PostEffectId =
   | 'PIXELATE'
   | 'PALETTE'
   | 'DITHER'
+  | 'RADIAL_BLUR'
+  | 'SHOCKWAVE'
+  | 'HIT_GLITCH'
   | 'ROLL_BAR'
   | 'VHS_JITTER'
   | 'GRAIN'
@@ -46,7 +49,7 @@ export interface PostEffectParam {
 
 export type PostEffectGroup = 'CRT' | 'ANALOG' | 'RETRO' | 'REACTIVE' | 'GRADE';
 
-export type PostEffectPass = 'CRT' | 'PERSISTENCE' | 'RETRO';
+export type PostEffectPass = 'CRT' | 'PERSISTENCE' | 'RETRO' | 'REACTIVE';
 
 export interface PostEffectDef {
   id: PostEffectId;
@@ -258,6 +261,108 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
         max: 1,
         step: 0.05,
         defaultValue: 0.35,
+        storage: { kind: 'effect' },
+      },
+    ],
+  },
+  RADIAL_BLUR: {
+    id: 'RADIAL_BLUR',
+    label: 'Radial Blur',
+    group: 'REACTIVE',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 2,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    pass: 'REACTIVE',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.45,
+        storage: { kind: 'effect' },
+      },
+    ],
+  },
+  SHOCKWAVE: {
+    id: 'SHOCKWAVE',
+    label: 'Shockwave',
+    group: 'REACTIVE',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'strength',
+    pass: 'REACTIVE',
+    params: [
+      {
+        key: 'strength',
+        label: 'Strength',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.35,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'speed',
+        label: 'Speed',
+        min: 0.4,
+        max: 2.0,
+        step: 0.05,
+        defaultValue: 1.1,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'width',
+        label: 'Width',
+        min: 0.02,
+        max: 0.2,
+        step: 0.01,
+        defaultValue: 0.06,
+        storage: { kind: 'effect' },
+      },
+    ],
+  },
+  HIT_GLITCH: {
+    id: 'HIT_GLITCH',
+    label: 'Hit Glitch',
+    group: 'REACTIVE',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    pass: 'REACTIVE',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.4,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'slices',
+        label: 'Slices',
+        min: 4,
+        max: 40,
+        step: 1,
+        defaultValue: 12,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'chroma',
+        label: 'Chroma',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.5,
         storage: { kind: 'effect' },
       },
     ],

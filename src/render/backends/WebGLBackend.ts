@@ -5,6 +5,7 @@ import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsS
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
 import { PostFX } from '../gl/PostFX';
+import { REACTIVE_SHOCK_DURATION, reactiveFx } from '../gl/reactiveFx';
 import { PrimitiveLayer } from '../PrimitiveLayer';
 import {
   type ParticleBackend,
@@ -142,13 +143,16 @@ export class WebGLBackend implements ParticleBackend {
     const worldCanvas = crt.webglCrt
       ? (document.getElementById('game-canvas') as HTMLCanvasElement | null)
       : null;
-    if (worldCanvas) {
-      const now = performance.now();
-      const frameDt = this.lastRenderTime
-        ? Math.min((now - this.lastRenderTime) / 1000, 0.1)
-        : 1 / 60;
-      this.lastRenderTime = now;
 
+    const now = performance.now();
+    const frameDt = this.lastRenderTime
+      ? Math.min((now - this.lastRenderTime) / 1000, 0.1)
+      : 1 / 60;
+    this.lastRenderTime = now;
+    reactiveFx.update(frameDt);
+
+    let reactiveActive = false;
+    if (worldCanvas) {
       const moveX =
         -(view.camX - this.prevCamX) * view.zoom + (view.shakeX - this.prevShakeX);
       const moveY =
@@ -157,6 +161,18 @@ export class WebGLBackend implements ParticleBackend {
         this.prevZoom > 0 &&
         Math.abs(view.zoom - this.prevZoom) / this.prevZoom > 0.02;
       const decay = Math.pow(crt.persistence.decay, frameDt * 60);
+
+      const snap = reactiveFx.snapshot();
+      const shockLive = snap.shockAge < REACTIVE_SHOCK_DURATION;
+      const sx = width / 2 + view.shakeX + (snap.worldX - view.camX) * view.zoom;
+      const sy = height / 2 + view.shakeY + (snap.worldY - view.camY) * view.zoom;
+      const reactiveBlur = crt.reactive.blurAmount * snap.blur;
+      const reactiveGlitch = crt.reactive.glitchAmount * snap.glitch;
+      const reactiveShock =
+        crt.reactive.shockStrength * (shockLive ? snap.shock : 0);
+      reactiveActive =
+        crt.reactive.enabled &&
+        (reactiveBlur > 0.001 || reactiveGlitch > 0.001 || reactiveShock > 0.001);
 
       this.postFx.presentCrt(
         worldCanvas,
@@ -182,6 +198,18 @@ export class WebGLBackend implements ParticleBackend {
             reset: zoomChanged,
           },
           retro: crt.retro,
+          reactive: {
+            active: reactiveActive,
+            blur: reactiveBlur,
+            glitch: reactiveGlitch,
+            glitchSlices: crt.reactive.glitchSlices,
+            glitchChroma: crt.reactive.glitchChroma,
+            shock: reactiveShock,
+            shockRadius: snap.shockAge * crt.reactive.shockSpeed,
+            shockWidth: crt.reactive.shockWidth,
+            shockU: sx / width,
+            shockV: 1 - sy / height,
+          },
         },
         bufferW,
         bufferH,
@@ -203,7 +231,8 @@ export class WebGLBackend implements ParticleBackend {
         stats.drawCalls +
         (limits.bloomPasses > 0 ? 3 : 0) +
         (crt.persistence.enabled ? 1 : 0) +
-        (crt.retro.enabled ? 1 : 0),
+        (crt.retro.enabled ? 1 : 0) +
+        (reactiveActive ? 1 : 0),
       instanceCount: stats.instanceCount,
       uploadBytes: stats.uploadBytes,
     };

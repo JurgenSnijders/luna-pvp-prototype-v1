@@ -129,6 +129,58 @@ void main() {
 }
 `;
 
+export const REACTIVE_SHADER = `#version 300 es
+precision highp float;
+in vec2 v_texCoord;
+uniform sampler2D u_source;
+uniform float u_time;
+uniform float u_blur;
+uniform float u_glitch;
+uniform float u_glitchSlices;
+uniform float u_glitchChroma;
+uniform float u_shock;
+uniform float u_shockRadius;
+uniform float u_shockWidth;
+uniform float u_shockU;
+uniform float u_shockV;
+out vec4 fragColor;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec2 uv = v_texCoord;
+  vec2 baseUv = uv;
+
+  vec2 toHit = uv - vec2(u_shockU, u_shockV);
+  float d = length(toHit);
+  float band = smoothstep(u_shockRadius - u_shockWidth, u_shockRadius, d)
+             * (1.0 - smoothstep(u_shockRadius, u_shockRadius + u_shockWidth, d));
+  uv += normalize(toHit + 1e-5) * band * u_shock;
+
+  float slice = floor(uv.y * u_glitchSlices);
+  float j = (hash21(vec2(slice, floor(u_time * 60.0))) - 0.5) * 2.0;
+  uv.x += j * u_glitch * 0.04;
+
+  vec2 dir = uv - 0.5;
+  vec3 col = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    vec2 s = uv - dir * u_blur * float(i) / 7.0;
+    bool inside = all(greaterThanEqual(s, vec2(0.0))) && all(lessThanEqual(s, vec2(1.0)));
+    vec2 sampleUv = inside ? s : baseUv;
+    vec3 t = texture(u_source, sampleUv).rgb;
+    vec2 chromaOff = vec2(u_glitch * u_glitchChroma * 0.01, 0.0);
+    t.r = texture(u_source, inside ? s + chromaOff : baseUv).r;
+    t.b = texture(u_source, inside ? s - chromaOff : baseUv).b;
+    col += t;
+  }
+  fragColor = vec4(col / 8.0, 1.0);
+}
+`;
+
 export const CRT_SHADER = `#version 300 es
 precision highp float;
 in vec2 v_texCoord;

@@ -29,14 +29,19 @@ export function assignDefaultLoadout(target: Player): void {
   target.setAbility(4, structuredClone(PRESETS['Phase Nova']));
 }
 
+export function storeForgedSpell(app: GameApp, ability: AbilitySchema): AbilitySchema {
+  const stored = SpellInventoryManager.addSpell(ability, true);
+  app.spellLibrary.addSpell(stored);
+  return stored;
+}
+
 function equipHumanSpell(
   app: GameApp,
   slotKey: ActionSlotKey,
   ability: AbilitySchema,
 ): void {
-  const stored = SpellInventoryManager.addSpell(ability, true);
+  const stored = storeForgedSpell(app, ability);
   SpellInventoryManager.equipSpell(slotKey, stored.id);
-  app.spellLibrary.addSpell(stored);
 }
 
 export function applyDraftSelection(app: GameApp, target: Player, selection: DraftSelection): void {
