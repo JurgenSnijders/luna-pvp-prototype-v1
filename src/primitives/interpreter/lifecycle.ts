@@ -1,10 +1,13 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import { isInsideHex } from '../../math/HexMath';
 import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
 import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
+import { decalManager, mapArchetypeToDecal } from '../../render/canvas/decals';
+import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
@@ -47,6 +50,91 @@ const ARCHETYPE_IMPACT_VFX: Partial<Record<SpellArchetype, ImpactVfx>> = {
 const CHAOS_IMPACT_POOL: ImpactVfx[] = ['SHOCKWAVE', 'LIGHTNING_FORK', 'VORTEX_SWIRL', 'SPARKS'];
 
 const DIRECTIONAL_RING_ARCHETYPES = new Set<SpellArchetype>(['KINETIC', 'SONIC', 'EARTH', 'BLOOD']);
+
+const stampedZoneIds = new Set<string>();
+let zoneVfxFrame = 0;
+
+function stampImpactDecal(
+  hit: { projectile: Projectile; hitPos: Vector2D },
+  scale: number,
+  isHeavy: boolean,
+): void {
+  const velocity = hit.projectile.vel.mag();
+  if (!isHeavy && velocity < 300) return;
+
+  const archetype = hit.projectile.spellArchetype;
+  const type = mapArchetypeToDecal(archetype);
+  const color = hit.projectile.visuals?.color ?? '#ff6644';
+  const radius = 12 + scale * 8;
+  decalManager.addDecal(hit.hitPos.x, hit.hitPos.y, radius, type, color);
+}
+
+function stampZoneExpirationDecals(world: PhysicsWorld): void {
+  const liveIds = new Set(world.zones.map((z) => z.id));
+
+  for (const zone of world.zones) {
+    if (!zone.isDead || stampedZoneIds.has(zone.id)) continue;
+    stampedZoneIds.add(zone.id);
+
+    if (!isInsideHex(zone.pos, world.hexCenter, world.hexRadius)) continue;
+
+    const radius = zone.config.radius * 0.35;
+    const color = FIELD_COLORS[zone.config.fieldType] ?? '#aa44ff';
+    let type = mapArchetypeToDecal(zone.spellArchetype);
+    if (zone.config.fieldType === 'RADIAL_IMPULSE') {
+      type = 'KINETIC_CRATER';
+    } else if (
+      zone.config.fieldType === 'VORTEX_TANGENT' ||
+      zone.config.fieldType === 'MASS_ATTRACTOR'
+    ) {
+      type = 'VOID_STAIN';
+    } else if (zone.config.fieldType === 'FRICTION_OVERRIDE') {
+      type = 'FROST_CRACK';
+    }
+    decalManager.addDecal(zone.pos.x, zone.pos.y, radius, type, color);
+  }
+
+  for (const id of stampedZoneIds) {
+    if (!liveIds.has(id)) stampedZoneIds.delete(id);
+  }
+}
+
+function processObstacleDestructions(interp: Interpreter, world: PhysicsWorld): void {
+  for (const death of world.pendingObstacleDestructions) {
+    if (!death.isDestructible) continue;
+    if (!isInsideHex(death.pos, world.hexCenter, world.hexRadius)) continue;
+
+    decalManager.addDecal(
+      death.pos.x,
+      death.pos.y,
+      death.radius * 1.2,
+      'KINETIC_CRATER',
+      '#aa8844',
+    );
+    interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
+  }
+}
+
+function processZoneParticleTicks(interp: Interpreter, world: PhysicsWorld): void {
+  zoneVfxFrame++;
+  if (zoneVfxFrame % 3 !== 0) return;
+  if (!getGraphicsSettings().particleTrails) return;
+
+  for (const zone of world.zones) {
+    if (zone.isDead) continue;
+    const color = FIELD_COLORS[zone.config.fieldType] ?? '#aa44ff';
+    if (
+      zone.config.fieldType === 'MASS_ATTRACTOR' ||
+      zone.config.fieldType === 'VORTEX_TANGENT'
+    ) {
+      interp.particles?.zoneVortexTick(zone.pos, zone.config.radius, color);
+    } else if (zone.config.fieldType === 'RADIAL_IMPULSE') {
+      interp.particles?.zoneHazardPulse(zone.pos, zone.config.radius, color);
+    } else if (Math.abs(zone.config.strength) >= 2000) {
+      interp.particles?.ember(zone.pos);
+    }
+  }
+}
 
 function resolveImpactVfx(archetype: SpellArchetype | undefined, authoredVfx: ImpactVfx): ImpactVfx {
   const isGeneric = authoredVfx === 'SPARKS';
@@ -242,6 +330,16 @@ export function processLifecycleEvents(
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
     if (shake > 0) screenShake.trigger(shake * 4, 0.12);
 
+    const detonated = hit.target.plasmaDetonatedThisFrame || detonatedBefore;
+    hit.target.plasmaDetonatedThisFrame = false;
+    const instabDelta = hit.target.instabilityPct - instabBefore;
+    const isHeavy = instabDelta >= 25 || detonated;
+
+    if (isInsideHex(hit.hitPos, world.hexCenter, world.hexRadius)) {
+      stampImpactDecal(hit, scale, isHeavy);
+    }
+    reactiveFx.pulse(hit.hitPos.x, hit.hitPos.y, isHeavy ? 1 : 0.45);
+
     dispatchProjectileTriggers(
       interp,
       hit.projectile,
@@ -251,12 +349,6 @@ export function processLifecycleEvents(
       hit.hitPos,
       hit.projectile.depth + 1,
     );
-
-    const detonated = hit.target.plasmaDetonatedThisFrame || detonatedBefore;
-    hit.target.plasmaDetonatedThisFrame = false;
-    const instabDelta = hit.target.instabilityPct - instabBefore;
-    const isHeavy = instabDelta >= 25 || detonated;
-    reactiveFx.pulse(hit.hitPos.x, hit.hitPos.y, isHeavy ? 1 : 0.45);
 
     if (hitFeedbackConfig.microHitstop && isHeavy) {
       requestHitstop(2);
@@ -409,6 +501,10 @@ export function processLifecycleEvents(
       (node, ctx) => !ctx?.targetEntity && nodeRequiresTarget(node),
     );
   }
+
+  stampZoneExpirationDecals(world);
+  processObstacleDestructions(interp, world);
+  processZoneParticleTicks(interp, world);
 }
 
 export function updateTrajectories(

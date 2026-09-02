@@ -8,6 +8,8 @@ import { drawHexPlatform } from './canvas/arena';
 
 import { drawLavaSeaFallback } from './canvas/background';
 
+import { decalManager } from './canvas/decals';
+
 import { drawDebugOverlay, type DebugOptions } from './canvas/debug';
 
 import { drawCombatants, drawSummons } from './canvas/entities';
@@ -213,6 +215,8 @@ export class CanvasRenderer {
 
 
     drawHexPlatform(ctx, state, world, shrinkProgress, isShrinking);
+
+    decalManager.render(ctx, performance.now());
 
     drawTerrainPatches(ctx, world);
 

@@ -103,4 +103,12 @@ export class ParticleSystem {
   spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
     this.director.spawnDirectionalImpactRing(pos, normal, color);
   }
+
+  zoneVortexTick(pos: Vector2D, radius: number, color: string): void {
+    this.director.zoneVortexTick(pos, radius, color);
+  }
+
+  zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
+    this.director.zoneHazardPulse(pos, radius, color);
+  }
 }

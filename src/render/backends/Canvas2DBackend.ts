@@ -346,4 +346,18 @@ export class Canvas2DBackend implements ParticleBackend {
       this.spawn(edge, Vector2D.fromAngle(angle, 40), 0.4, color, 4, 0.85);
     }
   }
+
+  zoneVortexTick(pos: Vector2D, radius: number, color: string): void {
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const edge = pos.add(Vector2D.fromAngle(angle, radius * 0.9));
+      const inward = pos.sub(edge).normalize().scale(50);
+      this.spawnStreak(edge, inward, 8, color, 0.65, 0.35, 'SECONDARY');
+    }
+  }
+
+  zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
+    this.spawnRing(pos, radius * 0.9, 2, color, 0.5, 0.4, 'SECONDARY');
+  }
 }

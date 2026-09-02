@@ -136,4 +136,12 @@ export class VfxDirector {
   spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
     this.backend.spawnDirectionalImpactRing(pos, normal, color);
   }
+
+  zoneVortexTick(pos: Vector2D, radius: number, color: string): void {
+    this.backend.zoneVortexTick(pos, radius, color);
+  }
+
+  zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
+    this.backend.zoneHazardPulse(pos, radius, color);
+  }
 }

@@ -196,6 +196,10 @@ export function getTierLimits(): TierLimits {
   };
 }
 
+export function areGroundDecalsEnabled(): boolean {
+  return getTierLimits().groundDecals;
+}
+
 export function getEffectiveDprCap(): number {
   const cap = getTierLimits().dprCap;
   const native = window.devicePixelRatio || 1;

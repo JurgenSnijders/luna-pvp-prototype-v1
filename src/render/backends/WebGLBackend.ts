@@ -34,6 +34,8 @@ import {
   trail as trailImpl,
   triggerImpactBurst as triggerImpactBurstImpl,
   triggerMuzzleFlash as triggerMuzzleFlashImpl,
+  zoneHazardPulse as zoneHazardPulseImpl,
+  zoneVortexTick as zoneVortexTickImpl,
 } from './webgl/vfxRecipes';
 
 const EMPTY_COUNTERS: VfxCounters = {
@@ -377,5 +379,13 @@ export class WebGLBackend implements ParticleBackend {
 
   spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
     spawnDirectionalImpactRingImpl(this.spawnCtx(), pos, normal, color);
+  }
+
+  zoneVortexTick(pos: Vector2D, radius: number, color: string): void {
+    zoneVortexTickImpl(this.spawnCtx(), pos, radius, color);
+  }
+
+  zoneHazardPulse(pos: Vector2D, radius: number, color: string): void {
+    zoneHazardPulseImpl(this.spawnCtx(), pos, radius, color);
   }
 }

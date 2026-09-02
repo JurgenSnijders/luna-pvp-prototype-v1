@@ -90,6 +90,8 @@ export interface ParticleBackend {
   ): void;
   expandingRing(pos: Vector2D, radius: number, color: string): void;
   spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void;
+  zoneVortexTick(pos: Vector2D, radius: number, color: string): void;
+  zoneHazardPulse(pos: Vector2D, radius: number, color: string): void;
 }
 
 export function parseColor(hex: string): [number, number, number] {

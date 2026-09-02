@@ -78,6 +78,12 @@ export interface HitMarkerEvent {
   isHeavy: boolean;
 }
 
+export interface PendingObstacleDestruction {
+  pos: Vector2D;
+  radius: number;
+  isDestructible: boolean;
+}
+
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
@@ -96,6 +102,7 @@ export class PhysicsWorld {
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
   pendingWallImpacts: Vector2D[] = [];
+  pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
 
@@ -275,6 +282,7 @@ export class PhysicsWorld {
     for (const obstacle of this.obstacles) {
       if (!obstacle.isDead) obstacle.update(dt);
     }
+    this.queueObstacleDestructions();
     this.obstacles = this.obstacles.filter((o) => !o.isDead);
 
     for (const patch of this.terrainPatches) {
@@ -486,6 +494,7 @@ export class PhysicsWorld {
     this.pendingHits = [];
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
+    this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
     this.lavaDamageAccumulator.clear();
@@ -547,6 +556,7 @@ export class PhysicsWorld {
     this.pendingHits = [];
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
+    this.pendingObstacleDestructions = [];
 
     this.updateObstaclesAndPatches(dt);
     this.refreshCombatantsCache();
@@ -915,7 +925,19 @@ export class PhysicsWorld {
       }
     }
 
+    this.queueObstacleDestructions();
     this.obstacles = this.obstacles.filter((o) => !o.isDead);
+  }
+
+  private queueObstacleDestructions(): void {
+    for (const obstacle of this.obstacles) {
+      if (!obstacle.isDead) continue;
+      this.pendingObstacleDestructions.push({
+        pos: obstacle.pos.clone(),
+        radius: obstacle.getCollisionRadius(),
+        isDestructible: obstacle.config.isDestructible ?? false,
+      });
+    }
   }
 
   private updateLavaTag(entity: Entity, dt: number): void {

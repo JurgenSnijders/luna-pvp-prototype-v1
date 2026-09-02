@@ -305,3 +305,49 @@ export function spawnDirectionalImpactRing(
   const [r, g, b] = parseColor(color);
   ctx.primitives.spawnDirectionalRing(pos.x, pos.y, 45, 3, rot, r, g, b, 0.85, 0.4);
 }
+
+export function zoneVortexTick(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  radius: number,
+  color: string,
+): void {
+  const count = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const edge = pos.add(Vector2D.fromAngle(angle, radius * (0.85 + Math.random() * 0.1)));
+    const inward = pos.sub(edge).normalize().scale(60 + Math.random() * 40);
+    spawnStreak(ctx, edge, inward, 10 + Math.random() * 6, color, 0.7, 0.35, 'SECONDARY');
+  }
+}
+
+export function zoneHazardPulse(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  radius: number,
+  color: string,
+): void {
+  spawnRing(ctx, pos, radius * 0.9, 2, color, 0.55, 0.4, 'SECONDARY');
+  const [r, g, b] = parseColor(color);
+  ctx.spawnParticle(
+    makeParticle({
+      posX: pos.x,
+      posY: pos.y,
+      velX: 0,
+      velY: 0,
+      life: 0.45,
+      size: radius * 1.8,
+      rot: 0,
+      angVel: 0,
+      drag: 1,
+      gravity: 0,
+      shapeId: ShapeId.ANNULUS,
+      r,
+      g,
+      b,
+      peakAlpha: 0.35,
+      additive: true,
+    }),
+    'SECONDARY',
+  );
+}
