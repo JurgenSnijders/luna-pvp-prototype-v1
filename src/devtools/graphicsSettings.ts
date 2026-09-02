@@ -1,5 +1,6 @@
 import {
   POST_EFFECTS,
+  POST_EFFECT_IDS,
   type PostEffectId,
   tierMeetsMinimum,
 } from '../render/gl/postEffects';
@@ -94,6 +95,7 @@ export interface EffectiveCrtSettings {
   tintColor: [number, number, number];
   tintAmount: number;
   brightness: number;
+  effectUniforms: Record<string, number>;
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -183,7 +185,7 @@ function getPostEffectState(id: PostEffectId): PostEffectState | undefined {
 
 export function getPostEffectUserEnabled(id: PostEffectId): boolean {
   const state = getPostEffectState(id);
-  return state?.enabled !== false;
+  return state?.enabled ?? POST_EFFECTS[id].defaultEnabled;
 }
 
 export function isPostEffectTierAvailable(id: PostEffectId): boolean {
@@ -222,7 +224,10 @@ export function getPostEffectParam(id: PostEffectId, paramKey: string): number {
 
 export function setPostEffectEnabled(id: PostEffectId, enabled: boolean): void {
   const s = getGraphicsSettings();
-  const current = s.postEffects[id] ?? { enabled: true, params: {} };
+  const current = s.postEffects[id] ?? {
+    enabled: POST_EFFECTS[id].defaultEnabled,
+    params: {},
+  };
   saveGraphicsSettings({
     ...s,
     postEffects: {
@@ -243,7 +248,10 @@ export function setPostEffectParam(id: PostEffectId, paramKey: string, value: nu
   }
 
   const s = getGraphicsSettings();
-  const current = s.postEffects[id] ?? { enabled: true, params: {} };
+  const current = s.postEffects[id] ?? {
+    enabled: POST_EFFECTS[id].defaultEnabled,
+    params: {},
+  };
   saveGraphicsSettings({
     ...s,
     postEffects: {
@@ -254,6 +262,20 @@ export function setPostEffectParam(id: PostEffectId, paramKey: string, value: nu
       },
     },
   });
+}
+
+export function getEffectUniforms(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const id of POST_EFFECT_IDS) {
+    const def = POST_EFFECTS[id];
+    const active = isPostEffectEnabled(id);
+    for (const param of def.params) {
+      if (!param.uniform) continue;
+      const neutralised = !active && param.key === def.masterParam;
+      out[param.uniform] = neutralised ? 0 : getPostEffectParam(id, param.key);
+    }
+  }
+  return out;
 }
 
 function resolveScanlineIntensity(): number {
@@ -290,6 +312,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const tintColor = presetCrt.tintColor;
   const tintAmount = resolveTintAmount(presetCrt.tintAmount);
   const brightness = s.crtBrightness;
+  const effectUniforms = s.crtEnabled ? getEffectUniforms() : {};
 
   if (!s.crtEnabled) {
     return {
@@ -306,6 +329,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       tintColor,
       tintAmount: 0,
       brightness: 1,
+      effectUniforms: {},
     };
   }
 
@@ -325,6 +349,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       tintColor,
       tintAmount,
       brightness,
+      effectUniforms: {},
     };
   }
 
@@ -342,6 +367,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     tintColor,
     tintAmount,
     brightness,
+    effectUniforms,
   };
 }
 

@@ -1,6 +1,15 @@
 import type { QualityTier } from '../../devtools/graphicsSettings';
 
-export type PostEffectId = 'SCANLINES' | 'PHOSPHOR' | 'CURVATURE' | 'VIGNETTE' | 'TINT';
+export type PostEffectId =
+  | 'SCANLINES'
+  | 'PHOSPHOR'
+  | 'CURVATURE'
+  | 'VIGNETTE'
+  | 'TINT'
+  | 'ROLL_BAR'
+  | 'VHS_JITTER'
+  | 'GRAIN'
+  | 'TRACKING';
 
 export type LegacyGraphicsKey =
   | 'crtScanlineIntensity'
@@ -20,6 +29,7 @@ export interface PostEffectParam {
   step: number;
   defaultValue: number;
   storage: ParamStorage;
+  uniform?: string;
 }
 
 export type PostEffectGroup = 'CRT' | 'ANALOG' | 'RETRO' | 'REACTIVE' | 'GRADE';
@@ -31,6 +41,8 @@ export interface PostEffectDef {
   minTier: Exclude<QualityTier, 'AUTO'>;
   conflictsWith: PostEffectId[];
   costHint: number;
+  defaultEnabled: boolean;
+  masterParam?: string;
   params: PostEffectParam[];
 }
 
@@ -42,6 +54,7 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     minTier: 'MEDIUM',
     conflictsWith: [],
     costHint: 1,
+    defaultEnabled: true,
     params: [
       {
         key: 'intensity',
@@ -61,6 +74,7 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     minTier: 'HIGH',
     conflictsWith: [],
     costHint: 1,
+    defaultEnabled: true,
     params: [
       {
         key: 'intensity',
@@ -80,6 +94,7 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     minTier: 'HIGH',
     conflictsWith: [],
     costHint: 1,
+    defaultEnabled: true,
     params: [
       {
         key: 'intensity',
@@ -99,6 +114,7 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     minTier: 'MEDIUM',
     conflictsWith: [],
     costHint: 1,
+    defaultEnabled: true,
     params: [
       {
         key: 'intensity',
@@ -118,7 +134,176 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
     minTier: 'MEDIUM',
     conflictsWith: [],
     costHint: 1,
+    defaultEnabled: true,
     params: [],
+  },
+  ROLL_BAR: {
+    id: 'ROLL_BAR',
+    label: 'Vertical Roll Bar',
+    group: 'ANALOG',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'intensity',
+    params: [
+      {
+        key: 'intensity',
+        label: 'Intensity',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.18,
+        storage: { kind: 'effect' },
+        uniform: 'u_rollIntensity',
+      },
+      {
+        key: 'speed',
+        label: 'Speed',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.08,
+        storage: { kind: 'effect' },
+        uniform: 'u_rollSpeed',
+      },
+      {
+        key: 'width',
+        label: 'Width',
+        min: 0.02,
+        max: 0.4,
+        step: 0.01,
+        defaultValue: 0.12,
+        storage: { kind: 'effect' },
+        uniform: 'u_rollWidth',
+      },
+    ],
+  },
+  VHS_JITTER: {
+    id: 'VHS_JITTER',
+    label: 'VHS Jitter',
+    group: 'ANALOG',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount (px)',
+        min: 0,
+        max: 20,
+        step: 0.5,
+        defaultValue: 3,
+        storage: { kind: 'effect' },
+        uniform: 'u_jitterAmount',
+      },
+      {
+        key: 'lines',
+        label: 'Line Density',
+        min: 50,
+        max: 1200,
+        step: 10,
+        defaultValue: 400,
+        storage: { kind: 'effect' },
+        uniform: 'u_jitterLines',
+      },
+      {
+        key: 'speed',
+        label: 'Speed',
+        min: 1,
+        max: 30,
+        step: 1,
+        defaultValue: 10,
+        storage: { kind: 'effect' },
+        uniform: 'u_jitterSpeed',
+      },
+    ],
+  },
+  GRAIN: {
+    id: 'GRAIN',
+    label: 'Film Grain',
+    group: 'ANALOG',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 0.5,
+        step: 0.01,
+        defaultValue: 0.08,
+        storage: { kind: 'effect' },
+        uniform: 'u_grainAmount',
+      },
+      {
+        key: 'darkBias',
+        label: 'Dark Bias',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.7,
+        storage: { kind: 'effect' },
+        uniform: 'u_grainDarkBias',
+      },
+    ],
+  },
+  TRACKING: {
+    id: 'TRACKING',
+    label: 'Tracking Bands',
+    group: 'ANALOG',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'frequency',
+    params: [
+      {
+        key: 'frequency',
+        label: 'Frequency',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.15,
+        storage: { kind: 'effect' },
+        uniform: 'u_trackFrequency',
+      },
+      {
+        key: 'height',
+        label: 'Band Height',
+        min: 0.01,
+        max: 0.3,
+        step: 0.01,
+        defaultValue: 0.06,
+        storage: { kind: 'effect' },
+        uniform: 'u_trackHeight',
+      },
+      {
+        key: 'shift',
+        label: 'Shift (px)',
+        min: 0,
+        max: 40,
+        step: 1,
+        defaultValue: 8,
+        storage: { kind: 'effect' },
+        uniform: 'u_trackShift',
+      },
+      {
+        key: 'desaturate',
+        label: 'Desaturate',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.6,
+        storage: { kind: 'effect' },
+        uniform: 'u_trackDesaturate',
+      },
+    ],
   },
 };
 

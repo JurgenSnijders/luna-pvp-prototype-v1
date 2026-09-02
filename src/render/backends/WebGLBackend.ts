@@ -151,6 +151,7 @@ export class WebGLBackend implements ParticleBackend {
           tintAmount: crt.tintAmount,
           brightness: crt.brightness,
           time: this.elapsed,
+          effectUniforms: crt.effectUniforms,
         },
         bufferW,
         bufferH,

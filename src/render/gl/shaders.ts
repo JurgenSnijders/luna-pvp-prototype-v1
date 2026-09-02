@@ -199,7 +199,7 @@ void main() {
 `;
 
 export const CRT_SHADER = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 v_texCoord;
 uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
@@ -214,6 +214,18 @@ uniform vec3 u_tintColor;
 uniform float u_tintAmount;
 uniform float u_brightness;
 uniform float u_time;
+uniform float u_rollIntensity;
+uniform float u_rollSpeed;
+uniform float u_rollWidth;
+uniform float u_jitterAmount;
+uniform float u_jitterLines;
+uniform float u_jitterSpeed;
+uniform float u_grainAmount;
+uniform float u_grainDarkBias;
+uniform float u_trackFrequency;
+uniform float u_trackHeight;
+uniform float u_trackShift;
+uniform float u_trackDesaturate;
 out vec4 fragColor;
 
 vec2 barrelDistort(vec2 uv, float k) {
@@ -222,8 +234,34 @@ vec2 barrelDistort(vec2 uv, float k) {
   return uv + cc * r2 * k;
 }
 
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
 void main() {
-  vec2 uv = barrelDistort(v_texCoord, u_curvature);
+  vec2 uv = v_texCoord;
+
+  float trackMask = 0.0;
+  if (u_trackFrequency > 0.0) {
+    float bandY = fract(uv.y * mix(5.0, 40.0, u_trackFrequency) + u_time * 0.1);
+    trackMask = smoothstep(0.0, u_trackHeight, bandY)
+              * (1.0 - smoothstep(u_trackHeight, u_trackHeight * 2.0, bandY));
+  }
+
+  if (u_jitterAmount > 0.0) {
+    float lineIdx = floor(uv.y * u_jitterLines);
+    float jitter = (hash21(vec2(lineIdx, floor(u_time * u_jitterSpeed))) - 0.5) * 2.0;
+    uv.x += jitter * u_jitterAmount / u_effectResolution.x;
+  }
+
+  if (u_trackFrequency > 0.0) {
+    uv.x += trackMask * u_trackShift / u_effectResolution.x;
+  }
+
+  uv = barrelDistort(uv, u_curvature);
+
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
@@ -259,9 +297,27 @@ void main() {
   float r = length(uv * 2.0 - 1.0) * 0.70710678;
   rgb *= 1.0 - u_vignette * smoothstep(0.4, 1.0, r);
 
+  if (u_rollIntensity > 0.0) {
+    float rollPos = fract(uv.y + u_time * u_rollSpeed);
+    float rollBand = smoothstep(0.0, u_rollWidth, rollPos)
+                   * (1.0 - smoothstep(u_rollWidth, u_rollWidth * 2.0, rollPos));
+    rgb *= 1.0 + u_rollIntensity * rollBand;
+  }
+
+  if (u_trackFrequency > 0.0 && trackMask > 0.0) {
+    float tluma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+    rgb = mix(rgb, vec3(tluma), trackMask * u_trackDesaturate);
+  }
+
+  if (u_grainAmount > 0.0) {
+    float glum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+    float gn = hash21(uv * u_effectResolution + vec2(u_time * 60.0));
+    rgb += (gn - 0.5) * u_grainAmount * mix(1.0, 1.0 - glum, u_grainDarkBias);
+  }
+
   rgb *= u_brightness;
 
-  fragColor = vec4(rgb, 1.0);
+  fragColor = vec4(max(rgb, vec3(0.0)), 1.0);
 }
 `;
 

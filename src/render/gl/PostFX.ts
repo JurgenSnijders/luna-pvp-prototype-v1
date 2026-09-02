@@ -27,6 +27,7 @@ export interface CrtPresentParams {
   tintAmount: number;
   brightness: number;
   time: number;
+  effectUniforms: Record<string, number>;
 }
 
 export class PostFX {
@@ -45,6 +46,7 @@ export class PostFX {
   private worldTexH = 0;
   private width = 0;
   private height = 0;
+  private crtUniformCache = new Map<string, WebGLUniformLocation | null>();
 
   constructor(private gl: WebGL2RenderingContext) {
     const vs = compileShader(gl, gl.VERTEX_SHADER, FULLSCREEN_VERTEX);
@@ -70,6 +72,7 @@ export class PostFX {
 
   rebuild(): void {
     this.destroyFbos();
+    this.crtUniformCache.clear();
     this.width = 0;
     this.height = 0;
   }
@@ -209,34 +212,39 @@ export class PostFX {
     gl.useProgram(this.crtProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_scene')!, 0);
+    gl.uniform1i(this.crtUniform('u_scene')!, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, hasBloom ? this.bloomFboA!.texture : target.texture);
-    gl.uniform1i(gl.getUniformLocation(this.crtProgram, 'u_bloom')!, 1);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_hasBloom')!, hasBloom ? 1 : 0);
-    gl.uniform1f(
-      gl.getUniformLocation(this.crtProgram, 'u_bloomIntensity')!,
-      params.bloomIntensity,
-    );
-    gl.uniform2f(
-      gl.getUniformLocation(this.crtProgram, 'u_effectResolution')!,
-      effectWidth,
-      effectHeight,
-    );
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_scanline')!, params.scanline);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_curvature')!, params.curvature);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_vignette')!, params.vignette);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_phosphor')!, params.phosphor);
+    gl.uniform1i(this.crtUniform('u_bloom')!, 1);
+    gl.uniform1f(this.crtUniform('u_hasBloom')!, hasBloom ? 1 : 0);
+    gl.uniform1f(this.crtUniform('u_bloomIntensity')!, params.bloomIntensity);
+    gl.uniform2f(this.crtUniform('u_effectResolution')!, effectWidth, effectHeight);
+    gl.uniform1f(this.crtUniform('u_scanline')!, params.scanline);
+    gl.uniform1f(this.crtUniform('u_curvature')!, params.curvature);
+    gl.uniform1f(this.crtUniform('u_vignette')!, params.vignette);
+    gl.uniform1f(this.crtUniform('u_phosphor')!, params.phosphor);
     gl.uniform3f(
-      gl.getUniformLocation(this.crtProgram, 'u_tintColor')!,
+      this.crtUniform('u_tintColor')!,
       params.tintColor[0],
       params.tintColor[1],
       params.tintColor[2],
     );
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_tintAmount')!, params.tintAmount);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_brightness')!, params.brightness);
-    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_time')!, params.time);
+    gl.uniform1f(this.crtUniform('u_tintAmount')!, params.tintAmount);
+    gl.uniform1f(this.crtUniform('u_brightness')!, params.brightness);
+    gl.uniform1f(this.crtUniform('u_time')!, params.time);
+    for (const [name, value] of Object.entries(params.effectUniforms)) {
+      gl.uniform1f(this.crtUniform(name)!, value);
+    }
     this.drawFullscreen();
+  }
+
+  private crtUniform(name: string): WebGLUniformLocation | null {
+    let loc = this.crtUniformCache.get(name);
+    if (loc === undefined) {
+      loc = this.gl.getUniformLocation(this.crtProgram, name);
+      this.crtUniformCache.set(name, loc);
+    }
+    return loc;
   }
 
   private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {
