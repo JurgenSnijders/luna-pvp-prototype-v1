@@ -117,6 +117,31 @@ export interface SpellTelemetry {
   deliveryText: string;
 }
 
+export interface CombatImpactProfile {
+  launchPct: number;
+  instabilityPct: number;
+  controlPct: number;
+  dominantRole: string;
+}
+
+export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactProfile {
+  const launchWeight = Math.min(100, (telemetry.repulseForce / 1500) * 100);
+  const instabilityWeight = Math.min(100, telemetry.instabilityYield * 1.2);
+  const controlWeight = telemetry.ccDescriptions.length > 0 ? 60 : 15;
+  const total = launchWeight + instabilityWeight + controlWeight;
+
+  const launchPct = total > 0 ? Math.round((launchWeight / total) * 100) : 33;
+  const instabilityPct = total > 0 ? Math.round((instabilityWeight / total) * 100) : 33;
+  const controlPct = total > 0 ? 100 - launchPct - instabilityPct : 34;
+
+  let dominantRole = 'BALANCED ASSAULT';
+  if (launchPct >= 50) dominantRole = 'HEAVY LAUNCH';
+  else if (instabilityPct >= 50) dominantRole = 'VULNERABILITY SPIKE';
+  else if (controlPct >= 40) dominantRole = 'CROWD CONTROL';
+
+  return { launchPct, instabilityPct, controlPct, dominantRole };
+}
+
 function formatEnumLabel(value: string): string {
   return value.replace(/_/g, ' ');
 }
@@ -951,7 +976,8 @@ export class DraftModal {
     }
 
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
-    const { trajectory } = resolveDisplayTrajectory(spell);
+    const telemetry = extractSpellTelemetry(spell);
+    const profile = calculateCombatProfile(telemetry);
     const actionTypes = collectActionTypes(spell);
     const loadout = SpellInventoryManager.getLoadout();
 
@@ -984,37 +1010,41 @@ export class DraftModal {
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'inspector-telemetry-grid';
 
-    const telemetryCells: { label: string; value: string }[] = [
-      { label: 'Cooldown', value: formatCooldown(spell.cooldownMs) },
-      { label: 'Recoil', value: `${spell.recoilKick}` },
-      {
-        label: 'Trajectory',
-        value: trajectory ? formatEnumLabel(trajectory.type) : 'INSTANT',
-      },
-      {
-        label: 'Range / Speed',
-        value: trajectory
-          ? `${trajectory.maxRange ?? 0}px / ${trajectory.speed ?? 0}px/s`
-          : '—',
-      },
-    ];
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
+    );
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
+    );
 
-    for (const cell of telemetryCells) {
-      const cellEl = document.createElement('div');
-      cellEl.className = 'telemetry-cell';
+    const repulseVal = document.createElement('span');
+    repulseVal.className = 'telemetry-value val-repulse';
+    repulseVal.textContent = `${telemetry.repulseForce} Force`;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
+    );
 
-      const label = document.createElement('span');
-      label.className = 'telemetry-label';
-      label.textContent = cell.label;
+    const instabilityVal = document.createElement('span');
+    instabilityVal.className = 'telemetry-value val-instability';
+    instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
+    );
 
-      const value = document.createElement('span');
-      value.className = 'telemetry-value';
-      value.textContent = cell.value;
-
-      cellEl.appendChild(label);
-      cellEl.appendChild(value);
-      telemetryGrid.appendChild(cellEl);
+    if (telemetry.directDamage > 0) {
+      telemetryGrid.appendChild(
+        this.buildInspectorTelemetryCell('DIRECT DAMAGE', `${telemetry.directDamage} HP`),
+      );
     }
+
+    const deliveryVal = document.createElement('span');
+    deliveryVal.className = 'telemetry-value val-delivery';
+    deliveryVal.textContent = telemetry.deliveryText;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
+    );
+
+    const profileCard = this.buildImpactProfileCard(profile);
 
     const tagsRow = document.createElement('div');
     tagsRow.className = 'inspector-tags-row';
@@ -1080,6 +1110,7 @@ export class DraftModal {
     panel.appendChild(heroWrap);
     panel.appendChild(header);
     panel.appendChild(telemetryGrid);
+    panel.appendChild(profileCard);
     panel.appendChild(tagsRow);
     panel.appendChild(desc);
     panel.appendChild(actionsSection);
@@ -1529,6 +1560,96 @@ export class DraftModal {
     this.clearVaultFilters();
     this.selectedSpellId = spellId;
     this.setActiveTab('VAULT');
+  }
+
+  private buildInspectorTelemetryCell(
+    label: string,
+    valueContent: string | HTMLElement,
+    fullWidth = false,
+  ): HTMLElement {
+    const cellEl = document.createElement('div');
+    cellEl.className = fullWidth ? 'telemetry-cell cell-span-2' : 'telemetry-cell';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'telemetry-label';
+    labelEl.textContent = label;
+
+    if (typeof valueContent === 'string') {
+      const valueEl = document.createElement('span');
+      valueEl.className = 'telemetry-value';
+      valueEl.textContent = valueContent;
+      cellEl.appendChild(labelEl);
+      cellEl.appendChild(valueEl);
+    } else {
+      cellEl.appendChild(labelEl);
+      cellEl.appendChild(valueContent);
+    }
+
+    return cellEl;
+  }
+
+  private buildImpactProfileCard(profile: CombatImpactProfile): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'inspector-profile-card';
+
+    const header = document.createElement('div');
+    header.className = 'inspector-profile-header';
+
+    const title = document.createElement('span');
+    title.className = 'inspector-profile-title';
+    title.textContent = 'PHYSICAL IMPACT SPECTRUM';
+
+    const role = document.createElement('span');
+    role.className = 'inspector-profile-role';
+    role.textContent = profile.dominantRole;
+
+    header.appendChild(title);
+    header.appendChild(role);
+
+    const bar = document.createElement('div');
+    bar.className = 'impact-gauge-bar';
+
+    const segments: { pct: number; cls: string }[] = [
+      { pct: profile.launchPct, cls: 'seg-launch' },
+      { pct: profile.instabilityPct, cls: 'seg-instability' },
+      { pct: profile.controlPct, cls: 'seg-control' },
+    ];
+
+    for (const seg of segments) {
+      if (seg.pct > 0) {
+        const el = document.createElement('div');
+        el.className = `impact-gauge-segment ${seg.cls}`;
+        el.style.width = `${seg.pct}%`;
+        bar.appendChild(el);
+      }
+    }
+
+    const legend = document.createElement('div');
+    legend.className = 'impact-gauge-legend';
+
+    const legendItems = [
+      { color: '#ffaa00', label: 'Launch', pct: profile.launchPct },
+      { color: '#ff4400', label: 'Instability', pct: profile.instabilityPct },
+      { color: '#00e5ff', label: 'Control', pct: profile.controlPct },
+    ];
+
+    for (const item of legendItems) {
+      const legendItem = document.createElement('span');
+      legendItem.className = 'legend-item';
+
+      const pip = document.createElement('span');
+      pip.className = 'legend-pip';
+      pip.style.background = item.color;
+
+      legendItem.appendChild(pip);
+      legendItem.appendChild(document.createTextNode(`${item.label} ${item.pct}%`));
+      legend.appendChild(legendItem);
+    }
+
+    card.appendChild(header);
+    card.appendChild(bar);
+    card.appendChild(legend);
+    return card;
   }
 
   private buildTelemetryItem(label: string, value: string, extraClass = ''): HTMLElement {

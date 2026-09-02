@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v10';
+export const STYLE_ID = 'luna-workshop-styles-v11';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -167,16 +167,23 @@ export function injectStyles(): void {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px;
-      background: rgba(8, 12, 22, 0.5);
-      padding: 8px;
-      border-radius: 4px;
+      background: rgba(10, 14, 26, 0.65);
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      padding: 8px 10px;
     }
 
     .telemetry-cell {
       display: flex;
       flex-direction: column;
       gap: 2px;
+    }
+
+    .telemetry-cell.cell-span-2 {
+      grid-column: 1 / -1;
+      border-top: 1px dashed rgba(26, 34, 54, 0.8);
+      padding-top: 4px;
+      margin-top: 2px;
     }
 
     .telemetry-label {
@@ -190,6 +197,94 @@ export function injectStyles(): void {
       font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
       font-size: 12px;
       color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .telemetry-value.val-repulse {
+      color: #ffaa00;
+      font-weight: bold;
+    }
+
+    .telemetry-value.val-instability {
+      color: #ff6644;
+      font-weight: bold;
+    }
+
+    .telemetry-value.val-delivery {
+      color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .inspector-profile-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(4, 6, 12, 0.7);
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+
+    .inspector-profile-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+    }
+
+    .inspector-profile-title {
+      color: var(--retro-text-muted, #6d8896);
+      text-transform: uppercase;
+    }
+
+    .inspector-profile-role {
+      color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .impact-gauge-bar {
+      display: flex;
+      height: 8px;
+      width: 100%;
+      border-radius: 2px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .impact-gauge-segment {
+      height: 100%;
+      transition: width 0.2s ease;
+    }
+
+    .impact-gauge-segment.seg-launch {
+      background: #ffaa00;
+    }
+
+    .impact-gauge-segment.seg-instability {
+      background: #ff4400;
+    }
+
+    .impact-gauge-segment.seg-control {
+      background: #00e5ff;
+    }
+
+    .impact-gauge-legend {
+      display: flex;
+      justify-content: space-between;
+      font-family: Fixedsys, monospace;
+      font-size: 9px;
+      color: var(--retro-text-muted, #6d8896);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-pip {
+      width: 6px;
+      height: 6px;
+      border-radius: 1px;
     }
 
     .inspector-tags-row {
@@ -213,7 +308,7 @@ export function injectStyles(): void {
       font-size: 11px;
       line-height: 1.4;
       color: var(--retro-text-secondary, #9ba8c7);
-      flex: 1 1 auto;
+      flex: 0 1 auto;
       overflow-y: auto;
     }
 
