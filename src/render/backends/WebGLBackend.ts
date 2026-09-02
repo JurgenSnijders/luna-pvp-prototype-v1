@@ -150,6 +150,8 @@ export class WebGLBackend implements ParticleBackend {
         },
         bufferW,
         bufferH,
+        width,
+        height,
       );
     }
 

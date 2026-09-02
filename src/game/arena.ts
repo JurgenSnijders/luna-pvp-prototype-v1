@@ -9,8 +9,10 @@ export function getHexCenter(): Vector2D {
 
 export function resize(app: GameApp): void {
   const dpr = getEffectiveDprCap();
-  app.canvas.width = window.innerWidth * dpr;
-  app.canvas.height = window.innerHeight * dpr;
+  const pixelW = Math.max(1, Math.floor(window.innerWidth * dpr));
+  const pixelH = Math.max(1, Math.floor(window.innerHeight * dpr));
+  app.canvas.width = pixelW;
+  app.canvas.height = pixelH;
   app.canvas.style.width = `${window.innerWidth}px`;
   app.canvas.style.height = `${window.innerHeight}px`;
   app.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

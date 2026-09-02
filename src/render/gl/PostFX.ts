@@ -170,6 +170,8 @@ export class PostFX {
     params: CrtPresentParams,
     bufferWidth: number,
     bufferHeight: number,
+    effectWidth: number,
+    effectHeight: number,
   ): void {
     const gl = this.gl;
     this.ensureWorldTexture(worldCanvas.width, worldCanvas.height);
@@ -214,7 +216,11 @@ export class PostFX {
       gl.getUniformLocation(this.crtProgram, 'u_bloomIntensity')!,
       params.bloomIntensity,
     );
-    gl.uniform2f(gl.getUniformLocation(this.crtProgram, 'u_resolution')!, bufferWidth, bufferHeight);
+    gl.uniform2f(
+      gl.getUniformLocation(this.crtProgram, 'u_effectResolution')!,
+      effectWidth,
+      effectHeight,
+    );
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_scanline')!, params.scanline);
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_curvature')!, params.curvature);
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_vignette')!, params.vignette);

@@ -56,6 +56,7 @@ function init(app: GameApp): void {
   app.camera.setViewport(window.innerWidth, window.innerHeight);
   resize(app);
   window.addEventListener('resize', () => resize(app));
+  document.addEventListener('fullscreenchange', () => resize(app));
   applyCooldownPacingSettings();
   applyInstabilitySettings();
 

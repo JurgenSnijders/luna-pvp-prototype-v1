@@ -203,7 +203,7 @@ precision mediump float;
 in vec2 v_texCoord;
 uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
-uniform vec2 u_resolution;
+uniform vec2 u_effectResolution;
 uniform float u_bloomIntensity;
 uniform float u_hasBloom;
 uniform float u_scanline;
@@ -231,7 +231,7 @@ void main() {
   vec3 bloomCol = u_hasBloom > 0.5 ? texture(u_bloom, uv).rgb * u_bloomIntensity : vec3(0.0);
   vec3 rgb = min(vec3(1.0), base + bloomCol);
 
-  float px = uv.x * u_resolution.x;
+  float px = uv.x * u_effectResolution.x;
   vec3 phosphorMask = vec3(
     0.8 + 0.2 * step(0.5, mod(px, 3.0)),
     0.8 + 0.2 * step(0.5, mod(px + 1.0, 3.0)),
@@ -244,7 +244,7 @@ void main() {
     rgb = mix(rgb, luma * u_tintColor, u_tintAmount);
   }
 
-  float scan = sin(uv.y * u_resolution.y * 3.14159265);
+  float scan = sin(uv.y * u_effectResolution.y * 3.14159265);
   rgb *= 1.0 - u_scanline * (0.5 + 0.5 * scan) * 0.5;
 
   vec2 vigUv = uv * 2.0 - 1.0;
