@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v11';
+export const STYLE_ID = 'luna-workshop-styles-v12';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -127,14 +127,48 @@ export function injectStyles(): void {
     }
 
     .inspector-hero-wrap {
+      position: relative;
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 12px;
-      background: rgba(4, 6, 12, 0.85);
+      padding: 18px 12px 14px 12px;
+      background: radial-gradient(circle at center, rgba(16, 24, 44, 0.95) 0%, rgba(4, 6, 12, 0.98) 100%);
       border: 1.5px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       border-radius: 4px;
-      box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.8);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.85);
+      overflow: hidden;
+    }
+
+    .scope-corner-hud {
+      position: absolute;
+      font-family: Fixedsys, monospace;
+      font-size: 8px;
+      line-height: 1;
+      color: rgba(0, 229, 255, 0.65);
+      letter-spacing: 0.5px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 2;
+    }
+
+    .scope-corner-hud.top-left {
+      top: 4px;
+      left: 6px;
+    }
+
+    .scope-corner-hud.top-right {
+      top: 4px;
+      right: 6px;
+    }
+
+    .scope-corner-hud.bottom-left {
+      bottom: 4px;
+      left: 6px;
+    }
+
+    .scope-corner-hud.bottom-right {
+      bottom: 4px;
+      right: 6px;
     }
 
     .inspector-header {

@@ -24,6 +24,7 @@ import type {
   AbilitySchema,
   ActionPayload,
   EmitterConfig,
+  ProjectileStyle,
   SpellArchetype,
   TrajectoryConfig,
   TriggerNode,
@@ -52,6 +53,7 @@ import {
   btnStyle,
   btnStyleRarity,
   chipStyle,
+  hexToRgba,
   injectStyles,
   renderPowerBar,
   showQuickEquipMenu,
@@ -75,6 +77,7 @@ import {
   attachVaultCardDrag,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
+import { resolveIconTrajectoryPaths } from '../render/canvas/trajectoryTracer';
 import { ActionBarHUD } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
@@ -140,6 +143,73 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
   else if (controlPct >= 40) dominantRole = 'CROWD CONTROL';
 
   return { launchPct, instabilityPct, controlPct, dominantRole };
+}
+
+const SCOPE_SIZE = 112;
+const SCOPE_PULSE_PERIOD_MS = 1200;
+
+export interface ScopeHudData {
+  channels: string;
+  velocity: string;
+  spread: string;
+  collision: string;
+}
+
+export function extractScopeHudData(spell: AbilitySchema): ScopeHudData {
+  const { trajectory, emitter } = resolveDisplayTrajectory(spell);
+  const count = emitter?.count ?? 1;
+  const speed = Math.round(trajectory?.speed ?? 400);
+  const spread =
+    emitter?.distribution === 'PARALLEL'
+      ? 'RAD: PARALLEL'
+      : `RAD: ${emitter?.spreadDeg ?? 0}°`;
+  const collision = (trajectory?.piercing ?? 0) > 0 ? 'MODE: PIERCE' : 'MODE: IMPACT';
+
+  return {
+    channels: `CH: ${count.toString().padStart(2, '0')}`,
+    velocity: `VEL: ${speed}`,
+    spread,
+    collision,
+  };
+}
+
+function buildScopeCornerHud(text: string, position: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = `scope-corner-hud ${position}`;
+  el.textContent = text;
+  return el;
+}
+
+function samplePathAtProgress(
+  points: { x: number; y: number }[],
+  t: number,
+): { x: number; y: number } {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1 || t <= 0) return points[0];
+  if (t >= 1) return points[points.length - 1];
+
+  const segments: number[] = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    segments.push(len);
+    total += len;
+  }
+  if (total === 0) return points[0];
+
+  let target = t * total;
+  for (let i = 1; i < points.length; i++) {
+    const segLen = segments[i - 1];
+    if (target <= segLen) {
+      const frac = segLen > 0 ? target / segLen : 0;
+      return {
+        x: points[i - 1].x + (points[i].x - points[i - 1].x) * frac,
+        y: points[i - 1].y + (points[i].y - points[i - 1].y) * frac,
+      };
+    }
+    target -= segLen;
+  }
+  return points[points.length - 1];
 }
 
 function formatEnumLabel(value: string): string {
@@ -394,6 +464,7 @@ export class DraftModal {
   private vaultBuilt = false;
   private selectedSpellId: string | null = null;
   private hoveredSpellId: string | null = null;
+  private heroScopeAnimId: number | null = null;
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
       this.renderVaultGrid();
@@ -630,6 +701,7 @@ export class DraftModal {
   }
 
   close(): void {
+    this.stopHeroScopeAnimation();
     this.invalidatePrefetch();
     this.clearSynthesisTimer();
     this.open_ = false;
@@ -729,6 +801,7 @@ export class DraftModal {
   }
 
   private setActiveTab(tab: WorkshopTab): void {
+    this.stopHeroScopeAnimation();
     this.activeTab = tab;
     this.refreshUI();
     if (tab === 'FORGE') {
@@ -962,6 +1035,7 @@ export class DraftModal {
   }
 
   private renderTacticalInspector(): void {
+    this.stopHeroScopeAnimation();
     this.inspectorPane.innerHTML = '';
 
     const activeId = this.hoveredSpellId ?? this.selectedSpellId;
@@ -988,7 +1062,40 @@ export class DraftModal {
     heroWrap.className = 'inspector-hero-wrap';
     heroWrap.style.borderColor = archetypeColor;
     heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
-    heroWrap.appendChild(generateSpellIcon(spell, 112));
+
+    const scopeHud = extractScopeHudData(spell);
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.channels, 'top-left'));
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.velocity, 'top-right'));
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.spread, 'bottom-left'));
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.collision, 'bottom-right'));
+
+    const scopeCanvas = document.createElement('canvas');
+    const dpr = window.devicePixelRatio || 1;
+    scopeCanvas.width = SCOPE_SIZE * dpr;
+    scopeCanvas.height = SCOPE_SIZE * dpr;
+    scopeCanvas.style.width = `${SCOPE_SIZE}px`;
+    scopeCanvas.style.height = `${SCOPE_SIZE}px`;
+    heroWrap.appendChild(scopeCanvas);
+
+    const scopePadding = Math.round(SCOPE_SIZE * 0.16);
+    const { origin, paths, endpoints } = resolveIconTrajectoryPaths(
+      spell,
+      SCOPE_SIZE,
+      scopePadding,
+    );
+    const scopeCtx = scopeCanvas.getContext('2d');
+    if (scopeCtx) {
+      scopeCtx.scale(dpr, dpr);
+      this.startHeroScopeAnimation(
+        scopeCanvas,
+        scopeCtx,
+        origin,
+        paths,
+        endpoints,
+        archetypeColor,
+        spell.visuals?.projectileStyle,
+      );
+    }
 
     const header = document.createElement('div');
     header.className = 'inspector-header';
@@ -1560,6 +1667,208 @@ export class DraftModal {
     this.clearVaultFilters();
     this.selectedSpellId = spellId;
     this.setActiveTab('VAULT');
+  }
+
+  private stopHeroScopeAnimation(): void {
+    if (this.heroScopeAnimId !== null) {
+      cancelAnimationFrame(this.heroScopeAnimId);
+      this.heroScopeAnimId = null;
+    }
+  }
+
+  private startHeroScopeAnimation(
+    canvas: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    origin: { x: number; y: number },
+    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
+    endpoints: { x: number; y: number }[],
+    archetypeColor: string,
+    payloadStyle?: ProjectileStyle,
+  ): void {
+    const animate = (timestamp: number): void => {
+      if (!canvas.isConnected) {
+        this.stopHeroScopeAnimation();
+        return;
+      }
+
+      ctx.clearRect(0, 0, SCOPE_SIZE, SCOPE_SIZE);
+      this.drawScopeBackground(ctx, SCOPE_SIZE, timestamp, archetypeColor, origin);
+      this.drawScopePaths(ctx, origin, paths, endpoints, archetypeColor, payloadStyle);
+      this.drawScopePulses(ctx, paths, timestamp, archetypeColor);
+
+      this.heroScopeAnimId = requestAnimationFrame(animate);
+    };
+
+    this.heroScopeAnimId = requestAnimationFrame(animate);
+  }
+
+  private drawScopeBackground(
+    ctx: CanvasRenderingContext2D,
+    size: number,
+    timestamp: number,
+    color: string,
+    origin: { x: number; y: number },
+  ): void {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= size; x += 8) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, size);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= size; y += 8) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(size, y);
+      ctx.stroke();
+    }
+
+    const scanY = (timestamp * 0.04) % size;
+    const scanGrad = ctx.createLinearGradient(0, scanY - 1, 0, scanY + 1);
+    scanGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    scanGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
+    scanGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = scanGrad;
+    ctx.fillRect(0, scanY - 1, size, 2);
+
+    const sonarRad = (timestamp * 0.03) % (size / 2);
+    const sonarAlpha = 1 - sonarRad / (size / 2);
+    ctx.strokeStyle = hexToRgba(color, sonarAlpha * 0.25);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, sonarRad, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  private drawScopePaths(
+    ctx: CanvasRenderingContext2D,
+    origin: { x: number; y: number },
+    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
+    endpoints: { x: number; y: number }[],
+    color: string,
+    payloadStyle?: ProjectileStyle,
+  ): void {
+    if (paths.length === 0) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.lineWidth = 0.5;
+      const cx = SCOPE_SIZE / 2;
+      const cy = SCOPE_SIZE / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, cy);
+      ctx.lineTo(cx + 4, cy);
+      ctx.moveTo(cx, cy - 4);
+      ctx.lineTo(cx, cy + 4);
+      ctx.stroke();
+      return;
+    }
+
+    const originRadius = Math.max(2, SCOPE_SIZE * 0.04);
+    const lineWidth = Math.max(1.5, SCOPE_SIZE * 0.035);
+    const markerSize = SCOPE_SIZE * 0.1;
+
+    ctx.fillStyle = hexToRgba(color, 0.6);
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, originRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (const path of paths) {
+      if (path.points.length < 2) continue;
+
+      const start = path.points[0];
+      const end = path.points[path.points.length - 1];
+      const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+      gradient.addColorStop(0, hexToRgba(color, 0.15));
+      gradient.addColorStop(0.7, hexToRgba(color, 0.7));
+      gradient.addColorStop(1, hexToRgba(color, 1));
+
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = lineWidth;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 4;
+
+      ctx.beginPath();
+      ctx.moveTo(path.points[0].x, path.points[0].y);
+      for (let i = 1; i < path.points.length; i++) {
+        ctx.lineTo(path.points[i].x, path.points[i].y);
+      }
+      if (path.isClosed) {
+        ctx.closePath();
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    for (const endpoint of endpoints) {
+      this.drawScopeEndpointMarker(ctx, endpoint.x, endpoint.y, color, markerSize, payloadStyle);
+    }
+  }
+
+  private drawScopeEndpointMarker(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    color: string,
+    markerSize: number,
+    payloadStyle?: ProjectileStyle,
+  ): void {
+    const r = markerSize * 0.5;
+    ctx.fillStyle = hexToRgba(color, 0.85);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+
+    if (payloadStyle === 'BEAM') {
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.6, y + r * 0.6);
+      ctx.lineTo(x + r * 0.6, y - r * 0.6);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private drawScopePulses(
+    ctx: CanvasRenderingContext2D,
+    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
+    timestamp: number,
+    color: string,
+  ): void {
+    const progress = (timestamp % SCOPE_PULSE_PERIOD_MS) / SCOPE_PULSE_PERIOD_MS;
+
+    for (const path of paths) {
+      if (path.points.length < 2) continue;
+
+      const tailStart = Math.max(0, progress - 0.05);
+      const tailSteps = 5;
+      for (let i = 0; i <= tailSteps; i++) {
+        const t = tailStart + ((progress - tailStart) * i) / tailSteps;
+        const pos = samplePathAtProgress(path.points, t);
+        const alpha = 0.15 + (i / tailSteps) * 0.35;
+        ctx.fillStyle = hexToRgba(color, alpha);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const head = samplePathAtProgress(path.points, progress);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
   }
 
   private buildInspectorTelemetryCell(
