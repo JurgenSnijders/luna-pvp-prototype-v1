@@ -4,6 +4,8 @@ import type { MovementProfile } from '../devtools/movementSettings';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
+import { ACTION_SLOT_INDEX, ACTION_SLOT_KEYS } from '../types/cards';
+import { SpellInventoryManager, type LoadoutChangedDetail } from '../game/SpellInventory';
 import {
   classifyAimingMode,
   resolveAbilityAimParams,
@@ -170,6 +172,35 @@ export class Player extends Entity {
   getAbility(slotIndex: number): AbilitySchema | null {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return null;
     return this.abilities[slotIndex];
+  }
+
+  applyEquippedLoadout(): void {
+    const equipped = SpellInventoryManager.getEquippedAbilities();
+    for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
+      const slotKey = ACTION_SLOT_KEYS[i];
+      const ability = equipped[slotKey];
+      this.setAbility(i, ability ? structuredClone(ability) : null);
+    }
+  }
+
+  subscribeLoadoutChanges(): void {
+    if (typeof window === 'undefined') return;
+
+    window.addEventListener('loadoutchanged', (event: Event) => {
+      const detail = (event as CustomEvent<LoadoutChangedDetail>).detail;
+      if (!detail) return;
+
+      const slotIndex = ACTION_SLOT_INDEX[detail.slotKey];
+      if (slotIndex === undefined) return;
+
+      if (detail.spellId === null) {
+        this.setAbility(slotIndex, null);
+        return;
+      }
+
+      const ability = SpellInventoryManager.getSpell(detail.spellId);
+      this.setAbility(slotIndex, ability ? structuredClone(ability) : null);
+    });
   }
 
   private buildAimingState(slotIndex: number, ability: AbilitySchema): AimingState {

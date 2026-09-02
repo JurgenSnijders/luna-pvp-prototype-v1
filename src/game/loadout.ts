@@ -2,7 +2,13 @@ import { compileAbilityPayload } from '../ai/Synthesizer';
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../ai/BudgetEngine';
 import { PRESETS } from '../devtools/Presets';
 import { Player } from '../entities/Player';
-import { ACTION_SLOT_INDEX, type DraftSelection } from '../types/cards';
+import { SpellInventoryManager } from './SpellInventory';
+import {
+  ACTION_SLOT_INDEX,
+  ACTION_SLOT_KEYS,
+  type ActionSlotKey,
+  type DraftSelection,
+} from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
 import type { GameApp } from './GameApp';
 
@@ -23,6 +29,16 @@ export function assignDefaultLoadout(target: Player): void {
   target.setAbility(4, structuredClone(PRESETS['Phase Nova']));
 }
 
+function equipHumanSpell(
+  app: GameApp,
+  slotKey: ActionSlotKey,
+  ability: AbilitySchema,
+): void {
+  const stored = SpellInventoryManager.addSpell(ability);
+  SpellInventoryManager.equipSpell(slotKey, stored.id);
+  app.spellLibrary.addSpell(stored);
+}
+
 export function applyDraftSelection(app: GameApp, target: Player, selection: DraftSelection): void {
   const { card, slot } = selection;
 
@@ -37,16 +53,21 @@ export function applyDraftSelection(app: GameApp, target: Player, selection: Dra
 
   const slotIndex = ACTION_SLOT_INDEX[slot as keyof typeof ACTION_SLOT_INDEX];
   if (slotIndex === undefined) return;
+  const slotKey = ACTION_SLOT_KEYS[slotIndex];
   const category = card.category ?? 'SECONDARY';
+  const isHuman = target === app.player;
 
   if (card.abilityPayload) {
     const ability = sanitizeAbilitySchema(structuredClone(card.abilityPayload), category);
     ability.tagline = card.tagline;
     ability.description = card.description;
-    target.setAbility(slotIndex, ability);
-    if (target === app.player) {
-      app.spellLibrary.addSpell(ability);
+
+    if (isHuman) {
+      equipHumanSpell(app, slotKey, ability);
+      return;
     }
+
+    target.setAbility(slotIndex, ability);
     return;
   }
 
@@ -60,13 +81,18 @@ export function applyDraftSelection(app: GameApp, target: Player, selection: Dra
   const resolveCompiled = (schema: AbilitySchema): void => {
     if (compileGen[slotIndex] !== gen) return; // superseded by a newer equip on this slot
     const ability = balanceAbilitySchema(sanitizeAbilitySchema(schema, category), category);
-    target.setAbility(slotIndex, ability);
     target.setSlotCompiling(slotIndex, false);
     target.cooldownTimersMs[slotIndex] = COMPILE_READY_DELAY_MS;
     target.slotCooldownTotalsMs[slotIndex] = COMPILE_READY_DELAY_MS;
-    if (target === app.player) {
-      app.spellLibrary.addSpell(ability);
+
+    if (isHuman) {
+      equipHumanSpell(app, slotKey, ability);
+      target.cooldownTimersMs[slotIndex] = COMPILE_READY_DELAY_MS;
+      target.slotCooldownTotalsMs[slotIndex] = COMPILE_READY_DELAY_MS;
+      return;
     }
+
+    target.setAbility(slotIndex, ability);
   };
 
   compileAbilityPayload(card, baseAbility)

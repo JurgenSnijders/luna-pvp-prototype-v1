@@ -36,6 +36,7 @@ export interface DraftCard {
 }
 
 export type ActionSlotKey = 'LMB' | 'RMB' | 'Q' | 'E' | 'SPACE';
+export type LoadoutMap = Record<ActionSlotKey, string | null>;
 export type SlotType = ActionSlotKey | 'PASSIVE';
 
 export const ACTION_SLOT_KEYS: readonly ActionSlotKey[] = ['LMB', 'RMB', 'Q', 'E', 'SPACE'];

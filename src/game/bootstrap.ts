@@ -22,6 +22,8 @@ import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
 import { handleCastInput, cancelPlayerAiming, updatePlayerAimTarget } from './input';
 import { assignDefaultLoadout } from './loadout';
+import { SpellInventoryManager } from './SpellInventory';
+import { ACTION_SLOT_KEYS } from '../types/cards';
 import {
   canDraftOpen,
   canCombatInput,
@@ -46,6 +48,8 @@ function init(app: GameApp): void {
   resize(app);
   window.addEventListener('resize', () => resize(app));
   applyCooldownPacingSettings();
+
+  SpellInventoryManager.initialize();
 
   const center = getHexCenter();
   const hexRadius = getStoredHexRadius();
@@ -82,7 +86,8 @@ function init(app: GameApp): void {
   app.interpreter.setParticleSystem(app.particles);
   perfMonitor.probeCapabilities(app.particles.getGlContext()?.gl ?? null);
 
-  assignDefaultLoadout(app.player);
+  app.player.applyEquippedLoadout();
+  app.player.subscribeLoadoutChanges();
   assignDefaultLoadout(app.bot);
 
   app.arenaShrink = new ArenaShrink(hexRadius);
@@ -109,13 +114,21 @@ function init(app: GameApp): void {
 
   app.spellLibrary = new SpellLibrary({
     onAssign: (slotIndex, schema) => {
-      app.player.setAbility(slotIndex, structuredClone(schema));
+      const stored = SpellInventoryManager.addSpell(schema);
+      SpellInventoryManager.equipSpell(ACTION_SLOT_KEYS[slotIndex], stored.id);
+      app.spellLibrary.addSpell(stored);
     },
   });
 
+  for (const spell of SpellInventoryManager.getCustomSpells()) {
+    app.spellLibrary.addSpell(spell);
+  }
+
   app.actionBarHUD = new ActionBarHUD({
     onSlotAssign: (slotIndex, schema) => {
-      app.player.setAbility(slotIndex, structuredClone(schema));
+      const stored = SpellInventoryManager.addSpell(schema);
+      SpellInventoryManager.equipSpell(ACTION_SLOT_KEYS[slotIndex], stored.id);
+      app.spellLibrary.addSpell(stored);
     },
     onEmptySlotClick: (slotIndex) => {
       app.spellLibrary.openForSlot(slotIndex);

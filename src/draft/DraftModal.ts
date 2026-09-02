@@ -1098,6 +1098,12 @@ export class DraftModal {
   }
 
   private equip(card: DraftCard, slot: DraftSelection['slot']): void {
+    if (card.abilityPayload) {
+      card.abilityPayload.id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `spell_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
     this.callbacks.onEquip({ card, slot });
     this.close();
   }
