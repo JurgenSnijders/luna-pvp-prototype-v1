@@ -45,11 +45,13 @@ import { subscribeGraphicsSettings } from '../devtools/graphicsSettings';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
+import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { lerpPos } from '../render/canvas/helpers';
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
+  loadFctClusterConfig();
   app.camera = new Camera2D();
   app.camera.setViewport(window.innerWidth, window.innerHeight);
   resize(app);

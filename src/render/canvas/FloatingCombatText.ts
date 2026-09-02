@@ -1,4 +1,5 @@
 import type { CombatVisualEvent } from '../../engine/PhysicsWorld';
+import { fctClusterConfig } from '../../render/fctClusterConfig';
 import type { SpellArchetype } from '../../types/schema';
 import { canvasFont } from '../../ui/tokens';
 
@@ -92,9 +93,6 @@ const SPAWN_Y_OFFSET = 24;
 const SPATIAL_CELL_SIZE = 80;
 const LANE_STAGGER_MS = 75;
 const LANE_MIN_STAGGER_MS = 35;
-const CLUSTER_WINDOW_MS = 400;
-const CLUSTER_PER_TICK_MAX = 8;
-const CLUSTER_INSTANT_FLUSH = 15;
 const GRAVITY_PX_S2 = 420;
 const SCALE_PUNCH_MS = 120;
 const FADE_OUT_MS = 250;
@@ -249,7 +247,7 @@ export class FloatingCombatTextManager {
     if (CLUSTERABLE_TYPES.has(type) && value !== undefined && value > 0) {
       const clusterKey = getClusterKey(type, targetId, pos);
 
-      if (value > CLUSTER_PER_TICK_MAX) {
+      if (value > fctClusterConfig.clusterPerTickMax) {
         this.flushCluster(clusterKey);
         this.enqueueSpawn(text, pos, type, colorOverride, value, kinematicProfile);
         return;
@@ -263,16 +261,16 @@ export class FloatingCombatTextManager {
           type,
           colorOverride,
           kinematicProfile,
-          remainingMs: CLUSTER_WINDOW_MS,
+          remainingMs: fctClusterConfig.clusterWindowMs,
         };
         this.clusters.set(clusterKey, cluster);
       }
 
       cluster.total += value;
       cluster.pos = { x: pos.x, y: pos.y };
-      cluster.remainingMs = CLUSTER_WINDOW_MS;
+      cluster.remainingMs = fctClusterConfig.clusterWindowMs;
 
-      if (cluster.total >= CLUSTER_INSTANT_FLUSH) {
+      if (cluster.total >= fctClusterConfig.clusterInstantFlush) {
         this.flushCluster(clusterKey);
       }
       return;

@@ -33,6 +33,12 @@ import {
   saveHitFeedbackConfig,
   type HitFeedbackConfig,
 } from '../../render/hitFeedbackConfig';
+import {
+  DEFAULT_FCT_CLUSTER_CONFIG,
+  fctClusterConfig,
+  saveFctClusterConfig,
+  type FctClusterConfig,
+} from '../../render/fctClusterConfig';
 import type { InspectorContext } from '../InspectorUI';
 
 export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): void {
@@ -277,6 +283,47 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   hitSection.appendChild(resetHitBtn);
 
   parent.appendChild(hitSection);
+
+  // --- FLOATING COMBAT TEXT ---
+  const fctSection = document.createElement('div');
+  fctSection.style.cssText = sectionDivider();
+  fctSection.appendChild(sectionHeader('FLOATING COMBAT TEXT'));
+
+  const fctHelper = document.createElement('div');
+  fctHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
+  fctHelper.textContent =
+    'Low damage/heal ticks merge into larger numbers. Stand in lava to preview.';
+  fctSection.appendChild(fctHelper);
+
+  const fctNumeric = (key: keyof FctClusterConfig) => ({
+    get: () => fctClusterConfig[key],
+    set: (v: number) => {
+      fctClusterConfig[key] = v;
+      saveFctClusterConfig();
+    },
+  });
+
+  const clusterWindow = fctNumeric('clusterWindowMs');
+  const clusterPerTick = fctNumeric('clusterPerTickMax');
+  const clusterFlush = fctNumeric('clusterInstantFlush');
+
+  const fctSliders = [
+    sliderRow(fctSection, 'Cluster Window', 100, 1000, 25, clusterWindow.get, clusterWindow.set, 'ms'),
+    sliderRow(fctSection, 'Per-Tick Max', 1, 20, 1, clusterPerTick.get, clusterPerTick.set),
+    sliderRow(fctSection, 'Instant Flush', 3, 50, 1, clusterFlush.get, clusterFlush.set),
+  ];
+
+  const resetFctBtn = document.createElement('button');
+  resetFctBtn.textContent = 'Reset FCT Clustering Defaults';
+  resetFctBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetFctBtn.onclick = () => {
+    Object.assign(fctClusterConfig, DEFAULT_FCT_CLUSTER_CONFIG);
+    saveFctClusterConfig();
+    for (const slider of fctSliders) slider.refresh();
+  };
+  fctSection.appendChild(resetFctBtn);
+
+  parent.appendChild(fctSection);
 
   // --- RETRO & CRT ENGINE ---
   const retroSection = document.createElement('div');
