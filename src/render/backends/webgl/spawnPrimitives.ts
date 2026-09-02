@@ -93,6 +93,15 @@ export function spawnRing(
   ctx.primitives.spawnRing(pos.x, pos.y, radius, thickness, r, g, b, alpha, life, true);
 }
 
+const STREAK_CAP_R = 0.06;
+const STREAK_HALF_LEN = 0.35;
+
+function streakParams(): [number, number, number, number] {
+  const capR = STREAK_CAP_R;
+  const halfLen = Math.max(STREAK_HALF_LEN, capR * 2.5);
+  return [capR, halfLen, 0, 0];
+}
+
 export function spawnStreak(
   ctx: WebGLSpawnCtx,
   pos: Vector2D,
@@ -105,6 +114,30 @@ export function spawnStreak(
 ): void {
   const [r, g, b] = parseColor(color);
   const rot = Math.atan2(vel.y, vel.x);
+  if (length <= 4) {
+    ctx.spawnParticle(
+      makeParticle({
+        posX: pos.x,
+        posY: pos.y,
+        velX: vel.x,
+        velY: vel.y,
+        life,
+        size: length,
+        rot: 0,
+        angVel: 0,
+        drag: 0.9,
+        gravity: 0,
+        shapeId: ShapeId.GLOW,
+        r,
+        g,
+        b,
+        peakAlpha: alpha,
+        additive: true,
+      }),
+      priority,
+    );
+    return;
+  }
   ctx.spawnParticle(
     makeParticle({
       posX: pos.x,
@@ -123,6 +156,7 @@ export function spawnStreak(
       b,
       peakAlpha: alpha,
       additive: true,
+      params: streakParams(),
     }),
     priority,
   );
@@ -154,6 +188,8 @@ export function burstSparks(
     if (!ctx.canSpawn(priority)) break;
     const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
     const speed = 80 + Math.random() * 120;
+    const size = 2 + Math.random() * 3;
+    const useGlow = size <= 4;
     ctx.particles.push(
       makeParticle({
         posX: pos.x,
@@ -161,17 +197,18 @@ export function burstSparks(
         velX: Math.cos(angle) * speed,
         velY: Math.sin(angle) * speed,
         life: 0.3 + Math.random() * 0.3,
-        size: 2 + Math.random() * 3,
-        rot: angle,
+        size,
+        rot: useGlow ? 0 : angle,
         angVel: 0,
         drag: 0.95,
         gravity: 0,
-        shapeId: ShapeId.STREAK,
+        shapeId: useGlow ? ShapeId.GLOW : ShapeId.STREAK,
         r,
         g,
         b,
         peakAlpha: 1,
         additive: true,
+        params: useGlow ? [0, 0, 0, 0] : streakParams(),
       }),
     );
   }

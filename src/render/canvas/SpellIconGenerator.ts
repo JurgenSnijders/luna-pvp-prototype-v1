@@ -384,6 +384,78 @@ function drawPayloadGlyph(
         ctx.stroke();
       });
       break;
+    case 'PRISM':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r);
+        ctx.lineTo(x + r * 0.85, y);
+        ctx.lineTo(x, y + r);
+        ctx.lineTo(x - r * 0.85, y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.5, y - r * 0.5);
+        ctx.lineTo(x + r * 0.5, y + r * 0.5);
+        ctx.stroke();
+      });
+      break;
+    case 'RUNE_SIGIL':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        const sq = r * 0.55;
+        ctx.beginPath();
+        ctx.rect(x - sq, y - sq, sq * 2, sq * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.15, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      break;
+    case 'VOID_RIFT':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - r * 1.1);
+        ctx.lineTo(x, y + r * 1.1);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r * 0.35, r * 0.9, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      break;
+    case 'CRYSTAL_SHARD':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + r * 0.9, y - r * 0.9);
+        ctx.lineTo(x - r * 0.4, y + r * 0.3);
+        ctx.lineTo(x - r * 0.2, y - r * 0.5);
+        ctx.closePath();
+        ctx.stroke();
+      });
+      break;
+    case 'PLASMA_TENDRIL':
+      strokeWithGlow(ctx, color, () => {
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.6, y + s * 0.2);
+        ctx.bezierCurveTo(
+          x - s * 0.1,
+          y - s * 0.5,
+          x + s * 0.1,
+          y + s * 0.5,
+          x + s * 0.6,
+          y - s * 0.2,
+        );
+        ctx.stroke();
+      });
+      break;
     default:
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;

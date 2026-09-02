@@ -106,7 +106,13 @@ float shapeAlpha(vec2 uv, float shapeId, vec4 params) {
   } else if (sid == 6) {
     d = sdBox(uv * vec2(1.0, 2.5), vec2(0.08, 0.35));
   } else if (sid == 7) {
-    d = sdCapsule(uv, vec2(-0.4, 0.0), vec2(0.4, 0.0), 0.06);
+    float capR = max(params.x, 0.04);
+    float halfLen = max(params.y, capR);
+    float aspect = halfLen / capR;
+    float circD = sdCircle(uv, capR);
+    float capD = sdCapsule(uv, vec2(-halfLen, 0.0), vec2(halfLen, 0.0), capR);
+    float blend = smoothstep(1.25, 2.5, aspect);
+    d = mix(circD, capD, blend);
   } else if (sid == 8) {
     d = sdCapsule(uv, vec2(-params.y, 0.0), vec2(params.y, 0.0), 0.05);
   } else {
