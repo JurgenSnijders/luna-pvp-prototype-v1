@@ -41,13 +41,23 @@ import {
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
-import { subscribeGraphicsSettings } from '../devtools/graphicsSettings';
+import { subscribeGraphicsSettings, getGraphicsSettings, getEffectiveCrtSettings, getEffectiveDprCap } from '../devtools/graphicsSettings';
+import { BackgroundRenderer, createBackgroundCanvas } from '../render/gl/BackgroundRenderer';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
 import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { lerpPos } from '../render/canvas/helpers';
+
+function syncWebGLBackground(app: GameApp): void {
+  const settings = getGraphicsSettings();
+  const renderer = app.backgroundRenderer;
+  const active =
+    settings.webglBackground && renderer !== null && renderer.isAvailable();
+  renderer?.setVisible(active);
+  app.renderer.setUseWebGLBackground(active);
+}
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
@@ -75,6 +85,14 @@ function init(app: GameApp): void {
   applyMovementSettings(app.player, app.bot, app.world);
   app.camera.snapTo(app.player.pos.x, app.player.pos.y);
 
+  const bgCanvas = createBackgroundCanvas();
+  app.backgroundRenderer = new BackgroundRenderer(bgCanvas);
+  if (!app.backgroundRenderer.isAvailable()) {
+    app.backgroundRenderer = null;
+  } else {
+    app.backgroundRenderer.resize(window.innerWidth, window.innerHeight);
+  }
+
   app.interpreter = new Interpreter();
   app.particles = new ParticleSystem(document.body);
   app.physicsDebugLayer = new PhysicsDebugLayer();
@@ -90,11 +108,13 @@ function init(app: GameApp): void {
   // with the GL drawing buffer or the CRT world texture samples at the wrong scale.
   subscribeGraphicsSettings(() => {
     resize(app);
+    syncWebGLBackground(app);
     applyPalette();
     applyCrtOverlay();
     applyArcadeBezel();
   });
   app.renderer = new CanvasRenderer(app.ctx);
+  syncWebGLBackground(app);
   app.interpreter.setParticleSystem(app.particles);
   perfMonitor.probeCapabilities(app.particles.getGlContext()?.gl ?? null);
 
@@ -410,6 +430,31 @@ function init(app: GameApp): void {
       const followPos = lerpPos(app.player, alpha);
       app.camera.update(1 / 60, followPos);
 
+      const settings = getGraphicsSettings();
+      const bg = app.backgroundRenderer;
+      const webglBg = settings.webglBackground && bg !== null && bg.isAvailable();
+      if (webglBg) {
+        bg.render(app.camera, app.world.hexRadius, performance.now());
+      }
+
+      const crt = getEffectiveCrtSettings();
+      const needsCrtBridge = webglBg && crt.webglCrt;
+
+      if (needsCrtBridge) {
+        const dpr = getEffectiveDprCap();
+        app.ctx.save();
+        app.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        app.ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        app.ctx.drawImage(
+          bg.getCanvas(),
+          0,
+          0,
+          window.innerWidth,
+          window.innerHeight,
+        );
+        app.ctx.restore();
+      }
+
       app.ctx.save();
       app.camera.applyTransform(app.ctx, shake.x, shake.y);
       app.renderer.render(
@@ -472,7 +517,7 @@ function init(app: GameApp): void {
 
 export function startGame(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d', { alpha: true })!;
   const app = new GameApp(canvas, ctx);
   init(app);
 }

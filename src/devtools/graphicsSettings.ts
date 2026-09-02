@@ -22,7 +22,7 @@ export type QualityTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'ULTRA' | 'AUTO';
 
 export interface GraphicsSettings {
   tier: QualityTier;
-  lavaHeatWaves: boolean;
+  webglBackground: boolean;
   ambientEmbers: boolean;
   particleTrails: boolean;
   bloomEnabled: boolean;
@@ -45,7 +45,7 @@ export interface GraphicsSettings {
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   tier: 'HIGH',
-  lavaHeatWaves: true,
+  webglBackground: true,
   ambientEmbers: true,
   particleTrails: true,
   bloomEnabled: true,
@@ -521,12 +521,17 @@ function loadFromStorage(): GraphicsSettings {
     if (!raw) return { ...DEFAULT_GRAPHICS_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<GraphicsSettings> & {
       lavaHeatWaves?: boolean;
+      webglBackground?: boolean;
       ambientEmbers?: boolean;
       particleTrails?: boolean;
     };
+    const webglBackground =
+      parsed.webglBackground ??
+      parsed.lavaHeatWaves ??
+      DEFAULT_GRAPHICS_SETTINGS.webglBackground;
     return {
       tier: parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier,
-      lavaHeatWaves: parsed.lavaHeatWaves ?? DEFAULT_GRAPHICS_SETTINGS.lavaHeatWaves,
+      webglBackground,
       ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
       particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
       bloomEnabled: parsed.bloomEnabled ?? DEFAULT_GRAPHICS_SETTINGS.bloomEnabled,
@@ -584,7 +589,7 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     ...getGraphicsSettings(),
     tier,
     manualTierOverride: true,
-    lavaHeatWaves: tier !== 'LOW',
+    webglBackground: tier !== 'LOW',
     ambientEmbers: tier !== 'LOW',
     particleTrails: true,
     bloomEnabled: limits.bloomPasses > 0,

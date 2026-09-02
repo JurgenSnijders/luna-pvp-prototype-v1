@@ -143,3 +143,101 @@ export const ShapeId = {
 
 export const FLOATS_PER_INSTANCE = 16;
 export const BYTES_PER_INSTANCE = FLOATS_PER_INSTANCE * 4;
+
+export const BACKGROUND_VERTEX_SHADER = `#version 300 es
+precision highp float;
+
+layout(location = 0) in vec2 a_pos;
+
+out vec2 v_uv;
+
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
+export const BACKGROUND_FRAGMENT_SHADER = `#version 300 es
+precision mediump float;
+
+in vec2 v_uv;
+
+uniform vec2 u_resolution;
+uniform vec2 u_cameraPos;
+uniform float u_cameraZoom;
+uniform float u_time;
+uniform float u_hexRadius;
+uniform int u_tier;
+
+out vec4 fragColor;
+
+const vec3 LAVA_CORE = vec3(1.0, 0.2667, 0.0);
+const vec3 LAVA_MID = vec3(0.6, 0.0941, 0.0);
+const vec3 LAVA_DEEP = vec3(0.0941, 0.0157, 0.0078);
+const vec3 VOID_COLOR = vec3(0.02, 0.01, 0.03);
+
+vec2 worldPos(vec2 uv) {
+  vec2 screen = uv * u_resolution;
+  return u_cameraPos + (screen - u_resolution * 0.5) / u_cameraZoom;
+}
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p, int octaves) {
+  float v = 0.0;
+  float a = 0.5;
+  mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+  for (int i = 0; i < 2; i++) {
+    if (i >= octaves) break;
+    v += a * noise2(p);
+    p = rot * p * 2.02 + vec2(1.7, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+
+vec3 deepLayer(vec2 world) {
+  vec2 p = world * 0.0015 + u_cameraPos * 0.15;
+  float grid = 0.0;
+  vec2 g = abs(fract(p * 0.08) - 0.5);
+  grid = smoothstep(0.48, 0.5, min(g.x, g.y)) * 0.12;
+  float stars = step(0.992, hash21(floor(p * 120.0))) * 0.55;
+  return VOID_COLOR + vec3(grid + stars);
+}
+
+vec3 lavaLayer(vec2 world) {
+  vec2 p = world * 0.0022 + u_cameraPos * 0.40;
+  float t = u_time * 0.3;
+  int octaves = u_tier >= 2 ? 2 : 1;
+  float n = fbm(p + vec2(t * 0.4, t * 0.25), octaves);
+  float veins = 1.0 - abs(fbm(p * 1.8 - vec2(t * 0.15, t * 0.35), octaves) * 2.0 - 1.0);
+  veins = pow(veins, 2.5) * 0.65;
+  float heat = n * 0.75 + veins;
+  vec3 col = mix(LAVA_DEEP, LAVA_MID, smoothstep(0.15, 0.45, heat));
+  col = mix(col, LAVA_CORE, smoothstep(0.55, 0.85, heat + veins * 0.3));
+  return col;
+}
+
+void main() {
+  vec2 world = worldPos(v_uv);
+  vec3 deep = deepLayer(world);
+  vec3 lava = lavaLayer(world);
+  float dist = length(world - vec2(0.0));
+  float arenaFade = smoothstep(u_hexRadius * 1.35, u_hexRadius * 2.8, dist);
+  vec3 rgb = mix(deep, lava, 0.55 + arenaFade * 0.45);
+  fragColor = vec4(rgb, 1.0);
+}
+`;

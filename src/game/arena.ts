@@ -20,6 +20,7 @@ export function resize(app: GameApp): void {
   app.world?.setViewportBounds(window.innerWidth, window.innerHeight);
   app.arenaShrink?.resize(getStoredHexRadius());
   app.particles?.resize(window.innerWidth, window.innerHeight);
+  app.backgroundRenderer?.resize(window.innerWidth, window.innerHeight);
   app.physicsDebugLayer?.resize(window.innerWidth, window.innerHeight);
 }
 

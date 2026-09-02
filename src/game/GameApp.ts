@@ -12,6 +12,7 @@ import type { Interpreter } from '../primitives/Interpreter';
 import type { ActionBarHUD } from '../render/ActionBarHUD';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import type { MatchHUD } from '../render/MatchHUD';
+import type { BackgroundRenderer } from '../render/gl/BackgroundRenderer';
 import type { ParticleSystem } from '../render/ParticleSystem';
 import type { PhysicsDebugLayer } from '../render/PhysicsDebugLayer';
 import { CombatLogger } from '../telemetry/CombatLogger';
@@ -27,6 +28,7 @@ export class GameApp {
   bot!: Player;
   interpreter!: Interpreter;
   particles!: ParticleSystem;
+  backgroundRenderer: BackgroundRenderer | null = null;
   renderer!: CanvasRenderer;
   inspector!: InspectorUI;
   draftModal!: DraftModal;

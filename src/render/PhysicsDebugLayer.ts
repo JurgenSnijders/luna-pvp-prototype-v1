@@ -11,7 +11,7 @@ export class PhysicsDebugLayer {
     this.canvas = document.createElement('canvas');
     this.canvas.id = 'physics-debug-canvas';
     this.canvas.style.cssText =
-      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;display:none;';
+      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;display:none;';
     document.body.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
   }

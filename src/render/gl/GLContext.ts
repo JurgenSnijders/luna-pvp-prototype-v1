@@ -28,7 +28,7 @@ export class GLContext {
     this.canvas = document.createElement('canvas');
     this.canvas.id = 'vfx-canvas';
     this.canvas.style.cssText =
-      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;';
+      'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;';
     const gameCanvas = document.getElementById('game-canvas');
     if (gameCanvas && gameCanvas.parentElement === parent) {
       gameCanvas.after(this.canvas);
