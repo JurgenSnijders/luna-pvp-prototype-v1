@@ -1,12 +1,13 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
-import { isInsideHex } from '../../math/HexMath';
+import { isInsideHex, clampToHex } from '../../math/HexMath';
 import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
 import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
 import { decalManager, mapArchetypeToDecal } from '../../render/canvas/decals';
+import { floorGridManager } from '../../render/canvas/floorGrid';
 import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
@@ -52,6 +53,7 @@ const CHAOS_IMPACT_POOL: ImpactVfx[] = ['SHOCKWAVE', 'LIGHTNING_FORK', 'VORTEX_S
 const DIRECTIONAL_RING_ARCHETYPES = new Set<SpellArchetype>(['KINETIC', 'SONIC', 'EARTH', 'BLOOD']);
 
 const stampedZoneIds = new Set<string>();
+const wasOnPlatform = new Map<string, boolean>();
 let zoneVfxFrame = 0;
 let statusVfxFrame = 0;
 
@@ -112,6 +114,7 @@ function processObstacleDestructions(interp: Interpreter, world: PhysicsWorld): 
       'KINETIC_CRATER',
       '#aa8844',
     );
+    floorGridManager.addRipple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
     interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
   }
 }
@@ -133,6 +136,26 @@ function processZoneParticleTicks(interp: Interpreter, world: PhysicsWorld): voi
       interp.particles?.zoneHazardPulse(zone.pos, zone.config.radius, color);
     } else if (Math.abs(zone.config.strength) >= 2000) {
       interp.particles?.ember(zone.pos);
+    }
+  }
+}
+
+function processLavaBoundaryRipples(world: PhysicsWorld): void {
+  const liveIds = new Set<string>();
+
+  for (const entity of world.getCombatants()) {
+    liveIds.add(entity.id);
+    const onPlatform = isInsideHex(entity.pos, world.hexCenter, world.hexRadius);
+    if (wasOnPlatform.get(entity.id) === true && !onPlatform) {
+      const boundary = clampToHex(entity.pos, world.hexCenter, world.hexRadius);
+      floorGridManager.addRipple(boundary.x, boundary.y, 200, 0.85, '#ffaa00');
+    }
+    wasOnPlatform.set(entity.id, onPlatform);
+  }
+
+  for (const id of wasOnPlatform.keys()) {
+    if (!liveIds.has(id)) {
+      wasOnPlatform.delete(id);
     }
   }
 }
@@ -368,6 +391,16 @@ export function processLifecycleEvents(
 
     if (isInsideHex(hit.hitPos, world.hexCenter, world.hexRadius)) {
       stampImpactDecal(hit, scale, isHeavy);
+      const forceProxy = hit.projectile.vel.mag();
+      if (isHeavy || forceProxy >= 300) {
+        floorGridManager.addRipple(
+          hit.hitPos.x,
+          hit.hitPos.y,
+          Math.min(320, 160 + forceProxy * 0.2),
+          isHeavy ? 1.0 : 0.7,
+          color,
+        );
+      }
     }
     reactiveFx.pulse(hit.hitPos.x, hit.hitPos.y, isHeavy ? 1 : 0.45);
 
@@ -535,6 +568,7 @@ export function processLifecycleEvents(
 
   stampZoneExpirationDecals(world);
   processObstacleDestructions(interp, world);
+  processLavaBoundaryRipples(world);
   processZoneParticleTicks(interp, world);
   processStatusParticleTicks(interp, world);
 }

@@ -170,6 +170,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   };
 
   addToggle(perfSection, perfCheckboxes, 'webglBackground', 'WebGL Arena Background');
+  addToggle(perfSection, perfCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
   addToggle(perfSection, perfCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
   addToggle(perfSection, perfCheckboxes, 'particleTrails', 'Projectile Particle Trails');
   addToggle(perfSection, perfCheckboxes, 'bloomEnabled', 'Bloom Post-Processing');

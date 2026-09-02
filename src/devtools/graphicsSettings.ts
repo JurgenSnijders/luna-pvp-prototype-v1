@@ -23,6 +23,7 @@ export type QualityTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'ULTRA' | 'AUTO';
 export interface GraphicsSettings {
   tier: QualityTier;
   webglBackground: boolean;
+  floorSubGrid: boolean;
   ambientEmbers: boolean;
   particleTrails: boolean;
   bloomEnabled: boolean;
@@ -46,6 +47,7 @@ export interface GraphicsSettings {
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   tier: 'HIGH',
   webglBackground: true,
+  floorSubGrid: true,
   ambientEmbers: true,
   particleTrails: true,
   bloomEnabled: true,
@@ -536,6 +538,7 @@ function loadFromStorage(): GraphicsSettings {
     return {
       tier: parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier,
       webglBackground,
+      floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
       ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
       particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
       bloomEnabled: parsed.bloomEnabled ?? DEFAULT_GRAPHICS_SETTINGS.bloomEnabled,
@@ -594,6 +597,7 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     tier,
     manualTierOverride: true,
     webglBackground: tier !== 'LOW',
+    floorSubGrid: tier !== 'LOW',
     ambientEmbers: tier !== 'LOW',
     particleTrails: true,
     bloomEnabled: limits.bloomPasses > 0,

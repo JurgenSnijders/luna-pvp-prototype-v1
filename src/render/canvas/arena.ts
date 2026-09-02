@@ -1,11 +1,14 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getHexVertices } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
+import { getGraphicsSettings } from '../../devtools/graphicsSettings';
 import { getActiveColors } from '../../ui/tokens';
+import { floorGridManager } from './floorGrid';
 import type { CanvasRenderCtx } from './renderCtx';
 
 const LIP_HEIGHT = 14;
 const SHADOW_OFFSET_Y = 24;
+let lastGridFrameTime = performance.now();
 
 function traceHexPath(ctx: CanvasRenderingContext2D, vertices: { x: number; y: number }[]): void {
   ctx.beginPath();
@@ -127,6 +130,21 @@ export function drawHexPlatform(
   ctx.fill();
 
   const colors = getActiveColors();
+  if (getGraphicsSettings().floorSubGrid) {
+    ctx.save();
+    traceHexPath(ctx, vertices);
+    ctx.clip();
+
+    const now = performance.now();
+    const dt = Math.min((now - lastGridFrameTime) / 1000, 0.1);
+    lastGridFrameTime = now;
+
+    floorGridManager.update(dt);
+    floorGridManager.render(ctx, center, world.hexRadius, colors.neonCyan);
+
+    ctx.restore();
+  }
+
   const neonRgb = hexToRgb(colors.neonCyan);
   traceHexPath(ctx, vertices);
   ctx.strokeStyle = `rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 0.3)`;
