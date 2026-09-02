@@ -31,6 +31,47 @@ export function helperText(parent: HTMLElement, text: string): void {
   parent.appendChild(el);
 }
 
+export function toggleRow(
+  parent: HTMLElement,
+  label: string,
+  get: () => boolean,
+  set: (v: boolean) => void,
+  options?: { disabled?: boolean; hint?: string },
+): { refresh: () => void; checkbox: HTMLInputElement } {
+  const row = document.createElement('label');
+  row.style.cssText =
+    `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
+  if (options?.disabled) {
+    row.style.opacity = '0.45';
+    row.style.cursor = 'not-allowed';
+  }
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.disabled = options?.disabled ?? false;
+
+  const text = document.createElement('span');
+  const updateLabel = (): void => {
+    text.textContent = options?.hint ? `${label} (${options.hint})` : label;
+  };
+
+  const refresh = (): void => {
+    checkbox.checked = get();
+    checkbox.disabled = options?.disabled ?? false;
+    updateLabel();
+  };
+
+  checkbox.onchange = () => {
+    if (!checkbox.disabled) set(checkbox.checked);
+  };
+
+  refresh();
+  row.appendChild(checkbox);
+  row.appendChild(text);
+  parent.appendChild(row);
+  return { refresh, checkbox };
+}
+
 export function sliderRow(
   parent: HTMLElement,
   label: string,

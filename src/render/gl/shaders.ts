@@ -212,6 +212,8 @@ uniform float u_vignette;
 uniform float u_phosphor;
 uniform vec3 u_tintColor;
 uniform float u_tintAmount;
+uniform float u_brightness;
+uniform float u_time;
 out vec4 fragColor;
 
 vec2 barrelDistort(vec2 uv, float k) {
@@ -237,7 +239,11 @@ void main() {
     0.8 + 0.2 * step(0.5, mod(px + 1.0, 3.0)),
     0.8 + 0.2 * step(0.5, mod(px + 2.0, 3.0))
   );
+  float phosphorMean = 1.0 - 0.033333333 * u_phosphor;
   rgb = mix(rgb, rgb * phosphorMask, u_phosphor);
+  if (u_phosphor > 0.0) {
+    rgb /= phosphorMean;
+  }
 
   if (u_tintAmount > 0.0) {
     float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -245,10 +251,15 @@ void main() {
   }
 
   float scan = sin(uv.y * u_effectResolution.y * 3.14159265);
-  rgb *= 1.0 - u_scanline * (0.5 + 0.5 * scan) * 0.5;
+  float scanMask = 1.0 - u_scanline * 0.5 * (0.5 + 0.5 * scan);
+  if (u_scanline > 0.0) {
+    rgb *= scanMask / (1.0 - 0.25 * u_scanline);
+  }
 
-  vec2 vigUv = uv * 2.0 - 1.0;
-  rgb *= clamp(1.0 - dot(vigUv, vigUv) * u_vignette, 0.0, 1.0);
+  float r = length(uv * 2.0 - 1.0) * 0.70710678;
+  rgb *= 1.0 - u_vignette * smoothstep(0.4, 1.0, r);
+
+  rgb *= u_brightness;
 
   fragColor = vec4(rgb, 1.0);
 }

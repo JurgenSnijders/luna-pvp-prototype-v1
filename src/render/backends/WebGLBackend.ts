@@ -49,6 +49,7 @@ export class WebGLBackend implements ParticleBackend {
   private renderer: InstancedQuadRenderer;
   private postFx: PostFX;
   private primitives: PrimitiveLayer;
+  private elapsed = 0;
 
   constructor(
     private glCtx: GLContext,
@@ -76,6 +77,7 @@ export class WebGLBackend implements ParticleBackend {
   }
 
   beginFrame(dt: number): void {
+    this.elapsed += dt;
     this.renderer.beginFrame(dt);
     this.primitives.beginFrame();
   }
@@ -147,6 +149,8 @@ export class WebGLBackend implements ParticleBackend {
           bloomThreshold: crt.bloomThreshold,
           tintColor: crt.tintColor,
           tintAmount: crt.tintAmount,
+          brightness: crt.brightness,
+          time: this.elapsed,
         },
         bufferW,
         bufferH,

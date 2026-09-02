@@ -27,6 +27,7 @@ import {
   selectRow,
   sliderRow,
 } from './domHelpers';
+import { buildPostEffectsSection } from './postEffectsSection';
 import {
   DEFAULT_HIT_FEEDBACK_CONFIG,
   hitFeedbackConfig,
@@ -407,19 +408,15 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
 
   const bloomSlider = numeric('bloomIntensity');
   const thresholdSlider = numeric('bloomThreshold');
-  const scanSlider = numeric('crtScanlineIntensity');
-  const curveSlider = numeric('crtCurvature');
-  const vigSlider = numeric('crtVignette');
-  const phosSlider = numeric('crtPhosphor');
+  const brightnessSlider = numeric('crtBrightness');
 
-  const sliders = [
+  const bloomSliders = [
     sliderRow(retroSection, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
     sliderRow(retroSection, 'Bloom Threshold', 0.2, 0.9, 0.05, thresholdSlider.get, thresholdSlider.set),
-    sliderRow(retroSection, 'CRT Scanlines', 0, 1, 0.05, scanSlider.get, scanSlider.set),
-    sliderRow(retroSection, 'CRT Curvature', 0, 0.5, 0.01, curveSlider.get, curveSlider.set),
-    sliderRow(retroSection, 'CRT Vignette', 0, 1, 0.05, vigSlider.get, vigSlider.set),
-    sliderRow(retroSection, 'CRT Phosphor', 0, 1, 0.05, phosSlider.get, phosSlider.set),
+    sliderRow(retroSection, 'CRT Brightness', 0.5, 2, 0.05, brightnessSlider.get, brightnessSlider.set),
   ];
+
+  const postEffectsControls = buildPostEffectsSection(retroSection);
 
   const resetPresetBtn = document.createElement('button');
   resetPresetBtn.textContent = 'Reset Preset Defaults';
@@ -441,7 +438,8 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     }
     presetSelect.refresh();
     crosshairSelect.refresh();
-    for (const slider of sliders) slider.refresh();
+    for (const slider of bloomSliders) slider.refresh();
+    postEffectsControls.sync();
   };
 
   subscribeGraphicsSettings(() => syncControls(getGraphicsSettings()));

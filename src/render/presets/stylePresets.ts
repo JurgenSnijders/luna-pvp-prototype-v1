@@ -36,6 +36,7 @@ export interface CrtPresetValues {
   crtCurvature: number;
   crtVignette: number;
   crtPhosphor: number;
+  crtBrightness: number;
   bloomIntensity: number;
   tintColor: [number, number, number];
   tintAmount: number;
@@ -84,6 +85,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       crtCurvature: 0.12,
       crtVignette: 0.45,
       crtPhosphor: 0.25,
+      crtBrightness: 1.0,
       bloomIntensity: 0.8,
       tintColor: [1, 1, 1],
       tintAmount: 0,
@@ -121,6 +123,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       crtCurvature: 0.12,
       crtVignette: 0.45,
       crtPhosphor: 0.35,
+      crtBrightness: 1.05,
       bloomIntensity: 0.8,
       tintColor: [1, 0.7, 0],
       tintAmount: 0.85,
@@ -158,6 +161,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       crtCurvature: 0.12,
       crtVignette: 0.45,
       crtPhosphor: 0.35,
+      crtBrightness: 1.05,
       bloomIntensity: 0.8,
       tintColor: [0.2, 1, 0.2],
       tintAmount: 0.9,
@@ -195,6 +199,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       crtCurvature: 0.12,
       crtVignette: 0.45,
       crtPhosphor: 0.25,
+      crtBrightness: 1.1,
       bloomIntensity: 1.4,
       tintColor: [1, 1, 1],
       tintAmount: 0,
@@ -220,6 +225,7 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       crtCurvature: 0,
       crtVignette: 0.45,
       crtPhosphor: 0,
+      crtBrightness: 1.0,
       bloomIntensity: 0.8,
       tintColor: [1, 1, 1],
       tintAmount: 0,

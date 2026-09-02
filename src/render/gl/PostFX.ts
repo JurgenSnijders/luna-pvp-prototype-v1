@@ -25,6 +25,8 @@ export interface CrtPresentParams {
   bloomThreshold: number;
   tintColor: [number, number, number];
   tintAmount: number;
+  brightness: number;
+  time: number;
 }
 
 export class PostFX {
@@ -232,6 +234,8 @@ export class PostFX {
       params.tintColor[2],
     );
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_tintAmount')!, params.tintAmount);
+    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_brightness')!, params.brightness);
+    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_time')!, params.time);
     this.drawFullscreen();
   }
 
