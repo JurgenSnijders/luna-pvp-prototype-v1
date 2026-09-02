@@ -14,10 +14,26 @@ export interface FloatingTextParticle {
   text: string;
   pos: { x: number; y: number };
   vel: { x: number; y: number };
+  gravity: number;
   color: string;
   scale: number;
+  baseScale: number;
   lifeMs: number;
   maxLifeMs: number;
+}
+
+interface QueuedCombatText {
+  text: string;
+  pos: { x: number; y: number };
+  type: FCTType;
+  colorOverride?: string;
+  scale: number;
+}
+
+interface SpatialFctLane {
+  queue: QueuedCombatText[];
+  cooldownMs: number;
+  alternateSign: number;
 }
 
 const FCT_COLORS = {
@@ -36,9 +52,19 @@ const FCT_COLORS = {
 } as const;
 
 const SPAWN_Y_OFFSET = 24;
+const SPATIAL_CELL_SIZE = 80;
+const LANE_STAGGER_MS = 75;
+const LANE_MIN_STAGGER_MS = 35;
+const GRAVITY_PX_S2 = 420;
+const SCALE_PUNCH_MS = 120;
+const FADE_OUT_MS = 250;
 let nextParticleId = 1;
 
 const isHeadless = typeof document === 'undefined';
+
+function getLaneKey(pos: { x: number; y: number }): string {
+  return `${Math.floor(pos.x / SPATIAL_CELL_SIZE)}_${Math.floor(pos.y / SPATIAL_CELL_SIZE)}`;
+}
 
 export function archetypeFctColor(archetype: SpellArchetype): string {
   switch (archetype) {
@@ -107,6 +133,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
 
 export class FloatingCombatTextManager {
   private particles: FloatingTextParticle[] = [];
+  private lanes: Map<string, SpatialFctLane> = new Map();
 
   spawn(
     text: string,
@@ -116,21 +143,49 @@ export class FloatingCombatTextManager {
   ): void {
     if (isHeadless) return;
 
-    const maxLifeMs = 800 + Math.random() * 400;
-    let scale = 1.0;
-    if (type === 'CRIT') scale = 1.35;
-    if (text === 'DETONATION!') scale = 1.4;
+    let baseScale = 1.0;
+    if (type === 'CRIT') baseScale = 1.35;
+    if (text === 'DETONATION!') baseScale = 1.45;
+
+    const laneKey = getLaneKey(pos);
+    let lane = this.lanes.get(laneKey);
+    if (!lane) {
+      lane = { queue: [], cooldownMs: 0, alternateSign: 1 };
+      this.lanes.set(laneKey, lane);
+    }
+
+    lane.queue.push({
+      text,
+      pos: { x: pos.x, y: pos.y },
+      type,
+      colorOverride,
+      scale: baseScale,
+    });
+
+    if (lane.cooldownMs <= 0 && lane.queue.length === 1) {
+      const item = lane.queue.shift()!;
+      this.emitParticle(item, lane);
+      lane.cooldownMs = LANE_STAGGER_MS;
+    }
+  }
+
+  private emitParticle(item: QueuedCombatText, lane: SpatialFctLane): void {
+    const maxLifeMs = 950 + Math.random() * 250;
+    const lateralVel = lane.alternateSign * (50 + Math.random() * 35);
+    lane.alternateSign *= -1;
 
     this.particles.push({
       id: `fct_${nextParticleId++}`,
-      text,
-      pos: { x: pos.x, y: pos.y - SPAWN_Y_OFFSET },
+      text: item.text,
+      pos: { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET },
       vel: {
-        x: (Math.random() - 0.5) * 40,
-        y: -60,
+        x: lateralVel,
+        y: -170 - Math.random() * 40,
       },
-      color: colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE,
-      scale,
+      gravity: GRAVITY_PX_S2,
+      color: item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE,
+      scale: item.scale * 1.35,
+      baseScale: item.scale,
       lifeMs: maxLifeMs,
       maxLifeMs,
     });
@@ -139,14 +194,42 @@ export class FloatingCombatTextManager {
   update(dt: number): void {
     if (isHeadless) return;
 
-    const damp = Math.exp(-3 * dt);
+    const dtMs = dt * 1000;
+
+    for (const [laneKey, lane] of this.lanes) {
+      lane.cooldownMs -= dtMs;
+
+      while (lane.cooldownMs <= 0 && lane.queue.length > 0) {
+        const item = lane.queue.shift()!;
+        this.emitParticle(item, lane);
+        lane.cooldownMs = Math.max(
+          LANE_MIN_STAGGER_MS,
+          LANE_STAGGER_MS - lane.queue.length * 6,
+        );
+      }
+
+      if (lane.queue.length === 0 && lane.cooldownMs <= 0) {
+        this.lanes.delete(laneKey);
+      }
+    }
+
     for (const p of this.particles) {
+      p.vel.y += p.gravity * dt;
+      p.vel.x *= Math.pow(0.35, dt);
       p.pos.x += p.vel.x * dt;
       p.pos.y += p.vel.y * dt;
-      p.vel.x *= damp;
-      p.vel.y *= damp;
-      p.lifeMs -= dt * 1000;
+
+      const elapsedMs = p.maxLifeMs - p.lifeMs;
+      if (elapsedMs < SCALE_PUNCH_MS) {
+        const t = elapsedMs / SCALE_PUNCH_MS;
+        p.scale = p.baseScale * 1.35 + (p.baseScale - p.baseScale * 1.35) * t;
+      } else {
+        p.scale = p.baseScale;
+      }
+
+      p.lifeMs -= dtMs;
     }
+
     this.particles = this.particles.filter((p) => p.lifeMs > 0);
   }
 
@@ -158,7 +241,7 @@ export class FloatingCombatTextManager {
     ctx.textAlign = 'center';
 
     for (const p of this.particles) {
-      const alpha = Math.max(0, p.lifeMs / p.maxLifeMs);
+      const alpha = Math.min(1.0, p.lifeMs / FADE_OUT_MS);
       const fontSize = Math.round(16 * p.scale);
       ctx.font = canvasFont(fontSize);
       ctx.globalAlpha = alpha;
