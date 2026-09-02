@@ -276,7 +276,19 @@ export function dispatchAction(
         const implicitSpike = Math.abs(scaledValue) * 0.5 * tuning.impactInstabilityScale;
         t.addInstability(implicitSpike, world);
       }
+      const prevHealth = t.health;
       applyModifyStat(t, action.stat, scaledValue, action.mode);
+      if (action.stat === 'health' && world) {
+        const healAmount = t.health - prevHealth;
+        if (healAmount > 0) {
+          world.emitCombatVisualEvent({
+            type: 'HEAL',
+            pos: { x: t.pos.x, y: t.pos.y },
+            value: healAmount,
+            archetype: ctx.ability?.archetype,
+          });
+        }
+      }
       break;
     }
     case 'APPLY_STASIS': {

@@ -64,7 +64,7 @@ export interface PendingHit {
 }
 
 export interface CombatVisualEvent {
-  type: 'DAMAGE' | 'INSTABILITY' | 'STATUS_APPLIED' | 'STATUS_EXPIRED';
+  type: 'DAMAGE' | 'HEAL' | 'INSTABILITY' | 'STATUS_APPLIED' | 'STATUS_EXPIRED';
   pos: { x: number; y: number };
   value?: number;
   archetype?: SpellArchetype;

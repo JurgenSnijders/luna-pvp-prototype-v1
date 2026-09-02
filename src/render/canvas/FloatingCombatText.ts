@@ -4,6 +4,7 @@ import { canvasFont } from '../../ui/tokens';
 
 export type FCTType =
   | 'DAMAGE'
+  | 'HEAL'
   | 'INSTABILITY'
   | 'STATUS_APPLIED'
   | 'STATUS_EXPIRED'
@@ -115,6 +116,13 @@ export function combatEventToFct(event: CombatVisualEvent): {
         text: `-${Math.round(event.value ?? 0)}`,
         type: 'DAMAGE',
         color: FCT_COLORS.LAVA_DAMAGE,
+        value: event.value,
+      };
+    case 'HEAL':
+      return {
+        text: `+${Math.round(event.value ?? 0)}`,
+        type: 'HEAL',
+        color: FCT_COLORS.HEAL,
         value: event.value,
       };
     case 'INSTABILITY':
