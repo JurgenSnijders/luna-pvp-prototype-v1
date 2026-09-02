@@ -1,7 +1,10 @@
+import { DEFAULT_EMITTER } from '../../primitives/interpreter/constants';
 import type {
   AbilitySchema,
   ActionPayload,
+  EmitterConfig,
   TrajectoryConfig,
+  TrajectoryType,
   TriggerNode,
 } from '../../types/schema';
 
@@ -39,7 +42,18 @@ function walkTriggers(
   }
 }
 
-function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig | undefined {
+export interface PredictivePath {
+  points: { x: number; y: number }[];
+  isClosed: boolean;
+  trajectoryType: TrajectoryType;
+}
+
+interface LiveCastConfig {
+  trajectory: TrajectoryConfig;
+  emitter: EmitterConfig;
+}
+
+export function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig | undefined {
   if (ability.trajectory) return ability.trajectory;
   for (const triggerNode of ability.triggers ?? []) {
     if (triggerNode.trigger !== 'ON_CAST') continue;
@@ -53,6 +67,287 @@ function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig | undef
     }
   }
   return undefined;
+}
+
+function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
+  if (ability.trajectory) {
+    return { trajectory: ability.trajectory, emitter: DEFAULT_EMITTER };
+  }
+  for (const triggerNode of ability.triggers ?? []) {
+    if (triggerNode.trigger !== 'ON_CAST') continue;
+    for (const action of triggerNode.actions ?? []) {
+      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
+        return {
+          trajectory: action.projectileTrajectory,
+          emitter: action.emitter ?? DEFAULT_EMITTER,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function dirFromAngle(angle: number): Point {
+  return { x: Math.cos(angle), y: Math.sin(angle) };
+}
+
+function muzzlePoint(
+  origin: Point,
+  angle: number,
+  muzzleOffset: number,
+): Point {
+  const d = dirFromAngle(angle);
+  return {
+    x: origin.x + d.x * muzzleOffset,
+    y: origin.y + d.y * muzzleOffset,
+  };
+}
+
+function computeSpreadAngles(
+  emitter: EmitterConfig,
+  aimAngle: number,
+): number[] {
+  const count = Math.max(1, Math.min(12, emitter.count));
+  const spreadRad = (emitter.spreadDeg * Math.PI) / 180;
+  const aimOffsetRad = ((emitter.aimOffsetDeg ?? 0) * Math.PI) / 180;
+  const baseAngle = aimAngle + aimOffsetRad;
+  const angles: number[] = [];
+
+  for (let i = 0; i < count; i++) {
+    let theta: number;
+    switch (emitter.distribution) {
+      case 'RADIAL':
+        theta = baseAngle + (i * (Math.PI * 2)) / count;
+        break;
+      case 'RANDOM_CONE':
+        theta =
+          count === 1
+            ? baseAngle
+            : baseAngle +
+              (i - (count - 1) / 2) * (spreadRad / Math.max(1, count - 1));
+        break;
+      case 'PARALLEL':
+        theta = baseAngle;
+        break;
+      case 'FAN':
+      default:
+        if (count === 1) {
+          theta = baseAngle;
+        } else {
+          theta = baseAngle - spreadRad / 2 + i * (spreadRad / (count - 1));
+        }
+        break;
+    }
+    angles.push(theta);
+  }
+
+  return angles;
+}
+
+function buildLinearPath(
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+  maxRange: number,
+): Point[] {
+  const muzzle = muzzlePoint(origin, theta, muzzleOffset);
+  const d = dirFromAngle(theta);
+  return [
+    muzzle,
+    { x: muzzle.x + d.x * maxRange, y: muzzle.y + d.y * maxRange },
+  ];
+}
+
+function buildDiscontinuousBlinkPath(
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+  trajectory: TrajectoryConfig,
+): Point[] {
+  const maxRange = trajectory.maxRange ?? 500;
+  const blinkDist = trajectory.blinkDistance ?? 80;
+  const muzzle = muzzlePoint(origin, theta, muzzleOffset);
+  const d = dirFromAngle(theta);
+  const points: Point[] = [muzzle];
+  let dist = 0;
+  while (dist < maxRange) {
+    dist += blinkDist;
+    if (dist > maxRange) dist = maxRange;
+    points.push({
+      x: muzzle.x + d.x * dist,
+      y: muzzle.y + d.y * dist,
+    });
+  }
+  return points;
+}
+
+function buildReturnToSourcePath(
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+  trajectory: TrajectoryConfig,
+  steps = 15,
+): Point[] {
+  const maxRange = trajectory.maxRange ?? 500;
+  const halfRange = maxRange * 0.5;
+  const muzzle = muzzlePoint(origin, theta, muzzleOffset);
+  const d = dirFromAngle(theta);
+  const apex = {
+    x: muzzle.x + d.x * halfRange,
+    y: muzzle.y + d.y * halfRange,
+  };
+  const points: Point[] = [];
+  const outSteps = Math.floor(steps * 0.45);
+  const returnSteps = steps - outSteps;
+
+  for (let i = 0; i <= outSteps; i++) {
+    const t = i / outSteps;
+    points.push({
+      x: muzzle.x + (apex.x - muzzle.x) * t,
+      y: muzzle.y + (apex.y - muzzle.y) * t,
+    });
+  }
+
+  const perp = { x: -d.y, y: d.x };
+  const bulge = halfRange * 0.25;
+  const control = {
+    x: apex.x + perp.x * bulge,
+    y: apex.y + perp.y * bulge,
+  };
+
+  for (let i = 1; i <= returnSteps; i++) {
+    const t = i / returnSteps;
+    const mt = 1 - t;
+    points.push({
+      x:
+        mt * mt * apex.x +
+        2 * mt * t * control.x +
+        t * t * muzzle.x,
+      y:
+        mt * mt * apex.y +
+        2 * mt * t * control.y +
+        t * t * muzzle.y,
+    });
+  }
+
+  return points;
+}
+
+function buildHomingSlerpPath(
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+  trajectory: TrajectoryConfig,
+  steps = 20,
+): Point[] {
+  const maxRange = trajectory.maxRange ?? 600;
+  const muzzle = muzzlePoint(origin, theta, muzzleOffset);
+  const d = dirFromAngle(theta);
+  const bendAngle = theta + Math.PI / 10;
+  const bend = dirFromAngle(bendAngle);
+  const end = {
+    x: muzzle.x + d.x * maxRange,
+    y: muzzle.y + d.y * maxRange,
+  };
+  const control = {
+    x: muzzle.x + bend.x * maxRange * 0.55,
+    y: muzzle.y + bend.y * maxRange * 0.55,
+  };
+  const points: Point[] = [];
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const mt = 1 - t;
+    points.push({
+      x: mt * mt * muzzle.x + 2 * mt * t * control.x + t * t * end.x,
+      y: mt * mt * muzzle.y + 2 * mt * t * control.y + t * t * end.y,
+    });
+  }
+
+  return points;
+}
+
+function buildOrbitAnchorPath(
+  origin: Point,
+  theta: number,
+  trajectory: TrajectoryConfig,
+  steps = 32,
+): Point[] {
+  const radius = trajectory.orbitRadius ?? 100;
+  const points: Point[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const angle = theta + (i / steps) * Math.PI * 2;
+    points.push({
+      x: origin.x + Math.cos(angle) * radius,
+      y: origin.y + Math.sin(angle) * radius,
+    });
+  }
+  return points;
+}
+
+function buildPredictivePath(
+  trajectory: TrajectoryConfig,
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+): PredictivePath {
+  const maxRange = trajectory.maxRange ?? 500;
+
+  switch (trajectory.type) {
+    case 'LINEAR':
+      return {
+        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        isClosed: false,
+        trajectoryType: 'LINEAR',
+      };
+    case 'DISCONTINUOUS_BLINK':
+      return {
+        points: buildDiscontinuousBlinkPath(origin, theta, muzzleOffset, trajectory),
+        isClosed: false,
+        trajectoryType: 'DISCONTINUOUS_BLINK',
+      };
+    case 'RETURN_TO_SOURCE':
+      return {
+        points: buildReturnToSourcePath(origin, theta, muzzleOffset, trajectory),
+        isClosed: false,
+        trajectoryType: 'RETURN_TO_SOURCE',
+      };
+    case 'HOMING_SLERP':
+      return {
+        points: buildHomingSlerpPath(origin, theta, muzzleOffset, trajectory),
+        isClosed: false,
+        trajectoryType: 'HOMING_SLERP',
+      };
+    case 'ORBIT_ANCHOR':
+      return {
+        points: buildOrbitAnchorPath(origin, theta, trajectory),
+        isClosed: true,
+        trajectoryType: 'ORBIT_ANCHOR',
+      };
+    default:
+      return {
+        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        isClosed: false,
+        trajectoryType: trajectory.type,
+      };
+  }
+}
+
+export function resolveLiveAimingPaths(
+  ability: AbilitySchema,
+  origin: { x: number; y: number },
+  aimAngle: number,
+  muzzleOffset = 0,
+): PredictivePath[] {
+  const config = resolveLiveCastConfig(ability);
+  if (!config) return [];
+
+  const originPt = { x: origin.x, y: origin.y };
+  const angles = computeSpreadAngles(config.emitter, aimAngle);
+
+  return angles.map((theta) =>
+    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset),
+  );
 }
 
 function collectOnCastProjectiles(

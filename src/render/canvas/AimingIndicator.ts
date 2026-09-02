@@ -1,9 +1,10 @@
-import type {
-  AbilitySchema,
-  TrajectoryConfig,
-  TrajectoryType,
-} from '../../types/schema';
+import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
+import {
+  resolveLiveAimingPaths,
+  resolveRootTrajectory,
+  type PredictivePath,
+} from './trajectoryTracer';
 
 export type AimingMode = 'directional' | 'radial';
 
@@ -43,29 +44,6 @@ export function layoutAimingVisual(
   };
 }
 
-const DIRECTIONAL_TYPES: TrajectoryType[] = [
-  'LINEAR',
-  'RETURN_TO_SOURCE',
-  'HOMING_SLERP',
-  'DISCONTINUOUS_BLINK',
-];
-
-function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig | undefined {
-  if (ability.trajectory) return ability.trajectory;
-  for (const triggerNode of ability.triggers ?? []) {
-    if (triggerNode.trigger !== 'ON_CAST') continue;
-    for (const action of triggerNode.actions ?? []) {
-      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
-        return action.projectileTrajectory;
-      }
-      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
-        return action.payload.trajectory;
-      }
-    }
-  }
-  return undefined;
-}
-
 function collectOnCastFieldRadii(ability: AbilitySchema): number[] {
   const radii: number[] = [];
   for (const triggerNode of ability.triggers ?? []) {
@@ -89,22 +67,25 @@ function hasOnCastTeleport(ability: AbilitySchema): boolean {
   return false;
 }
 
+/** Trajectory/field visual mode from schema alone (ignores input profile). */
+export function resolveTrajectoryVisualMode(ability: AbilitySchema): AimingMode | null {
+  const trajectory = resolveRootTrajectory(ability);
+  if (trajectory) {
+    return 'directional';
+  }
+
+  if (hasOnCastTeleport(ability)) return null;
+
+  const fieldRadii = collectOnCastFieldRadii(ability);
+  if (fieldRadii.length > 0) return 'radial';
+
+  return null;
+}
+
 export function classifyAimingMode(ability: AbilitySchema): AimingMode | null {
   const profile = ability.inputProfile ?? { mode: 'INSTANT' };
   if (profile.mode !== 'INSTANT') return null;
-
-  const trajectory = resolveRootTrajectory(ability);
-  if (trajectory) {
-    if (DIRECTIONAL_TYPES.includes(trajectory.type)) return 'directional';
-    if (trajectory.type === 'ORBIT_ANCHOR') return 'radial';
-  }
-
-  if (hasOnCastTeleport(ability) && !trajectory) return null;
-
-  const fieldRadii = collectOnCastFieldRadii(ability);
-  if (fieldRadii.length > 0 && !trajectory) return 'radial';
-
-  return null;
+  return resolveTrajectoryVisualMode(ability);
 }
 
 export function resolveAbilityAimParams(ability: AbilitySchema): {
@@ -134,250 +115,178 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function longitudinalT(x: number, startX: number, endX: number): number {
-  return Math.max(0, Math.min(1, (x - startX) / Math.max(1, endX - startX)));
+function distanceT(
+  dist: number,
+  startDist: number,
+  endDist: number,
+): number {
+  return Math.max(0, Math.min(1, (dist - startDist) / Math.max(1, endDist - startDist)));
 }
 
-function fadeAlpha(x: number, startX: number, endX: number, maxAlpha: number): number {
-  return Math.pow(longitudinalT(x, startX, endX), 1.6) * maxAlpha;
+function fadeAlphaByDistance(
+  dist: number,
+  startDist: number,
+  endDist: number,
+  maxAlpha: number,
+): number {
+  return Math.pow(distanceT(dist, startDist, endDist), 1.6) * maxAlpha;
 }
 
-function drawFrostAccents(
-  ctx: CanvasRenderingContext2D,
-  startX: number,
-  endX: number,
-  shaftEnd: number,
-  shaftWidth: number,
-  color: string,
-): void {
-  ctx.lineWidth = 1.5;
-  const tickLen = 8;
-  for (let x = startX + 20; x < shaftEnd; x += 28) {
-    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
-    const side = ((x / 28) % 2 === 0) ? 1 : -1;
-    const y = (shaftWidth / 2 + 4) * side;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + tickLen * 0.6, y + tickLen * side);
-    ctx.lineTo(x + tickLen, y);
-    ctx.stroke();
+function gradientEndpoints(path: PredictivePath): {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+} {
+  const start = path.points[0];
+  if (path.isClosed && path.points.length > 2) {
+    const mid = path.points[Math.floor(path.points.length / 2)];
+    return { start, end: mid };
   }
-  const tipX = shaftEnd + 18;
-  const tipAlpha = fadeAlpha(tipX, startX, endX, 0.85);
-  ctx.beginPath();
-  ctx.moveTo(tipX, 0);
-  ctx.lineTo(tipX + 10, -shaftWidth * 0.5);
-  ctx.lineTo(tipX + 20, 0);
-  ctx.lineTo(tipX + 10, shaftWidth * 0.5);
-  ctx.closePath();
-  ctx.fillStyle = hexToRgba(color, tipAlpha * 0.45);
-  ctx.fill();
-  ctx.strokeStyle = hexToRgba(color, tipAlpha);
-  ctx.stroke();
+  return { start, end: path.points[path.points.length - 1] };
 }
 
-function drawFireAccents(
+function createStrokeGradient(
   ctx: CanvasRenderingContext2D,
-  startX: number,
-  endX: number,
   color: string,
-  now: number,
-): void {
-  ctx.lineWidth = 2;
-  const pulse = (now / 300) % 1;
-  const lineEnd = endX - 45;
-  const span = Math.max(1, lineEnd - startX);
-  for (let i = 0; i < 5; i++) {
-    const t = ((i / 5 + pulse) % 1);
-    const x = startX + 20 + t * span;
-    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
-    ctx.beginPath();
-    ctx.moveTo(x - 6, -8);
-    ctx.lineTo(x, 0);
-    ctx.lineTo(x - 6, 8);
-    ctx.stroke();
-  }
-}
-
-function drawLightningAccents(
-  ctx: CanvasRenderingContext2D,
-  startX: number,
-  endX: number,
-  color: string,
-): void {
-  ctx.lineWidth = 2;
-  const lineEnd = endX - 45;
-  const segments = 6;
-  let prevX = startX + 20;
-  let prevY = 0;
-  for (let i = 1; i <= segments; i++) {
-    const x = startX + 20 + (lineEnd - (startX + 20)) * (i / segments);
-    const y = (i % 2 === 0 ? 1 : -1) * (6 + (i % 3) * 3);
-    const midX = (prevX + x) / 2;
-    ctx.strokeStyle = hexToRgba(color, fadeAlpha(midX, startX, endX, 0.85));
-    ctx.beginPath();
-    ctx.moveTo(prevX, prevY);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    prevX = x;
-    prevY = y;
-  }
-}
-
-function drawVoidAccents(
-  ctx: CanvasRenderingContext2D,
-  startX: number,
-  endX: number,
-  shaftStart: number,
-  shaftEnd: number,
-  shaftWidth: number,
-  headBase: number,
-  range: number,
-  color: string,
-): void {
-  const voidFillGrad = ctx.createLinearGradient(startX, 0, endX, 0);
-  voidFillGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  voidFillGrad.addColorStop(0.35, 'rgba(0, 0, 0, 0.06)');
-  voidFillGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.18)');
-  voidFillGrad.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
-
-  ctx.beginPath();
-  ctx.moveTo(shaftStart, -shaftWidth / 2);
-  ctx.lineTo(shaftEnd, -shaftWidth / 2);
-  ctx.lineTo(headBase, -shaftWidth * 0.85);
-  ctx.lineTo(range, 0);
-  ctx.lineTo(headBase, shaftWidth * 0.85);
-  ctx.lineTo(shaftEnd, shaftWidth / 2);
-  ctx.lineTo(shaftStart, shaftWidth / 2);
-  ctx.closePath();
-  ctx.fillStyle = voidFillGrad;
-  ctx.fill();
-
-  const voidStrokeGrad = ctx.createLinearGradient(startX, 0, endX, 0);
-  voidStrokeGrad.addColorStop(0, hexToRgba(color, 0));
-  voidStrokeGrad.addColorStop(0.25, hexToRgba(color, 0.12));
-  voidStrokeGrad.addColorStop(0.65, hexToRgba(color, 0.35));
-  voidStrokeGrad.addColorStop(1, hexToRgba(color, 0.45));
-  ctx.strokeStyle = voidStrokeGrad;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-}
-
-function drawKineticAccents(
-  ctx: CanvasRenderingContext2D,
-  startX: number,
-  endX: number,
-  color: string,
-): void {
-  ctx.lineWidth = 2;
-  const lineEnd = endX - 45;
-
-  for (let x = startX + 20; x < lineEnd; x += 12) {
-    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(Math.min(x + 6, lineEnd), 0);
-    ctx.stroke();
-  }
-
-  for (let x = startX + 20; x < endX - 45; x += 32) {
-    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
-    ctx.beginPath();
-    ctx.moveTo(x, -5);
-    ctx.lineTo(x + 10, 0);
-    ctx.lineTo(x, 5);
-    ctx.stroke();
-  }
-}
-
-export function drawSkillshotArrow(
-  ctx: CanvasRenderingContext2D,
-  state: AimingState,
-  now = performance.now(),
-): void {
-  const archetype = state.ability.archetype ?? 'KINETIC';
-  const color = getArchetypeColor(archetype, state.ability.visuals?.color);
-  const maxRange = state.range;
-  const cursorLen = Math.hypot(
-    state.target.x - state.origin.x,
-    state.target.y - state.origin.y,
-  );
-  const minLen = state.playerRadius + 40;
-  const len = Math.max(minLen, Math.min(cursorLen, maxRange));
-  const shaftWidth = state.width;
-  const shaftStart = state.playerRadius;
-  const shaftEnd = len - 36;
-  const headBase = len - 36;
-  const startX = state.playerRadius + 6;
-  const endX = len;
-
-  ctx.save();
-  ctx.translate(state.origin.x, state.origin.y);
-  ctx.rotate(state.angle);
-
-  const fillGrad = ctx.createLinearGradient(startX, 0, endX, 0);
-  fillGrad.addColorStop(0, hexToRgba(color, 0));
-  fillGrad.addColorStop(0.35, hexToRgba(color, 0.06));
-  fillGrad.addColorStop(0.7, hexToRgba(color, 0.22));
-  fillGrad.addColorStop(1, hexToRgba(color, 0.45));
-
-  const strokeGrad = ctx.createLinearGradient(startX, 0, endX, 0);
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): CanvasGradient {
+  const strokeGrad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
   strokeGrad.addColorStop(0, hexToRgba(color, 0));
   strokeGrad.addColorStop(0.25, hexToRgba(color, 0.15));
   strokeGrad.addColorStop(0.65, hexToRgba(color, 0.65));
   strokeGrad.addColorStop(1, hexToRgba(color, 1));
+  return strokeGrad;
+}
 
-  ctx.beginPath();
-  ctx.moveTo(shaftStart, -shaftWidth / 2);
-  ctx.lineTo(shaftEnd, -shaftWidth / 2);
-  ctx.lineTo(headBase, -shaftWidth * 0.85);
-  ctx.lineTo(len, 0);
-  ctx.lineTo(headBase, shaftWidth * 0.85);
-  ctx.lineTo(shaftEnd, shaftWidth / 2);
-  ctx.lineTo(shaftStart, shaftWidth / 2);
-  ctx.closePath();
-  ctx.fillStyle = fillGrad;
-  ctx.strokeStyle = strokeGrad;
+function drawLinearChevrons(
+  ctx: CanvasRenderingContext2D,
+  path: PredictivePath,
+  color: string,
+): void {
+  if (path.points.length < 2) return;
+
+  const start = path.points[0];
+  const end = path.points[path.points.length - 1];
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 40) return;
+
+  const angle = Math.atan2(dy, dx);
+  const ux = dx / length;
+  const uy = dy / length;
+  const chevronSpacing = 32;
+  const chevronSize = 8;
+
+  ctx.save();
   ctx.lineWidth = 2;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
-  ctx.fill();
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.shadowColor = 'transparent';
 
-  switch (archetype) {
-    case 'FROST':
-      drawFrostAccents(ctx, startX, endX, shaftEnd, shaftWidth, color);
-      break;
-    case 'FIRE':
-    case 'PLASMA':
-      drawFireAccents(ctx, startX, endX, color, now);
-      break;
-    case 'LIGHTNING':
-    case 'CHAOS':
-      drawLightningAccents(ctx, startX, endX, color);
-      break;
-    case 'VOID':
-    case 'ARCANE':
-      drawVoidAccents(
-        ctx,
-        startX,
-        endX,
-        shaftStart,
-        shaftEnd,
-        shaftWidth,
-        headBase,
-        len,
-        color,
-      );
-      break;
-    default:
-      drawKineticAccents(ctx, startX, endX, color);
-      break;
+  for (let dist = 28; dist < length - 20; dist += chevronSpacing) {
+    const alpha = fadeAlphaByDistance(dist, 0, length, 0.85);
+    const cx = start.x + ux * dist;
+    const cy = start.y + uy * dist;
+    ctx.strokeStyle = hexToRgba(color, alpha);
+    ctx.beginPath();
+    ctx.moveTo(
+      cx - Math.cos(angle) * chevronSize * 0.3 - Math.sin(angle) * chevronSize * 0.5,
+      cy - Math.sin(angle) * chevronSize * 0.3 + Math.cos(angle) * chevronSize * 0.5,
+    );
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(
+      cx - Math.cos(angle) * chevronSize * 0.3 + Math.sin(angle) * chevronSize * 0.5,
+      cy - Math.sin(angle) * chevronSize * 0.3 - Math.cos(angle) * chevronSize * 0.5,
+    );
+    ctx.stroke();
   }
 
   ctx.restore();
+}
+
+function drawEndpointDiamond(
+  ctx: CanvasRenderingContext2D,
+  point: { x: number; y: number },
+  angle: number,
+  color: string,
+  alpha: number,
+): void {
+  const size = 6;
+  ctx.save();
+  ctx.translate(point.x, point.y);
+  ctx.rotate(angle + Math.PI / 4);
+  ctx.strokeStyle = hexToRgba(color, alpha);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(-size / 2, -size / 2, size, size);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPredictivePath(
+  ctx: CanvasRenderingContext2D,
+  path: PredictivePath,
+  color: string,
+): void {
+  if (path.points.length < 2) return;
+
+  const { start, end } = gradientEndpoints(path);
+  const strokeGrad = createStrokeGradient(ctx, color, start, end);
+
+  ctx.save();
+  ctx.strokeStyle = strokeGrad;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+
+  ctx.beginPath();
+  ctx.moveTo(path.points[0].x, path.points[0].y);
+  for (let i = 1; i < path.points.length; i++) {
+    ctx.lineTo(path.points[i].x, path.points[i].y);
+  }
+  if (path.isClosed) {
+    ctx.closePath();
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  ctx.restore();
+
+  if (path.trajectoryType === 'LINEAR') {
+    drawLinearChevrons(ctx, path, color);
+  }
+
+  if (!path.isClosed) {
+    const last = path.points[path.points.length - 1];
+    const prev = path.points[path.points.length - 2];
+    const tipAngle = Math.atan2(last.y - prev.y, last.x - prev.x);
+    const tipDist = Math.hypot(last.x - start.x, last.y - start.y);
+    const pathLen = Math.hypot(end.x - start.x, end.y - start.y);
+    const alpha = fadeAlphaByDistance(tipDist, 0, pathLen, 1);
+    drawEndpointDiamond(ctx, last, tipAngle, color, alpha);
+  }
+}
+
+export function drawPredictivePaths(
+  ctx: CanvasRenderingContext2D,
+  state: AimingState,
+): void {
+  const archetype = state.ability.archetype ?? 'KINETIC';
+  const color = getArchetypeColor(archetype, state.ability.visuals?.color);
+  const muzzleOffset =
+    state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
+  const paths = resolveLiveAimingPaths(
+    state.ability,
+    state.origin,
+    state.angle,
+    muzzleOffset,
+  );
+
+  if (paths.length === 0) return;
+
+  for (const path of paths) {
+    drawPredictivePath(ctx, path, color);
+  }
 }
 
 export function drawAoERadial(
@@ -440,7 +349,7 @@ export class AimingIndicatorRenderer {
     const visual = origin ? layoutAimingVisual(state, origin) : state;
     const now = performance.now();
     if (visual.mode === 'directional') {
-      drawSkillshotArrow(ctx, visual, now);
+      drawPredictivePaths(ctx, visual);
     } else {
       drawAoERadial(ctx, visual, now);
     }

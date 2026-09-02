@@ -9,6 +9,8 @@ import { SpellInventoryManager, type LoadoutChangedDetail } from '../game/SpellI
 import {
   classifyAimingMode,
   resolveAbilityAimParams,
+  resolveTrajectoryVisualMode,
+  type AimingMode,
   type AimingState,
 } from '../render/canvas/AimingIndicator';
 import { Entity, generateEntityId } from './Entity';
@@ -201,8 +203,11 @@ export class Player extends Entity {
     });
   }
 
-  private buildAimingState(slotIndex: number, ability: AbilitySchema): AimingState {
-    const mode = classifyAimingMode(ability)!;
+  private buildAimingState(
+    slotIndex: number,
+    ability: AbilitySchema,
+    mode: AimingMode,
+  ): AimingState {
     const params = resolveAbilityAimParams(ability);
     const dir = this.aimTarget.sub(this.pos);
     const angle = dir.magSq() > 0.01 ? Math.atan2(dir.y, dir.x) : this.facingAngle;
@@ -255,7 +260,21 @@ export class Player extends Entity {
     const mode = classifyAimingMode(ability);
     if (!mode) return false;
 
-    this.activeAimingState = this.buildAimingState(slotIndex, ability);
+    this.activeAimingState = this.buildAimingState(slotIndex, ability, mode);
+    this.syncAimFromCursor();
+    return true;
+  }
+
+  startTrajectoryPreview(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+
+    const ability = this.abilities[slotIndex];
+    if (!ability || this.slotCompiling[slotIndex]) return false;
+
+    const mode = resolveTrajectoryVisualMode(ability);
+    if (!mode) return false;
+
+    this.activeAimingState = this.buildAimingState(slotIndex, ability, mode);
     this.syncAimFromCursor();
     return true;
   }
@@ -400,6 +419,7 @@ export class Player extends Entity {
             }
             slot.charging = true;
             slot.chargeMs = 0;
+            this.startTrajectoryPreview(slotIndex);
           }
           break;
         case 'CHANNELED':
@@ -417,10 +437,20 @@ export class Player extends Entity {
             const maxCharge = profile.maxChargeMs ?? 1000;
             if (slot.chargeMs >= minCharge) {
               const ratio = Math.min(1, slot.chargeMs / maxCharge);
+              if (this.activeAimingState?.slotIndex === slotIndex) {
+                this.facingAngle = this.activeAimingState.angle;
+                this.aimTarget = new Vector2D(
+                  this.activeAimingState.target.x,
+                  this.activeAimingState.target.y,
+                );
+              }
               onCast(slotIndex, { chargeRatio: ratio }, false);
             }
             slot.chargeMs = 0;
             slot.charging = false;
+            if (this.activeAimingState?.slotIndex === slotIndex) {
+              this.cancelAiming();
+            }
           }
           break;
         }
