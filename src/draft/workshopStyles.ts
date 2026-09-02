@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v8';
+export const STYLE_ID = 'luna-workshop-styles-v9';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -435,11 +435,171 @@ export function injectStyles(): void {
     .forge-cards {
       flex: 1 1 auto;
       min-height: 280px;
-      overflow: hidden;
+      overflow-y: auto;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
+      gap: 16px;
       align-items: stretch;
+      margin-top: 16px;
+    }
+
+    .forge-card-redesign {
+      display: flex;
+      flex-direction: column;
+      background: rgba(6, 9, 18, 0.9);
+      border: 1.5px solid var(--card-border-color, var(--retro-border-subtle));
+      border-radius: 6px;
+      padding: 14px;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .forge-card-redesign:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 10px var(--card-glow-color, rgba(0, 229, 255, 0.2));
+    }
+
+    .forge-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .forge-card-rarity {
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .forge-card-archetype {
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+    }
+
+    .forge-card-glyph-frame {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+      background: rgba(4, 6, 12, 0.85);
+      border: 1px solid var(--retro-border-subtle);
+      border-radius: 4px;
+    }
+
+    .forge-card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .forge-card-title {
+      font-family: Fixedsys, monospace;
+      font-size: 15px;
+      color: #ffffff;
+    }
+
+    .forge-card-tagline {
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      color: var(--retro-text-muted);
+    }
+
+    .forge-card-desc {
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      line-height: 1.35;
+      color: var(--retro-text-secondary, #9ba8c7);
+      min-height: 44px;
+    }
+
+    .forge-card-telemetry {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: rgba(10, 14, 26, 0.6);
+      border: 1px solid var(--retro-border-subtle);
+      border-radius: 4px;
+      padding: 8px;
+    }
+
+    .telemetry-row-full {
+      grid-column: 1 / -1;
+    }
+
+    .telemetry-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .telemetry-k {
+      font-family: Fixedsys, monospace;
+      font-size: 9px;
+      color: var(--retro-text-muted);
+      text-transform: uppercase;
+    }
+
+    .telemetry-v {
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      color: var(--retro-text-primary);
+    }
+
+    .telemetry-v.highlight-repulse {
+      color: #ffaa00;
+    }
+
+    .telemetry-v.highlight-instability {
+      color: #ff6644;
+    }
+
+    .forge-card-status-block {
+      background: rgba(0, 229, 255, 0.05);
+      border: 1px dashed rgba(0, 229, 255, 0.25);
+      padding: 6px 8px;
+      border-radius: 3px;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      color: var(--retro-neon-cyan);
+    }
+
+    .forge-card-footer {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 8px;
+    }
+
+    .forge-stored-indicator {
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      color: var(--retro-neon-magenta);
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+
+    .forge-claim-btn {
+      width: 100%;
+      padding: 8px;
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      background: rgba(0, 229, 255, 0.15);
+      border: 1px solid var(--retro-neon-cyan);
+      color: #ffffff;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .forge-claim-btn:hover {
+      background: rgba(0, 229, 255, 0.3);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
     }
 
     .vault-toolbar {
@@ -473,6 +633,24 @@ export function injectStyles(): void {
     }
 
     .vault-search:focus {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
+    }
+
+    .vault-sort-select {
+      flex-shrink: 0;
+      padding: 10px 12px;
+      border-radius: 4px;
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      background: var(--retro-panel-bg-opaque, #0a0d18);
+      color: var(--retro-text-primary, #e0f8ff);
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .vault-sort-select:focus {
       border-color: var(--retro-neon-cyan, #00e5ff);
       box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
     }

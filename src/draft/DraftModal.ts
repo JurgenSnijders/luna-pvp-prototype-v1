@@ -28,6 +28,9 @@ import type {
   TrajectoryConfig,
   TriggerNode,
 } from '../types/schema';
+import { walkActions } from '../types/schema';
+import { BASELINE_INSTABILITY_ON_HIT } from '../engine/PhysicsWorld';
+import { ARCHETYPE_TUNING } from '../primitives/interpreter/constants';
 import {
   extractMechanicBadges,
   renderBadge,
@@ -56,11 +59,15 @@ import {
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   getSpellRoleLabel,
+  getVaultSortLabel,
   SPELL_ROLES,
+  sortVaultSpells,
   spellMatchesMetaFilter,
   spellMatchesRoleFilter,
+  VAULT_SORT_ORDERS,
   type SpellRole,
   type VaultMetaFilter,
+  type VaultSortOrder,
 } from '../game/spellRoles';
 import {
   attachDockSlotDrag,
@@ -91,8 +98,134 @@ const ARCHETYPE_DESCRIPTIONS: Partial<Record<SpellArchetype, string>> = {
 
 const ARCHETYPE_FALLBACK = 'Elemental physics modifier active on hit.';
 
+const STATUS_CC_LABELS: Partial<Record<SpellArchetype, (dur: string) => string>> = {
+  FROST: (d) => `50% Chill Slow (${d})`,
+  KINETIC: (d) => `80% Drag Loss / Extreme Slip (${d})`,
+  EARTH: (d) => `3× Heavy Mass Anchor (${d})`,
+  GRAVITY: (d) => `0.2× Weightless Float (${d})`,
+  FIRE: (d) => `Thermal Instability on Move (${d})`,
+  PLASMA: () => 'Detonation at 100% Instability',
+};
+
+export interface SpellTelemetry {
+  cooldownSec: string;
+  recoilKick: number;
+  repulseForce: number;
+  instabilityYield: number;
+  directDamage: number;
+  ccDescriptions: string[];
+  deliveryText: string;
+}
+
 function formatEnumLabel(value: string): string {
   return value.replace(/_/g, ' ');
+}
+
+function formatDurationSec(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function abilityCanHit(ability: AbilitySchema): boolean {
+  if (ability.trajectory) return true;
+  let hasProjectile = false;
+  walkActions(ability, (v) => {
+    if (v.action.type === 'SPAWN_PROJECTILE') hasProjectile = true;
+  });
+  return hasProjectile;
+}
+
+export function extractSpellTelemetry(ability: AbilitySchema): SpellTelemetry {
+  const archetype = ability.archetype ?? 'KINETIC';
+  const tuning = ARCHETYPE_TUNING[archetype];
+
+  let repulseForce = 0;
+  let instabilityExplicit = 0;
+  let implicitInstability = 0;
+  let directDamage = 0;
+  const ccDescriptions: string[] = [];
+  const ccSeen = new Set<string>();
+
+  const pushCc = (desc: string): void => {
+    if (ccSeen.has(desc)) return;
+    ccSeen.add(desc);
+    ccDescriptions.push(desc);
+  };
+
+  walkActions(ability, (v) => {
+    const action = v.action;
+    switch (action.type) {
+      case 'APPLY_IMPULSE':
+        repulseForce = Math.max(repulseForce, action.baseForce);
+        implicitInstability += action.baseForce * 0.02 * tuning.impactInstabilityScale;
+        break;
+      case 'SPAWN_FIELD':
+        if (action.field.fieldType === 'RADIAL_IMPULSE') {
+          repulseForce = Math.max(repulseForce, Math.abs(action.field.strength));
+        }
+        break;
+      case 'ADD_INSTABILITY':
+        instabilityExplicit += action.amount;
+        break;
+      case 'MODIFY_STAT':
+        if (action.stat === 'health' && action.value < 0) {
+          directDamage += Math.abs(action.value);
+        }
+        break;
+      case 'APPLY_STATUS': {
+        const dur = formatDurationSec(action.durationMs);
+        const labelFn = STATUS_CC_LABELS[action.archetype];
+        pushCc(labelFn ? labelFn(dur) : `${formatEnumLabel(action.archetype)} (${dur})`);
+        break;
+      }
+      case 'APPLY_STASIS':
+        pushCc(`Stasis lock (${formatDurationSec(action.durationMs)})`);
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (abilityCanHit(ability) && archetype) {
+    const labelFn = STATUS_CC_LABELS[archetype];
+    if (labelFn) {
+      const archetypeDesc = labelFn('2.0s');
+      if (!ccSeen.has(archetypeDesc)) {
+        ccDescriptions.unshift(archetypeDesc);
+        ccSeen.add(archetypeDesc);
+      }
+    }
+  }
+
+  const baseline = abilityCanHit(ability) ? BASELINE_INSTABILITY_ON_HIT : 0;
+  const instabilityYield = Math.round(baseline + instabilityExplicit + implicitInstability);
+
+  const { trajectory, emitter } = resolveDisplayTrajectory(ability);
+  let deliveryText = 'Instant';
+  if (trajectory) {
+    const parts: string[] = [];
+    if (emitter && emitter.count > 1) {
+      const distLabel =
+        emitter.distribution === 'RADIAL' ? 'RING' : formatEnumLabel(emitter.distribution);
+      const spread =
+        emitter.spreadDeg > 0 ? ` (${emitter.spreadDeg}°)` : '';
+      parts.push(`${emitter.count}x ${distLabel}${spread}`);
+    }
+    const range = trajectory.maxRange ?? 0;
+    const speed = trajectory.speed ?? 0;
+    if (range > 0) parts.push(`${range} Range`);
+    if (speed > 0) parts.push(`${speed} px/s`);
+    deliveryText = parts.length > 0 ? parts.join(' · ') : formatEnumLabel(trajectory.type);
+  }
+
+  return {
+    cooldownSec: formatDurationSec(ability.cooldownMs),
+    recoilKick: ability.recoilKick ?? 0,
+    repulseForce: Math.round(repulseForce),
+    instabilityYield,
+    directDamage: Math.round(directDamage),
+    ccDescriptions,
+    deliveryText,
+  };
 }
 
 function walkTriggers(
@@ -167,6 +300,7 @@ export class DraftModal {
   private vaultTabBtn!: HTMLButtonElement;
   private forgeTabBtn!: HTMLButtonElement;
   private vaultSearchInput!: HTMLInputElement;
+  private vaultSortSelect!: HTMLSelectElement;
   private vaultRoleFilterRow!: HTMLElement;
   private vaultMetaFilterRow!: HTMLElement;
   private spellGrid!: HTMLElement;
@@ -210,6 +344,7 @@ export class DraftModal {
   private evolvingBaseSpellId: string | null = null;
   private activeTab: WorkshopTab = 'VAULT';
   private vaultSearchQuery = '';
+  private vaultSortOrder: VaultSortOrder = 'NEWEST';
   private vaultRoleFilters = new Set<SpellRole>();
   private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
@@ -582,6 +717,21 @@ export class DraftModal {
     });
     toolbar.appendChild(this.vaultSearchInput);
 
+    this.vaultSortSelect = document.createElement('select');
+    this.vaultSortSelect.className = 'vault-sort-select';
+    for (const order of VAULT_SORT_ORDERS) {
+      const option = document.createElement('option');
+      option.value = order;
+      option.textContent = getVaultSortLabel(order);
+      this.vaultSortSelect.appendChild(option);
+    }
+    this.vaultSortSelect.value = this.vaultSortOrder;
+    this.vaultSortSelect.addEventListener('change', () => {
+      this.vaultSortOrder = this.vaultSortSelect.value as VaultSortOrder;
+      this.renderVaultGrid();
+    });
+    toolbar.appendChild(this.vaultSortSelect);
+
     const resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.className = 'vault-btn-reset';
@@ -721,20 +871,24 @@ export class DraftModal {
       isPresetSpell: (id: string) => SpellInventoryManager.isPresetSpell(id),
     };
 
-    const spells = SpellInventoryManager.getAllSpells().filter((spell) => {
-      if (q) {
-        const archetype = (spell.archetype ?? '').toLowerCase();
-        const tagline = (spell.tagline ?? '').toLowerCase();
-        const matchesText =
-          spell.name.toLowerCase().includes(q) ||
-          archetype.includes(q) ||
-          tagline.includes(q);
-        if (!matchesText) return false;
-      }
-      if (!spellMatchesRoleFilter(spell, this.vaultRoleFilters)) return false;
-      if (!spellMatchesMetaFilter(spell, this.vaultMetaFilters, metaContext)) return false;
-      return true;
-    });
+    const spells = sortVaultSpells(
+      SpellInventoryManager.getAllSpells().filter((spell) => {
+        if (q) {
+          const archetype = (spell.archetype ?? '').toLowerCase();
+          const tagline = (spell.tagline ?? '').toLowerCase();
+          const matchesText =
+            spell.name.toLowerCase().includes(q) ||
+            archetype.includes(q) ||
+            tagline.includes(q);
+          if (!matchesText) return false;
+        }
+        if (!spellMatchesRoleFilter(spell, this.vaultRoleFilters)) return false;
+        if (!spellMatchesMetaFilter(spell, this.vaultMetaFilters, metaContext)) return false;
+        return true;
+      }),
+      this.vaultSortOrder,
+      (id) => SpellInventoryManager.getSpellInsertionIndex(id),
+    );
 
     const spellIds = new Set(spells.map((s) => s.id));
     if (
@@ -1319,7 +1473,6 @@ export class DraftModal {
   }
 
   private async storeSynthesizedCardsToVault(): Promise<void> {
-    const storedSpells: AbilitySchema[] = [];
     const category = this.resolveSynthesisCategory();
 
     for (const card of this.cards) {
@@ -1337,21 +1490,171 @@ export class DraftModal {
       ability.tagline = card.tagline;
       ability.description = card.description;
 
-      storedSpells.push(this.callbacks.onStoreSpell(ability));
+      const stored = this.callbacks.onStoreSpell(ability);
+      card.abilityPayload = stored;
     }
 
-    this.cards = [];
-    this.cardsContainer.innerHTML = '';
     this.streamingSlots = null;
     this.evolvingBaseSpellId = null;
     this.evolutionContext = null;
     this.mode = 'FORGE_NEW';
     this.selectedCategory = category;
+    this.renderForgeTelemetryCards();
+  }
+
+  private navigateToVaultSpell(spellId: string): void {
     this.hoveredSpellId = null;
     this.clearVaultFilters();
-    this.selectedSpellId = storedSpells[0]?.id ?? null;
-    this.showSynthesisWarning('SPELL SYNTHESIZED AND STORED IN VAULT');
+    this.selectedSpellId = spellId;
     this.setActiveTab('VAULT');
+  }
+
+  private buildTelemetryItem(label: string, value: string, extraClass = ''): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'telemetry-item';
+
+    const key = document.createElement('span');
+    key.className = 'telemetry-k';
+    key.textContent = label;
+
+    const val = document.createElement('span');
+    val.className = `telemetry-v${extraClass ? ` ${extraClass}` : ''}`;
+    val.textContent = value;
+
+    item.appendChild(key);
+    item.appendChild(val);
+    return item;
+  }
+
+  private buildForgeTelemetryCard(card: DraftCard): HTMLElement | null {
+    const ability = card.abilityPayload;
+    if (!ability) return null;
+
+    const telemetry = extractSpellTelemetry(ability);
+    const rarityColor = RARITY_COLORS[card.rarity];
+    const archetype = ability.archetype ?? 'KINETIC';
+    const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
+
+    const root = document.createElement('div');
+    root.className = 'forge-card-redesign';
+    root.style.setProperty('--card-border-color', rarityColor);
+    root.style.setProperty('--card-glow-color', `${rarityColor}44`);
+    root.style.borderColor = rarityColor;
+
+    const header = document.createElement('div');
+    header.className = 'forge-card-header';
+
+    const rarityEl = document.createElement('span');
+    rarityEl.className = 'forge-card-rarity';
+    rarityEl.textContent = card.rarity;
+    rarityEl.style.color = rarityColor;
+
+    const archetypeEl = document.createElement('span');
+    archetypeEl.className = 'forge-card-archetype';
+    archetypeEl.textContent = archetype;
+    archetypeEl.style.color = archetypeColor;
+    archetypeEl.style.borderColor = archetypeColor;
+    archetypeEl.style.background = `${archetypeColor}18`;
+
+    header.appendChild(rarityEl);
+    header.appendChild(archetypeEl);
+
+    const glyphFrame = document.createElement('div');
+    glyphFrame.className = 'forge-card-glyph-frame';
+    glyphFrame.appendChild(generateSpellIcon(ability, 64));
+
+    const info = document.createElement('div');
+    info.className = 'forge-card-info';
+
+    const title = document.createElement('div');
+    title.className = 'forge-card-title';
+    title.textContent = card.title || ability.name;
+
+    const tagline = document.createElement('div');
+    tagline.className = 'forge-card-tagline';
+    tagline.textContent = card.tagline;
+
+    const desc = document.createElement('div');
+    desc.className = 'forge-card-desc';
+    desc.textContent = card.description;
+
+    info.appendChild(title);
+    info.appendChild(tagline);
+    info.appendChild(desc);
+
+    const telemetryGrid = document.createElement('div');
+    telemetryGrid.className = 'forge-card-telemetry';
+
+    telemetryGrid.appendChild(this.buildTelemetryItem('Cooldown', telemetry.cooldownSec));
+    telemetryGrid.appendChild(this.buildTelemetryItem('Recoil', `${telemetry.recoilKick} px/s`));
+    telemetryGrid.appendChild(
+      this.buildTelemetryItem(
+        'Repulse',
+        telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal',
+        telemetry.repulseForce > 0 ? 'highlight-repulse' : '',
+      ),
+    );
+    telemetryGrid.appendChild(
+      this.buildTelemetryItem(
+        'Instability',
+        `+${telemetry.instabilityYield}% Yield`,
+        'highlight-instability',
+      ),
+    );
+
+    if (telemetry.directDamage > 0) {
+      telemetryGrid.appendChild(
+        this.buildTelemetryItem('Direct HP', `${telemetry.directDamage} HP`),
+      );
+    }
+
+    const deliveryItem = this.buildTelemetryItem('Delivery', telemetry.deliveryText);
+    deliveryItem.classList.add('telemetry-row-full');
+    telemetryGrid.appendChild(deliveryItem);
+
+    const statusBlock = document.createElement('div');
+    statusBlock.className = 'forge-card-status-block';
+    statusBlock.textContent =
+      telemetry.ccDescriptions.length > 0
+        ? telemetry.ccDescriptions.join(' · ')
+        : '[CLEAN HIT] Pure Kinetic Force';
+
+    const footer = document.createElement('div');
+    footer.className = 'forge-card-footer';
+
+    const storedIndicator = document.createElement('div');
+    storedIndicator.className = 'forge-stored-indicator';
+    storedIndicator.textContent = '✦ STORED IN SPELL VAULT (TESTING)';
+
+    const viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.className = 'forge-claim-btn';
+    viewBtn.textContent = 'VIEW IN VAULT';
+    viewBtn.addEventListener('click', () => {
+      if (ability.id) this.navigateToVaultSpell(ability.id);
+    });
+
+    footer.appendChild(storedIndicator);
+    footer.appendChild(viewBtn);
+
+    root.appendChild(header);
+    root.appendChild(glyphFrame);
+    root.appendChild(info);
+    root.appendChild(telemetryGrid);
+    root.appendChild(statusBlock);
+    root.appendChild(footer);
+
+    return root;
+  }
+
+  private renderForgeTelemetryCards(): void {
+    this.cardsContainer.innerHTML = '';
+
+    for (const card of this.cards) {
+      if (card.type !== 'ACTIVE_ABILITY') continue;
+      const el = this.buildForgeTelemetryCard(card);
+      if (el) this.cardsContainer.appendChild(el);
+    }
   }
 
   private resolveEquipTarget(card?: DraftCard): DraftSelection['slot'] | null {

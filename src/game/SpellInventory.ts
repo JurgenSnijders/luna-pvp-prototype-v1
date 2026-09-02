@@ -102,15 +102,18 @@ class SpellInventoryStore {
   private loadout: LoadoutMap = createEmptyLoadout();
   private presetIds = new Set<string>();
   private newSpellIds = new Set<string>();
+  private insertionOrder: string[] = [];
   private initialized = false;
 
   initialize(): void {
     if (this.initialized) return;
 
     this.presetIds.clear();
+    this.insertionOrder = [];
     for (const schema of Object.values(PRESETS)) {
       this.presetIds.add(schema.id);
       this.inventory.set(schema.id, structuredClone(schema));
+      this.insertionOrder.push(schema.id);
     }
 
     this.loadCustomSpellsFromStorage();
@@ -136,6 +139,9 @@ class SpellInventoryStore {
         if (!validated) continue;
         if (this.presetIds.has(validated.id)) continue;
         this.inventory.set(validated.id, validated);
+        if (!this.insertionOrder.includes(validated.id)) {
+          this.insertionOrder.push(validated.id);
+        }
       }
     } catch {
       // Ignore corrupt storage.
@@ -222,7 +228,11 @@ class SpellInventoryStore {
       ...stored.metadata,
       roles: inferSpellRoles(stored),
     };
+    const isNew = !this.inventory.has(stored.id);
     this.inventory.set(stored.id, stored);
+    if (isNew && !this.insertionOrder.includes(stored.id)) {
+      this.insertionOrder.push(stored.id);
+    }
     if (isNewlyForged) {
       this.newSpellIds.add(stored.id);
     }
@@ -272,6 +282,11 @@ class SpellInventoryStore {
 
   getAllSpells(): AbilitySchema[] {
     return Array.from(this.inventory.values()).map((spell) => structuredClone(spell));
+  }
+
+  getSpellInsertionIndex(id: string): number {
+    const idx = this.insertionOrder.indexOf(id);
+    return idx === -1 ? 0 : idx;
   }
 
   getCustomSpells(): AbilitySchema[] {

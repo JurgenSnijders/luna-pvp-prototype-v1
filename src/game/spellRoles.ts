@@ -12,6 +12,49 @@ export type SpellRole =
 
 export type VaultMetaFilter = 'EQUIPPED' | 'NEW' | 'CUSTOM';
 
+export type VaultSortOrder = 'NEWEST' | 'OLDEST' | 'NAME_ASC' | 'NAME_DESC';
+
+export const VAULT_SORT_ORDERS: readonly VaultSortOrder[] = [
+  'NEWEST',
+  'OLDEST',
+  'NAME_ASC',
+  'NAME_DESC',
+];
+
+const VAULT_SORT_LABELS: Record<VaultSortOrder, string> = {
+  NEWEST: 'Newest first',
+  OLDEST: 'Oldest first',
+  NAME_ASC: 'Name A–Z',
+  NAME_DESC: 'Name Z–A',
+};
+
+export function getVaultSortLabel(order: VaultSortOrder): string {
+  return VAULT_SORT_LABELS[order];
+}
+
+export function sortVaultSpells(
+  spells: AbilitySchema[],
+  order: VaultSortOrder,
+  getInsertionIndex: (id: string) => number,
+): AbilitySchema[] {
+  const sorted = [...spells];
+  switch (order) {
+    case 'NEWEST':
+      sorted.sort((a, b) => getInsertionIndex(b.id) - getInsertionIndex(a.id));
+      break;
+    case 'OLDEST':
+      sorted.sort((a, b) => getInsertionIndex(a.id) - getInsertionIndex(b.id));
+      break;
+    case 'NAME_ASC':
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'NAME_DESC':
+      sorted.sort((a, b) => b.name.localeCompare(a.name));
+      break;
+  }
+  return sorted;
+}
+
 export const SPELL_ROLES: readonly SpellRole[] = [
   'MOBILITY',
   'DAMAGE',
