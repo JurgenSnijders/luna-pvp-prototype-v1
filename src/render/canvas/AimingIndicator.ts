@@ -269,17 +269,23 @@ export function drawSkillshotArrow(
 ): void {
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
-  const range = state.range;
+  const maxRange = state.range;
+  const cursorLen = Math.hypot(
+    state.target.x - state.origin.x,
+    state.target.y - state.origin.y,
+  );
+  const minLen = state.playerRadius + 40;
+  const len = Math.max(minLen, Math.min(cursorLen, maxRange));
   const shaftWidth = state.width;
   const shaftStart = state.playerRadius;
-  const shaftEnd = range - 36;
-  const headBase = range - 36;
+  const shaftEnd = len - 36;
+  const headBase = len - 36;
 
   ctx.save();
   ctx.translate(state.origin.x, state.origin.y);
   ctx.rotate(state.angle);
 
-  const grad = ctx.createLinearGradient(shaftStart, 0, range, 0);
+  const grad = ctx.createLinearGradient(shaftStart, 0, len, 0);
   grad.addColorStop(0, hexToRgba(color, 0.15));
   grad.addColorStop(1, hexToRgba(color, 0.35));
 
@@ -287,7 +293,7 @@ export function drawSkillshotArrow(
   ctx.moveTo(shaftStart, -shaftWidth / 2);
   ctx.lineTo(shaftEnd, -shaftWidth / 2);
   ctx.lineTo(headBase, -shaftWidth * 0.85);
-  ctx.lineTo(range, 0);
+  ctx.lineTo(len, 0);
   ctx.lineTo(headBase, shaftWidth * 0.85);
   ctx.lineTo(shaftEnd, shaftWidth / 2);
   ctx.lineTo(shaftStart, shaftWidth / 2);
@@ -308,22 +314,22 @@ export function drawSkillshotArrow(
       break;
     case 'FIRE':
     case 'PLASMA':
-      drawFireAccents(ctx, shaftStart, range, color, now);
+      drawFireAccents(ctx, shaftStart, len, color, now);
       break;
     case 'LIGHTNING':
     case 'CHAOS':
-      drawLightningAccents(ctx, shaftStart, range, color);
+      drawLightningAccents(ctx, shaftStart, len, color);
       break;
     case 'VOID':
     case 'ARCANE':
-      drawVoidAccents(ctx, shaftStart, shaftEnd, shaftWidth, headBase, range, color);
+      drawVoidAccents(ctx, shaftStart, shaftEnd, shaftWidth, headBase, len, color);
       break;
     default:
-      drawKineticAccents(ctx, shaftStart, range, color);
+      drawKineticAccents(ctx, shaftStart, len, color);
       break;
   }
 
-  drawTerminalReticle(ctx, range, color, 10);
+  drawTerminalReticle(ctx, len, color, 10);
 
   ctx.restore();
 }
