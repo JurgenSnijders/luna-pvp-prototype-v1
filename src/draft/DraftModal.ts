@@ -145,6 +145,95 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
   return { launchPct, instabilityPct, controlPct, dominantRole };
 }
 
+const FORGE_TIER_ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
+
+export function normalizeForgeTierRarity(rarity: string): string {
+  const upper = (rarity || 'COMMON').toUpperCase();
+  if (upper === 'LEGENDARY') return 'CHAOTIC';
+  if (upper === 'COMMON' || upper === 'RARE' || upper === 'EPIC' || upper === 'CHAOTIC') return upper;
+  return 'COMMON';
+}
+
+export function getTierCrest(rarity: string): string {
+  switch (normalizeForgeTierRarity(rarity)) {
+    case 'COMMON':
+      return '◈ COMMON';
+    case 'RARE':
+      return '◈◈ RARE';
+    case 'EPIC':
+      return '✦✦ EPIC ✦✦';
+    case 'CHAOTIC':
+      return '★ CHAOTIC ★';
+    default:
+      return rarity.toUpperCase();
+  }
+}
+
+export function resolveMutationPerk(card: DraftCard, telemetry: SpellTelemetry): string | null {
+  if (card.evolutionDiff && card.evolutionDiff.length > 0) {
+    return card.evolutionDiff[0];
+  }
+
+  if (telemetry.repulseForce >= 1000) {
+    return `⚡ HIGH KINETIC IMPACT (${telemetry.repulseForce} FORCE)`;
+  }
+  if (telemetry.instabilityYield >= 60) {
+    return `⚡ CRITICAL INSTABILITY (+${telemetry.instabilityYield}%)`;
+  }
+  if (telemetry.deliveryText.includes('FAN')) {
+    return `⚡ MULTI-VECTOR SPREAD (${telemetry.deliveryText.split('·')[0].trim()})`;
+  }
+  if (parseFloat(telemetry.cooldownSec) <= 0.8) {
+    return `⚡ RAPID CYCLING (${telemetry.cooldownSec} CD)`;
+  }
+  if (normalizeForgeTierRarity(card.rarity) === 'COMMON') {
+    return 'STANDARD BLUEPRINT';
+  }
+  return null;
+}
+
+export function resolveForgeCardTitle(
+  card: DraftCard,
+  cardIndex: number,
+  allCards: DraftCard[],
+): string {
+  const base = card.title || card.abilityPayload?.name || 'Untitled';
+  const titleCounts = new Map<string, number>();
+  for (const c of allCards) {
+    const t = c.title || c.abilityPayload?.name || 'Untitled';
+    titleCounts.set(t, (titleCounts.get(t) ?? 0) + 1);
+  }
+  if ((titleCounts.get(base) ?? 0) <= 1) return base;
+
+  const duplicateIndices = allCards
+    .map((c, i) => ({ title: c.title || c.abilityPayload?.name || 'Untitled', index: i }))
+    .filter((entry) => entry.title === base)
+    .map((entry) => entry.index);
+  const positionAmongDuplicates = duplicateIndices.indexOf(cardIndex);
+  const roman = FORGE_TIER_ROMAN[positionAmongDuplicates] ?? String(positionAmongDuplicates + 1);
+  return `${base} [${roman}]`;
+}
+
+export function resolveSuperchargedMetricKey(
+  telemetry: SpellTelemetry,
+  tier: string,
+): 'repulse' | 'instability' | 'cooldown' | null {
+  if (tier !== 'EPIC' && tier !== 'CHAOTIC') return null;
+
+  const cooldownSec = parseFloat(telemetry.cooldownSec) || 1;
+  const candidates: { key: 'repulse' | 'instability' | 'cooldown'; score: number }[] = [
+    { key: 'repulse', score: Math.min(100, (telemetry.repulseForce / 1500) * 100) },
+    { key: 'instability', score: Math.min(100, telemetry.instabilityYield * 1.2) },
+    { key: 'cooldown', score: Math.min(100, (1 / cooldownSec) * 40) },
+  ];
+
+  let best = candidates[0];
+  for (const c of candidates) {
+    if (c.score > best.score) best = c;
+  }
+  return best.score > 0 ? best.key : null;
+}
+
 const SCOPE_SIZE = 112;
 const SCOPE_PULSE_PERIOD_MS = 1200;
 
@@ -2317,28 +2406,32 @@ export class DraftModal {
     return item;
   }
 
-  private buildForgeTelemetryCard(card: DraftCard, cardIndex: number): HTMLElement | null {
+  private buildForgeTelemetryCard(
+    card: DraftCard,
+    cardIndex: number,
+    allCards: DraftCard[],
+  ): HTMLElement | null {
     const ability = card.abilityPayload;
     if (!ability) return null;
 
     const telemetry = extractSpellTelemetry(ability);
+    const tier = normalizeForgeTierRarity(card.rarity);
     const rarityColor = RARITY_COLORS[card.rarity];
     const archetype = ability.archetype ?? 'KINETIC';
     const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
+    const superKey = resolveSuperchargedMetricKey(telemetry, tier);
 
     const root = document.createElement('div');
-    root.className = 'forge-card-redesign';
+    root.className = `forge-card-redesign tier-${tier.toLowerCase()}`;
     root.style.setProperty('--card-border-color', rarityColor);
     root.style.setProperty('--card-glow-color', `${rarityColor}44`);
-    root.style.borderColor = rarityColor;
 
     const header = document.createElement('div');
     header.className = 'forge-card-header';
 
     const rarityEl = document.createElement('span');
-    rarityEl.className = 'forge-card-rarity';
-    rarityEl.textContent = card.rarity;
-    rarityEl.style.color = rarityColor;
+    rarityEl.className = 'forge-card-rarity forge-card-crest';
+    rarityEl.textContent = getTierCrest(tier);
 
     const archetypeEl = document.createElement('span');
     archetypeEl.className = 'forge-card-archetype';
@@ -2350,6 +2443,16 @@ export class DraftModal {
     header.appendChild(rarityEl);
     header.appendChild(archetypeEl);
 
+    const perk = resolveMutationPerk(card, telemetry);
+    const mutationBanner = document.createElement('div');
+    mutationBanner.className = 'forge-mutation-banner';
+    if (perk) {
+      const arrow = document.createElement('span');
+      arrow.textContent = '▲';
+      mutationBanner.appendChild(arrow);
+      mutationBanner.appendChild(document.createTextNode(` ${perk}`));
+    }
+
     const glyphFrame = document.createElement('div');
     glyphFrame.className = 'forge-card-glyph-frame';
     glyphFrame.appendChild(generateSpellIcon(ability, 64));
@@ -2359,7 +2462,7 @@ export class DraftModal {
 
     const title = document.createElement('div');
     title.className = 'forge-card-title';
-    title.textContent = card.title || ability.name;
+    title.textContent = resolveForgeCardTitle(card, cardIndex, allCards);
 
     const tagline = document.createElement('div');
     tagline.className = 'forge-card-tagline';
@@ -2376,22 +2479,31 @@ export class DraftModal {
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'forge-card-telemetry';
 
-    telemetryGrid.appendChild(this.buildTelemetryItem('Cooldown', telemetry.cooldownSec));
+    const cooldownItem = this.buildTelemetryItem('Cooldown', telemetry.cooldownSec);
+    telemetryGrid.appendChild(cooldownItem);
     telemetryGrid.appendChild(this.buildTelemetryItem('Recoil', `${telemetry.recoilKick} px/s`));
-    telemetryGrid.appendChild(
-      this.buildTelemetryItem(
-        'Repulse',
-        telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal',
-        telemetry.repulseForce > 0 ? 'highlight-repulse' : '',
-      ),
+
+    const repulseItem = this.buildTelemetryItem(
+      'Repulse',
+      telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal',
+      telemetry.repulseForce > 0 ? 'highlight-repulse' : '',
     );
-    telemetryGrid.appendChild(
-      this.buildTelemetryItem(
-        'Instability',
-        `+${telemetry.instabilityYield}% Yield`,
-        'highlight-instability',
-      ),
+    telemetryGrid.appendChild(repulseItem);
+
+    const instabilityItem = this.buildTelemetryItem(
+      'Instability',
+      `+${telemetry.instabilityYield}% Yield`,
+      'highlight-instability',
     );
+    telemetryGrid.appendChild(instabilityItem);
+
+    if (superKey === 'cooldown') {
+      cooldownItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+    } else if (superKey === 'repulse') {
+      repulseItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+    } else if (superKey === 'instability') {
+      instabilityItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+    }
 
     if (telemetry.directDamage > 0) {
       telemetryGrid.appendChild(
@@ -2455,6 +2567,7 @@ export class DraftModal {
     }
 
     root.appendChild(header);
+    if (perk) root.appendChild(mutationBanner);
     root.appendChild(glyphFrame);
     root.appendChild(info);
     root.appendChild(telemetryGrid);
@@ -2475,10 +2588,10 @@ export class DraftModal {
       this.cardsContainer.appendChild(hint);
     }
 
+    const abilityCards = this.cards.filter((c) => c.type === 'ACTIVE_ABILITY');
     let cardIndex = 0;
-    for (const card of this.cards) {
-      if (card.type !== 'ACTIVE_ABILITY') continue;
-      const el = this.buildForgeTelemetryCard(card, cardIndex);
+    for (const card of abilityCards) {
+      const el = this.buildForgeTelemetryCard(card, cardIndex, abilityCards);
       cardIndex += 1;
       if (el) this.cardsContainer.appendChild(el);
     }

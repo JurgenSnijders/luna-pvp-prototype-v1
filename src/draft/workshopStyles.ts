@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v14';
+export const STYLE_ID = 'luna-workshop-styles-v15';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -701,18 +701,170 @@ export function injectStyles(): void {
     .forge-card-redesign {
       display: flex;
       flex-direction: column;
-      background: rgba(6, 9, 18, 0.9);
-      border: 1.5px solid var(--card-border-color, var(--retro-border-subtle));
+      background: var(--tier-bg, rgba(6, 9, 18, 0.9));
+      border: 1.5px solid var(--tier-border, var(--card-border-color, var(--retro-border-subtle)));
       border-radius: 6px;
       padding: 14px;
       gap: 10px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
       transition: transform 0.15s ease, box-shadow 0.15s ease;
+      position: relative;
     }
 
     .forge-card-redesign:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 10px var(--card-glow-color, rgba(0, 229, 255, 0.2));
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 10px var(--tier-glow, var(--card-glow-color, rgba(0, 229, 255, 0.2)));
+    }
+
+    /* COMMON: Industrial Slate */
+    .forge-card-redesign.tier-common {
+      --tier-color: #5a6e8c;
+      --tier-border: rgba(90, 110, 140, 0.4);
+      --tier-bg: rgba(6, 9, 18, 0.88);
+      --tier-glow: transparent;
+    }
+
+    /* RARE: Neon Cyan Strike */
+    .forge-card-redesign.tier-rare {
+      --tier-color: #00e5ff;
+      --tier-border: #00e5ff;
+      --tier-bg: radial-gradient(circle at top center, rgba(0, 229, 255, 0.08) 0%, rgba(6, 9, 18, 0.92) 80%);
+      --tier-glow: rgba(0, 229, 255, 0.3);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7), inset 0 0 12px rgba(0, 229, 255, 0.08);
+    }
+
+    .forge-card-redesign.tier-rare:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9), 0 0 16px var(--tier-glow);
+    }
+
+    .forge-card-redesign.tier-rare::before,
+    .forge-card-redesign.tier-rare::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+    }
+
+    .forge-card-redesign.tier-rare::before {
+      top: 4px;
+      left: 4px;
+      border-top: 1.5px solid var(--tier-color);
+      border-left: 1.5px solid var(--tier-color);
+    }
+
+    .forge-card-redesign.tier-rare::after {
+      bottom: 4px;
+      right: 4px;
+      border-bottom: 1.5px solid var(--tier-color);
+      border-right: 1.5px solid var(--tier-color);
+    }
+
+    /* EPIC: Volatile Violet & Shimmer Sheen */
+    .forge-card-redesign.tier-epic {
+      --tier-color: #bf00ff;
+      --tier-border: #bf00ff;
+      --tier-bg: radial-gradient(circle at top center, rgba(191, 0, 255, 0.12) 0%, rgba(6, 9, 18, 0.94) 80%);
+      --tier-glow: rgba(191, 0, 255, 0.45);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), inset 0 0 16px rgba(191, 0, 255, 0.12);
+      overflow: hidden;
+    }
+
+    .forge-card-redesign.tier-epic::before {
+      content: '';
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 10px;
+      height: 10px;
+      border-top: 1.5px solid var(--tier-color);
+      border-left: 1.5px solid var(--tier-color);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .forge-card-redesign.tier-epic::after {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(
+        45deg,
+        transparent 40%,
+        rgba(191, 0, 255, 0.08) 50%,
+        transparent 60%
+      );
+      transform: rotate(25deg);
+      animation: epicSheen 6s infinite linear;
+      pointer-events: none;
+    }
+
+    @keyframes epicSheen {
+      0% { transform: translateX(-100%) rotate(25deg); }
+      100% { transform: translateX(100%) rotate(25deg); }
+    }
+
+    /* CHAOTIC: Prismatic Solar Gold (schema tier; spec "legendary" treatment) */
+    .forge-card-redesign.tier-chaotic {
+      --tier-color: #ffd700;
+      --tier-border: #ffd700;
+      --tier-bg: radial-gradient(circle at top center, rgba(255, 215, 0, 0.15) 0%, rgba(6, 9, 18, 0.96) 80%);
+      --tier-glow: rgba(255, 215, 0, 0.5);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.85), inset 0 0 20px rgba(255, 215, 0, 0.15);
+    }
+
+    .forge-card-redesign.tier-chaotic::before,
+    .forge-card-redesign.tier-chaotic::after {
+      content: '';
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .forge-card-redesign.tier-chaotic::before {
+      top: 4px;
+      left: 4px;
+      border-top: 2px solid var(--tier-color);
+      border-left: 2px solid var(--tier-color);
+    }
+
+    .forge-card-redesign.tier-chaotic::after {
+      bottom: 4px;
+      right: 4px;
+      border-bottom: 2px solid var(--tier-color);
+      border-right: 2px solid var(--tier-color);
+    }
+
+    .forge-mutation-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid var(--tier-color);
+      color: var(--tier-color);
+      border-radius: 3px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      box-shadow: 0 0 6px var(--tier-glow);
+    }
+
+    .forge-card-crest {
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--tier-color);
+    }
+
+    .telemetry-v.stat-supercharged {
+      color: #00ff88 !important;
+      text-shadow: 0 0 6px rgba(0, 255, 136, 0.5);
     }
 
     .forge-card-header {
