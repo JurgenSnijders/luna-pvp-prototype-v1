@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v12';
+export const STYLE_ID = 'luna-workshop-styles-v13';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -324,7 +324,71 @@ export function injectStyles(): void {
     .inspector-tags-row {
       display: flex;
       flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .semantic-badge {
+      display: inline-flex;
+      align-items: center;
       gap: 4px;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 3px;
+      background: rgba(10, 14, 26, 0.85);
+      border: 1px solid var(--badge-accent, var(--retro-neon-cyan, #00e5ff));
+      color: var(--badge-accent, var(--retro-neon-cyan, #00e5ff));
+      cursor: help;
+      user-select: none;
+      transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .semantic-badge:hover {
+      background: rgba(0, 229, 255, 0.18);
+      box-shadow: 0 0 8px var(--badge-accent, rgba(0, 229, 255, 0.4));
+      transform: translateY(-1px);
+    }
+
+    .forge-semantic-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .retro-combat-tooltip {
+      position: fixed;
+      z-index: 99999;
+      pointer-events: none;
+      max-width: 240px;
+      padding: 8px 10px;
+      background: rgba(6, 9, 18, 0.96);
+      border: 1px solid var(--retro-neon-cyan, #00e5ff);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8), 0 0 8px rgba(0, 229, 255, 0.3);
+      border-radius: 4px;
+      font-family: Fixedsys, monospace;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+
+    .retro-combat-tooltip.is-visible {
+      opacity: 1;
+    }
+
+    .retro-combat-tooltip-header {
+      font-size: 10px;
+      color: var(--retro-neon-cyan, #00e5ff);
+      border-bottom: 1px dashed rgba(0, 229, 255, 0.3);
+      padding-bottom: 3px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .retro-combat-tooltip-body {
+      font-size: 10px;
+      line-height: 1.35;
+      color: var(--retro-text-primary, #e0f8ff);
     }
 
     .inspector-action-pill {
@@ -729,6 +793,37 @@ export function injectStyles(): void {
     .forge-claim-btn:hover {
       background: rgba(0, 229, 255, 0.3);
       box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    .forge-vault-picker-hint {
+      grid-column: 1 / -1;
+      font-family: Fixedsys, monospace;
+      font-size: 11px;
+      color: var(--retro-text-muted);
+      text-align: center;
+      padding: 4px 0 2px;
+      letter-spacing: 0.3px;
+    }
+
+    .forge-card-saved {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px var(--card-glow-color, rgba(0, 229, 255, 0.25));
+    }
+
+    .forge-card-discarded {
+      opacity: 0.45;
+    }
+
+    .forge-card-discarded:hover {
+      transform: none;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    }
+
+    .forge-card-discarded-hint {
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      color: var(--retro-text-muted);
+      text-align: center;
+      letter-spacing: 0.5px;
     }
 
     .vault-toolbar {

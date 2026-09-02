@@ -216,6 +216,129 @@ function formatEnumLabel(value: string): string {
   return value.replace(/_/g, ' ');
 }
 
+export interface SemanticActionDef {
+  label: string;
+  category: 'OFFENSE' | 'CONTROL' | 'UTILITY' | 'DEFENSE';
+  accentColor: string;
+  getDescription: (action: ActionPayload) => string;
+}
+
+const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
+  APPLY_IMPULSE: {
+    label: '💥 KNOCKBACK',
+    category: 'OFFENSE',
+    accentColor: '#ffaa00',
+    getDescription: (a) =>
+      a.type === 'APPLY_IMPULSE'
+        ? `Delivers ${a.baseForce ?? 400} physical impulse force on impact, pushing targets backward.`
+        : 'Delivers physical impulse force on impact, pushing targets backward.',
+  },
+  RADIAL_IMPULSE: {
+    label: '💥 RADIAL SHOCKWAVE',
+    category: 'OFFENSE',
+    accentColor: '#ffaa00',
+    getDescription: (a) =>
+      a.type === 'SPAWN_FIELD'
+        ? `Emits a 360° explosive shockwave (${Math.abs(a.field.strength ?? 500)} force) launching all nearby entities outward.`
+        : 'Emits a 360° explosive shockwave launching all nearby entities outward.',
+  },
+  ADD_INSTABILITY: {
+    label: '⚡ VULNERABILITY',
+    category: 'CONTROL',
+    accentColor: '#ff4400',
+    getDescription: (a) =>
+      a.type === 'ADD_INSTABILITY'
+        ? `Inflicts +${a.amount ?? 15}% instability, drastically magnifying future launch distance.`
+        : 'Inflicts instability, magnifying future launch distance.',
+  },
+  SPAWN_PROJECTILE: {
+    label: '🎯 BALLISTIC',
+    category: 'OFFENSE',
+    accentColor: '#00e5ff',
+    getDescription: () =>
+      'Launches a traveling kinetic projectile payload along the aimed trajectory.',
+  },
+  SPAWN_FIELD: {
+    label: '🌐 HAZARD ZONE',
+    category: 'CONTROL',
+    accentColor: '#bf00ff',
+    getDescription: (a) =>
+      a.type === 'SPAWN_FIELD'
+        ? `Deploys a persistent ${a.field.radius ?? 60}px area-of-effect zone applying force or damage over time.`
+        : 'Deploys a persistent area-of-effect zone applying force or damage over time.',
+  },
+  SPAWN_OBSTACLE: {
+    label: '🧱 BARRICADE',
+    category: 'DEFENSE',
+    accentColor: '#d4a373',
+    getDescription: (a) =>
+      a.type === 'SPAWN_OBSTACLE'
+        ? `Erects destructible physical terrain (${a.obstacle.maxHealth ?? 40} HP) that blocks shots and paths.`
+        : 'Erects destructible physical terrain that blocks shots and paths.',
+  },
+  SPAWN_ACTOR: {
+    label: '🤖 DEPLOYABLE',
+    category: 'UTILITY',
+    accentColor: '#00ff88',
+    getDescription: () =>
+      'Summons an autonomous turret or combat drone entity to fight alongside the caster.',
+  },
+  SPAWN_CONSTRAINT: {
+    label: '🪢 TETHER PULL',
+    category: 'CONTROL',
+    accentColor: '#00e5ff',
+    getDescription: () =>
+      'Binds the target with an elastic energetic tether, pulling them toward the anchor point.',
+  },
+  TELEPORT: {
+    label: '🌀 WARP / PHASE',
+    category: 'UTILITY',
+    accentColor: '#00e5ff',
+    getDescription: () =>
+      'Instantly translates player position across space, ignoring obstacles and hazard zones.',
+  },
+  MODIFY_STAT: {
+    label: '💔 DIRECT DAMAGE',
+    category: 'OFFENSE',
+    accentColor: '#ff0055',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Directly alters target vitals (${a.value ?? -10} HP).`
+        : 'Directly alters target vitals.',
+  },
+};
+
+function semanticActionKey(action: ActionPayload): string {
+  if (action.type === 'SPAWN_FIELD' && action.field.fieldType === 'RADIAL_IMPULSE') {
+    return 'RADIAL_IMPULSE';
+  }
+  return action.type;
+}
+
+export function resolveSemanticAction(action: ActionPayload): SemanticActionDef {
+  const key = semanticActionKey(action);
+  const def = SEMANTIC_ACTION_REGISTRY[key];
+  if (def) return def;
+  return {
+    label: formatEnumLabel(action.type),
+    category: 'UTILITY',
+    accentColor: '#00e5ff',
+    getDescription: () => `Executes ${formatEnumLabel(action.type)} during spell resolution.`,
+  };
+}
+
+function collectUniqueSemanticActions(ability: AbilitySchema): ActionPayload[] {
+  const seen = new Set<string>();
+  const actions: ActionPayload[] = [];
+  walkActions(ability, (v) => {
+    const key = semanticActionKey(v.action);
+    if (seen.has(key)) return;
+    seen.add(key);
+    actions.push(v.action);
+  });
+  return actions;
+}
+
 function formatDurationSec(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -381,14 +504,6 @@ function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
   return onCast ?? {};
 }
 
-function collectActionTypes(ability: AbilitySchema): string[] {
-  const actions = new Set<string>();
-  walkTriggers(ability.triggers ?? [], (_node, action) => {
-    actions.add(action.type);
-  });
-  return [...actions];
-}
-
 function formatCooldown(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
@@ -462,9 +577,12 @@ export class DraftModal {
   private vaultRoleFilters = new Set<SpellRole>();
   private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
+  private forgeVaultPickerActive = false;
+  private vaultSavedCardIndex: number | null = null;
   private selectedSpellId: string | null = null;
   private hoveredSpellId: string | null = null;
   private heroScopeAnimId: number | null = null;
+  private tooltipEl: HTMLElement | null = null;
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
       this.renderVaultGrid();
@@ -687,6 +805,8 @@ export class DraftModal {
     this.evolutionContext = null;
     this.evolvingBaseSpellId = null;
     this.cards = [];
+    this.forgeVaultPickerActive = false;
+    this.vaultSavedCardIndex = null;
     this.clearSynthesisWarning();
     this.open_ = true;
     this.overlay.style.display = 'flex';
@@ -702,8 +822,11 @@ export class DraftModal {
 
   close(): void {
     this.stopHeroScopeAnimation();
+    this.destroyCombatTooltip();
     this.invalidatePrefetch();
     this.clearSynthesisTimer();
+    this.forgeVaultPickerActive = false;
+    this.vaultSavedCardIndex = null;
     this.open_ = false;
     this.overlay.style.opacity = '0';
     this.panel.style.transform = 'scale(0.97)';
@@ -1052,7 +1175,6 @@ export class DraftModal {
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
     const telemetry = extractSpellTelemetry(spell);
     const profile = calculateCombatProfile(telemetry);
-    const actionTypes = collectActionTypes(spell);
     const loadout = SpellInventoryManager.getLoadout();
 
     const panel = document.createElement('div');
@@ -1155,19 +1277,7 @@ export class DraftModal {
 
     const tagsRow = document.createElement('div');
     tagsRow.className = 'inspector-tags-row';
-    if (actionTypes.length === 0) {
-      const pill = document.createElement('span');
-      pill.className = 'inspector-action-pill';
-      pill.textContent = 'INSTANT';
-      tagsRow.appendChild(pill);
-    } else {
-      for (const actionType of actionTypes) {
-        const pill = document.createElement('span');
-        pill.className = 'inspector-action-pill';
-        pill.textContent = formatEnumLabel(actionType);
-        tagsRow.appendChild(pill);
-      }
-    }
+    this.appendSemanticBadges(tagsRow, spell);
 
     const desc = document.createElement('div');
     desc.className = 'inspector-desc';
@@ -1307,7 +1417,11 @@ export class DraftModal {
 
   private renderForge(): void {
     this.renderSynthesisControls();
-    this.renderResultCards();
+    if (this.forgeVaultPickerActive) {
+      this.renderForgeVaultPickerCards();
+    } else {
+      this.renderResultCards();
+    }
   }
 
   private renderApiStatusPill(): void {
@@ -1525,6 +1639,8 @@ export class DraftModal {
     }
 
     this.clearSynthesisWarning();
+    this.forgeVaultPickerActive = false;
+    this.vaultSavedCardIndex = null;
     const useStreaming =
       this.mode !== 'PASSIVE_UPGRADES' &&
       getAiSettings().apiKey.trim().length > 0 &&
@@ -1593,8 +1709,8 @@ export class DraftModal {
       }
 
       this.renderApiStatusPill();
-      if (this.shouldAutoStoreToVault()) {
-        await this.storeSynthesizedCardsToVault();
+      if (this.shouldShowForgeVaultPicker()) {
+        await this.showForgeVaultPicker();
       } else if (useStreaming && this.streamingSlots) {
         this.finalizeStreamingCards();
       } else {
@@ -1612,7 +1728,7 @@ export class DraftModal {
     }
   }
 
-  private shouldAutoStoreToVault(): boolean {
+  private shouldShowForgeVaultPicker(): boolean {
     return !this.intermissionMode && this.mode !== 'PASSIVE_UPGRADES';
   }
 
@@ -1632,34 +1748,42 @@ export class DraftModal {
     this.refreshVaultFilterChips();
   }
 
-  private async storeSynthesizedCardsToVault(): Promise<void> {
-    const category = this.resolveSynthesisCategory();
-
+  private async prepareForgeCardsForDisplay(): Promise<void> {
     for (const card of this.cards) {
-      if (card.type !== 'ACTIVE_ABILITY') continue;
-
-      let ability: AbilitySchema;
-      if (card.abilityPayload) {
-        ability = structuredClone(card.abilityPayload);
-      } else {
-        ability = await compileAbilityPayload(card, this.evolutionContext?.baseAbility);
-      }
-
-      ability.id = this.mintSpellId();
-      ability.name = card.title || ability.name;
-      ability.tagline = card.tagline;
-      ability.description = card.description;
-
-      const stored = this.callbacks.onStoreSpell(ability);
-      card.abilityPayload = stored;
+      if (card.type !== 'ACTIVE_ABILITY' || card.abilityPayload) continue;
+      card.abilityPayload = await compileAbilityPayload(
+        card,
+        this.evolutionContext?.baseAbility,
+      );
     }
+  }
 
+  private async showForgeVaultPicker(): Promise<void> {
+    await this.prepareForgeCardsForDisplay();
     this.streamingSlots = null;
+    this.forgeVaultPickerActive = true;
+    this.renderForgeVaultPickerCards();
+  }
+
+  private saveCardToVault(card: DraftCard, cardIndex: number): void {
+    if (this.vaultSavedCardIndex !== null || !card.abilityPayload) return;
+
+    const ability = structuredClone(card.abilityPayload);
+    ability.id = this.mintSpellId();
+    ability.name = card.title || ability.name;
+    ability.tagline = card.tagline;
+    ability.description = card.description;
+
+    const stored = this.callbacks.onStoreSpell(ability);
+    card.abilityPayload = stored;
+    this.vaultSavedCardIndex = cardIndex;
+
+    const category = this.resolveSynthesisCategory();
     this.evolvingBaseSpellId = null;
     this.evolutionContext = null;
     this.mode = 'FORGE_NEW';
     this.selectedCategory = category;
-    this.renderForgeTelemetryCards();
+    this.renderForgeVaultPickerCards();
   }
 
   private navigateToVaultSpell(spellId: string): void {
@@ -1667,6 +1791,98 @@ export class DraftModal {
     this.clearVaultFilters();
     this.selectedSpellId = spellId;
     this.setActiveTab('VAULT');
+  }
+
+  private ensureCombatTooltip(): HTMLElement {
+    if (this.tooltipEl) return this.tooltipEl;
+    this.tooltipEl = document.createElement('div');
+    this.tooltipEl.className = 'retro-combat-tooltip';
+    document.body.appendChild(this.tooltipEl);
+    return this.tooltipEl;
+  }
+
+  private destroyCombatTooltip(): void {
+    if (!this.tooltipEl) return;
+    this.tooltipEl.classList.remove('is-visible');
+    this.tooltipEl.remove();
+    this.tooltipEl = null;
+  }
+
+  private attachSemanticTooltip(el: HTMLElement, title: string, text: string): void {
+    el.addEventListener('mouseenter', () => {
+      const tooltip = this.ensureCombatTooltip();
+      tooltip.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'retro-combat-tooltip-header';
+      header.textContent = title;
+      const body = document.createElement('div');
+      body.className = 'retro-combat-tooltip-body';
+      body.textContent = text;
+      tooltip.appendChild(header);
+      tooltip.appendChild(body);
+
+      tooltip.classList.remove('is-visible');
+      tooltip.style.top = '0px';
+      tooltip.style.left = '0px';
+      const rect = el.getBoundingClientRect();
+      const tooltipWidth = tooltip.offsetWidth;
+      const tooltipHeight = tooltip.offsetHeight;
+      let top = rect.top - tooltipHeight - 8;
+      if (top < 8) {
+        top = rect.bottom + 8;
+      }
+      let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8));
+      tooltip.style.top = `${top}px`;
+      tooltip.style.left = `${left}px`;
+      tooltip.classList.add('is-visible');
+    });
+
+    el.addEventListener('mouseleave', () => {
+      this.tooltipEl?.classList.remove('is-visible');
+    });
+  }
+
+  private buildSemanticBadge(action: ActionPayload): HTMLElement {
+    const def = resolveSemanticAction(action);
+    const badge = document.createElement('div');
+    badge.className = 'semantic-badge';
+    badge.style.setProperty('--badge-accent', def.accentColor);
+    badge.textContent = def.label;
+    this.attachSemanticTooltip(badge, def.label, def.getDescription(action));
+    return badge;
+  }
+
+  private appendSemanticBadges(container: HTMLElement, ability: AbilitySchema): void {
+    const actions = collectUniqueSemanticActions(ability);
+    if (actions.length === 0) {
+      const instant = document.createElement('div');
+      instant.className = 'semantic-badge';
+      instant.style.setProperty('--badge-accent', '#00e5ff');
+      instant.textContent = '⚡ INSTANT CAST';
+      this.attachSemanticTooltip(
+        instant,
+        'INSTANT CAST',
+        'Resolves immediately on cast with no traveling projectile payload.',
+      );
+      container.appendChild(instant);
+      return;
+    }
+    for (const action of actions) {
+      container.appendChild(this.buildSemanticBadge(action));
+    }
+  }
+
+  private appendCardMechanicBadges(container: HTMLElement, card: DraftCard): void {
+    if (card.type === 'ACTIVE_ABILITY' && card.abilityPayload) {
+      this.appendSemanticBadges(container, card.abilityPayload);
+      return;
+    }
+    for (const b of extractMechanicBadges(card).slice(0, 6)) {
+      const badge = renderBadge(b.label, b.kind);
+      badge.setAttribute('data-badge', b.label);
+      container.appendChild(badge);
+    }
   }
 
   private stopHeroScopeAnimation(): void {
@@ -1978,7 +2194,7 @@ export class DraftModal {
     return item;
   }
 
-  private buildForgeTelemetryCard(card: DraftCard): HTMLElement | null {
+  private buildForgeTelemetryCard(card: DraftCard, cardIndex: number): HTMLElement | null {
     const ability = card.abilityPayload;
     if (!ability) return null;
 
@@ -2064,6 +2280,10 @@ export class DraftModal {
     deliveryItem.classList.add('telemetry-row-full');
     telemetryGrid.appendChild(deliveryItem);
 
+    const badgeRow = document.createElement('div');
+    badgeRow.className = 'forge-semantic-badges';
+    this.appendSemanticBadges(badgeRow, ability);
+
     const statusBlock = document.createElement('div');
     statusBlock.className = 'forge-card-status-block';
     statusBlock.textContent =
@@ -2074,37 +2294,69 @@ export class DraftModal {
     const footer = document.createElement('div');
     footer.className = 'forge-card-footer';
 
-    const storedIndicator = document.createElement('div');
-    storedIndicator.className = 'forge-stored-indicator';
-    storedIndicator.textContent = '✦ STORED IN SPELL VAULT (TESTING)';
+    const isSaved = this.vaultSavedCardIndex === cardIndex;
+    const anotherSaved =
+      this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex;
 
-    const viewBtn = document.createElement('button');
-    viewBtn.type = 'button';
-    viewBtn.className = 'forge-claim-btn';
-    viewBtn.textContent = 'VIEW IN VAULT';
-    viewBtn.addEventListener('click', () => {
-      if (ability.id) this.navigateToVaultSpell(ability.id);
-    });
+    if (isSaved) {
+      root.classList.add('forge-card-saved');
 
-    footer.appendChild(storedIndicator);
-    footer.appendChild(viewBtn);
+      const storedIndicator = document.createElement('div');
+      storedIndicator.className = 'forge-stored-indicator';
+      storedIndicator.textContent = '✦ SAVED TO SPELL VAULT';
+
+      const viewBtn = document.createElement('button');
+      viewBtn.type = 'button';
+      viewBtn.className = 'forge-claim-btn';
+      viewBtn.textContent = 'VIEW IN VAULT';
+      viewBtn.addEventListener('click', () => {
+        if (ability.id) this.navigateToVaultSpell(ability.id);
+      });
+
+      footer.appendChild(storedIndicator);
+      footer.appendChild(viewBtn);
+    } else if (anotherSaved) {
+      root.classList.add('forge-card-discarded');
+
+      const discardedHint = document.createElement('div');
+      discardedHint.className = 'forge-card-discarded-hint';
+      discardedHint.textContent = 'Not saved';
+      footer.appendChild(discardedHint);
+    } else {
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'forge-claim-btn';
+      saveBtn.textContent = 'SAVE TO VAULT';
+      saveBtn.addEventListener('click', () => this.saveCardToVault(card, cardIndex));
+      footer.appendChild(saveBtn);
+    }
 
     root.appendChild(header);
     root.appendChild(glyphFrame);
     root.appendChild(info);
     root.appendChild(telemetryGrid);
+    root.appendChild(badgeRow);
     root.appendChild(statusBlock);
     root.appendChild(footer);
 
     return root;
   }
 
-  private renderForgeTelemetryCards(): void {
+  private renderForgeVaultPickerCards(): void {
     this.cardsContainer.innerHTML = '';
 
+    if (this.vaultSavedCardIndex === null) {
+      const hint = document.createElement('div');
+      hint.className = 'forge-vault-picker-hint';
+      hint.textContent = 'Choose one spell to save to your vault.';
+      this.cardsContainer.appendChild(hint);
+    }
+
+    let cardIndex = 0;
     for (const card of this.cards) {
       if (card.type !== 'ACTIVE_ABILITY') continue;
-      const el = this.buildForgeTelemetryCard(card);
+      const el = this.buildForgeTelemetryCard(card, cardIndex);
+      cardIndex += 1;
       if (el) this.cardsContainer.appendChild(el);
     }
   }
@@ -2256,11 +2508,7 @@ export class DraftModal {
       slot.desc.textContent = card.description;
 
       slot.badges.innerHTML = '';
-      for (const b of extractMechanicBadges(card).slice(0, 6)) {
-        const badge = renderBadge(b.label, b.kind);
-        badge.setAttribute('data-badge', b.label);
-        slot.badges.appendChild(badge);
-      }
+      this.appendCardMechanicBadges(slot.badges, card);
 
       const newPower = renderPowerBar(
         card.budgetCost,
@@ -2352,9 +2600,7 @@ export class DraftModal {
       const badges = document.createElement('div');
       badges.style.cssText =
         'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;flex-shrink:0;';
-      for (const b of extractMechanicBadges(card).slice(0, 6)) {
-        badges.appendChild(renderBadge(b.label, b.kind));
-      }
+      this.appendCardMechanicBadges(badges, card);
 
       el.appendChild(rarityBadge);
       el.appendChild(cardTitle);
