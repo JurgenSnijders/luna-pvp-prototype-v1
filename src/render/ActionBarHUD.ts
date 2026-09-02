@@ -3,6 +3,7 @@ import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotK
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
+import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
 
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
@@ -11,6 +12,7 @@ export interface ActionBarHUDCallbacks {
 
 interface SlotElements {
   root: HTMLElement;
+  iconContainer: HTMLElement;
   badge: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
@@ -22,6 +24,8 @@ interface SlotElements {
   lockoutOverlay: HTMLElement;
   countdown: HTMLElement;
   accent: string;
+  archetypeColor: string;
+  lastAbilityId: string | null;
 }
 
 const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
@@ -250,46 +254,53 @@ export class ActionBarHUD {
     const accent = BADGE_STYLES[key];
     const root = document.createElement('div');
     root.style.cssText = `
-      width: 84px; height: 80px; position: relative; overflow: hidden;
+      width: 80px; height: 80px; position: relative; overflow: hidden;
       backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
       border: 1px solid ${RETRO_COLORS.borderNeon}40; border-radius: 4px;
       box-shadow: ${RETRO_GLOW.boxCyan};
       cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
     `;
 
+    const iconContainer = document.createElement('div');
+    iconContainer.style.cssText = `
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      z-index: 1; pointer-events: none;
+    `;
+
     const badge = document.createElement('div');
     badge.textContent = key;
     badge.style.cssText = `
-      position: absolute; top: 3px; left: 3px;
-      font-size: ${FONTS.size.badge}; font-weight: 700; color: ${accent.color};
+      position: absolute; top: 4px; left: 4px; z-index: 3;
+      font-size: 12px; font-weight: 700; color: ${accent.color};
       background: ${accent.bg}; padding: 1px 3px; border-radius: 4px;
     `;
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
     label.style.cssText = `
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      padding: 16px 3px 3px; font-size: ${FONTS.size.badge}; color: #666; text-align: center;
-      line-height: 1.2; word-break: break-word;
+      position: absolute; bottom: 3px; left: 2px; right: 2px; z-index: 3;
+      font-size: 11px; color: #666; text-align: center;
+      text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      pointer-events: none;
     `;
 
     const cooldownOverlay = document.createElement('div');
     cooldownOverlay.style.cssText = `
-      position: absolute; bottom: 0; left: 0; right: 0; height: 0%;
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; z-index: 4;
       background: rgba(0, 0, 0, 0.7); pointer-events: none;
       transition: height 0.05s linear;
     `;
 
     const chargeOverlay = document.createElement('div');
     chargeOverlay.style.cssText = `
-      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none;
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none; z-index: 4;
       background: rgba(0, 229, 255, 0.45); pointer-events: none;
       transition: height 0.05s linear;
     `;
 
     const heatOverlay = document.createElement('div');
     heatOverlay.style.cssText = `
-      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none;
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%; display: none; z-index: 4;
       background: linear-gradient(to top, #ff4400, #ff8800);
       pointer-events: none; opacity: 0.85;
       transition: height 0.05s linear;
@@ -299,19 +310,19 @@ export class ActionBarHUD {
     // cooldown has cleared, so it reads as a shared casting-lockout beat rather than recharge.
     const gcdOverlay = document.createElement('div');
     gcdOverlay.style.cssText = `
-      position: absolute; top: 0; left: 0; right: 0; height: 0%; display: none;
+      position: absolute; top: 0; left: 0; right: 0; height: 0%; display: none; z-index: 4;
       background: rgba(255, 255, 255, 0.16); pointer-events: none;
       transition: height 0.05s linear;
     `;
 
     const compileOverlay = document.createElement('div');
     compileOverlay.style.cssText = `
-      position: absolute; inset: 0; display: none; pointer-events: none;
+      position: absolute; inset: 0; display: none; z-index: 5; pointer-events: none;
     `;
 
     const resourceBadge = document.createElement('div');
     resourceBadge.style.cssText = `
-      position: absolute; top: 3px; right: 3px; display: none;
+      position: absolute; top: 4px; right: 4px; display: none; z-index: 3;
       font-size: ${FONTS.size.badge}; font-weight: 700; color: #e2e8f0;
       background: rgba(0, 0, 0, 0.55); padding: 1px 4px; border-radius: 4px;
       pointer-events: none; line-height: 1.2;
@@ -319,7 +330,7 @@ export class ActionBarHUD {
 
     const lockoutOverlay = document.createElement('div');
     lockoutOverlay.style.cssText = `
-      position: absolute; inset: 0; display: none; pointer-events: none;
+      position: absolute; inset: 0; display: none; z-index: 6; pointer-events: none;
       align-items: center; justify-content: center; flex-direction: column;
       background: rgba(120, 0, 0, 0.55); color: #ffcccc;
       font-size: ${FONTS.size.badge}; font-weight: 700; text-align: center; line-height: 1.2;
@@ -327,11 +338,13 @@ export class ActionBarHUD {
 
     const countdown = document.createElement('div');
     countdown.style.cssText = `
-      position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+      position: absolute; inset: 0; display: none; z-index: 7;
+      align-items: center; justify-content: center;
       font-size: ${FONTS.size.lg}; font-weight: 700; color: #fff; text-shadow: 0 0 8px rgba(0,0,0,0.8);
       pointer-events: none;
     `;
 
+    root.appendChild(iconContainer);
     root.appendChild(badge);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
@@ -387,7 +400,48 @@ export class ActionBarHUD {
       this.tooltipEl.style.opacity = '0';
     });
 
-    return { root, badge, label, cooldownOverlay, chargeOverlay, heatOverlay, gcdOverlay, compileOverlay, resourceBadge, lockoutOverlay, countdown, accent: accent.color };
+    return {
+      root,
+      iconContainer,
+      badge,
+      label,
+      cooldownOverlay,
+      chargeOverlay,
+      heatOverlay,
+      gcdOverlay,
+      compileOverlay,
+      resourceBadge,
+      lockoutOverlay,
+      countdown,
+      accent: accent.color,
+      archetypeColor: accent.color,
+      lastAbilityId: null,
+    };
+  }
+
+  private updateSlotIcon(slotIndex: number, ability: AbilitySchema | null): void {
+    const slot = this.slots[slotIndex];
+    const nextId = ability?.id ?? null;
+    if (nextId === slot.lastAbilityId) return;
+
+    slot.iconContainer.replaceChildren();
+    slot.lastAbilityId = nextId;
+
+    if (ability) {
+      slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
+      slot.label.textContent = ability.name;
+      slot.label.style.color = '#ccc';
+      slot.archetypeColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
+      slot.root.style.borderColor = `${slot.archetypeColor}4d`;
+      slot.root.dataset.hasAbility = 'true';
+      slot.root.style.borderStyle = 'solid';
+    } else {
+      slot.label.textContent = '+ Assign';
+      slot.label.style.color = '#666';
+      slot.archetypeColor = slot.accent;
+      slot.root.dataset.hasAbility = 'false';
+      slot.root.style.borderStyle = 'dashed';
+    }
   }
 
   private updateTooltipPosition(slotIndex: number): void {
@@ -444,20 +498,7 @@ export class ActionBarHUD {
       const compiling = player.isSlotCompiling(i);
       const accent = slot.accent;
 
-      if (ability) {
-        slot.root.dataset.hasAbility = 'true';
-        slot.label.textContent = ability.name.length > 14
-          ? `${ability.name.slice(0, 13)}…`
-          : ability.name;
-        slot.label.style.color = '#ccc';
-        slot.label.style.fontSize = FONTS.size.badge;
-        slot.root.style.borderStyle = 'solid';
-      } else {
-        slot.root.dataset.hasAbility = 'false';
-        slot.label.textContent = '+ Assign';
-        slot.label.style.color = '#666';
-        slot.root.style.borderStyle = 'dashed';
-      }
+      this.updateSlotIcon(i, ability);
 
       if (compiling) {
         // Background synthesis in flight — suppress the real cooldown fill/ready-glow and
@@ -570,7 +611,7 @@ export class ActionBarHUD {
         slot.root.style.borderColor = accent;
         slot.root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 10px ${accent}59`;
       } else if (!slot.root.matches(':hover')) {
-        slot.root.style.borderColor = ability ? `${accent}4d` : `${accent}40`;
+        slot.root.style.borderColor = ability ? `${slot.archetypeColor}4d` : `${accent}40`;
         slot.root.style.boxShadow = '';
       }
     }
