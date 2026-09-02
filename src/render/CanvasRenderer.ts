@@ -24,6 +24,7 @@ import {
 } from './canvas/worldLayers';
 import { Vector2D } from '../math/Vector2D';
 import { hitFeedbackConfig } from './hitFeedbackConfig';
+import { flashArenaCrosshair } from '../ui/palette';
 
 export type { DebugOptions } from './canvas/debug';
 
@@ -39,9 +40,6 @@ export class CanvasRenderer {
   private fctManager = new FloatingCombatTextManager();
   private aimingRenderer = new AimingIndicatorRenderer();
   private lastRenderMs = 0;
-  private hitMarkerTimer = 0;
-  private hitMarkerIsHeavy = false;
-  private hitMarkerPos: { x: number; y: number } | null = null;
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -91,19 +89,12 @@ export class CanvasRenderer {
     if (aimingPlayer) {
       for (const marker of world.drainHitMarkerEvents()) {
         if (marker.sourceId !== aimingPlayer.id) continue;
-        this.hitMarkerTimer = 0.09;
-        this.hitMarkerIsHeavy = marker.isHeavy;
-        this.hitMarkerPos = {
-          x: aimingPlayer.aimTarget.x,
-          y: aimingPlayer.aimTarget.y,
-        };
+        if (hitFeedbackConfig.reticleMarkers) {
+          flashArenaCrosshair(marker.isHeavy);
+        }
       }
     } else {
       world.drainHitMarkerEvents();
-    }
-
-    if (this.hitMarkerTimer > 0) {
-      this.hitMarkerTimer = Math.max(0, this.hitMarkerTimer - renderDt);
     }
 
     this.ringRotation += 0.02;
@@ -131,46 +122,11 @@ export class CanvasRenderer {
     this.fctManager.update(renderDt);
     this.fctManager.draw(ctx);
 
-    if (hitFeedbackConfig.reticleMarkers && this.hitMarkerTimer > 0 && this.hitMarkerPos) {
-      this.drawReticleHitMarker(ctx, this.hitMarkerPos.x, this.hitMarkerPos.y);
-    }
-
     this.syncStateFromCtx(state);
 
     if (debug.showVectors || debug.showRadii || debug.showIds) {
       drawDebugOverlay(ctx, world, alpha, debug);
     }
 
-  }
-
-  private drawReticleHitMarker(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-    const stroke = this.hitMarkerIsHeavy ? '#ff007f' : '#ffffff';
-    const inner = 6;
-    const outer = 14;
-    const angles = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4];
-
-    ctx.save();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-    for (const a of angles) {
-      const cos = Math.cos(a);
-      const sin = Math.sin(a);
-      ctx.beginPath();
-      ctx.moveTo(x + cos * inner, y + sin * inner);
-      ctx.lineTo(x + cos * outer, y + sin * outer);
-      ctx.stroke();
-    }
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = stroke;
-    for (const a of angles) {
-      const cos = Math.cos(a);
-      const sin = Math.sin(a);
-      ctx.beginPath();
-      ctx.moveTo(x + cos * inner, y + sin * inner);
-      ctx.lineTo(x + cos * outer, y + sin * outer);
-      ctx.stroke();
-    }
-    ctx.restore();
   }
 }

@@ -32,6 +32,33 @@ function resolveArenaCursor(neonColor: string): string {
   return buildCrosshairCursor(getGraphicsSettings().crosshairStyle, neonColor);
 }
 
+const HIT_FLASH_MS = 90;
+const HIT_FLASH_LIGHT = '#ffffff';
+const HIT_FLASH_HEAVY = '#ff007f';
+
+let flashRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+function refreshArenaCursor(): void {
+  const colors = getActiveColors();
+  const cursor = resolveArenaCursor(colors.borderNeon || colors.neonCyan);
+  setCssVar('--retro-cursor', cursor);
+  applyArenaCursor(cursor);
+}
+
+/** Briefly recolor the hardware crosshair on hit (white = light, hot magenta = heavy). */
+export function flashArenaCrosshair(isHeavy: boolean): void {
+  const style = getGraphicsSettings().crosshairStyle;
+  const flashColor = isHeavy ? HIT_FLASH_HEAVY : HIT_FLASH_LIGHT;
+  const flashStyle = style === 'SYSTEM' ? 'CLASSIC_CROSS' : style;
+  applyArenaCursor(buildCrosshairCursor(flashStyle, flashColor));
+
+  if (flashRestoreTimer) clearTimeout(flashRestoreTimer);
+  flashRestoreTimer = setTimeout(() => {
+    flashRestoreTimer = null;
+    refreshArenaCursor();
+  }, HIT_FLASH_MS);
+}
+
 /** Writes resolved preset colors to :root so DOM cssText using RETRO_COLORS vars live-updates. */
 export function applyPalette(): void {
   const preset = getActivePreset();
@@ -57,17 +84,14 @@ export function applyPalette(): void {
   setCssVar('--retro-glow-magenta', glow.magenta);
   setCssVar('--retro-glow-box-cyan', glow.boxCyan);
   setCssVar('--retro-glow-box-magenta', glow.boxMagenta);
-  const cursor = resolveArenaCursor(colors.borderNeon || colors.neonCyan);
-  setCssVar('--retro-cursor', cursor);
-  applyArenaCursor(cursor);
+  refreshArenaCursor();
 
   document.body.style.backgroundColor = colors.bgDark;
 }
 
 /** Re-apply arena cursor (e.g. after #vfx-canvas is mounted). */
 export function syncArenaCursor(): void {
-  const colors = getActiveColors();
-  applyArenaCursor(resolveArenaCursor(colors.borderNeon || colors.neonCyan));
+  refreshArenaCursor();
 }
 
 subscribeGraphicsSettings(() => applyPalette());

@@ -191,7 +191,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   };
 
   addHitToggle('targetFlash', 'Target White Flash');
-  addHitToggle('reticleMarkers', 'Crosshair Hit Markers');
+  addHitToggle('reticleMarkers', 'Crosshair Hit Flash');
   addHitToggle('bodyDeform', 'Body Squash & Shudder');
   addHitToggle('microHitstop', 'Micro-Hitstop Freeze');
   addHitToggle('ghostInstabilityBar', 'Ghost Bar Chunking');
