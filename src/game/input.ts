@@ -37,27 +37,63 @@ export function executePlayerCast(
   caster.triggerSlotCooldown(slotIndex, isChannelTick);
 }
 
+function castCallback(app: GameApp) {
+  return (slotIndex: number, overrides: ExecutionOverrides, isChannelTick: boolean) =>
+    executePlayerCast(app, slotIndex, overrides, isChannelTick);
+}
+
+export function cancelPlayerAiming(app: GameApp): boolean {
+  if (!app.player.activeAimingState) return false;
+  app.player.cancelAiming();
+  return true;
+}
+
 export function handleCastInput(app: GameApp, slot: number, isDown: boolean): void {
   if (slot < 0 || slot > 4) return;
   if (!canCombatInput(app)) return;
 
+  const player = app.player;
+  const onCast = castCallback(app);
+
   if (isDown) {
-    const ability = app.player.getAbility(slot);
-    if (ability && !app.player.isSlotReady(slot)) {
+    if (slot === 1 && player.activeAimingState) {
+      player.cancelAiming();
+      return;
+    }
+
+    if (slot === 0 && player.activeAimingState) {
+      if (player.isSlotReady(player.activeAimingState.slotIndex)) {
+        player.confirmAimCast(onCast);
+      }
+      return;
+    }
+
+    if (player.activeAimingState?.slotIndex === slot) {
+      if (player.isSlotReady(slot)) {
+        player.confirmAimCast(onCast);
+      }
+      return;
+    }
+
+    const ability = player.getAbility(slot);
+    if (ability && !player.isSlotReady(slot)) {
       const profile = ability.inputProfile ?? { mode: 'INSTANT' };
       if (
         profile.mode === 'INSTANT' &&
         ability.triggers.some((t) => t.trigger === 'ON_RECAST')
       ) {
-        app.interpreter.dispatchRecast(app.player.id, ability.name, app.world);
+        app.interpreter.dispatchRecast(player.id, ability.name, app.world);
         return;
       }
     }
+
+    if (player.startAiming(slot)) return;
+
+    player.setSlotInput(slot, isDown, onCast);
+    return;
   }
 
-  app.player.setSlotInput(slot, isDown, (slotIndex, overrides, isChannelTick) =>
-    executePlayerCast(app, slotIndex, overrides, isChannelTick),
-  );
+  player.setSlotInput(slot, isDown, onCast);
 }
 
 export function applyPlayerInput(app: GameApp): void {
@@ -69,4 +105,14 @@ export function applyPlayerInput(app: GameApp): void {
   if (app.keys.has('d')) mx += 1;
   const move = new Vector2D(mx, my);
   app.player.inputMove = move.magSq() > 0 ? move.normalize() : Vector2D.zero();
+}
+
+export function updatePlayerAimTarget(
+  app: GameApp,
+  mouseWorldPos: { x: number; y: number },
+): void {
+  app.player.aimTarget = new Vector2D(mouseWorldPos.x, mouseWorldPos.y);
+  if (app.player.activeAimingState) {
+    app.player.updateAimTarget(mouseWorldPos);
+  }
 }

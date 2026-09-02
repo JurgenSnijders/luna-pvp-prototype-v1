@@ -11,6 +11,8 @@ import {
   combatEventToFct,
   FloatingCombatTextManager,
 } from './canvas/FloatingCombatText';
+import type { AimingState } from './canvas/AimingIndicator';
+import { AimingIndicatorRenderer } from './canvas/AimingIndicator';
 import type { CanvasRenderCtx } from './canvas/renderCtx';
 import { SpriteCache } from './canvas/SpriteCache';
 import {
@@ -33,6 +35,7 @@ export class CanvasRenderer {
   private bgCacheCanvas: HTMLCanvasElement | null = null;
   private bgCacheKey = '';
   private fctManager = new FloatingCombatTextManager();
+  private aimingRenderer = new AimingIndicatorRenderer();
   private lastRenderMs = 0;
 
   constructor(private ctx: CanvasRenderingContext2D) {}
@@ -68,6 +71,7 @@ export class CanvasRenderer {
     height: number,
     shrinkProgress = 0,
     isShrinking = false,
+    aimingState: AimingState | null = null,
   ): void {
     const ctx = this.ctx;
     const now = performance.now();
@@ -76,7 +80,7 @@ export class CanvasRenderer {
 
     for (const event of world.drainCombatVisualEvents()) {
       const { text, type, color } = combatEventToFct(event);
-      this.fctManager.spawn(text, event.pos, type, color, event.entityRadius);
+      this.fctManager.spawn(text, event.pos, type, color);
     }
 
     this.ringRotation += 0.02;
@@ -94,6 +98,9 @@ export class CanvasRenderer {
     drawSummons(ctx, world, alpha);
     drawConstraints(ctx, world);
     drawProjectiles(ctx, state, world, alpha);
+    if (aimingState) {
+      this.aimingRenderer.render(ctx, aimingState);
+    }
     drawOverheadHUD(ctx, world, alpha);
 
     this.fctManager.update(renderDt);

@@ -20,7 +20,7 @@ import { CombatLogger } from '../telemetry/CombatLogger';
 import { TelemetryModal } from '../telemetry/TelemetryModal';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
-import { handleCastInput } from './input';
+import { handleCastInput, cancelPlayerAiming, updatePlayerAimTarget } from './input';
 import { assignDefaultLoadout } from './loadout';
 import {
   canDraftOpen,
@@ -227,6 +227,13 @@ function init(app: GameApp): void {
 
     if (!canCombatInput(app)) return;
 
+    if (e.code === 'Escape') {
+      if (cancelPlayerAiming(app)) {
+        e.preventDefault();
+        return;
+      }
+    }
+
     if (e.code === 'KeyQ') handleCastInput(app, 2, true);
     if (e.code === 'KeyE') handleCastInput(app, 3, true);
 
@@ -246,7 +253,7 @@ function init(app: GameApp): void {
 
   window.addEventListener('mousemove', (e) => {
     if (app.matchManager.mode === 'SANDBOX' || app.matchManager.state === 'ROUND_ACTIVE') {
-      app.player.aimTarget = new Vector2D(e.clientX, e.clientY);
+      updatePlayerAimTarget(app, { x: e.clientX, y: e.clientY });
     }
   });
 
@@ -260,7 +267,13 @@ function init(app: GameApp): void {
     if (e.button === 0) handleCastInput(app, 0, false);
     if (e.button === 2) handleCastInput(app, 1, false);
   });
-  app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  app.canvas.addEventListener('contextmenu', (e) => {
+    if (cancelPlayerAiming(app)) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+  });
 
   app.loop = new Loop({
     onUpdate(dt) {
@@ -311,6 +324,7 @@ function init(app: GameApp): void {
         window.innerHeight,
         app.arenaShrink.getShrinkProgress(),
         app.arenaShrink.isShrinking,
+        app.player.activeAimingState,
       );
       app.ctx.restore();
 

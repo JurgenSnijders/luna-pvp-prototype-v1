@@ -4,6 +4,11 @@ import type { MovementProfile } from '../devtools/movementSettings';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
+import {
+  classifyAimingMode,
+  resolveAbilityAimParams,
+  type AimingState,
+} from '../render/canvas/AimingIndicator';
 import { Entity, generateEntityId } from './Entity';
 
 const SLOT_COUNT = 5;
@@ -106,6 +111,7 @@ export class Player extends Entity {
   slotCompiling: BoolSlotTuple;
   slotInputs: SlotInputState[];
   slotResources: SlotResourceState[];
+  activeAimingState: AimingState | null = null;
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -164,6 +170,80 @@ export class Player extends Entity {
   getAbility(slotIndex: number): AbilitySchema | null {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return null;
     return this.abilities[slotIndex];
+  }
+
+  private buildAimingState(slotIndex: number, ability: AbilitySchema): AimingState {
+    const mode = classifyAimingMode(ability)!;
+    const params = resolveAbilityAimParams(ability);
+    const dir = this.aimTarget.sub(this.pos);
+    const angle = dir.magSq() > 0.01 ? Math.atan2(dir.y, dir.x) : this.facingAngle;
+    const clampedDist = Math.min(dir.mag(), params.range);
+    const target = this.pos.add(Vector2D.fromAngle(angle, clampedDist));
+
+    return {
+      slotIndex,
+      ability,
+      mode,
+      origin: { x: this.pos.x, y: this.pos.y },
+      target: { x: target.x, y: target.y },
+      angle,
+      range: params.range,
+      width: params.width,
+      radialRadius: params.radialRadius,
+      playerRadius: this.radius,
+    };
+  }
+
+  startAiming(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+
+    const ability = this.abilities[slotIndex];
+    if (!ability || this.slotCompiling[slotIndex] || !this.isSlotReady(slotIndex)) {
+      return false;
+    }
+
+    const mode = classifyAimingMode(ability);
+    if (!mode) return false;
+
+    this.activeAimingState = this.buildAimingState(slotIndex, ability);
+    this.updateAimTarget({ x: this.aimTarget.x, y: this.aimTarget.y });
+    return true;
+  }
+
+  updateAimTarget(mouseWorldPos: { x: number; y: number }): void {
+    if (!this.activeAimingState) return;
+
+    const state = this.activeAimingState;
+    const dx = mouseWorldPos.x - state.origin.x;
+    const dy = mouseWorldPos.y - state.origin.y;
+    const dist = Math.hypot(dx, dy);
+    const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+    const clampedDist =
+      state.mode === 'directional' ? Math.min(dist, state.range) : dist;
+    const targetX = state.origin.x + Math.cos(angle) * clampedDist;
+    const targetY = state.origin.y + Math.sin(angle) * clampedDist;
+
+    state.target = { x: targetX, y: targetY };
+    state.angle = angle;
+    state.origin = { x: this.pos.x, y: this.pos.y };
+    this.aimTarget = new Vector2D(targetX, targetY);
+  }
+
+  confirmAimCast(onCast: SlotCastCallback): void {
+    if (!this.activeAimingState) return;
+
+    const slotIndex = this.activeAimingState.slotIndex;
+    this.facingAngle = this.activeAimingState.angle;
+    this.aimTarget = new Vector2D(
+      this.activeAimingState.target.x,
+      this.activeAimingState.target.y,
+    );
+    this.activeAimingState = null;
+    onCast(slotIndex, {}, false);
+  }
+
+  cancelAiming(): void {
+    this.activeAimingState = null;
   }
 
   isSlotReady(slotIndex: number): boolean {
@@ -567,6 +647,7 @@ export class Player extends Entity {
 
   clearCastInputs(): void {
     this.slotCastFlags = [false, false, false, false, false];
+    this.activeAimingState = null;
   }
 
   takeDamage(amount: number): void {

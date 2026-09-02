@@ -213,8 +213,10 @@ export class ActionBarHUD {
   private tooltipEl: HTMLDivElement;
   private activeHoveredSlot: number | null = null;
   private cachedPlayerRef: Player | null = null;
+  private aimingSlotIndex: number | null = null;
 
   constructor(private callbacks: ActionBarHUDCallbacks) {
+    this.injectAimingStyles();
     this.root = document.createElement('div');
     this.root.style.cssText = `
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -256,6 +258,43 @@ export class ActionBarHUD {
         slot.lastAbilityId = null;
       }
     });
+  }
+
+  private injectAimingStyles(): void {
+    if (document.getElementById('action-bar-aiming-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'action-bar-aiming-styles';
+    style.textContent = `
+      @keyframes slotAimPulse {
+        from {
+          box-shadow: inset 0 0 12px rgba(0, 229, 255, 0.35), 0 0 8px rgba(0, 229, 255, 0.45);
+          border-color: rgba(0, 229, 255, 0.75);
+        }
+        to {
+          box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.55), 0 0 18px rgba(0, 229, 255, 0.85);
+          border-color: rgba(0, 229, 255, 1);
+        }
+      }
+      .slot-aiming {
+        transform: scale(1.05);
+        animation: slotAimPulse 0.8s ease-in-out infinite alternate;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  setSlotAimingState(slotIndex: number | null): void {
+    if (this.aimingSlotIndex === slotIndex) return;
+
+    if (this.aimingSlotIndex !== null) {
+      this.slots[this.aimingSlotIndex].root.classList.remove('slot-aiming');
+    }
+
+    this.aimingSlotIndex = slotIndex;
+
+    if (slotIndex !== null) {
+      this.slots[slotIndex].root.classList.add('slot-aiming');
+    }
   }
 
   private createSlot(slotIndex: number, key: ActionSlotKey): SlotElements {
@@ -486,6 +525,9 @@ export class ActionBarHUD {
 
   update(player: Player): void {
     this.cachedPlayerRef = player;
+    this.setSlotAimingState(
+      player.activeAimingState ? player.activeAimingState.slotIndex : null,
+    );
 
     if (this.activeHoveredSlot !== null) {
       const hovered = this.activeHoveredSlot;
@@ -618,10 +660,10 @@ export class ActionBarHUD {
         slot.countdown.style.display = 'none';
       }
 
-      if (ready && ability) {
+      if (ready && ability && this.aimingSlotIndex !== i) {
         slot.root.style.borderColor = accent;
         slot.root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 10px ${accent}59`;
-      } else if (!slot.root.matches(':hover')) {
+      } else if (!slot.root.matches(':hover') && this.aimingSlotIndex !== i) {
         slot.root.style.borderColor = ability ? `${slot.archetypeColor}4d` : `${accent}40`;
         slot.root.style.boxShadow = '';
       }
