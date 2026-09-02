@@ -3,6 +3,13 @@ import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
 import { canvasFont } from '../../ui/tokens';
 
+export const OVERHEAD_BAR_TOP_OFFSET = 14;
+export const OVERHEAD_BAR_HEIGHT = 5;
+const OVERHEAD_INSTABILITY_LABEL_GAP = 6;
+const OVERHEAD_INSTABILITY_FONT_SIZE = 16;
+export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
+  OVERHEAD_BAR_TOP_OFFSET + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_LABEL_GAP;
+
 export function drawOverheadHUD(
   ctx: CanvasRenderingContext2D,
   world: PhysicsWorld,
@@ -11,20 +18,19 @@ export function drawOverheadHUD(
   const entities = [...world.players, ...world.dummies, ...world.summons].filter(
     (e) => !e.isDead && !e.isStealthed(),
   );
-  ctx.font = canvasFont(13);
+  ctx.font = canvasFont(OVERHEAD_INSTABILITY_FONT_SIZE);
   ctx.textAlign = 'center';
 
   const barWidth = 40;
-  const barHeight = 5;
   const fillMaxWidth = barWidth - 2;
 
   for (const entity of entities) {
     const pos = lerpPos(entity, alpha);
     const barX = pos.x - barWidth / 2;
-    const barY = pos.y - entity.effectiveRadius - 14;
+    const barY = pos.y - entity.effectiveRadius - OVERHEAD_BAR_TOP_OFFSET;
 
     ctx.beginPath();
-    ctx.roundRect(barX, barY, barWidth, barHeight, 2);
+    ctx.roundRect(barX, barY, barWidth, OVERHEAD_BAR_HEIGHT, 2);
     ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
@@ -35,7 +41,7 @@ export function drawOverheadHUD(
     const fillWidth = fillMaxWidth * Math.min(1, Math.max(0, healthRatio));
     if (fillWidth > 0) {
       ctx.beginPath();
-      ctx.roundRect(barX + 1, barY + 1, fillWidth, barHeight - 2, 1);
+      ctx.roundRect(barX + 1, barY + 1, fillWidth, OVERHEAD_BAR_HEIGHT - 2, 1);
       ctx.fillStyle = healthBarColor(healthRatio);
       ctx.fill();
     }
@@ -43,7 +49,7 @@ export function drawOverheadHUD(
     const pct = entity.instabilityPct;
     ctx.fillStyle = instabilityColor(pct);
     ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
-    ctx.fillText(`${Math.round(pct)}%`, pos.x, pos.y - entity.effectiveRadius - 6);
+    ctx.fillText(`${Math.round(pct)}`, pos.x, pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET);
     ctx.globalAlpha = 1;
   }
 }

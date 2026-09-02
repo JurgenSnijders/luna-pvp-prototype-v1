@@ -144,6 +144,7 @@ export class Entity {
         type: 'INSTABILITY',
         pos: { x: this.pos.x, y: this.pos.y },
         value: amount,
+        entityRadius: this.effectiveRadius,
       });
     }
 

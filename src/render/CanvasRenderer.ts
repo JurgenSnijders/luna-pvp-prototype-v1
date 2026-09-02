@@ -76,7 +76,7 @@ export class CanvasRenderer {
 
     for (const event of world.drainCombatVisualEvents()) {
       const { text, type, color } = combatEventToFct(event);
-      this.fctManager.spawn(text, event.pos, type, color);
+      this.fctManager.spawn(text, event.pos, type, color, event.entityRadius);
     }
 
     this.ringRotation += 0.02;

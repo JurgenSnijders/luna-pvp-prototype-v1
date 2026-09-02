@@ -101,7 +101,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
       };
     case 'INSTABILITY':
       return {
-        text: `+${Math.round(event.value ?? 0)}%`,
+        text: `${Math.round(event.value ?? 0)}`,
         type: 'INSTABILITY',
         color: FCT_COLORS.INSTABILITY,
       };

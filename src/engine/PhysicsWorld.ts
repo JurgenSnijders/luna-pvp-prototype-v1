@@ -69,6 +69,7 @@ export interface CombatVisualEvent {
   value?: number;
   archetype?: SpellArchetype;
   label?: string;
+  entityRadius?: number;
 }
 
 export class PhysicsWorld {
