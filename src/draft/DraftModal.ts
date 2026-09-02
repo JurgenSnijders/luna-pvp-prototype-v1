@@ -21,7 +21,14 @@ import {
   SKILL_CATEGORIES,
   SLOT_CATEGORY_MAP,
 } from '../types/cards';
-import type { AbilitySchema } from '../types/schema';
+import type {
+  AbilitySchema,
+  ActionPayload,
+  EmitterConfig,
+  SpellArchetype,
+  TrajectoryConfig,
+  TriggerNode,
+} from '../types/schema';
 import {
   extractMechanicBadges,
   extractMechanicBadgesFromAbility,
@@ -67,6 +74,79 @@ import { ActionBarHUD } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
 type WorkshopTab = 'VAULT' | 'FORGE';
+
+interface DisplayTrajectory {
+  trajectory?: TrajectoryConfig;
+  emitter?: EmitterConfig;
+}
+
+const ARCHETYPE_DESCRIPTIONS: Partial<Record<SpellArchetype, string>> = {
+  KINETIC: 'Reduces target linear drag by 80%. Hits cause extreme sliding across arena and lava.',
+  FROST: 'Chills target movement. Reduces active running acceleration and maximum speed by 50%.',
+  EARTH: 'Triples target mass and increases friction. Harder to launch, anchors firmly.',
+  GRAVITY: 'Reduces target mass to 20%. Target becomes weightless and highly susceptible to knockback.',
+  FIRE: 'Applies thermal instability. Targets moving at high speed rapidly build additional instability.',
+  PLASMA: 'Volatile energy. Reaching 100% instability triggers an immediate violent detonation.',
+  VOID: 'Gravitational singularity. Scales vortex pull strength and field disruption.',
+  CHAOS: 'Erratic physics trajectories with random velocity vectors and impulse redirects.',
+};
+
+const ARCHETYPE_FALLBACK = 'Elemental physics modifier active on hit.';
+
+function formatEnumLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+function walkTriggers(
+  nodes: TriggerNode[],
+  visit: (node: TriggerNode, action: ActionPayload) => void,
+): void {
+  for (const node of nodes) {
+    for (const action of node.actions) {
+      visit(node, action);
+      if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+        walkTriggers(action.triggers, visit);
+      }
+      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.triggers) {
+        walkTriggers(action.payload.triggers, visit);
+      }
+    }
+    if (node.children) walkTriggers(node.children, visit);
+  }
+}
+
+function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
+  if (ability.trajectory) {
+    return { trajectory: ability.trajectory };
+  }
+  for (const triggerNode of ability.triggers ?? []) {
+    if (triggerNode.trigger !== 'ON_CAST') continue;
+    for (const action of triggerNode.actions ?? []) {
+      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
+        return {
+          trajectory: action.projectileTrajectory,
+          emitter: action.emitter,
+        };
+      }
+      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
+        return { trajectory: action.payload.trajectory };
+      }
+    }
+  }
+  return {};
+}
+
+function collectActionTypes(ability: AbilitySchema): string[] {
+  const actions = new Set<string>();
+  walkTriggers(ability.triggers ?? [], (_node, action) => {
+    actions.add(action.type);
+  });
+  return [...actions];
+}
+
+function formatCooldown(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
 
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
@@ -146,6 +226,7 @@ export class DraftModal {
     this.renderBottomLoadoutBay();
     if (this.activeTab === 'VAULT') {
       this.renderVaultGrid();
+      this.renderTacticalInspector();
     }
   };
 
@@ -650,7 +731,7 @@ export class DraftModal {
         : 'No spells in inventory.';
       empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};grid-column:1/-1;`;
       this.spellGrid.appendChild(empty);
-      this.updateInspectorPreview(null);
+      this.renderTacticalInspector();
       return;
     }
 
@@ -658,23 +739,14 @@ export class DraftModal {
       this.spellGrid.appendChild(this.createSpellTile(spell, equippedSlotBySpellId));
     }
 
-    this.updateInspectorPreview(this.getInspectorPreviewSpell(spells));
+    this.renderTacticalInspector();
   }
 
-  private getInspectorPreviewSpell(spells: AbilitySchema[]): AbilitySchema | null {
-    if (this.hoveredSpellId) {
-      const hovered = spells.find((s) => s.id === this.hoveredSpellId);
-      if (hovered) return hovered;
-    }
-    if (this.selectedSpellId) {
-      const selected = spells.find((s) => s.id === this.selectedSpellId);
-      if (selected) return selected;
-    }
-    return spells[0] ?? null;
-  }
-
-  private updateInspectorPreview(spell: AbilitySchema | null): void {
+  private renderTacticalInspector(): void {
     this.inspectorPane.innerHTML = '';
+
+    const activeId = this.hoveredSpellId ?? this.selectedSpellId;
+    const spell = activeId ? (SpellInventoryManager.getSpell(activeId) ?? null) : null;
 
     if (!spell) {
       const empty = document.createElement('div');
@@ -685,28 +757,129 @@ export class DraftModal {
     }
 
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
-    const preview = document.createElement('div');
-    preview.className = 'inspector-preview';
+    const { trajectory } = resolveDisplayTrajectory(spell);
+    const actionTypes = collectActionTypes(spell);
+    const loadout = SpellInventoryManager.getLoadout();
 
-    const name = document.createElement('div');
-    name.className = 'inspector-preview-name';
-    name.textContent = spell.name;
+    const panel = document.createElement('div');
+    panel.className = 'inspector-panel';
 
-    const archetype = document.createElement('span');
-    archetype.className = 'inspector-preview-archetype';
-    archetype.textContent = spell.archetype ?? 'UNKNOWN';
-    archetype.style.color = archetypeColor;
-    archetype.style.borderColor = archetypeColor;
-    archetype.style.background = `${archetypeColor}18`;
+    const heroWrap = document.createElement('div');
+    heroWrap.className = 'inspector-hero-wrap';
+    heroWrap.style.borderColor = archetypeColor;
+    heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
+    heroWrap.appendChild(generateSpellIcon(spell, 112));
 
-    const hint = document.createElement('div');
-    hint.className = 'inspector-preview-hint';
-    hint.textContent = 'Hover or click tile to preview. Full telemetry in next pass.';
+    const header = document.createElement('div');
+    header.className = 'inspector-header';
 
-    preview.appendChild(name);
-    preview.appendChild(archetype);
-    preview.appendChild(hint);
-    this.inspectorPane.appendChild(preview);
+    const title = document.createElement('div');
+    title.className = 'inspector-title';
+    title.textContent = spell.name;
+
+    const archetypeTag = document.createElement('span');
+    archetypeTag.className = 'inspector-archetype-tag';
+    archetypeTag.textContent = spell.archetype ?? 'UNKNOWN';
+    archetypeTag.style.color = archetypeColor;
+    archetypeTag.style.borderColor = archetypeColor;
+    archetypeTag.style.background = `${archetypeColor}18`;
+
+    header.appendChild(title);
+    header.appendChild(archetypeTag);
+
+    const telemetryGrid = document.createElement('div');
+    telemetryGrid.className = 'inspector-telemetry-grid';
+
+    const telemetryCells: { label: string; value: string }[] = [
+      { label: 'Cooldown', value: formatCooldown(spell.cooldownMs) },
+      { label: 'Recoil', value: `${spell.recoilKick}` },
+      {
+        label: 'Trajectory',
+        value: trajectory ? formatEnumLabel(trajectory.type) : 'INSTANT',
+      },
+      {
+        label: 'Range / Speed',
+        value: trajectory
+          ? `${trajectory.maxRange ?? 0}px / ${trajectory.speed ?? 0}px/s`
+          : '—',
+      },
+    ];
+
+    for (const cell of telemetryCells) {
+      const cellEl = document.createElement('div');
+      cellEl.className = 'telemetry-cell';
+
+      const label = document.createElement('span');
+      label.className = 'telemetry-label';
+      label.textContent = cell.label;
+
+      const value = document.createElement('span');
+      value.className = 'telemetry-value';
+      value.textContent = cell.value;
+
+      cellEl.appendChild(label);
+      cellEl.appendChild(value);
+      telemetryGrid.appendChild(cellEl);
+    }
+
+    const tagsRow = document.createElement('div');
+    tagsRow.className = 'inspector-tags-row';
+    if (actionTypes.length === 0) {
+      const pill = document.createElement('span');
+      pill.className = 'inspector-action-pill';
+      pill.textContent = 'INSTANT';
+      tagsRow.appendChild(pill);
+    } else {
+      for (const actionType of actionTypes) {
+        const pill = document.createElement('span');
+        pill.className = 'inspector-action-pill';
+        pill.textContent = formatEnumLabel(actionType);
+        tagsRow.appendChild(pill);
+      }
+    }
+
+    const desc = document.createElement('div');
+    desc.className = 'inspector-desc';
+    const archetypeNote =
+      (spell.archetype && ARCHETYPE_DESCRIPTIONS[spell.archetype]) || ARCHETYPE_FALLBACK;
+    const flavor = spell.tagline || spell.description || '';
+    desc.textContent = flavor ? `${archetypeNote}\n\n${flavor}` : archetypeNote;
+
+    const equipSection = document.createElement('div');
+    equipSection.className = 'inspector-equip-section';
+
+    const equipLabel = document.createElement('div');
+    equipLabel.className = 'inspector-equip-label';
+    equipLabel.textContent = 'EQUIP TO SLOT';
+
+    const equipButtons = document.createElement('div');
+    equipButtons.className = 'inspector-equip-buttons';
+
+    for (const slotKey of ACTION_SLOT_KEYS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'inspector-equip-btn';
+      btn.textContent = slotKey;
+      if (loadout[slotKey] === spell.id) {
+        btn.classList.add('is-active-slot');
+      }
+      btn.addEventListener('click', () => {
+        SpellInventoryManager.equipSpell(slotKey, spell.id);
+        SpellInventoryManager.clearNewSpellTag(spell.id);
+      });
+      equipButtons.appendChild(btn);
+    }
+
+    equipSection.appendChild(equipLabel);
+    equipSection.appendChild(equipButtons);
+
+    panel.appendChild(heroWrap);
+    panel.appendChild(header);
+    panel.appendChild(telemetryGrid);
+    panel.appendChild(tagsRow);
+    panel.appendChild(desc);
+    panel.appendChild(equipSection);
+    this.inspectorPane.appendChild(panel);
   }
 
   private createSpellTile(
@@ -747,7 +920,7 @@ export class DraftModal {
       if (!tile.classList.contains('tile-selected')) {
         tile.style.boxShadow = `0 0 8px ${archetypeColor}66`;
       }
-      this.updateInspectorPreview(spell);
+      this.renderTacticalInspector();
     });
 
     tile.addEventListener('mouseleave', () => {
@@ -755,15 +928,18 @@ export class DraftModal {
       if (!tile.classList.contains('tile-selected')) {
         tile.style.boxShadow = '';
       }
-      const selected = this.selectedSpellId
-        ? (SpellInventoryManager.getSpell(this.selectedSpellId) ?? null)
-        : null;
-      this.updateInspectorPreview(selected);
+      this.renderTacticalInspector();
     });
 
     tile.addEventListener('click', () => {
       this.selectedSpellId = spell.id;
-      this.renderVaultGrid();
+      for (const sibling of this.spellGrid.querySelectorAll('.spell-tile')) {
+        sibling.classList.remove('tile-selected');
+        (sibling as HTMLElement).style.boxShadow = '';
+      }
+      tile.classList.add('tile-selected');
+      tile.style.boxShadow = '';
+      this.renderTacticalInspector();
     });
 
     tile.addEventListener('contextmenu', (e) => {

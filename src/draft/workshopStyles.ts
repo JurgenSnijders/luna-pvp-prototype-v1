@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v6';
+export const STYLE_ID = 'luna-workshop-styles-v7';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -119,40 +119,151 @@ export function injectStyles(): void {
       padding: 16px;
     }
 
-    .inspector-preview {
+    .inspector-panel {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      height: 100%;
+      gap: 12px;
     }
 
-    .inspector-preview-name {
+    .inspector-hero-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+      background: rgba(4, 6, 12, 0.85);
+      border: 1.5px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.8);
+    }
+
+    .inspector-header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .inspector-title {
       font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--retro-text-primary, #e0f8ff);
-      line-height: 1.2;
+      font-size: 16px;
+      color: #ffffff;
+      text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
       word-break: break-word;
     }
 
-    .inspector-preview-archetype {
-      display: inline-block;
-      align-self: flex-start;
+    .inspector-archetype-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
       font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      padding: 3px 8px;
-      border-radius: 3px;
+      padding: 2px 6px;
+      border-radius: 2px;
       border: 1px solid currentColor;
+      width: fit-content;
     }
 
-    .inspector-preview-hint {
+    .inspector-telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: rgba(8, 12, 22, 0.5);
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+    }
+
+    .telemetry-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .telemetry-label {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 9px;
+      color: var(--retro-text-muted, #6a7796);
+      text-transform: uppercase;
+    }
+
+    .telemetry-value {
       font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
       font-size: 12px;
-      color: var(--retro-text-muted, #6d8896);
+      color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .inspector-tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .inspector-action-pill {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      background: rgba(0, 229, 255, 0.08);
+      color: var(--retro-neon-cyan, #00e5ff);
+      border-radius: 2px;
+    }
+
+    .inspector-desc {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 11px;
       line-height: 1.4;
-      margin-top: 4px;
+      color: var(--retro-text-secondary, #9ba8c7);
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+
+    .inspector-equip-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      padding-top: 10px;
+      margin-top: auto;
+      flex-shrink: 0;
+    }
+
+    .inspector-equip-label {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 10px;
+      color: var(--retro-text-muted, #6d8896);
+      text-transform: uppercase;
+    }
+
+    .inspector-equip-buttons {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+    }
+
+    .inspector-equip-btn {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 10px;
+      padding: 6px 2px;
+      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      color: var(--retro-text-primary, #e0f8ff);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      text-align: center;
+    }
+
+    .inspector-equip-btn:hover {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      background: rgba(0, 229, 255, 0.15);
+      color: #ffffff;
+    }
+
+    .inspector-equip-btn.is-active-slot {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      background: rgba(0, 229, 255, 0.25);
+      box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
+      color: #ffffff;
     }
 
     .bottom-loadout-bay {
