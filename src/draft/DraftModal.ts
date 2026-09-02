@@ -49,7 +49,11 @@ import {
   injectStyles,
   renderPowerBar,
 } from './workshopStyles';
+import { SpellInventoryManager } from '../game/SpellInventory';
+import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
+
+type WorkshopTab = 'VAULT' | 'FORGE';
 
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
@@ -61,6 +65,16 @@ export class DraftModal {
   private overlay: HTMLElement;
   private panel: HTMLElement;
   private loadoutBar: HTMLElement;
+  private workshopContainer!: HTMLElement;
+  private dockSection!: HTMLElement;
+  private workspaceTabs!: HTMLElement;
+  private workspaceContent!: HTMLElement;
+  private vaultRoot!: HTMLElement;
+  private forgeRoot!: HTMLElement;
+  private vaultTabBtn!: HTMLButtonElement;
+  private forgeTabBtn!: HTMLButtonElement;
+  private vaultSearchInput!: HTMLInputElement;
+  private spellGrid!: HTMLElement;
   private modeRow: HTMLElement;
   private categoryRow: HTMLElement;
   private evolutionBanner: HTMLElement;
@@ -99,6 +113,14 @@ export class DraftModal {
   private selectedCategory: SkillCategory = 'SECONDARY';
   private evolutionContext: EvolutionContext | null = null;
   private presetSlot: ActionSlotKey | null = null;
+  private activeTab: WorkshopTab = 'VAULT';
+  private vaultSearchQuery = '';
+  private vaultBuilt = false;
+  private readonly onInventoryUpdated = (): void => {
+    if (this.open_ && this.activeTab === 'VAULT') {
+      this.renderVaultGrid();
+    }
+  };
 
   constructor(private callbacks: DraftModalCallbacks) {
     injectStyles();
@@ -164,11 +186,15 @@ export class DraftModal {
     const overviewLabel = document.createElement('div');
     overviewLabel.textContent = 'ARSENAL DOCK';
     overviewLabel.style.cssText =
-      `font-size:${FONTS.size.badge};letter-spacing:0.08em;color:#889;margin-bottom:6px;font-weight:600;flex-shrink:0;`;
+      `font-size:${FONTS.size.badge};letter-spacing:0.08em;color:#889;font-weight:600;flex-shrink:0;`;
 
     this.loadoutBar = document.createElement('div');
-    this.loadoutBar.style.cssText =
-      'display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px;flex-shrink:0;';
+    this.loadoutBar.className = 'loadout-grid';
+
+    this.dockSection = document.createElement('div');
+    this.dockSection.className = 'arsenal-dock-section';
+    this.dockSection.appendChild(overviewLabel);
+    this.dockSection.appendChild(this.loadoutBar);
 
     this.modeRow = document.createElement('div');
     this.modeRow.style.cssText =
@@ -234,25 +260,57 @@ export class DraftModal {
       `display:none;text-align:center;color:#888;margin-bottom:6px;flex-shrink:0;font-size:${FONTS.size.body};`;
 
     this.cardsContainer = document.createElement('div');
-    this.cardsContainer.style.cssText = `
-      flex:1;min-height:0;overflow:hidden;
-      display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:stretch;
-    `;
+    this.cardsContainer.className = 'forge-cards';
+
+    this.forgeRoot = document.createElement('div');
+    this.forgeRoot.className = 'forge-root';
+    this.forgeRoot.style.display = 'none';
+    this.forgeRoot.appendChild(this.modeRow);
+    this.forgeRoot.appendChild(this.categoryRow);
+    this.forgeRoot.appendChild(this.evolutionBanner);
+    this.forgeRoot.appendChild(promptRow);
+    this.forgeRoot.appendChild(this.chipsRow);
+    this.forgeRoot.appendChild(this.loadingEl);
+    this.forgeRoot.appendChild(this.cardsContainer);
+
+    this.vaultRoot = document.createElement('div');
+    this.vaultRoot.className = 'vault-root';
+
+    this.workspaceContent = document.createElement('div');
+    this.workspaceContent.className = 'workspace-content';
+    this.workspaceContent.appendChild(this.vaultRoot);
+    this.workspaceContent.appendChild(this.forgeRoot);
+
+    this.vaultTabBtn = document.createElement('button');
+    this.vaultTabBtn.type = 'button';
+    this.vaultTabBtn.className = 'workspace-tab active';
+    this.vaultTabBtn.textContent = 'SPELL VAULT';
+    this.vaultTabBtn.onclick = () => this.setActiveTab('VAULT');
+
+    this.forgeTabBtn = document.createElement('button');
+    this.forgeTabBtn.type = 'button';
+    this.forgeTabBtn.className = 'workspace-tab';
+    this.forgeTabBtn.textContent = 'FORGE';
+    this.forgeTabBtn.onclick = () => this.setActiveTab('FORGE');
+
+    this.workspaceTabs = document.createElement('div');
+    this.workspaceTabs.className = 'workspace-tabs';
+    this.workspaceTabs.appendChild(this.vaultTabBtn);
+    this.workspaceTabs.appendChild(this.forgeTabBtn);
+
+    this.workshopContainer = document.createElement('div');
+    this.workshopContainer.className = 'workshop-container';
+    this.workshopContainer.appendChild(this.dockSection);
+    this.workshopContainer.appendChild(this.workspaceTabs);
+    this.workshopContainer.appendChild(this.workspaceContent);
 
     this.panel.appendChild(header);
     this.panel.appendChild(this.apiWarningBanner);
-    this.panel.appendChild(overviewLabel);
-    this.panel.appendChild(this.loadoutBar);
-    this.panel.appendChild(this.modeRow);
-    this.panel.appendChild(this.categoryRow);
-    this.panel.appendChild(this.evolutionBanner);
-    this.panel.appendChild(promptRow);
-    this.panel.appendChild(this.chipsRow);
-    this.panel.appendChild(this.loadingEl);
-    this.panel.appendChild(this.cardsContainer);
+    this.panel.appendChild(this.workshopContainer);
     this.overlay.appendChild(this.panel);
     document.body.appendChild(this.overlay);
 
+    window.addEventListener('inventoryupdated', this.onInventoryUpdated);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.open_) this.close();
     });
@@ -276,8 +334,7 @@ export class DraftModal {
       this.panel.style.transform = 'scale(1)';
     });
     this.callbacks.onOpenChange(true);
-    this.refreshUI();
-    this.promptInput.focus();
+    this.setActiveTab('VAULT');
     this.startPrefetch();
   }
 
@@ -312,7 +369,7 @@ export class DraftModal {
       this.panel.style.transform = 'scale(1)';
     });
     this.callbacks.onOpenChange(true);
-    this.refreshUI();
+    this.setActiveTab('FORGE');
   }
 
   private setMode(mode: WorkshopMode): void {
@@ -343,8 +400,118 @@ export class DraftModal {
   }
 
   private refreshUI(): void {
+    this.syncTabChrome();
     this.renderApiStatusPill();
     this.renderLoadoutOverview();
+    this.renderWorkspace();
+  }
+
+  private syncTabChrome(): void {
+    this.vaultTabBtn.classList.toggle('active', this.activeTab === 'VAULT');
+    this.forgeTabBtn.classList.toggle('active', this.activeTab === 'FORGE');
+    this.vaultRoot.style.display = this.activeTab === 'VAULT' ? 'block' : 'none';
+    this.forgeRoot.style.display = this.activeTab === 'FORGE' ? 'flex' : 'none';
+  }
+
+  private setActiveTab(tab: WorkshopTab): void {
+    this.activeTab = tab;
+    this.refreshUI();
+    if (tab === 'FORGE') {
+      this.promptInput.focus();
+    }
+  }
+
+  private renderWorkspace(): void {
+    if (this.activeTab === 'VAULT') {
+      this.renderVaultGrid();
+      return;
+    }
+    this.renderForge();
+  }
+
+  private buildVault(): void {
+    if (this.vaultBuilt) return;
+    this.vaultBuilt = true;
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'vault-toolbar';
+
+    this.vaultSearchInput = document.createElement('input');
+    this.vaultSearchInput.type = 'search';
+    this.vaultSearchInput.placeholder = 'Search spells...';
+    this.vaultSearchInput.className = 'vault-search';
+    this.vaultSearchInput.addEventListener('input', () => {
+      this.vaultSearchQuery = this.vaultSearchInput.value;
+      this.renderVaultGrid();
+    });
+    toolbar.appendChild(this.vaultSearchInput);
+    this.vaultRoot.appendChild(toolbar);
+
+    this.spellGrid = document.createElement('div');
+    this.spellGrid.className = 'spell-grid';
+    this.vaultRoot.appendChild(this.spellGrid);
+  }
+
+  private renderVaultGrid(): void {
+    this.buildVault();
+    this.spellGrid.innerHTML = '';
+
+    const q = this.vaultSearchQuery.trim().toLowerCase();
+    const spells = SpellInventoryManager.getAllSpells().filter((spell) => {
+      if (!q) return true;
+      const archetype = (spell.archetype ?? '').toLowerCase();
+      return spell.name.toLowerCase().includes(q) || archetype.includes(q);
+    });
+
+    if (spells.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = q ? 'No spells match your search.' : 'No spells in inventory.';
+      empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};`;
+      this.spellGrid.appendChild(empty);
+      return;
+    }
+
+    for (const spell of spells) {
+      this.spellGrid.appendChild(this.createInventoryCard(spell));
+    }
+  }
+
+  private createInventoryCard(spell: AbilitySchema): HTMLElement {
+    const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const card = document.createElement('div');
+    card.className = 'inventory-card';
+    card.style.borderLeftColor = archetypeColor;
+
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'card-icon-container';
+    iconContainer.appendChild(generateSpellIcon(spell, 48));
+
+    const details = document.createElement('div');
+    details.className = 'card-details';
+
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    title.textContent = spell.name;
+
+    const archetype = document.createElement('span');
+    archetype.className = 'card-archetype';
+    archetype.textContent = spell.archetype ?? 'UNKNOWN';
+    archetype.style.color = archetypeColor;
+
+    const stats = document.createElement('span');
+    stats.className = 'card-stats';
+    stats.textContent = `CD ${spell.cooldownMs}ms`;
+
+    details.appendChild(title);
+    details.appendChild(archetype);
+    details.appendChild(stats);
+
+    card.appendChild(iconContainer);
+    card.appendChild(details);
+    return card;
+  }
+
+  private renderForge(): void {
     this.renderSynthesisControls();
     this.renderResultCards();
   }
@@ -455,8 +622,7 @@ export class DraftModal {
         this.presetSlot = key;
         this.selectedCategory = category;
         this.mode = 'EVOLVE_EXISTING';
-        this.refreshUI();
-        this.promptInput.focus();
+        this.setActiveTab('FORGE');
         this.startPrefetch();
       };
 
@@ -470,8 +636,7 @@ export class DraftModal {
         this.selectedCategory = category;
         this.evolutionContext = null;
         this.mode = 'FORGE_NEW';
-        this.refreshUI();
-        this.promptInput.focus();
+        this.setActiveTab('FORGE');
         this.startPrefetch();
       };
 
@@ -480,12 +645,23 @@ export class DraftModal {
       topRow.appendChild(slotLabel);
       topRow.appendChild(actions);
 
+      const nameRow = document.createElement('div');
+      nameRow.className = 'dock-icon-row';
+
+      if (ability) {
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'dock-icon';
+        iconWrap.appendChild(generateSpellIcon(ability, 36));
+        nameRow.appendChild(iconWrap);
+      }
+
       const name = document.createElement('div');
       name.textContent = ability?.name ?? 'Empty';
       name.style.cssText = `
         font-size:${FONTS.size.sm};font-weight:bold;color:${ability ? '#eee' : '#666'};
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;
       `;
+      nameRow.appendChild(name);
 
       const bottom = document.createElement('div');
       bottom.style.cssText = 'display:flex;flex-direction:column;gap:3px;min-height:0;';
@@ -512,7 +688,7 @@ export class DraftModal {
       bottom.appendChild(badges);
 
       panel.appendChild(topRow);
-      panel.appendChild(name);
+      panel.appendChild(nameRow);
       panel.appendChild(bottom);
       this.loadoutBar.appendChild(panel);
     }
