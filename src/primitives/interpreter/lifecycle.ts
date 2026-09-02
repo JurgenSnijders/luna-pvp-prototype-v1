@@ -7,7 +7,7 @@ import { screenShake } from '../../render/ScreenShake';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
-import type { ActionPayload, TriggerNode, TriggerType } from '../../types/schema';
+import type { ActionPayload, ImpactVfx, TriggerNode, TriggerType } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
@@ -20,6 +20,36 @@ function projectileHeading(projectile: Projectile): Vector2D {
   return projectile.vel.magSq() > 0
     ? projectile.vel.normalize()
     : Vector2D.fromAngle(projectile.aimAngle);
+}
+
+function emitArchetypeImpact(
+  interp: Interpreter,
+  hit: { projectile: Projectile; hitPos: Vector2D },
+  color: string,
+  sec: string,
+  scale: number,
+  fallbackVfx: ImpactVfx,
+): void {
+  const archetype = hit.projectile.spellArchetype;
+  const heading = projectileHeading(hit.projectile);
+
+  switch (archetype) {
+    case 'KINETIC':
+      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'SHOCKWAVE', sec, scale);
+      interp.particles?.spawnDirectionalImpactRing(hit.hitPos, heading, color);
+      break;
+    case 'VOID':
+      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'IMPLOSION', sec, scale);
+      break;
+    case 'FROST':
+      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'SHATTER', sec, scale);
+      break;
+    default:
+      interp.particles?.triggerImpactBurst(hit.hitPos, color, fallbackVfx, sec, scale);
+      if (hitFeedbackConfig.directionalBlastRings) {
+        interp.particles?.spawnDirectionalImpactRing(hit.hitPos, heading, color);
+      }
+  }
 }
 
 function buildLifecycleContext(
@@ -177,14 +207,9 @@ export function processLifecycleEvents(
     const instabBefore = hit.target.instabilityPct;
     const detonatedBefore = hit.target.plasmaDetonatedThisFrame;
 
-    interp.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
+    emitArchetypeImpact(interp, hit, color, sec, scale, vfx);
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
     if (shake > 0) screenShake.trigger(shake * 4, 0.12);
-
-    if (hitFeedbackConfig.directionalBlastRings) {
-      const hitNormal = projectileHeading(hit.projectile);
-      interp.particles?.spawnDirectionalImpactRing(hit.hitPos, hitNormal, color);
-    }
 
     dispatchProjectileTriggers(
       interp,

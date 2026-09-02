@@ -10,6 +10,27 @@ export type FCTType =
   | 'STATUS_EXPIRED'
   | 'CRIT';
 
+export type FCTKinematicProfile =
+  | 'FOUNTAIN'
+  | 'FLOAT_UP'
+  | 'HEAVY_DROP'
+  | 'WEIGHTLESS'
+  | 'SLIDE'
+  | 'JITTER';
+
+const ARCHETYPE_ACTION_TAGS: Partial<
+  Record<SpellArchetype, { tag: string; profile: FCTKinematicProfile }>
+> = {
+  KINETIC: { tag: '[SLIP]', profile: 'SLIDE' },
+  FROST: { tag: '[CHILLED]', profile: 'FLOAT_UP' },
+  EARTH: { tag: '[HEAVY]', profile: 'HEAVY_DROP' },
+  GRAVITY: { tag: '[FLOAT]', profile: 'WEIGHTLESS' },
+  FIRE: { tag: '[OVERHEAT]', profile: 'JITTER' },
+  PLASMA: { tag: '[VOLATILE]', profile: 'FOUNTAIN' },
+  CHRONO: { tag: '[TIME LOCKED]', profile: 'FLOAT_UP' },
+  ARCANE: { tag: '[ABSORB]', profile: 'FLOAT_UP' },
+};
+
 export interface FloatingTextParticle {
   id: string;
   text: string;
@@ -21,7 +42,9 @@ export interface FloatingTextParticle {
   baseScale: number;
   lifeMs: number;
   maxLifeMs: number;
-  isLinearUpward: boolean;
+  kinematicProfile: FCTKinematicProfile;
+  jitterOffset: number;
+  horizontalDrag: number;
 }
 
 interface QueuedCombatText {
@@ -30,7 +53,7 @@ interface QueuedCombatText {
   type: FCTType;
   colorOverride?: string;
   scale: number;
-  isLinearUpward: boolean;
+  kinematicProfile: FCTKinematicProfile;
 }
 
 interface SpatialFctLane {
@@ -62,7 +85,6 @@ const GRAVITY_PX_S2 = 420;
 const SCALE_PUNCH_MS = 120;
 const FADE_OUT_MS = 250;
 const LINEAR_UPWARD_LIFE_MS = 1100;
-const LINEAR_UPWARD_VEL_Y = -75;
 let nextParticleId = 1;
 
 const isHeadless = typeof document === 'undefined';
@@ -74,7 +96,11 @@ function getLaneKey(pos: { x: number; y: number }): string {
 function computeFctBaseScale(type: FCTType, text: string, value?: number): number {
   if (type === 'STATUS_APPLIED' || type === 'STATUS_EXPIRED') {
     if (text === 'DETONATION!') return 2.2;
-    return 1.15;
+    let scale = 1.15;
+    if (text.length > 14) {
+      scale *= 0.88;
+    }
+    return scale;
   }
 
   const val = Math.max(1, value ?? 1);
@@ -109,6 +135,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
   type: FCTType;
   color: string;
   value?: number;
+  kinematicProfile: FCTKinematicProfile;
 } {
   switch (event.type) {
     case 'DAMAGE':
@@ -117,6 +144,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
         type: 'DAMAGE',
         color: FCT_COLORS.LAVA_DAMAGE,
         value: event.value,
+        kinematicProfile: 'FOUNTAIN',
       };
     case 'HEAL':
       return {
@@ -124,6 +152,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
         type: 'HEAL',
         color: FCT_COLORS.HEAL,
         value: event.value,
+        kinematicProfile: 'FOUNTAIN',
       };
     case 'INSTABILITY':
       return {
@@ -131,6 +160,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
         type: 'INSTABILITY',
         color: FCT_COLORS.INSTABILITY,
         value: event.value,
+        kinematicProfile: 'FOUNTAIN',
       };
     case 'STATUS_APPLIED':
       if (event.label) {
@@ -140,7 +170,19 @@ export function combatEventToFct(event: CombatVisualEvent): {
           color: event.archetype
             ? archetypeFctColor(event.archetype)
             : FCT_COLORS.PLASMA,
+          kinematicProfile: 'FOUNTAIN',
         };
+      }
+      if (event.archetype) {
+        const mapping = ARCHETYPE_ACTION_TAGS[event.archetype];
+        if (mapping) {
+          return {
+            text: `+${event.archetype}${mapping.tag}`,
+            type: 'STATUS_APPLIED',
+            color: archetypeFctColor(event.archetype),
+            kinematicProfile: mapping.profile,
+          };
+        }
       }
       return {
         text: `+${event.archetype ?? ''}`,
@@ -148,12 +190,14 @@ export function combatEventToFct(event: CombatVisualEvent): {
         color: event.archetype
           ? archetypeFctColor(event.archetype)
           : FCT_COLORS.DEFAULT_DAMAGE,
+        kinematicProfile: 'FLOAT_UP',
       };
     case 'STATUS_EXPIRED':
       return {
         text: `-${event.archetype ?? ''}`,
         type: 'STATUS_EXPIRED',
         color: FCT_COLORS.STATUS_EXPIRED,
+        kinematicProfile: 'FLOAT_UP',
       };
   }
 }
@@ -168,10 +212,10 @@ export class FloatingCombatTextManager {
     type: FCTType,
     colorOverride?: string,
     value?: number,
+    kinematicProfile: FCTKinematicProfile = 'FOUNTAIN',
   ): void {
     if (isHeadless) return;
 
-    const isLinearUpward = type === 'STATUS_APPLIED' || type === 'STATUS_EXPIRED';
     const baseScale = computeFctBaseScale(type, text, value);
 
     const laneKey = getLaneKey(pos);
@@ -187,7 +231,7 @@ export class FloatingCombatTextManager {
       type,
       colorOverride,
       scale: baseScale,
-      isLinearUpward,
+      kinematicProfile,
     });
 
     if (lane.cooldownMs <= 0 && lane.queue.length === 1) {
@@ -198,43 +242,132 @@ export class FloatingCombatTextManager {
   }
 
   private emitParticle(item: QueuedCombatText, lane: SpatialFctLane): void {
-    if (item.isLinearUpward) {
-      this.particles.push({
-        id: `fct_${nextParticleId++}`,
-        text: item.text,
-        pos: { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET },
-        vel: { x: 0, y: LINEAR_UPWARD_VEL_Y },
-        gravity: 0,
-        color: item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE,
-        scale: item.scale,
-        baseScale: item.scale,
-        lifeMs: LINEAR_UPWARD_LIFE_MS,
-        maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-        isLinearUpward: true,
-      });
-      return;
+    const profile = item.kinematicProfile;
+    const spawnPos = { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET };
+    const color = item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE;
+
+    switch (profile) {
+      case 'FLOAT_UP':
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: { x: 0, y: -75 },
+          gravity: 0,
+          color,
+          scale: item.scale,
+          baseScale: item.scale,
+          lifeMs: LINEAR_UPWARD_LIFE_MS,
+          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+          kinematicProfile: profile,
+          jitterOffset: 0,
+          horizontalDrag: 0.35,
+        });
+        return;
+
+      case 'SLIDE': {
+        const lateralVel = lane.alternateSign * (160 + Math.random() * 40);
+        lane.alternateSign *= -1;
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: { x: lateralVel, y: -30 },
+          gravity: 40,
+          color,
+          scale: item.scale,
+          baseScale: item.scale,
+          lifeMs: LINEAR_UPWARD_LIFE_MS,
+          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+          kinematicProfile: profile,
+          jitterOffset: 0,
+          horizontalDrag: 0.7,
+        });
+        return;
+      }
+
+      case 'HEAVY_DROP': {
+        const lateralVel = lane.alternateSign * 25;
+        lane.alternateSign *= -1;
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: { x: lateralVel, y: -60 },
+          gravity: 850,
+          color,
+          scale: item.scale,
+          baseScale: item.scale,
+          lifeMs: LINEAR_UPWARD_LIFE_MS,
+          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+          kinematicProfile: profile,
+          jitterOffset: 0,
+          horizontalDrag: 0.35,
+        });
+        return;
+      }
+
+      case 'WEIGHTLESS':
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: { x: (Math.random() - 0.5) * 15, y: -35 },
+          gravity: 0,
+          color,
+          scale: item.scale,
+          baseScale: item.scale,
+          lifeMs: LINEAR_UPWARD_LIFE_MS,
+          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+          kinematicProfile: profile,
+          jitterOffset: 0,
+          horizontalDrag: 0.35,
+        });
+        return;
+
+      case 'JITTER':
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: { x: 0, y: -65 },
+          gravity: 0,
+          color,
+          scale: item.scale,
+          baseScale: item.scale,
+          lifeMs: LINEAR_UPWARD_LIFE_MS,
+          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
+          kinematicProfile: profile,
+          jitterOffset: 0,
+          horizontalDrag: 0.35,
+        });
+        return;
+
+      case 'FOUNTAIN':
+      default: {
+        const maxLifeMs = 950 + Math.random() * 250;
+        const lateralVel = lane.alternateSign * (50 + Math.random() * 35);
+        lane.alternateSign *= -1;
+        this.particles.push({
+          id: `fct_${nextParticleId++}`,
+          text: item.text,
+          pos: spawnPos,
+          vel: {
+            x: lateralVel,
+            y: -170 - Math.random() * 40,
+          },
+          gravity: GRAVITY_PX_S2,
+          color,
+          scale: item.scale * 1.35,
+          baseScale: item.scale,
+          lifeMs: maxLifeMs,
+          maxLifeMs,
+          kinematicProfile: 'FOUNTAIN',
+          jitterOffset: 0,
+          horizontalDrag: 0.35,
+        });
+      }
     }
-
-    const maxLifeMs = 950 + Math.random() * 250;
-    const lateralVel = lane.alternateSign * (50 + Math.random() * 35);
-    lane.alternateSign *= -1;
-
-    this.particles.push({
-      id: `fct_${nextParticleId++}`,
-      text: item.text,
-      pos: { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET },
-      vel: {
-        x: lateralVel,
-        y: -170 - Math.random() * 40,
-      },
-      gravity: GRAVITY_PX_S2,
-      color: item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE,
-      scale: item.scale * 1.35,
-      baseScale: item.scale,
-      lifeMs: maxLifeMs,
-      maxLifeMs,
-      isLinearUpward: false,
-    });
   }
 
   update(dt: number): void {
@@ -261,11 +394,15 @@ export class FloatingCombatTextManager {
 
     for (const p of this.particles) {
       p.vel.y += p.gravity * dt;
-      p.vel.x *= Math.pow(0.35, dt);
+      p.vel.x *= Math.pow(p.horizontalDrag, dt);
       p.pos.x += p.vel.x * dt;
       p.pos.y += p.vel.y * dt;
 
-      if (!p.isLinearUpward) {
+      if (p.kinematicProfile === 'JITTER') {
+        p.jitterOffset = Math.sin(p.lifeMs * 0.05) * 1.5;
+      }
+
+      if (p.kinematicProfile === 'FOUNTAIN') {
         const elapsedMs = p.maxLifeMs - p.lifeMs;
         if (elapsedMs < SCALE_PUNCH_MS) {
           const t = elapsedMs / SCALE_PUNCH_MS;
@@ -291,15 +428,16 @@ export class FloatingCombatTextManager {
     for (const p of this.particles) {
       const alpha = Math.min(1.0, p.lifeMs / FADE_OUT_MS);
       const fontSize = Math.round(16 * p.scale);
+      const drawX = p.pos.x + p.jitterOffset;
       ctx.font = canvasFont(fontSize);
       ctx.globalAlpha = alpha;
       ctx.lineWidth = 3;
       ctx.strokeStyle = '#000000';
       ctx.fillStyle = p.color;
-      ctx.strokeText(p.text, p.pos.x, p.pos.y);
+      ctx.strokeText(p.text, drawX, p.pos.y);
       ctx.shadowColor = p.color;
       ctx.shadowBlur = 8;
-      ctx.fillText(p.text, p.pos.x, p.pos.y);
+      ctx.fillText(p.text, drawX, p.pos.y);
       ctx.shadowBlur = 0;
     }
 
