@@ -183,6 +183,9 @@ function init(app: GameApp): void {
     getHexCenter(),
   );
 
+  let pendingAimMouse: { x: number; y: number } | null = null;
+  let aimMouseRafPending = false;
+
   window.addEventListener('keydown', (e) => {
     if (e.code === 'F8' || (e.code === 'F2' && e.shiftKey)) {
       e.preventDefault();
@@ -252,8 +255,18 @@ function init(app: GameApp): void {
   });
 
   window.addEventListener('mousemove', (e) => {
-    if (app.matchManager.mode === 'SANDBOX' || app.matchManager.state === 'ROUND_ACTIVE') {
-      updatePlayerAimTarget(app, { x: e.clientX, y: e.clientY });
+    if (app.matchManager.mode !== 'SANDBOX' && app.matchManager.state !== 'ROUND_ACTIVE') {
+      return;
+    }
+    pendingAimMouse = { x: e.clientX, y: e.clientY };
+    if (!aimMouseRafPending) {
+      aimMouseRafPending = true;
+      requestAnimationFrame(() => {
+        aimMouseRafPending = false;
+        if (pendingAimMouse) {
+          updatePlayerAimTarget(app, pendingAimMouse);
+        }
+      });
     }
   });
 

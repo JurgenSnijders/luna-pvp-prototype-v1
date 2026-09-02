@@ -214,18 +214,20 @@ export class Player extends Entity {
     if (!this.activeAimingState) return;
 
     const state = this.activeAimingState;
-    const dx = mouseWorldPos.x - state.origin.x;
-    const dy = mouseWorldPos.y - state.origin.y;
+    const ox = this.pos.x;
+    const oy = this.pos.y;
+    const dx = mouseWorldPos.x - ox;
+    const dy = mouseWorldPos.y - oy;
     const dist = Math.hypot(dx, dy);
     const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
     const clampedDist =
       state.mode === 'directional' ? Math.min(dist, state.range) : dist;
-    const targetX = state.origin.x + Math.cos(angle) * clampedDist;
-    const targetY = state.origin.y + Math.sin(angle) * clampedDist;
+    const targetX = ox + Math.cos(angle) * clampedDist;
+    const targetY = oy + Math.sin(angle) * clampedDist;
 
     state.target = { x: targetX, y: targetY };
     state.angle = angle;
-    state.origin = { x: this.pos.x, y: this.pos.y };
+    state.origin = { x: ox, y: oy };
     this.aimTarget = new Vector2D(targetX, targetY);
   }
 
@@ -595,6 +597,19 @@ export class Player extends Entity {
       }
     }
 
+    if (this.activeAimingState) {
+      const s = this.activeAimingState;
+      const dist = Math.hypot(s.target.x - s.origin.x, s.target.y - s.origin.y);
+      s.origin = { x: this.pos.x, y: this.pos.y };
+      if (dist > 0.01) {
+        s.target = {
+          x: this.pos.x + Math.cos(s.angle) * dist,
+          y: this.pos.y + Math.sin(s.angle) * dist,
+        };
+        this.aimTarget = new Vector2D(s.target.x, s.target.y);
+      }
+    }
+
     const rawMove = this.inputMove;
     if (this.inputSmoothingMs > 0) {
       const t = Math.min(1, (dt * 1000) / this.inputSmoothingMs);
@@ -647,7 +662,6 @@ export class Player extends Entity {
 
   clearCastInputs(): void {
     this.slotCastFlags = [false, false, false, false, false];
-    this.activeAimingState = null;
   }
 
   takeDamage(amount: number): void {
@@ -665,6 +679,7 @@ export class Player extends Entity {
     this.slotCompiling = [false, false, false, false, false];
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
+    this.activeAimingState = null;
     this.resetSlotInputs();
     this.smoothedInputMove = Vector2D.zero();
     this.resetStasis();

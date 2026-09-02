@@ -171,10 +171,8 @@ function drawLightningAccents(
 ): void {
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 8;
   const endX = range - 36;
-  const segments = 8;
+  const segments = 6;
   ctx.beginPath();
   ctx.moveTo(shaftStart, 0);
   for (let i = 1; i <= segments; i++) {
@@ -183,7 +181,6 @@ function drawLightningAccents(
     ctx.lineTo(x, y);
   }
   ctx.stroke();
-  ctx.shadowBlur = 0;
 }
 
 function drawVoidAccents(
@@ -207,12 +204,12 @@ function drawVoidAccents(
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 16;
+  ctx.strokeStyle = hexToRgba(color, 0.35);
+  ctx.lineWidth = 5;
   ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 function drawKineticAccents(
@@ -246,11 +243,14 @@ function drawTerminalReticle(
   color: string,
   size: number,
 ): void {
+  const s = size;
+  ctx.strokeStyle = hexToRgba(color, 0.4);
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(tipX, 0, s, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
-  const s = size;
   ctx.beginPath();
   ctx.arc(tipX, 0, s, 0, Math.PI * 2);
   ctx.stroke();
@@ -260,7 +260,6 @@ function drawTerminalReticle(
   ctx.moveTo(tipX, -s - 4);
   ctx.lineTo(tipX, s + 4);
   ctx.stroke();
-  ctx.shadowBlur = 0;
 }
 
 export function drawSkillshotArrow(
@@ -296,12 +295,12 @@ export function drawSkillshotArrow(
   ctx.fillStyle = grad;
   ctx.fill();
 
+  ctx.strokeStyle = hexToRgba(color, 0.35);
+  ctx.lineWidth = 6;
+  ctx.stroke();
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 12;
   ctx.stroke();
-  ctx.shadowBlur = 0;
 
   switch (archetype) {
     case 'FROST':
@@ -343,23 +342,24 @@ export function drawAoERadial(
       : state.target;
 
   ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 12;
+  ctx.strokeStyle = hexToRgba(color, 0.35);
+  ctx.lineWidth = 4;
   ctx.setLineDash([8, 6]);
   ctx.beginPath();
   ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.setLineDash([]);
 
   const rotation = (now / 2000) * Math.PI * 2;
-  const tickCount = 12;
+  const tickCount = 8;
+  ctx.beginPath();
   for (let i = 0; i < tickCount; i++) {
     const angle = rotation + (i / tickCount) * Math.PI * 2;
     const inner = radius - 10;
     const outer = radius + 6;
-    ctx.beginPath();
     ctx.moveTo(
       center.x + Math.cos(angle) * inner,
       center.y + Math.sin(angle) * inner,
@@ -368,15 +368,14 @@ export function drawAoERadial(
       center.x + Math.cos(angle) * outer,
       center.y + Math.sin(angle) * outer,
     );
-    ctx.stroke();
   }
+  ctx.stroke();
 
   ctx.fillStyle = hexToRgba(color, 0.12);
   ctx.beginPath();
   ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
