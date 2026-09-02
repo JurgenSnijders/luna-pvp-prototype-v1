@@ -8,6 +8,7 @@ import {
 } from '../ai/Synthesizer';
 import type {
   ActionSlotKey,
+  CardRarity,
   DraftCard,
   DraftSelection,
   EvolutionContext,
@@ -177,6 +178,29 @@ export function getTierCrest(rarity: string): string {
     default:
       return rarity.toUpperCase();
   }
+}
+
+export function stampDraftCardMetadataOntoAbility(
+  ability: AbilitySchema,
+  card: DraftCard,
+): void {
+  ability.metadata = {
+    ...(ability.metadata ?? {}),
+    rarity: card.rarity,
+    ...(card.evolutionDiff?.length ? { evolutionDiff: [...card.evolutionDiff] } : {}),
+  };
+}
+
+export function resolveSpellRarity(spell: AbilitySchema): CardRarity {
+  const meta = spell.metadata?.rarity;
+  if (typeof meta === 'string') return normalizeForgeTierRarity(meta) as CardRarity;
+  return 'COMMON';
+}
+
+export function resolveSpellEvolutionDiff(spell: AbilitySchema): string[] {
+  const diff = spell.metadata?.evolutionDiff;
+  if (!Array.isArray(diff)) return [];
+  return diff.filter((d): d is string => typeof d === 'string');
 }
 
 export function resolveMutationPerk(card: DraftCard, telemetry: SpellTelemetry): string | null {
@@ -1291,17 +1315,22 @@ export class DraftModal {
     }
 
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const rarity = resolveSpellRarity(spell);
+    const tier = rarity.toLowerCase();
     const telemetry = extractSpellTelemetry(spell);
     const profile = calculateCombatProfile(telemetry);
     const loadout = SpellInventoryManager.getLoadout();
+    const evolutionDiff = resolveSpellEvolutionDiff(spell);
 
     const panel = document.createElement('div');
-    panel.className = 'inspector-panel';
+    panel.className = `inspector-panel tier-${tier}`;
 
     const heroWrap = document.createElement('div');
-    heroWrap.className = 'inspector-hero-wrap';
-    heroWrap.style.borderColor = archetypeColor;
-    heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
+    heroWrap.className = `inspector-hero-wrap tier-${tier}`;
+    if (rarity === 'COMMON') {
+      heroWrap.style.borderColor = archetypeColor;
+      heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
+    }
 
     const scopeHud = extractScopeHudData(spell);
     heroWrap.appendChild(buildScopeCornerHud(scopeHud.channels, 'top-left'));
@@ -1344,6 +1373,13 @@ export class DraftModal {
     title.className = 'inspector-title';
     title.textContent = spell.name;
 
+    const tagsWrap = document.createElement('div');
+    tagsWrap.className = 'inspector-header-tags';
+
+    const rarityTag = document.createElement('span');
+    rarityTag.className = `inspector-rarity-tag tier-${tier}`;
+    rarityTag.textContent = getTierCrest(rarity);
+
     const archetypeTag = document.createElement('span');
     archetypeTag.className = 'inspector-archetype-tag';
     archetypeTag.textContent = spell.archetype ?? 'UNKNOWN';
@@ -1351,12 +1387,25 @@ export class DraftModal {
     archetypeTag.style.borderColor = archetypeColor;
     archetypeTag.style.background = `${archetypeColor}18`;
 
+    tagsWrap.appendChild(rarityTag);
+    tagsWrap.appendChild(archetypeTag);
+
     header.appendChild(title);
-    header.appendChild(archetypeTag);
+    header.appendChild(tagsWrap);
 
     const compareBanner = document.createElement('div');
     compareBanner.className = 'inspector-compare-banner';
     compareBanner.id = 'inspector-compare-banner';
+
+    let mutationBanner: HTMLElement | null = null;
+    if (evolutionDiff.length > 0) {
+      mutationBanner = document.createElement('div');
+      mutationBanner.className = 'forge-mutation-banner';
+      const arrow = document.createElement('span');
+      arrow.textContent = '▲';
+      mutationBanner.appendChild(arrow);
+      mutationBanner.appendChild(document.createTextNode(` ${evolutionDiff[0]}`));
+    }
 
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'inspector-telemetry-grid';
@@ -1492,6 +1541,7 @@ export class DraftModal {
     panel.appendChild(heroWrap);
     panel.appendChild(header);
     panel.appendChild(compareBanner);
+    if (mutationBanner) panel.appendChild(mutationBanner);
     panel.appendChild(telemetryGrid);
     panel.appendChild(profileCard);
     panel.appendChild(tagsRow);
@@ -1506,10 +1556,18 @@ export class DraftModal {
     equippedSlotBySpellId: Map<string, ActionSlotKey>,
   ): HTMLElement {
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const rarity = resolveSpellRarity(spell);
     const tile = document.createElement('div');
-    tile.className = 'spell-tile';
+    tile.className = `spell-tile tier-${rarity.toLowerCase()}`;
     tile.dataset.spellId = spell.id;
     tile.style.borderColor = archetypeColor;
+
+    if (rarity !== 'COMMON') {
+      const notch = document.createElement('div');
+      notch.className = `tile-rarity-notch notch-${rarity.toLowerCase()}`;
+      notch.textContent = rarity === 'RARE' ? '◈' : rarity === 'EPIC' ? '✦' : '★';
+      tile.appendChild(notch);
+    }
 
     if (this.selectedSpellId === spell.id) {
       tile.classList.add('tile-selected');
@@ -1538,7 +1596,11 @@ export class DraftModal {
 
     tile.addEventListener('mouseenter', () => {
       this.hoveredSpellId = spell.id;
-      if (!tile.classList.contains('tile-selected') && !tile.classList.contains('tile-new')) {
+      if (
+        rarity === 'COMMON' &&
+        !tile.classList.contains('tile-selected') &&
+        !tile.classList.contains('tile-new')
+      ) {
         tile.style.boxShadow = `0 0 8px ${archetypeColor}66`;
       }
       this.renderTacticalInspector();
@@ -1546,7 +1608,7 @@ export class DraftModal {
 
     tile.addEventListener('mouseleave', () => {
       this.hoveredSpellId = null;
-      if (!tile.classList.contains('tile-selected')) {
+      if (!tile.classList.contains('tile-selected') && rarity === 'COMMON') {
         tile.style.boxShadow = '';
       }
       this.renderTacticalInspector();
@@ -1921,6 +1983,7 @@ export class DraftModal {
         card,
         this.evolutionContext?.baseAbility,
       );
+      stampDraftCardMetadataOntoAbility(card.abilityPayload, card);
     }
   }
 
@@ -1973,6 +2036,7 @@ export class DraftModal {
     ability.name = card.title || ability.name;
     ability.tagline = card.tagline;
     ability.description = card.description;
+    stampDraftCardMetadataOntoAbility(ability, card);
 
     const stored = this.callbacks.onStoreSpell(ability);
     card.abilityPayload = stored;
@@ -3041,6 +3105,7 @@ export class DraftModal {
 
   private equip(card: DraftCard, slot: DraftSelection['slot']): void {
     if (card.abilityPayload) {
+      stampDraftCardMetadataOntoAbility(card.abilityPayload, card);
       card.abilityPayload.id =
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()

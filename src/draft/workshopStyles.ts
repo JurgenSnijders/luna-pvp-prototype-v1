@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v16';
+export const STYLE_ID = 'luna-workshop-styles-v17';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -195,6 +195,87 @@ export function injectStyles(): void {
       border-radius: 2px;
       border: 1px solid currentColor;
       width: fit-content;
+    }
+
+    .inspector-header-tags {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 2px;
+      flex-wrap: wrap;
+    }
+
+    .inspector-rarity-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .inspector-rarity-tag.tier-common {
+      color: #8a9bb8;
+      border: 1px solid #4a5b78;
+      background: rgba(74, 91, 120, 0.15);
+    }
+
+    .inspector-rarity-tag.tier-rare {
+      color: #00e5ff;
+      border: 1px solid #00e5ff;
+      background: rgba(0, 229, 255, 0.15);
+      box-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
+    }
+
+    .inspector-rarity-tag.tier-epic {
+      color: #bf00ff;
+      border: 1px solid #bf00ff;
+      background: rgba(191, 0, 255, 0.15);
+      box-shadow: 0 0 8px rgba(191, 0, 255, 0.4);
+    }
+
+    .inspector-rarity-tag.tier-chaotic {
+      color: #ffd700;
+      border: 1px solid #ffd700;
+      background: rgba(255, 215, 0, 0.15);
+      box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    }
+
+    .inspector-hero-wrap.tier-rare {
+      border-color: rgba(0, 229, 255, 0.6) !important;
+    }
+
+    .inspector-hero-wrap.tier-epic {
+      border-color: rgba(191, 0, 255, 0.7) !important;
+      box-shadow: inset 0 0 20px rgba(191, 0, 255, 0.2), 0 0 10px rgba(191, 0, 255, 0.25) !important;
+    }
+
+    .inspector-hero-wrap.tier-chaotic {
+      border-color: rgba(255, 215, 0, 0.8) !important;
+      box-shadow: inset 0 0 20px rgba(255, 215, 0, 0.25), 0 0 12px rgba(255, 215, 0, 0.35) !important;
+    }
+
+    .inspector-panel.tier-common {
+      --tier-color: #5a6e8c;
+      --tier-glow: transparent;
+    }
+
+    .inspector-panel.tier-rare {
+      --tier-color: #00e5ff;
+      --tier-glow: rgba(0, 229, 255, 0.3);
+    }
+
+    .inspector-panel.tier-epic {
+      --tier-color: #bf00ff;
+      --tier-glow: rgba(191, 0, 255, 0.45);
+    }
+
+    .inspector-panel.tier-chaotic {
+      --tier-color: #ffd700;
+      --tier-glow: rgba(255, 215, 0, 0.5);
     }
 
     .inspector-telemetry-grid {
@@ -1234,6 +1315,46 @@ export function injectStyles(): void {
       opacity: 0.4;
       transform: scale(0.98);
       cursor: grabbing;
+    }
+
+    .spell-tile.tier-rare {
+      box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.25);
+    }
+
+    .spell-tile.tier-epic {
+      box-shadow: inset 0 0 8px rgba(191, 0, 255, 0.35), 0 0 4px rgba(191, 0, 255, 0.3);
+    }
+
+    .spell-tile.tier-chaotic {
+      box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.4), 0 0 6px rgba(255, 215, 0, 0.4);
+    }
+
+    .tile-rarity-notch {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      font-family: Fixedsys, monospace;
+      font-size: 8px;
+      line-height: 1;
+      pointer-events: none;
+      z-index: 2;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
+
+    .tile-rarity-notch.notch-rare {
+      color: #00e5ff;
+      text-shadow: 0 0 4px rgba(0, 229, 255, 0.8);
+    }
+
+    .tile-rarity-notch.notch-epic {
+      color: #bf00ff;
+      text-shadow: 0 0 4px rgba(191, 0, 255, 0.8);
+    }
+
+    .tile-rarity-notch.notch-chaotic {
+      color: #ffd700;
+      text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
     }
 
     .tile-icon-wrap {
