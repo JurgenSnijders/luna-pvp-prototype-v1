@@ -293,3 +293,15 @@ export function spawnAmbientEmber(
 export function expandingRing(ctx: WebGLSpawnCtx, pos: Vector2D, radius: number, color: string): void {
   spawnRing(ctx, pos, radius, 3, color, 0.8, 0.5, 'CORE');
 }
+
+export function spawnDirectionalImpactRing(
+  ctx: WebGLSpawnCtx,
+  pos: Vector2D,
+  normal: Vector2D,
+  color: string,
+): void {
+  const heading = normal.magSq() > 0 ? normal.normalize() : Vector2D.fromAngle(0);
+  const rot = Math.atan2(heading.y, heading.x);
+  const [r, g, b] = parseColor(color);
+  ctx.primitives.spawnDirectionalRing(pos.x, pos.y, 45, 3, rot, r, g, b, 0.85, 0.4);
+}

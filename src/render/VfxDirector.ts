@@ -131,4 +131,8 @@ export class VfxDirector {
     if (!this.checkOverdraw(pos.x, pos.y, radius, SpawnMaterial.RING)) return;
     this.backend.spawnRing(pos, radius, thickness, color, alpha, life, priority);
   }
+
+  spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
+    this.backend.spawnDirectionalImpactRing(pos, normal, color);
+  }
 }

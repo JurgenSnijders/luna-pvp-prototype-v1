@@ -72,6 +72,11 @@ export interface CombatVisualEvent {
   entityRadius?: number;
 }
 
+export interface HitMarkerEvent {
+  sourceId: string;
+  isHeavy: boolean;
+}
+
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
@@ -91,6 +96,7 @@ export class PhysicsWorld {
   pendingExpirations: Projectile[] = [];
   pendingWallImpacts: Vector2D[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
+  hitMarkerEvents: HitMarkerEvent[] = [];
 
   private readonly maxCombatVisualEvents = 128;
   private lavaDamageAccumulator = new Map<string, number>();
@@ -480,6 +486,7 @@ export class PhysicsWorld {
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
     this.combatVisualEvents = [];
+    this.hitMarkerEvents = [];
     this.lavaDamageAccumulator.clear();
   }
 
@@ -494,6 +501,17 @@ export class PhysicsWorld {
     if (this.combatVisualEvents.length === 0) return [];
     const events = this.combatVisualEvents;
     this.combatVisualEvents = [];
+    return events;
+  }
+
+  emitHitMarkerEvent(event: HitMarkerEvent): void {
+    this.hitMarkerEvents.push(event);
+  }
+
+  drainHitMarkerEvents(): HitMarkerEvent[] {
+    if (this.hitMarkerEvents.length === 0) return [];
+    const events = this.hitMarkerEvents;
+    this.hitMarkerEvents = [];
     return events;
   }
 
@@ -1072,6 +1090,8 @@ export class PhysicsWorld {
         if (projectile.spellArchetype) {
           target.applyStatus(projectile.spellArchetype, 2000, 1, this, projectile.sourceEntityId);
         }
+
+        target.triggerHitFeedback(projectile.vel.clone(), projectile.spellArchetype);
 
         const hitPos = projectile.pos.lerp(target.pos, 0.5);
         this.pendingHits.push({ projectile, target, hitPos });

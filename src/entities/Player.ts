@@ -712,6 +712,7 @@ export class Player extends Entity {
     this.smoothedInputMove = Vector2D.zero();
     this.resetStasis();
     this.resetMorphStealth();
+    this.resetHitFeedback();
     for (let i = 0; i < SLOT_COUNT; i++) {
       this.initSlotResourceState(i);
     }

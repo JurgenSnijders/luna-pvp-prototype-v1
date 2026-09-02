@@ -27,6 +27,12 @@ import {
   selectRow,
   sliderRow,
 } from './domHelpers';
+import {
+  DEFAULT_HIT_FEEDBACK_CONFIG,
+  hitFeedbackConfig,
+  saveHitFeedbackConfig,
+  type HitFeedbackConfig,
+} from '../../render/hitFeedbackConfig';
 
 export function buildGraphicsTab(parent: HTMLElement): void {
   const settings = getGraphicsSettings();
@@ -159,6 +165,52 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   perfSection.appendChild(highQualityBtn);
 
   parent.appendChild(perfSection);
+
+  // --- HIT IMPACT & SATISFACTION ---
+  const hitSection = document.createElement('div');
+  hitSection.style.cssText = sectionDivider();
+  hitSection.appendChild(sectionHeader('HIT IMPACT & SATISFACTION'));
+
+  const hitCheckboxes: Partial<Record<keyof HitFeedbackConfig, HTMLInputElement>> = {};
+
+  const addHitToggle = (key: keyof HitFeedbackConfig, label: string): void => {
+    const row = document.createElement('label');
+    row.style.cssText =
+      `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = hitFeedbackConfig[key];
+    checkbox.onchange = () => {
+      hitFeedbackConfig[key] = checkbox.checked;
+      saveHitFeedbackConfig();
+    };
+    hitCheckboxes[key] = checkbox;
+    row.appendChild(checkbox);
+    row.appendChild(document.createTextNode(label));
+    hitSection.appendChild(row);
+  };
+
+  addHitToggle('targetFlash', 'Target White Flash');
+  addHitToggle('reticleMarkers', 'Crosshair Hit Markers');
+  addHitToggle('bodyDeform', 'Body Squash & Shudder');
+  addHitToggle('microHitstop', 'Micro-Hitstop Freeze');
+  addHitToggle('ghostInstabilityBar', 'Ghost Bar Chunking');
+  addHitToggle('directionalBlastRings', 'Directional Blast Rings');
+
+  const resetHitBtn = document.createElement('button');
+  resetHitBtn.textContent = 'Reset Hit Feedback (All On)';
+  resetHitBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetHitBtn.onclick = () => {
+    Object.assign(hitFeedbackConfig, DEFAULT_HIT_FEEDBACK_CONFIG);
+    saveHitFeedbackConfig();
+    for (const key of Object.keys(hitCheckboxes) as (keyof HitFeedbackConfig)[]) {
+      const box = hitCheckboxes[key];
+      if (box) box.checked = hitFeedbackConfig[key];
+    }
+  };
+  hitSection.appendChild(resetHitBtn);
+
+  parent.appendChild(hitSection);
 
   // --- RETRO & CRT ENGINE ---
   const retroSection = document.createElement('div');

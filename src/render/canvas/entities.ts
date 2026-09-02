@@ -1,9 +1,28 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
+import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { getActiveColors } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
+
+function lerpColor(a: string, b: string, t: number): string {
+  const parse = (hex: string): [number, number, number] => {
+    const h = hex.replace('#', '');
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    return [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16),
+    ];
+  };
+  const [r1, g1, b1] = parse(a);
+  const [r2, g2, b2] = parse(b);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const bl = Math.round(b1 + (b2 - b1) * t);
+  return `rgb(${r},${g},${bl})`;
+}
 
 export function drawCombatants(
   ctx: CanvasRenderingContext2D,
@@ -45,36 +64,93 @@ function drawCombatantBody(
   const radius = entity.effectiveRadius;
   const drawColor = entity.activeMorph ? '#6a7a8a' : fillColor;
 
-  const glow = state.spriteCache.getSprite('COMBATANT', drawColor, radius);
-  ctx.drawImage(glow.canvas, pos.x - glow.w / 2, pos.y - glow.h / 2, glow.w, glow.h);
+  let drawPos = pos;
+  let useDeform = false;
+  let squash = 1;
+  let stretch = 1;
+  let rot = 0;
 
-  ctx.fillStyle = drawColor;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-  ctx.fill();
+  if (hitFeedbackConfig.bodyDeform && entity.hitDeformTimer > 0) {
+    const t = entity.hitDeformTimer / 0.12;
+    squash = 1 - 0.25 * t;
+    stretch = 1 + 0.2 * t;
+    const nx = entity.hitImpactNormal.x;
+    const ny = entity.hitImpactNormal.y;
+    const tx = -ny;
+    const ty = nx;
+    const jitter = Math.sin(t * 60) * 3 * t;
+    drawPos = pos.add(new Vector2D(tx * jitter, ty * jitter));
+    rot = Math.atan2(ny, nx);
+    useDeform = true;
+  }
+
+  const drawBody = (): void => {
+    const glow = state.spriteCache.getSprite('COMBATANT', drawColor, radius);
+    ctx.drawImage(glow.canvas, -glow.w / 2, -glow.h / 2, glow.w, glow.h);
+
+    ctx.fillStyle = drawColor;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (hitFeedbackConfig.targetFlash && entity.hitFlashTimer > 0) {
+      const flashT = 1 - entity.hitFlashTimer / 0.08;
+      let flashColor = '#ffffff';
+      if (entity.hitFlashTimer <= 0.04) {
+        flashColor = lerpColor('#ffffff', entity.hitFlashColor, 1 - entity.hitFlashTimer / 0.04);
+      }
+      const prevShadow = ctx.shadowBlur;
+      ctx.shadowBlur = entity.hitFlashTimer > 0.04 ? 16 : 8;
+      ctx.shadowColor = flashColor;
+      ctx.fillStyle = flashColor;
+      ctx.globalAlpha = Math.min(prevAlpha, 0.55 + flashT * 0.45);
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = prevShadow;
+      ctx.globalAlpha = prevAlpha;
+      ctx.strokeStyle = flashColor;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  };
+
+  if (useDeform) {
+    ctx.save();
+    ctx.translate(drawPos.x, drawPos.y);
+    ctx.rotate(rot);
+    ctx.scale(squash, stretch);
+    drawBody();
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.translate(drawPos.x, drawPos.y);
+    drawBody();
+    ctx.restore();
+  }
 
   if (entity.activeMorph) {
     const morphPulse = 0.5 + 0.5 * Math.sin(state.ringRotation * 4);
     ctx.strokeStyle = `rgba(160, 200, 255, ${0.35 + morphPulse * 0.45})`;
     ctx.lineWidth = 2 + morphPulse * 2;
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, radius + 3 + morphPulse * 2, 0, Math.PI * 2);
+    ctx.arc(drawPos.x, drawPos.y, radius + 3 + morphPulse * 2, 0, Math.PI * 2);
     ctx.stroke();
   }
 
   if (aimColor && 'facingAngle' in entity) {
     const facing = (entity as { facingAngle: number }).facingAngle;
-    const aimEnd = pos.add(Vector2D.fromAngle(facing, radius + 14));
+    const aimEnd = drawPos.add(Vector2D.fromAngle(facing, radius + 14));
     ctx.strokeStyle = aimColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
+    ctx.moveTo(drawPos.x, drawPos.y);
     ctx.lineTo(aimEnd.x, aimEnd.y);
     ctx.stroke();
   }
 
   ctx.globalAlpha = prevAlpha;
-  drawStasisOverlay(ctx, state, entity, pos);
+  drawStasisOverlay(ctx, state, entity, drawPos);
 }
 
 export function drawSummons(

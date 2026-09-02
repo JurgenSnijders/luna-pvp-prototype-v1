@@ -6,6 +6,16 @@ import type { GameApp } from './GameApp';
 import { getHexCenter } from './arena';
 import { applyPlayerInput, executePlayerCast } from './input';
 
+let hitstopFramesRemaining = 0;
+
+export function requestHitstop(frames: number): void {
+  hitstopFramesRemaining = Math.min(2, Math.max(hitstopFramesRemaining, frames));
+}
+
+export function getHitstopFramesRemaining(): number {
+  return hitstopFramesRemaining;
+}
+
 export function syncArenaRadius(app: GameApp, dt: number): void {
   if (app.arenaShrink.enabled) {
     app.arenaShrink.update(dt);
@@ -34,6 +44,14 @@ export function applySpatialFields(app: GameApp, dt: number): void {
 export function runSimulationStep(app: GameApp, dt: number): void {
   CombatLogger.getInstance().advanceClock(dt);
   app.particles.beginFrame(dt);
+
+  if (hitstopFramesRemaining > 0) {
+    hitstopFramesRemaining--;
+    app.particles.update(dt);
+    adaptiveQuality.update();
+    return;
+  }
+
   app.world.beginDebugFrame();
   syncArenaRadius(app, dt);
   applyPlayerInput(app);

@@ -1,6 +1,8 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
+import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
+import { requestHitstop } from '../../game/simulation';
 import { screenShake } from '../../render/ScreenShake';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
@@ -172,9 +174,18 @@ export function processLifecycleEvents(
     const vfx = visuals?.impactVfx ?? 'SPARKS';
     const sec = secondaryColor(visuals, '#ffffff');
     const scale = visuals?.vfx?.impactScale ?? 1;
+    const instabBefore = hit.target.instabilityPct;
+    const detonatedBefore = hit.target.plasmaDetonatedThisFrame;
+
     interp.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
     if (shake > 0) screenShake.trigger(shake * 4, 0.12);
+
+    if (hitFeedbackConfig.directionalBlastRings) {
+      const hitNormal = projectileHeading(hit.projectile);
+      interp.particles?.spawnDirectionalImpactRing(hit.hitPos, hitNormal, color);
+    }
+
     dispatchProjectileTriggers(
       interp,
       hit.projectile,
@@ -184,6 +195,20 @@ export function processLifecycleEvents(
       hit.hitPos,
       hit.projectile.depth + 1,
     );
+
+    const detonated = hit.target.plasmaDetonatedThisFrame || detonatedBefore;
+    hit.target.plasmaDetonatedThisFrame = false;
+    const instabDelta = hit.target.instabilityPct - instabBefore;
+    const isHeavy = instabDelta >= 25 || detonated;
+
+    if (hitFeedbackConfig.microHitstop && isHeavy) {
+      requestHitstop(2);
+    }
+
+    world.emitHitMarkerEvent({
+      sourceId: hit.projectile.sourceEntityId,
+      isHeavy,
+    });
   }
 
   for (const projectile of interp.returnTriggeredProjectiles) {

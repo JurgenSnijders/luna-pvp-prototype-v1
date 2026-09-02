@@ -98,4 +98,8 @@ export class ParticleSystem {
       scale,
     );
   }
+
+  spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
+    this.director.spawnDirectionalImpactRing(pos, normal, color);
+  }
 }

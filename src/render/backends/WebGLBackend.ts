@@ -28,6 +28,7 @@ import {
   expandingRing as expandingRingImpl,
   neonRibbon as neonRibbonImpl,
   spawnAmbientEmber as spawnAmbientEmberImpl,
+  spawnDirectionalImpactRing as spawnDirectionalImpactRingImpl,
   trail as trailImpl,
   triggerImpactBurst as triggerImpactBurstImpl,
   triggerMuzzleFlash as triggerMuzzleFlashImpl,
@@ -288,5 +289,9 @@ export class WebGLBackend implements ParticleBackend {
 
   expandingRing(pos: Vector2D, radius: number, color: string): void {
     expandingRingImpl(this.spawnCtx(), pos, radius, color);
+  }
+
+  spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
+    spawnDirectionalImpactRingImpl(this.spawnCtx(), pos, normal, color);
   }
 }

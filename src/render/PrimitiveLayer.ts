@@ -56,24 +56,46 @@ export class PrimitiveLayer {
     alpha: number,
     life: number,
     expanding: boolean,
+    rot = 0,
+    stretchAlongNormal = 1,
   ): void {
     if (this.isAtCapacity()) return;
     this.active.push({
       posX: x,
       posY: y,
       size: radius * 2,
-      rot: 0,
+      rot,
       shapeId: ShapeId.ANNULUS,
       r,
       g,
       b,
       alpha,
-      params: [Math.max(0.15, thickness / Math.max(radius, 1)), 0.42, 0, 0],
+      params: [
+        Math.max(0.15, thickness / Math.max(radius, 1)),
+        stretchAlongNormal,
+        1 / Math.max(stretchAlongNormal, 0.1),
+        0,
+      ],
       additive: true,
       life,
       maxLife: life,
       growRate: expanding ? radius * 1.2 : 0,
     });
+  }
+
+  spawnDirectionalRing(
+    x: number,
+    y: number,
+    radius: number,
+    thickness: number,
+    rot: number,
+    r: number,
+    g: number,
+    b: number,
+    alpha: number,
+    life: number,
+  ): void {
+    this.spawnRing(x, y, radius, thickness, r, g, b, alpha, life, true, rot, 1.6);
   }
 
   spawnFlash(

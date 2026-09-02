@@ -328,4 +328,18 @@ export class Canvas2DBackend implements ParticleBackend {
   expandingRing(pos: Vector2D, radius: number, color: string): void {
     this.spawnRing(pos, radius, 3, color, 0.8, 0.5, 'CORE');
   }
+
+  spawnDirectionalImpactRing(pos: Vector2D, normal: Vector2D, color: string): void {
+    const heading = normal.magSq() > 0 ? normal.normalize() : Vector2D.fromAngle(0);
+    const baseAngle = Math.atan2(heading.y, heading.x);
+    const segments = 14;
+    for (let i = 0; i < segments; i++) {
+      const t = i / segments;
+      const angle = baseAngle + (t - 0.5) * Math.PI * 0.85;
+      const stretch = 1 + Math.abs(Math.cos(angle - baseAngle)) * 0.5;
+      const dist = 22 * stretch;
+      const edge = pos.add(Vector2D.fromAngle(angle, dist));
+      this.spawn(edge, Vector2D.fromAngle(angle, 40), 0.4, color, 4, 0.85);
+    }
+  }
 }

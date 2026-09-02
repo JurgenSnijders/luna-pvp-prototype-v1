@@ -1,14 +1,23 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
 import { canvasFont } from '../../ui/tokens';
 
 export const OVERHEAD_BAR_TOP_OFFSET = 14;
 export const OVERHEAD_BAR_HEIGHT = 5;
+export const OVERHEAD_INSTABILITY_BAR_HEIGHT = 3;
+export const OVERHEAD_INSTABILITY_BAR_GAP = 2;
 const OVERHEAD_INSTABILITY_LABEL_GAP = 6;
 const OVERHEAD_INSTABILITY_FONT_SIZE = 16;
 export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
-  OVERHEAD_BAR_TOP_OFFSET + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_LABEL_GAP;
+  OVERHEAD_BAR_TOP_OFFSET +
+  OVERHEAD_BAR_HEIGHT +
+  OVERHEAD_INSTABILITY_BAR_GAP +
+  OVERHEAD_INSTABILITY_BAR_HEIGHT +
+  OVERHEAD_INSTABILITY_LABEL_GAP;
+
+const INSTABILITY_BAR_CAP = 100;
 
 export function drawOverheadHUD(
   ctx: CanvasRenderingContext2D,
@@ -46,10 +55,55 @@ export function drawOverheadHUD(
       ctx.fill();
     }
 
+    const instabBarY = barY + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+    ctx.beginPath();
+    ctx.roundRect(barX, instabBarY, barWidth, OVERHEAD_INSTABILITY_BAR_HEIGHT, 1);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (hitFeedbackConfig.ghostInstabilityBar) {
+      const ghostRatio = Math.min(1, Math.max(0, entity.ghostInstability / INSTABILITY_BAR_CAP));
+      const ghostWidth = fillMaxWidth * ghostRatio;
+      if (ghostWidth > 0) {
+        ctx.beginPath();
+        ctx.roundRect(
+          barX + 1,
+          instabBarY + 1,
+          ghostWidth,
+          OVERHEAD_INSTABILITY_BAR_HEIGHT - 2,
+          1,
+        );
+        ctx.fillStyle = 'rgba(255, 220, 140, 0.85)';
+        ctx.fill();
+      }
+    }
+
     const pct = entity.instabilityPct;
+    const instabRatio = Math.min(1, Math.max(0, pct / INSTABILITY_BAR_CAP));
+    const instabWidth = fillMaxWidth * instabRatio;
+    if (instabWidth > 0) {
+      ctx.beginPath();
+      ctx.roundRect(
+        barX + 1,
+        instabBarY + 1,
+        instabWidth,
+        OVERHEAD_INSTABILITY_BAR_HEIGHT - 2,
+        1,
+      );
+      ctx.fillStyle = instabilityColor(pct);
+      ctx.fill();
+    }
+
     ctx.fillStyle = instabilityColor(pct);
     ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
-    ctx.fillText(`${Math.round(pct)}`, pos.x, pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET);
+    ctx.fillText(
+      `${Math.round(pct)}`,
+      pos.x,
+      pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET,
+    );
     ctx.globalAlpha = 1;
   }
 }

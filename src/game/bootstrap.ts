@@ -43,8 +43,10 @@ import { subscribeGraphicsSettings } from '../devtools/graphicsSettings';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
+import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 
 function init(app: GameApp): void {
+  loadHitFeedbackConfig();
   resize(app);
   window.addEventListener('resize', () => resize(app));
   applyCooldownPacingSettings();

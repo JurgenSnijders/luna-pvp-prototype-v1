@@ -1,5 +1,6 @@
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import type { MorphConfig, SpellArchetype } from '../types/schema';
 
 let nextEntityId = 1;
@@ -47,6 +48,14 @@ export class Entity {
   voidDistanceAcc: number;
   natureAnchor?: Vector2D;
 
+  hitFlashTimer = 0;
+  hitFlashColor = '#ffffff';
+  hitDeformTimer = 0;
+  hitImpactNormal = { x: 1, y: 0 };
+  ghostInstability = 0;
+  ghostInstabilityTimer = 0;
+  plasmaDetonatedThisFrame = false;
+
   constructor(
     id: string,
     pos: Vector2D,
@@ -86,6 +95,47 @@ export class Entity {
     this.activeStatuses = new Map();
     this.friction = 0;
     this.voidDistanceAcc = 0;
+    this.ghostInstability = this.instabilityPct;
+  }
+
+  triggerHitFeedback(impactVel: Vector2D, archetype?: SpellArchetype): void {
+    this.hitFlashTimer = 0.08;
+    this.hitDeformTimer = 0.12;
+    this.hitFlashColor = archetype ? getArchetypeColor(archetype) : '#ffffff';
+    if (impactVel.magSq() > 0) {
+      const n = impactVel.normalize();
+      this.hitImpactNormal = { x: n.x, y: n.y };
+    }
+    if (this.instabilityPct > this.ghostInstability) {
+      this.ghostInstabilityTimer = 0.15;
+    }
+  }
+
+  tickHitFeedback(dt: number): void {
+    if (this.hitFlashTimer > 0) {
+      this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+    }
+    if (this.hitDeformTimer > 0) {
+      this.hitDeformTimer = Math.max(0, this.hitDeformTimer - dt);
+    }
+    if (this.ghostInstabilityTimer > 0) {
+      this.ghostInstabilityTimer = Math.max(0, this.ghostInstabilityTimer - dt);
+    } else if (this.ghostInstability < this.instabilityPct) {
+      this.ghostInstability = Math.min(
+        this.instabilityPct,
+        this.ghostInstability + dt * 200,
+      );
+    }
+  }
+
+  resetHitFeedback(): void {
+    this.hitFlashTimer = 0;
+    this.hitDeformTimer = 0;
+    this.hitFlashColor = '#ffffff';
+    this.hitImpactNormal = { x: 1, y: 0 };
+    this.ghostInstability = this.instabilityPct;
+    this.ghostInstabilityTimer = 0;
+    this.plasmaDetonatedThisFrame = false;
   }
 
   get effectiveRadius(): number {
@@ -154,6 +204,7 @@ export class Entity {
   }
 
   private triggerPlasmaDetonation(world: PhysicsWorld): void {
+    this.plasmaDetonatedThisFrame = true;
     world.spawnPlasmaDetonation(this.pos.clone(), this.id);
     world.emitCombatVisualEvent({
       type: 'STATUS_APPLIED',
@@ -328,6 +379,7 @@ export class Entity {
   }
 
   integrate(dt: number, world?: PhysicsWorld): void {
+    this.tickHitFeedback(dt);
     this.tickStatusTimers(dt, world);
     if (this.stasisRemainingMs > 0) return;
 
