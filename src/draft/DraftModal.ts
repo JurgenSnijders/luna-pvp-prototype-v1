@@ -246,25 +246,44 @@ function walkTriggers(
   }
 }
 
+function emitterHasSpread(emitter: EmitterConfig): boolean {
+  return (
+    emitter.count > 1 ||
+    emitter.spreadDeg > 0 ||
+    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0)
+  );
+}
+
 function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
-  if (ability.trajectory) {
-    return { trajectory: ability.trajectory };
-  }
+  let onCast: DisplayTrajectory | null = null;
+
   for (const triggerNode of ability.triggers ?? []) {
     if (triggerNode.trigger !== 'ON_CAST') continue;
     for (const action of triggerNode.actions ?? []) {
       if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
-        return {
+        onCast = {
           trajectory: action.projectileTrajectory,
           emitter: action.emitter,
         };
+        break;
       }
       if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
         return { trajectory: action.payload.trajectory };
       }
     }
+    if (onCast) break;
   }
-  return {};
+
+  if (onCast?.emitter && emitterHasSpread(onCast.emitter)) {
+    return onCast;
+  }
+  if (!ability.trajectory && onCast) {
+    return onCast;
+  }
+  if (ability.trajectory) {
+    return { trajectory: ability.trajectory, emitter: onCast?.emitter };
+  }
+  return onCast ?? {};
 }
 
 function collectActionTypes(ability: AbilitySchema): string[] {

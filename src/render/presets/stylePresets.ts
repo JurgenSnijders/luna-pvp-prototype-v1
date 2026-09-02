@@ -40,6 +40,11 @@ export interface CrtPresetValues {
   bloomIntensity: number;
   tintColor: [number, number, number];
   tintAmount: number;
+  maskType: number;
+  halation: number;
+  beamBlur: number;
+  convergence: number;
+  glassGlare: number;
 }
 
 export interface StylePreset {
@@ -89,6 +94,11 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       bloomIntensity: 0.8,
       tintColor: [1, 1, 1],
       tintAmount: 0,
+      maskType: 0,
+      halation: 0.25,
+      beamBlur: 1.0,
+      convergence: 0.4,
+      glassGlare: 0.3,
     },
   },
   AMBER_TERMINAL: {
@@ -127,6 +137,11 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       bloomIntensity: 0.8,
       tintColor: [1, 0.7, 0],
       tintAmount: 0.85,
+      maskType: 2,
+      halation: 0.2,
+      beamBlur: 1.0,
+      convergence: 0.5,
+      glassGlare: 0.35,
     },
   },
   GREEN_PHOSPHOR: {
@@ -165,6 +180,11 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       bloomIntensity: 0.8,
       tintColor: [0.2, 1, 0.2],
       tintAmount: 0.9,
+      maskType: 2,
+      halation: 0.2,
+      beamBlur: 1.0,
+      convergence: 0.5,
+      glassGlare: 0.35,
     },
   },
   MIDNIGHT_ARCADE: {
@@ -203,6 +223,11 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       bloomIntensity: 1.4,
       tintColor: [1, 1, 1],
       tintAmount: 0,
+      maskType: 1,
+      halation: 0.5,
+      beamBlur: 2.0,
+      convergence: 1.0,
+      glassGlare: 0.4,
     },
   },
   CLEAN_CRT: {
@@ -229,6 +254,11 @@ export const STYLE_PRESETS: Record<StylePresetId, StylePreset> = {
       bloomIntensity: 0.8,
       tintColor: [1, 1, 1],
       tintAmount: 0,
+      maskType: 0,
+      halation: 0,
+      beamBlur: 0,
+      convergence: 0,
+      glassGlare: 0,
     },
   },
 };

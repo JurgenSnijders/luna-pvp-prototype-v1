@@ -89,6 +89,7 @@ export interface EffectiveCrtSettings {
   curvature: number;
   vignette: number;
   phosphor: number;
+  maskType: number;
   bloomIntensity: number;
   bloomThreshold: number;
   arcadeBezel: boolean;
@@ -113,6 +114,15 @@ export interface EffectiveCrtSettings {
     glitchAmount: number;
     glitchSlices: number;
     glitchChroma: number;
+  };
+  grade: {
+    streakIntensity: number;
+    streakLength: number;
+    lutEnabled: boolean;
+    lutId: number;
+    lutMix: number;
+    saturation: number;
+    contrast: number;
   };
 }
 
@@ -317,6 +327,10 @@ function resolvePhosphor(): number {
   return getPostEffectParam('PHOSPHOR', 'intensity');
 }
 
+function resolveMaskType(): number {
+  return getPostEffectParam('PHOSPHOR', 'type');
+}
+
 function resolveTintAmount(presetAmount: number): number {
   if (!isPostEffectEnabled('TINT')) return 0;
   return presetAmount;
@@ -375,6 +389,28 @@ function resolveReactive(): {
   };
 }
 
+function resolveGrade(): {
+  streakIntensity: number;
+  streakLength: number;
+  lutEnabled: boolean;
+  lutId: number;
+  lutMix: number;
+  saturation: number;
+  contrast: number;
+} {
+  const anamorphicOn = isPostEffectEnabled('ANAMORPHIC');
+  const lutOn = isPostEffectEnabled('LUT');
+  return {
+    streakIntensity: anamorphicOn ? getPostEffectParam('ANAMORPHIC', 'intensity') : 0,
+    streakLength: getPostEffectParam('ANAMORPHIC', 'length'),
+    lutEnabled: lutOn,
+    lutId: getPostEffectParam('LUT', 'id'),
+    lutMix: lutOn ? getPostEffectParam('LUT', 'mix') : 0,
+    saturation: lutOn ? getPostEffectParam('LUT', 'saturation') : 1,
+    contrast: lutOn ? getPostEffectParam('LUT', 'contrast') : 1,
+  };
+}
+
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
@@ -397,6 +433,15 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     glitchSlices: 12,
     glitchChroma: 0.5,
   };
+  const gradeOff = {
+    streakIntensity: 0,
+    streakLength: 8,
+    lutEnabled: false,
+    lutId: 0,
+    lutMix: 0,
+    saturation: 1,
+    contrast: 1,
+  };
 
   if (!s.crtEnabled) {
     return {
@@ -407,6 +452,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       curvature: 0,
       vignette: 0,
       phosphor: 0,
+      maskType: 0,
       bloomIntensity,
       bloomThreshold,
       arcadeBezel: s.arcadeBezel,
@@ -417,6 +463,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       persistence: persistenceOff,
       retro: retroOff,
       reactive: reactiveOff,
+      grade: gradeOff,
     };
   }
 
@@ -430,6 +477,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       curvature: 0,
       vignette: resolveVignette(),
       phosphor: 0,
+      maskType: 0,
       bloomIntensity,
       bloomThreshold,
       arcadeBezel: s.arcadeBezel,
@@ -440,6 +488,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       persistence: persistenceOff,
       retro: retroOff,
       reactive: reactiveOff,
+      grade: gradeOff,
     };
   }
 
@@ -451,6 +500,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     curvature: resolveCurvature(),
     vignette: resolveVignette(),
     phosphor: resolvePhosphor(),
+    maskType: resolveMaskType(),
     bloomIntensity,
     bloomThreshold,
     arcadeBezel: s.arcadeBezel,
@@ -461,6 +511,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     persistence: resolvePersistence(),
     retro: resolveRetro(),
     reactive: resolveReactive(),
+    grade: resolveGrade(),
   };
 }
 
@@ -546,15 +597,55 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
 
 export function applyStylePreset(id: StylePresetId): GraphicsSettings {
   const preset = STYLE_PRESETS[id];
+  const crt = preset.crt;
+  const current = getGraphicsSettings();
+  const postEffects = { ...current.postEffects };
+
+  const phosphorState = postEffects.PHOSPHOR ?? {
+    enabled: POST_EFFECTS.PHOSPHOR.defaultEnabled,
+    params: {},
+  };
+  postEffects.PHOSPHOR = {
+    ...phosphorState,
+    params: { ...phosphorState.params, type: crt.maskType },
+  };
+
+  const arcadeEffects: {
+    id: 'HALATION' | 'BEAM_BLUR' | 'CONVERGENCE' | 'GLASS_GLARE';
+    paramKey: string;
+    value: number;
+  }[] = [
+    { id: 'HALATION', paramKey: 'intensity', value: crt.halation },
+    { id: 'BEAM_BLUR', paramKey: 'amount', value: crt.beamBlur },
+    { id: 'CONVERGENCE', paramKey: 'amount', value: crt.convergence },
+    { id: 'GLASS_GLARE', paramKey: 'intensity', value: crt.glassGlare },
+  ];
+
+  for (const { id: effectId, paramKey, value } of arcadeEffects) {
+    const def = POST_EFFECTS[effectId];
+    const state = postEffects[effectId] ?? {
+      enabled: def.defaultEnabled,
+      params: {},
+    };
+    postEffects[effectId] = {
+      enabled: value > 0,
+      params: {
+        ...state.params,
+        [paramKey]: value > 0 ? value : state.params[paramKey] ?? def.params.find((p) => p.key === paramKey)?.defaultValue ?? 0,
+      },
+    };
+  }
+
   const next: GraphicsSettings = {
-    ...getGraphicsSettings(),
+    ...current,
     activePreset: id,
-    crtScanlineIntensity: preset.crt.crtScanlineIntensity,
-    crtCurvature: preset.crt.crtCurvature,
-    crtVignette: preset.crt.crtVignette,
-    crtPhosphor: preset.crt.crtPhosphor,
-    crtBrightness: preset.crt.crtBrightness,
-    bloomIntensity: preset.crt.bloomIntensity,
+    crtScanlineIntensity: crt.crtScanlineIntensity,
+    crtCurvature: crt.crtCurvature,
+    crtVignette: crt.crtVignette,
+    crtPhosphor: crt.crtPhosphor,
+    crtBrightness: crt.crtBrightness,
+    bloomIntensity: crt.bloomIntensity,
+    postEffects,
   };
   saveGraphicsSettings(next);
   return next;

@@ -1,10 +1,22 @@
 import type { QualityTier } from '../../devtools/graphicsSettings';
+import { GRADE_LUTS } from './gradeLuts';
 import { RETRO_PALETTES } from './retroPalettes';
 
 const PALETTE_SELECT_OPTIONS = RETRO_PALETTES.map((palette, index) => ({
   value: index,
   label: palette.label,
 }));
+
+const LUT_SELECT_OPTIONS = GRADE_LUTS.map((lut, index) => ({
+  value: index,
+  label: lut.label,
+}));
+
+const MASK_TYPE_OPTIONS = [
+  { value: 0, label: 'Aperture Grille' },
+  { value: 1, label: 'Slot Mask' },
+  { value: 2, label: 'Shadow Mask' },
+];
 
 export type PostEffectId =
   | 'SCANLINES'
@@ -22,7 +34,13 @@ export type PostEffectId =
   | 'ROLL_BAR'
   | 'VHS_JITTER'
   | 'GRAIN'
-  | 'TRACKING';
+  | 'TRACKING'
+  | 'ANAMORPHIC'
+  | 'LUT'
+  | 'HALATION'
+  | 'BEAM_BLUR'
+  | 'CONVERGENCE'
+  | 'GLASS_GLARE';
 
 export type LegacyGraphicsKey =
   | 'crtScanlineIntensity'
@@ -102,6 +120,104 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
         step: 0.05,
         defaultValue: 0.25,
         storage: { kind: 'legacy', key: 'crtPhosphor' },
+      },
+      {
+        key: 'type',
+        label: 'Mask Type',
+        min: 0,
+        max: 2,
+        step: 1,
+        defaultValue: 0,
+        storage: { kind: 'effect' },
+        widget: 'select',
+        options: MASK_TYPE_OPTIONS,
+      },
+    ],
+  },
+  HALATION: {
+    id: 'HALATION',
+    label: 'CRT Halation',
+    group: 'CRT',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'intensity',
+    params: [
+      {
+        key: 'intensity',
+        label: 'Intensity',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.35,
+        storage: { kind: 'effect' },
+        uniform: 'u_halation',
+      },
+    ],
+  },
+  BEAM_BLUR: {
+    id: 'BEAM_BLUR',
+    label: 'Beam Blur',
+    group: 'CRT',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 4,
+        step: 0.25,
+        defaultValue: 1.5,
+        storage: { kind: 'effect' },
+        uniform: 'u_beamBlur',
+      },
+    ],
+  },
+  CONVERGENCE: {
+    id: 'CONVERGENCE',
+    label: 'RGB Convergence',
+    group: 'CRT',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'amount',
+    params: [
+      {
+        key: 'amount',
+        label: 'Amount',
+        min: 0,
+        max: 4,
+        step: 0.1,
+        defaultValue: 0.8,
+        storage: { kind: 'effect' },
+        uniform: 'u_convergence',
+      },
+    ],
+  },
+  GLASS_GLARE: {
+    id: 'GLASS_GLARE',
+    label: 'Glass Glare',
+    group: 'CRT',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 0,
+    defaultEnabled: false,
+    masterParam: 'intensity',
+    params: [
+      {
+        key: 'intensity',
+        label: 'Intensity',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 0.35,
+        storage: { kind: 'effect' },
       },
     ],
   },
@@ -532,6 +648,86 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
         defaultValue: 0.6,
         storage: { kind: 'effect' },
         uniform: 'u_trackDesaturate',
+      },
+    ],
+  },
+  ANAMORPHIC: {
+    id: 'ANAMORPHIC',
+    label: 'Anamorphic Streaks',
+    group: 'GRADE',
+    minTier: 'HIGH',
+    conflictsWith: [],
+    costHint: 2,
+    defaultEnabled: false,
+    masterParam: 'intensity',
+    params: [
+      {
+        key: 'intensity',
+        label: 'Intensity',
+        min: 0,
+        max: 2,
+        step: 0.05,
+        defaultValue: 0.7,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'length',
+        label: 'Length',
+        min: 2,
+        max: 24,
+        step: 1,
+        defaultValue: 8,
+        storage: { kind: 'effect' },
+      },
+    ],
+  },
+  LUT: {
+    id: 'LUT',
+    label: 'LUT Color Grade',
+    group: 'GRADE',
+    minTier: 'MEDIUM',
+    conflictsWith: [],
+    costHint: 1,
+    defaultEnabled: false,
+    masterParam: 'mix',
+    params: [
+      {
+        key: 'mix',
+        label: 'Mix',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        defaultValue: 1,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'id',
+        label: 'LUT',
+        min: 0,
+        max: 3,
+        step: 1,
+        defaultValue: 0,
+        storage: { kind: 'effect' },
+        widget: 'select',
+        options: LUT_SELECT_OPTIONS,
+      },
+      {
+        key: 'saturation',
+        label: 'Saturation',
+        min: 0,
+        max: 2,
+        step: 0.05,
+        defaultValue: 1,
+        storage: { kind: 'effect' },
+      },
+      {
+        key: 'contrast',
+        label: 'Contrast',
+        min: 0.5,
+        max: 2,
+        step: 0.05,
+        defaultValue: 1,
+        storage: { kind: 'effect' },
       },
     ],
   },

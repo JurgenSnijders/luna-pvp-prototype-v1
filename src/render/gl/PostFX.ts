@@ -8,12 +8,15 @@ import {
   PERSISTENCE_SHADER,
   REACTIVE_SHADER,
   RETRO_SHADER,
+  STREAK_SHADER,
 } from './postShaders';
+import { getLutData, LUT_SIZE } from './gradeLuts';
 import { getPaletteSize, packPaletteUniform } from './retroPalettes';
 import {
   compileShader,
   createFramebuffer,
   createFullscreenQuad,
+  createLutTexture,
   linkProgram,
   resizeFramebuffer,
   type FramebufferTarget,
@@ -24,6 +27,7 @@ export interface CrtPresentParams {
   curvature: number;
   vignette: number;
   phosphor: number;
+  maskType: number;
   bloomIntensity: number;
   bloomPasses: number;
   bloomThreshold: number;
@@ -59,6 +63,15 @@ export interface CrtPresentParams {
     shockU: number;
     shockV: number;
   };
+  grade: {
+    streakIntensity: number;
+    streakLength: number;
+    lutEnabled: boolean;
+    lutId: number;
+    lutMix: number;
+    saturation: number;
+    contrast: number;
+  };
 }
 
 export class PostFX {
@@ -70,6 +83,7 @@ export class PostFX {
   private persistProgram: WebGLProgram;
   private retroProgram: WebGLProgram;
   private reactiveProgram: WebGLProgram;
+  private streakProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
   private bloomFboA: FramebufferTarget | null = null;
@@ -81,6 +95,8 @@ export class PostFX {
   private persistValid = false;
   private retroFbo: FramebufferTarget | null = null;
   private reactiveFbo: FramebufferTarget | null = null;
+  private lutTexture: WebGLTexture | null = null;
+  private lutId = -1;
   private paletteUniformData = new Float32Array(16 * 3);
   private worldTexture: WebGLTexture | null = null;
   private worldTexW = 0;
@@ -99,6 +115,7 @@ export class PostFX {
     const fsPersist = compileShader(gl, gl.FRAGMENT_SHADER, PERSISTENCE_SHADER);
     const fsRetro = compileShader(gl, gl.FRAGMENT_SHADER, RETRO_SHADER);
     const fsReactive = compileShader(gl, gl.FRAGMENT_SHADER, REACTIVE_SHADER);
+    const fsStreak = compileShader(gl, gl.FRAGMENT_SHADER, STREAK_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
@@ -107,6 +124,7 @@ export class PostFX {
     this.persistProgram = linkProgram(gl, vs, fsPersist);
     this.retroProgram = linkProgram(gl, vs, fsRetro);
     this.reactiveProgram = linkProgram(gl, vs, fsReactive);
+    this.streakProgram = linkProgram(gl, vs, fsStreak);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
@@ -116,6 +134,7 @@ export class PostFX {
     gl.deleteShader(fsPersist);
     gl.deleteShader(fsRetro);
     gl.deleteShader(fsReactive);
+    gl.deleteShader(fsStreak);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
   }
@@ -126,6 +145,7 @@ export class PostFX {
     this.width = 0;
     this.height = 0;
     this.persistValid = false;
+    this.lutId = -1;
   }
 
   private destroyFbos(): void {
@@ -158,6 +178,11 @@ export class PostFX {
       this.worldTexture = null;
       this.worldTexW = 0;
       this.worldTexH = 0;
+    }
+    if (this.lutTexture) {
+      gl.deleteTexture(this.lutTexture);
+      this.lutTexture = null;
+      this.lutId = -1;
     }
   }
 
@@ -304,8 +329,19 @@ export class PostFX {
     }
 
     const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
+    let hasStreak = false;
     if (hasBloom) {
       this.extractBloom(sourceTex, params.bloomPasses, params.bloomThreshold);
+      if (params.grade.streakIntensity > 0) {
+        hasStreak = true;
+        this.applyStreak(params.grade.streakLength);
+      }
+    }
+
+    const grade = params.grade;
+    const lutMix = grade.lutEnabled ? grade.lutMix : 0;
+    if (grade.lutEnabled) {
+      this.ensureLutTexture(grade.lutId);
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -321,13 +357,33 @@ export class PostFX {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, hasBloom ? this.bloomFboA!.texture : sourceTex);
     gl.uniform1i(this.uniform(this.crtProgram, 'u_bloom')!, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(
+      gl.TEXTURE_2D,
+      hasStreak ? this.bloomFboB!.texture : hasBloom ? this.bloomFboA!.texture : sourceTex,
+    );
+    gl.uniform1i(this.uniform(this.crtProgram, 'u_streak')!, 2);
+    if (grade.lutEnabled && this.lutTexture) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
+      gl.uniform1i(this.uniform(this.crtProgram, 'u_lut')!, 3);
+    }
     gl.uniform1f(this.uniform(this.crtProgram, 'u_hasBloom')!, hasBloom ? 1 : 0);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_hasStreak')!, hasStreak ? 1 : 0);
+    gl.uniform1f(
+      this.uniform(this.crtProgram, 'u_streakIntensity')!,
+      params.grade.streakIntensity,
+    );
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_lutMix')!, lutMix);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_saturation')!, grade.saturation);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_contrast')!, grade.contrast);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_bloomIntensity')!, params.bloomIntensity);
     gl.uniform2f(this.uniform(this.crtProgram, 'u_effectResolution')!, effectWidth, effectHeight);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_scanline')!, params.scanline);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_curvature')!, params.curvature);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_vignette')!, params.vignette);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_phosphor')!, params.phosphor);
+    gl.uniform1f(this.uniform(this.crtProgram, 'u_maskType')!, params.maskType);
     gl.uniform3f(
       this.uniform(this.crtProgram, 'u_tintColor')!,
       params.tintColor[0],
@@ -532,6 +588,36 @@ export class PostFX {
     gl.uniform1f(this.uniform(this.reactiveProgram, 'u_shockV')!, reactive.shockV);
     this.drawFullscreen();
     return target.texture;
+  }
+
+  private applyStreak(streakLength: number): void {
+    const gl = this.gl;
+    const bloomA = this.bloomFboA!;
+    const bloomB = this.bloomFboB!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloomB.fbo);
+    gl.viewport(0, 0, bloomB.width, bloomB.height);
+    gl.useProgram(this.streakProgram);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, bloomA.texture);
+    gl.uniform1i(this.uniform(this.streakProgram, 'u_source')!, 0);
+    gl.uniform2f(
+      this.uniform(this.streakProgram, 'u_texelSize')!,
+      1 / bloomB.width,
+      1 / bloomB.height,
+    );
+    gl.uniform1f(this.uniform(this.streakProgram, 'u_length')!, streakLength);
+    this.drawFullscreen();
+  }
+
+  private ensureLutTexture(id: number): void {
+    if (this.lutTexture && this.lutId === id) return;
+    const gl = this.gl;
+    if (this.lutTexture) {
+      gl.deleteTexture(this.lutTexture);
+      this.lutTexture = null;
+    }
+    this.lutTexture = createLutTexture(gl, getLutData(id), LUT_SIZE);
+    this.lutId = id;
   }
 
   private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {

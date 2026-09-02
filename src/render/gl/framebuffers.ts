@@ -112,3 +112,31 @@ export function linkProgram(
   }
   return program;
 }
+
+export function createLutTexture(
+  gl: WebGL2RenderingContext,
+  data: Uint8Array,
+  size: number,
+): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_3D, texture);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  gl.texImage3D(
+    gl.TEXTURE_3D,
+    0,
+    gl.RGBA,
+    size,
+    size,
+    size,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    data,
+  );
+  gl.bindTexture(gl.TEXTURE_3D, null);
+  return texture;
+}

@@ -181,14 +181,46 @@ void main() {
 }
 `;
 
+export const STREAK_SHADER = `#version 300 es
+precision mediump float;
+in vec2 v_texCoord;
+uniform sampler2D u_source;
+uniform vec2 u_texelSize;
+uniform float u_length;
+out vec4 fragColor;
+void main() {
+  float w[5];
+  w[0] = 0.227027;
+  w[1] = 0.1945946;
+  w[2] = 0.1216216;
+  w[3] = 0.054054;
+  w[4] = 0.016216;
+  vec4 sum = texture(u_source, v_texCoord) * w[0];
+  for (int i = 1; i < 5; i++) {
+    float off = float(i) * u_length * u_texelSize.x;
+    sum += texture(u_source, v_texCoord + vec2(off, 0.0)) * w[i];
+    sum += texture(u_source, v_texCoord - vec2(off, 0.0)) * w[i];
+  }
+  fragColor = sum;
+}
+`;
+
 export const CRT_SHADER = `#version 300 es
 precision highp float;
+precision highp sampler3D;
 in vec2 v_texCoord;
 uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
+uniform sampler2D u_streak;
+uniform sampler3D u_lut;
 uniform vec2 u_effectResolution;
 uniform float u_bloomIntensity;
 uniform float u_hasBloom;
+uniform float u_hasStreak;
+uniform float u_streakIntensity;
+uniform float u_lutMix;
+uniform float u_saturation;
+uniform float u_contrast;
 uniform float u_scanline;
 uniform float u_curvature;
 uniform float u_vignette;
@@ -209,7 +241,56 @@ uniform float u_trackFrequency;
 uniform float u_trackHeight;
 uniform float u_trackShift;
 uniform float u_trackDesaturate;
+uniform float u_maskType;
+uniform float u_halation;
+uniform float u_beamBlur;
+uniform float u_convergence;
 out vec4 fragColor;
+
+vec3 sampleComposite(vec2 suv) {
+  vec3 sceneCol = texture(u_scene, suv).rgb;
+  vec3 bloomCol = u_hasBloom > 0.5 ? texture(u_bloom, suv).rgb * u_bloomIntensity : vec3(0.0);
+  vec3 streakCol = u_hasStreak > 0.5 ? texture(u_streak, suv).rgb * u_streakIntensity : vec3(0.0);
+  return min(vec3(1.0), sceneCol + bloomCol + streakCol);
+}
+
+vec3 convergedComposite(vec2 suv) {
+  if (u_convergence <= 0.0) {
+    return sampleComposite(suv);
+  }
+  vec2 offset = (suv - 0.5) * u_convergence / u_effectResolution;
+  vec3 col;
+  col.r = sampleComposite(suv + offset).r;
+  col.g = sampleComposite(suv).g;
+  col.b = sampleComposite(suv - offset).b;
+  return col;
+}
+
+vec3 phosphorMaskAt(vec2 suv, float maskType) {
+  float px = floor(suv.x * u_effectResolution.x);
+  float py = floor(suv.y * u_effectResolution.y);
+  if (maskType < 0.5) {
+    return vec3(
+      0.8 + 0.2 * step(0.5, mod(px, 3.0)),
+      0.8 + 0.2 * step(0.5, mod(px + 1.0, 3.0)),
+      0.8 + 0.2 * step(0.5, mod(px + 2.0, 3.0))
+    );
+  }
+  if (maskType < 1.5) {
+    float rowOffset = mod(py, 2.0);
+    return vec3(
+      0.8 + 0.2 * step(0.5, mod(px + rowOffset, 3.0)),
+      0.8 + 0.2 * step(0.5, mod(px + rowOffset + 1.0, 3.0)),
+      0.8 + 0.2 * step(0.5, mod(px + rowOffset + 2.0, 3.0))
+    );
+  }
+  float cell = mod(px + py * 2.0, 3.0);
+  return mix(
+    mix(vec3(1.0, 0.8, 0.8), vec3(0.8, 1.0, 0.8), step(1.0, cell)),
+    vec3(0.8, 0.8, 1.0),
+    step(2.0, cell)
+  );
+}
 
 vec2 barrelDistort(vec2 uv, float k) {
   vec2 cc = uv - 0.5;
@@ -250,25 +331,42 @@ void main() {
     return;
   }
 
-  vec3 base = texture(u_scene, uv).rgb;
-  vec3 bloomCol = u_hasBloom > 0.5 ? texture(u_bloom, uv).rgb * u_bloomIntensity : vec3(0.0);
-  vec3 rgb = min(vec3(1.0), base + bloomCol);
+  vec3 rgb = convergedComposite(uv);
 
-  float px = uv.x * u_effectResolution.x;
-  vec3 phosphorMask = vec3(
-    0.8 + 0.2 * step(0.5, mod(px, 3.0)),
-    0.8 + 0.2 * step(0.5, mod(px + 1.0, 3.0)),
-    0.8 + 0.2 * step(0.5, mod(px + 2.0, 3.0))
-  );
-  float phosphorMean = 1.0 - 0.033333333 * u_phosphor;
-  rgb = mix(rgb, rgb * phosphorMask, u_phosphor);
+  if (u_beamBlur > 0.0) {
+    float dx = u_beamBlur / u_effectResolution.x;
+    rgb = convergedComposite(uv - vec2(dx, 0.0)) * 0.25
+        + convergedComposite(uv) * 0.5
+        + convergedComposite(uv + vec2(dx, 0.0)) * 0.25;
+  }
+
+  if (u_halation > 0.0 && u_hasBloom > 0.5) {
+    rgb += texture(u_bloom, uv + vec2(0.0, 1.0 / u_effectResolution.y)).rgb * u_halation;
+    rgb = min(rgb, vec3(1.0));
+  }
+
   if (u_phosphor > 0.0) {
+    vec3 phosphorMask = phosphorMaskAt(uv, u_maskType);
+    float phosphorMean = 1.0 - 0.033333333 * u_phosphor;
+    rgb = mix(rgb, rgb * phosphorMask, u_phosphor);
     rgb /= phosphorMean;
   }
 
   if (u_tintAmount > 0.0) {
     float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
     rgb = mix(rgb, luma * u_tintColor, u_tintAmount);
+  }
+
+  {
+    float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+    rgb = mix(vec3(luma), rgb, u_saturation);
+    rgb = (rgb - 0.5) * u_contrast + 0.5;
+    if (u_lutMix > 0.0) {
+      float scale = 15.0 / 16.0;
+      float offset = 0.5 / 16.0;
+      vec3 coord = clamp(rgb, 0.0, 1.0) * scale + offset;
+      rgb = mix(rgb, texture(u_lut, coord).rgb, u_lutMix);
+    }
   }
 
   float scan = sin(uv.y * u_effectResolution.y * 3.14159265);

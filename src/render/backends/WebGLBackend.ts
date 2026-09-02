@@ -181,6 +181,7 @@ export class WebGLBackend implements ParticleBackend {
           curvature: crt.curvature,
           vignette: crt.vignette,
           phosphor: crt.phosphor,
+          maskType: crt.maskType,
           bloomIntensity: crt.bloomIntensity,
           bloomPasses: limits.bloomPasses,
           bloomThreshold: crt.bloomThreshold,
@@ -210,6 +211,7 @@ export class WebGLBackend implements ParticleBackend {
             shockU: sx / width,
             shockV: 1 - sy / height,
           },
+          grade: crt.grade,
         },
         bufferW,
         bufferH,
@@ -232,7 +234,12 @@ export class WebGLBackend implements ParticleBackend {
         (limits.bloomPasses > 0 ? 3 : 0) +
         (crt.persistence.enabled ? 1 : 0) +
         (crt.retro.enabled ? 1 : 0) +
-        (reactiveActive ? 1 : 0),
+        (reactiveActive ? 1 : 0) +
+        (crt.grade.streakIntensity > 0 &&
+        limits.bloomPasses > 0 &&
+        crt.bloomIntensity > 0
+          ? 1
+          : 0),
       instanceCount: stats.instanceCount,
       uploadBytes: stats.uploadBytes,
     };

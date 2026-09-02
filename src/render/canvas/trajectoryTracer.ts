@@ -69,10 +69,7 @@ export function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig 
   return undefined;
 }
 
-function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
-  if (ability.trajectory) {
-    return { trajectory: ability.trajectory, emitter: DEFAULT_EMITTER };
-  }
+function findOnCastProjectileConfig(ability: AbilitySchema): LiveCastConfig | null {
   for (const triggerNode of ability.triggers ?? []) {
     if (triggerNode.trigger !== 'ON_CAST') continue;
     for (const action of triggerNode.actions ?? []) {
@@ -85,6 +82,31 @@ function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
     }
   }
   return null;
+}
+
+function emitterHasSpread(emitter: EmitterConfig): boolean {
+  return (
+    emitter.count > 1 ||
+    emitter.spreadDeg > 0 ||
+    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0)
+  );
+}
+
+function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
+  const onCast = findOnCastProjectileConfig(ability);
+
+  if (onCast && (!ability.trajectory || emitterHasSpread(onCast.emitter))) {
+    return onCast;
+  }
+
+  if (ability.trajectory) {
+    return {
+      trajectory: ability.trajectory,
+      emitter: onCast?.emitter ?? DEFAULT_EMITTER,
+    };
+  }
+
+  return onCast;
 }
 
 function dirFromAngle(angle: number): Point {

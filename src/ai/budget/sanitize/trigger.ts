@@ -1,5 +1,5 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { AbilitySchema, ActionPayload, ConditionNode, TriggerNode } from '../../../types/schema';
+import type { AbilitySchema, ActionPayload, ConditionNode, EmitterConfig, TriggerNode } from '../../../types/schema';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
 import { sanitizeAction } from './action';
 import { sanitizeConditionNode } from './condition';
@@ -100,35 +100,63 @@ export function hasOnCastEffect(triggers: TriggerNode[]): boolean {
   return triggers.some((n) => n.trigger === 'ON_CAST' && n.actions.length > 0);
 }
 
+function emitterHasSpread(emitter: EmitterConfig): boolean {
+  return (
+    emitter.count > 1 ||
+    emitter.spreadDeg > 0 ||
+    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0)
+  );
+}
+
+function hasNestedSpreadOnCastProjectile(schema: AbilitySchema): boolean {
+  for (const triggerNode of schema.triggers) {
+    if (triggerNode.trigger !== 'ON_CAST') continue;
+    for (const action of triggerNode.actions) {
+      if (
+        action.type === 'SPAWN_PROJECTILE' &&
+        action.emitter &&
+        emitterHasSpread(action.emitter)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function promoteRootEmitter(
   schema: AbilitySchema,
   obj: Record<string, unknown>,
 ): void {
   const emitterRaw = obj.rootEmitter ?? obj.emitter;
-  if (emitterRaw === undefined || !schema.trajectory) return;
+  if (emitterRaw !== undefined && schema.trajectory) {
+    const emitter = sanitizeEmitter(emitterRaw);
+    const needsFan =
+      emitter.count > 1 ||
+      emitter.spreadDeg > 0 ||
+      (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0);
+    if (needsFan) {
+      const lifecycle = schema.triggers.filter((t) => t.trigger !== 'ON_CAST');
+      const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
+      const spawn: Extract<ActionPayload, { type: 'SPAWN_PROJECTILE' }> = {
+        type: 'SPAWN_PROJECTILE',
+        projectileTrajectory: schema.trajectory,
+        emitter,
+      };
+      if (lifecycle.length > 0) spawn.triggers = lifecycle;
+      if (schema.visuals) spawn.visuals = schema.visuals;
 
-  const emitter = sanitizeEmitter(emitterRaw);
-  const needsFan =
-    emitter.count > 1 ||
-    emitter.spreadDeg > 0 ||
-    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0);
-  if (!needsFan) return;
+      delete schema.trajectory;
+      schema.triggers = schema.triggers.filter((t) => t.trigger === 'ON_CAST');
+      if (onCast) {
+        onCast.actions.push(spawn);
+      } else {
+        schema.triggers.unshift({ trigger: 'ON_CAST', actions: [spawn] });
+      }
+    }
+  }
 
-  const lifecycle = schema.triggers.filter((t) => t.trigger !== 'ON_CAST');
-  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
-  const spawn: Extract<ActionPayload, { type: 'SPAWN_PROJECTILE' }> = {
-    type: 'SPAWN_PROJECTILE',
-    projectileTrajectory: schema.trajectory,
-    emitter,
-  };
-  if (lifecycle.length > 0) spawn.triggers = lifecycle;
-  if (schema.visuals) spawn.visuals = schema.visuals;
-
-  delete schema.trajectory;
-  schema.triggers = schema.triggers.filter((t) => t.trigger === 'ON_CAST');
-  if (onCast) {
-    onCast.actions.push(spawn);
-  } else {
-    schema.triggers.unshift({ trigger: 'ON_CAST', actions: [spawn] });
+  if (schema.trajectory && hasNestedSpreadOnCastProjectile(schema)) {
+    delete schema.trajectory;
   }
 }

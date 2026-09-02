@@ -1,4 +1,8 @@
-import { getEffectiveCrtSettings } from '../devtools/graphicsSettings';
+import {
+  getEffectiveCrtSettings,
+  getPostEffectParam,
+  isPostEffectEnabled,
+} from '../devtools/graphicsSettings';
 import { RETRO_COLORS } from './tokens';
 
 const BEZEL_ID = 'arcade-bezel';
@@ -21,13 +25,26 @@ export function applyArcadeBezel(): void {
   const el = ensureBezel();
   if (!getEffectiveCrtSettings().arcadeBezel) {
     el.style.display = 'none';
+    el.style.background = '';
     return;
   }
 
+  const vmin = Math.min(window.innerWidth, window.innerHeight);
+  const insetSpread = Math.round(vmin * 0.08);
+  const insetBlur = Math.round(vmin * 0.024);
+  const glareOn = isPostEffectEnabled('GLASS_GLARE');
+  const glareIntensity = glareOn ? getPostEffectParam('GLASS_GLARE', 'intensity') : 0;
+
   el.style.display = 'block';
   el.style.boxShadow = [
-    `inset 0 0 80px 24px ${RETRO_COLORS.bgDark}`,
+    `inset 0 0 ${insetSpread}px ${insetBlur}px ${RETRO_COLORS.bgDark}`,
     `inset 0 0 0 3px ${RETRO_COLORS.borderSubtle}`,
-    'inset 0 0 120px 40px rgba(0, 0, 0, 0.53)',
   ].join(', ');
+
+  if (glareIntensity > 0) {
+    const alpha = (0.08 + glareIntensity * 0.14).toFixed(3);
+    el.style.background = `linear-gradient(135deg, rgba(255, 255, 255, ${alpha}) 0%, rgba(255, 255, 255, 0) 42%)`;
+  } else {
+    el.style.background = '';
+  }
 }
