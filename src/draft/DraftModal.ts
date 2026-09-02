@@ -48,6 +48,7 @@ import {
   hexToRgba,
   injectStyles,
   renderPowerBar,
+  showQuickEquipMenu,
 } from './workshopStyles';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
@@ -456,6 +457,23 @@ export class DraftModal {
       this.renderVaultGrid();
     });
     toolbar.appendChild(this.vaultSearchInput);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'vault-btn-reset';
+    resetBtn.textContent = 'Reset Loadout';
+    resetBtn.addEventListener('click', () => {
+      if (
+        !window.confirm(
+          'Reset your equipped loadout to the default demo spells? This will replace all five action slots.',
+        )
+      ) {
+        return;
+      }
+      SpellInventoryManager.resetToDefaultLoadout();
+    });
+    toolbar.appendChild(resetBtn);
+
     this.vaultRoot.appendChild(toolbar);
 
     this.spellGrid = document.createElement('div');
@@ -519,6 +537,26 @@ export class DraftModal {
 
     card.appendChild(iconContainer);
     card.appendChild(details);
+
+    if (SpellInventoryManager.isNewSpell(spell.id)) {
+      const newBadge = document.createElement('span');
+      newBadge.className = 'card-new-badge';
+      newBadge.textContent = 'NEW';
+      card.appendChild(newBadge);
+    }
+
+    card.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const items = ACTION_SLOT_KEYS.map((slotKey) => ({
+        label: `[${slotKey}] ${getCategoryLabel(SLOT_CATEGORY_MAP[slotKey])}`,
+        onSelect: () => {
+          SpellInventoryManager.equipSpell(slotKey, spell.id);
+          SpellInventoryManager.clearNewSpellTag(spell.id);
+        },
+      }));
+      showQuickEquipMenu(e.clientX, e.clientY, items);
+    });
+
     attachVaultCardDrag(card, spell.id);
     return card;
   }
@@ -711,6 +749,15 @@ export class DraftModal {
       panel.draggable = !!ability;
       if (ability) {
         attachDockSlotDrag(panel, ability.id, key);
+        panel.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showQuickEquipMenu(e.clientX, e.clientY, [
+            {
+              label: 'Unequip Slot',
+              onSelect: () => SpellInventoryManager.unequipSlot(key),
+            },
+          ]);
+        });
       }
 
       this.loadoutBar.appendChild(panel);

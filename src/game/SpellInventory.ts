@@ -100,6 +100,7 @@ class SpellInventoryStore {
   private inventory = new Map<string, AbilitySchema>();
   private loadout: LoadoutMap = createEmptyLoadout();
   private presetIds = new Set<string>();
+  private newSpellIds = new Set<string>();
   private initialized = false;
 
   initialize(): void {
@@ -211,15 +212,36 @@ class SpellInventoryStore {
     return false;
   }
 
-  addSpell(spell: AbilitySchema): AbilitySchema {
+  addSpell(spell: AbilitySchema, isNewlyForged = false): AbilitySchema {
     const stored = structuredClone(spell);
     if (this.needsUniqueId(stored.id)) {
       stored.id = mintSpellId();
     }
     this.inventory.set(stored.id, stored);
+    if (isNewlyForged) {
+      this.newSpellIds.add(stored.id);
+    }
     this.persistCustomSpells();
     this.dispatchInventoryUpdated();
     return stored;
+  }
+
+  isNewSpell(id: string): boolean {
+    return this.newSpellIds.has(id);
+  }
+
+  clearNewSpellTag(id: string): void {
+    this.newSpellIds.delete(id);
+  }
+
+  unequipSlot(slotKey: ActionSlotKey): void {
+    this.equipSpell(slotKey, null);
+  }
+
+  resetToDefaultLoadout(): void {
+    for (const slotKey of ACTION_SLOT_KEYS) {
+      this.equipSpell(slotKey, DEFAULT_LOADOUT_BY_SLOT[slotKey]);
+    }
   }
 
   equipSpell(slotKey: ActionSlotKey, spellId: string | null): void {

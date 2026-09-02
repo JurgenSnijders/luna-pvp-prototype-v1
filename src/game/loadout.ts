@@ -34,7 +34,7 @@ function equipHumanSpell(
   slotKey: ActionSlotKey,
   ability: AbilitySchema,
 ): void {
-  const stored = SpellInventoryManager.addSpell(ability);
+  const stored = SpellInventoryManager.addSpell(ability, true);
   SpellInventoryManager.equipSpell(slotKey, stored.id);
   app.spellLibrary.addSpell(stored);
 }

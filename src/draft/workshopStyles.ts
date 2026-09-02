@@ -27,7 +27,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v3';
+export const STYLE_ID = 'luna-workshop-styles-v4';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -141,10 +141,14 @@ export function injectStyles(): void {
     .vault-toolbar {
       margin-bottom: 12px;
       flex-shrink: 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
     }
 
     .vault-search {
-      width: 100%;
+      flex: 1;
+      width: auto;
       padding: 10px 12px;
       border-radius: 4px;
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
@@ -168,6 +172,7 @@ export function injectStyles(): void {
     }
 
     .inventory-card {
+      position: relative;
       display: flex;
       gap: 12px;
       padding: 12px;
@@ -275,8 +280,163 @@ export function injectStyles(): void {
     .action-slot.is-dragging {
       cursor: grabbing;
     }
+
+    @keyframes newBadgePulse {
+      0%, 100% {
+        box-shadow: 0 0 6px rgba(255, 0, 127, 0.4);
+        opacity: 0.85;
+      }
+      50% {
+        box-shadow: 0 0 12px rgba(255, 0, 127, 0.85);
+        opacity: 1;
+      }
+    }
+
+    .card-new-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      font-size: 10px;
+      border: 1px solid var(--retro-neon-magenta, #ff007f);
+      color: var(--retro-neon-magenta, #ff007f);
+      text-shadow: var(--retro-glow-magenta, 0 0 8px rgba(255, 0, 127, 0.6));
+      background: rgba(255, 0, 127, 0.15);
+      padding: 2px 5px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      pointer-events: none;
+      animation: newBadgePulse 1.4s ease-in-out infinite;
+      z-index: 2;
+    }
+
+    .quick-equip-menu {
+      position: fixed;
+      z-index: 10100;
+      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      border: 1px solid var(--retro-neon-cyan, #00e5ff);
+      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      border-radius: 3px;
+      min-width: 140px;
+    }
+
+    .quick-equip-item {
+      font-size: 12px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      padding: 4px 8px;
+      color: var(--retro-text-primary, #e0f8ff);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      text-align: left;
+      transition: background 0.1s;
+      border-radius: 2px;
+    }
+
+    .quick-equip-item:hover {
+      background: rgba(0, 229, 255, 0.2);
+      color: #ffffff;
+    }
+
+    .vault-btn-reset {
+      flex-shrink: 0;
+      font-size: 12px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      padding: 10px 12px;
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      background: rgba(255, 68, 68, 0.1);
+      color: #ff6666;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .vault-btn-reset:hover {
+      border-color: #ff4444;
+      background: rgba(255, 68, 68, 0.2);
+    }
   `;
   document.head.appendChild(style);
+}
+
+export interface QuickEquipMenuItem {
+  label: string;
+  onSelect: () => void;
+}
+
+let activeQuickEquipMenu: HTMLElement | null = null;
+let quickEquipDismissMouseHandler: ((e: MouseEvent) => void) | null = null;
+let quickEquipDismissKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+export function dismissQuickEquipMenu(): void {
+  if (activeQuickEquipMenu) {
+    activeQuickEquipMenu.remove();
+    activeQuickEquipMenu = null;
+  }
+  if (quickEquipDismissMouseHandler) {
+    document.removeEventListener('mousedown', quickEquipDismissMouseHandler);
+    quickEquipDismissMouseHandler = null;
+  }
+  if (quickEquipDismissKeyHandler) {
+    document.removeEventListener('keydown', quickEquipDismissKeyHandler);
+    quickEquipDismissKeyHandler = null;
+  }
+}
+
+export function showQuickEquipMenu(x: number, y: number, items: QuickEquipMenuItem[]): void {
+  dismissQuickEquipMenu();
+  if (items.length === 0) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'quick-equip-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  for (const item of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'quick-equip-item';
+    btn.textContent = item.label;
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      item.onSelect();
+      dismissQuickEquipMenu();
+    });
+    menu.appendChild(btn);
+  }
+
+  document.body.appendChild(menu);
+  activeQuickEquipMenu = menu;
+
+  const rect = menu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - rect.width - 8);
+  }
+  if (top + rect.height > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - rect.height - 8);
+  }
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  quickEquipDismissMouseHandler = (e: MouseEvent) => {
+    if (menu.contains(e.target as Node)) return;
+    dismissQuickEquipMenu();
+  };
+  quickEquipDismissKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') dismissQuickEquipMenu();
+  };
+
+  document.addEventListener('mousedown', quickEquipDismissMouseHandler);
+  document.addEventListener('keydown', quickEquipDismissKeyHandler);
 }
 
 export function btnStyle(primary = false): string {

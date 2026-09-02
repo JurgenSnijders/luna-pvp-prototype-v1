@@ -3,8 +3,9 @@ import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotK
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
-import { injectStyles } from '../draft/workshopStyles';
+import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
 import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
+import { SpellInventoryManager } from '../game/SpellInventory';
 import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
@@ -436,6 +437,17 @@ export class ActionBarHUD {
       this.activeHoveredSlot = null;
       this.tooltipEl.style.display = 'none';
       this.tooltipEl.style.opacity = '0';
+    });
+
+    root.addEventListener('contextmenu', (e) => {
+      if (root.dataset.hasAbility !== 'true') return;
+      e.preventDefault();
+      showQuickEquipMenu(e.clientX, e.clientY, [
+        {
+          label: 'Unequip',
+          onSelect: () => SpellInventoryManager.unequipSlot(key),
+        },
+      ]);
     });
 
     return {
