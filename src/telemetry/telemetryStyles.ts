@@ -27,12 +27,12 @@ export function injectTelemetryStyles(): void {
     }
     .telemetry-title {
       font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
-      color: #f8fafc; margin-right: 8px;
+      color: ${RETRO_COLORS.textPrimary}; margin-right: 8px;
     }
     .telemetry-badge-count {
       font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
-      background: rgba(0, 229, 255, 0.15); color: #00e5ff;
-      border: 1px solid rgba(0, 229, 255, 0.35);
+      background: rgba(0, 229, 255, 0.15); color: ${RETRO_COLORS.neonCyan};
+      border: 1px solid ${RETRO_COLORS.borderSubtle};
     }
     .telemetry-live-dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -40,7 +40,7 @@ export function injectTelemetryStyles(): void {
       animation: telemetryPulse 1.2s ease-in-out infinite;
     }
     .telemetry-live-dot.paused {
-      background: #64748b; box-shadow: none; animation: none;
+      background: ${RETRO_COLORS.textMuted}; box-shadow: none; animation: none;
     }
     @keyframes telemetryPulse {
       0%, 100% { opacity: 0.5; }
@@ -49,13 +49,13 @@ export function injectTelemetryStyles(): void {
     .telemetry-pill-group { display: flex; flex-wrap: wrap; gap: 6px; }
     .telemetry-pill {
       padding: 5px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
-      letter-spacing: 0.04em; cursor: pointer; border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.04); color: #94a3b8;
+      letter-spacing: 0.04em; cursor: pointer; border: 1px solid ${RETRO_COLORS.borderSubtle};
+      background: ${RETRO_COLORS.panelBg}; color: ${RETRO_COLORS.textMuted};
       transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
-    .telemetry-pill:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+    .telemetry-pill:hover { background: ${RETRO_COLORS.panelBgOpaque}; color: ${RETRO_COLORS.textPrimary}; }
     .telemetry-pill.active {
-      background: rgba(0, 229, 255, 0.15); border-color: rgba(0, 229, 255, 0.45); color: #00e5ff;
+      background: rgba(0, 229, 255, 0.15); border-color: ${RETRO_COLORS.borderNeon}; color: ${RETRO_COLORS.neonCyan};
     }
     .telemetry-search {
       flex: 1; min-width: 160px; max-width: 280px;
@@ -68,12 +68,12 @@ export function injectTelemetryStyles(): void {
     .telemetry-btn {
       padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600;
       cursor: pointer; border: 1px solid ${RETRO_COLORS.borderSubtle};
-      background: rgba(255,255,255,0.05); color: #cbd5e1;
+      background: ${RETRO_COLORS.panelBg}; color: ${RETRO_COLORS.textPrimary};
       font-family: ${FONTS.mono};
     }
-    .telemetry-btn:hover { background: rgba(255,255,255,0.1); }
+    .telemetry-btn:hover { background: ${RETRO_COLORS.panelBgOpaque}; }
     .telemetry-btn.primary {
-      border-color: rgba(0, 229, 255, 0.45); background: rgba(0, 229, 255, 0.12); color: #00e5ff;
+      border-color: ${RETRO_COLORS.borderNeon}; background: rgba(0, 229, 255, 0.12); color: ${RETRO_COLORS.neonCyan};
     }
     .telemetry-table-wrap {
       flex: 1; overflow: auto; padding: 0 12px 12px;
@@ -84,24 +84,24 @@ export function injectTelemetryStyles(): void {
     .telemetry-table thead th {
       position: sticky; top: 0; z-index: 1;
       text-align: left; padding: 10px 8px;
-      background: rgba(10, 12, 24, 0.95);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-      color: #94a3b8; font-weight: 600; font-size: 10px;
+      background: ${RETRO_COLORS.panelBgOpaque};
+      border-bottom: 1px solid ${RETRO_COLORS.borderSubtle};
+      color: ${RETRO_COLORS.textMuted}; font-weight: 600; font-size: 10px;
       letter-spacing: 0.06em; text-transform: uppercase;
     }
     .telemetry-row {
-      cursor: pointer; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer; border-bottom: 1px solid ${RETRO_COLORS.borderSubtle};
       transition: background 0.1s;
     }
-    .telemetry-row:hover { background: rgba(255, 255, 255, 0.04); }
+    .telemetry-row:hover { background: ${RETRO_COLORS.panelBg}; }
     .telemetry-row:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
-    .telemetry-row:nth-child(even):hover { background: rgba(255, 255, 255, 0.06); }
+    .telemetry-row:nth-child(even):hover { background: ${RETRO_COLORS.panelBg}; }
     .telemetry-row.expanded { background: rgba(0, 229, 255, 0.06); }
     .telemetry-row td { padding: 8px; vertical-align: top; }
     .telemetry-time { font-variant-numeric: tabular-nums; }
-    .telemetry-time-sub { font-size: 10px; color: #64748b; }
-    .telemetry-endpoint { font-size: 11px; color: #cbd5e1; }
-    .telemetry-params { font-size: 11px; color: #94a3b8; max-width: 280px; }
+    .telemetry-time-sub { font-size: 10px; color: ${RETRO_COLORS.textMuted}; }
+    .telemetry-endpoint { font-size: 11px; color: ${RETRO_COLORS.textPrimary}; }
+    .telemetry-params { font-size: 11px; color: ${RETRO_COLORS.textMuted}; max-width: 280px; }
     .telemetry-delta { font-size: 11px; color: #a5b4fc; font-variant-numeric: tabular-nums; }
     .telemetry-instab { font-size: 11px; color: #f97316; }
     .telemetry-badge {
@@ -115,21 +115,21 @@ export function injectTelemetryStyles(): void {
     .telemetry-badge--slam { background: rgba(244,63,94,0.15); color: #f43f5e; border: 1px solid rgba(244,63,94,0.35); }
     .telemetry-vec {
       font-family: ${FONTS.mono};
-      font-size: 11px; color: #94a3b8;
+      font-size: 11px; color: ${RETRO_COLORS.textMuted};
     }
     .telemetry-detail td {
       padding: 0 8px 12px 8px;
-      background: rgba(0, 0, 0, 0.35);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: ${RETRO_COLORS.panelBgOpaque};
+      border-bottom: 1px solid ${RETRO_COLORS.borderSubtle};
     }
     .telemetry-detail pre {
       margin: 0; padding: 10px; border-radius: 4px;
-      background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255,255,255,0.08);
-      font-size: 11px; color: #cbd5e1; overflow-x: auto;
+      background: ${RETRO_COLORS.panelBgOpaque}; border: 1px solid ${RETRO_COLORS.borderSubtle};
+      font-size: 11px; color: ${RETRO_COLORS.textPrimary}; overflow-x: auto;
       font-family: ${FONTS.mono};
     }
     .telemetry-empty {
-      padding: 48px; text-align: center; color: #64748b; font-size: 14px;
+      padding: 48px; text-align: center; color: ${RETRO_COLORS.textMuted}; font-size: 14px;
     }
   `;
   document.head.appendChild(style);

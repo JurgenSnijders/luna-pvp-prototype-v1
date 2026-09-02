@@ -111,7 +111,7 @@ export class SpellLibrary {
 
     const meta = document.createElement('div');
     meta.textContent = `${traj} · CD ${entry.schema.cooldownMs}ms`;
-    meta.style.cssText = 'font-size:10px;color:#888;margin-bottom:8px;';
+    meta.style.cssText = `font-size:10px;color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
 
     const btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
@@ -173,7 +173,7 @@ export class SpellLibrary {
 
       const chevron = document.createElement('span');
       chevron.textContent = collapsed ? '▸' : '▾';
-      chevron.style.cssText = 'margin-left: 8px; font-size: 10px; color: #888;';
+      chevron.style.cssText = `margin-left: 8px; font-size: 10px; color: ${RETRO_COLORS.textMuted};`;
 
       const right = document.createElement('span');
       right.style.cssText = 'display:flex;align-items:center;';

@@ -4,6 +4,7 @@ import {
   applyTierPreset,
   getEffectiveTier,
   getGraphicsSettings,
+  resetStylePresetDefaults,
   saveGraphicsSettings,
   subscribeGraphicsSettings,
   type GraphicsSettings,
@@ -12,23 +13,27 @@ import {
 import { STYLE_PRESET_IDS, STYLE_PRESETS, isStylePresetId } from '../../render/presets/stylePresets';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
-import { buttonStyle, selectRow, sliderRow } from './domHelpers';
+import { RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
+import {
+  buttonStyle,
+  sectionDivider,
+  sectionHeader,
+  selectRow,
+  sliderRow,
+} from './domHelpers';
 
 export function buildGraphicsTab(parent: HTMLElement): void {
-  const section = document.createElement('div');
-  section.style.cssText =
-    'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-  const title = document.createElement('div');
-  title.textContent = 'Graphics & Performance';
-  title.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-  section.appendChild(title);
-
   const settings = getGraphicsSettings();
-  const checkboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+  const perfCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+  const retroCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+
+  // --- Graphics & Performance ---
+  const perfSection = document.createElement('div');
+  perfSection.style.cssText = sectionDivider();
+  perfSection.appendChild(sectionHeader('Graphics & Performance'));
 
   const perfBox = document.createElement('pre');
-  perfBox.style.cssText =
-    'font-size:10px;line-height:1.35;background:rgba(0,0,0,0.35);padding:8px;border-radius:6px;margin-bottom:8px;white-space:pre-wrap;';
+  perfBox.style.cssText = `font-size:10px;line-height:1.35;background:${RETRO_COLORS.panelBgOpaque};padding:8px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;border:1px solid ${RETRO_COLORS.borderSubtle};`;
   const refreshPerf = (): void => {
     const caps = perfMonitor.getCapabilities();
     perfBox.textContent = [
@@ -45,17 +50,22 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   };
   refreshPerf();
   setInterval(refreshPerf, 500);
-  section.appendChild(perfBox);
+  perfSection.appendChild(perfBox);
 
   const caps = perfMonitor.getCapabilities();
   if (caps) {
     const capLine = document.createElement('div');
-    capLine.style.cssText = 'font-size:10px;opacity:0.75;margin-bottom:8px;';
+    capLine.style.cssText = `font-size:10px;color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
     capLine.textContent = `Extensions: ${caps.extensions.length}`;
-    section.appendChild(capLine);
+    perfSection.appendChild(capLine);
   }
 
-  const addToggle = (key: keyof GraphicsSettings, label: string): void => {
+  const addToggle = (
+    container: HTMLElement,
+    store: Partial<Record<keyof GraphicsSettings, HTMLInputElement>>,
+    key: keyof GraphicsSettings,
+    label: string,
+  ): void => {
     if (typeof settings[key] === 'boolean') {
       const row = document.createElement('label');
       row.style.cssText =
@@ -67,56 +77,18 @@ export function buildGraphicsTab(parent: HTMLElement): void {
         const current = getGraphicsSettings();
         saveGraphicsSettings({ ...current, [key]: checkbox.checked });
       };
-      checkboxes[key] = checkbox;
+      store[key] = checkbox;
       row.appendChild(checkbox);
       row.appendChild(document.createTextNode(label));
-      section.appendChild(row);
+      container.appendChild(row);
     }
   };
 
-  addToggle('lavaHeatWaves', 'Lava Heat Waves');
-  addToggle('ambientEmbers', 'Ambient Lava Embers');
-  addToggle('particleTrails', 'Projectile Particle Trails');
-  addToggle('bloomEnabled', 'Bloom Post-Processing');
-  addToggle('refractionEnabled', 'Refraction (ULTRA)');
-  addToggle('crtEnabled', 'CRT Post-Processing');
-  addToggle('arcadeBezel', 'Arcade Bezel');
-
-  const presetOptions = STYLE_PRESET_IDS.map((id) => ({
-    value: id,
-    label: STYLE_PRESETS[id].label,
-  }));
-  const presetSelect = selectRow(
-    section,
-    'Style Preset',
-    presetOptions,
-    () => getGraphicsSettings().activePreset,
-    (id) => {
-      if (isStylePresetId(id)) {
-        applyStylePreset(id);
-        syncControls(getGraphicsSettings());
-      }
-    },
-  );
-
-  const numeric = (key: keyof GraphicsSettings) => ({
-    get: () => getGraphicsSettings()[key] as number,
-    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
-  });
-
-  const bloomSlider = numeric('bloomIntensity');
-  const scanSlider = numeric('crtScanlineIntensity');
-  const curveSlider = numeric('crtCurvature');
-  const vigSlider = numeric('crtVignette');
-  const phosSlider = numeric('crtPhosphor');
-
-  const sliders = [
-    sliderRow(section, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
-    sliderRow(section, 'CRT Scanlines', 0, 1, 0.05, scanSlider.get, scanSlider.set),
-    sliderRow(section, 'CRT Curvature', 0, 0.5, 0.01, curveSlider.get, curveSlider.set),
-    sliderRow(section, 'CRT Vignette', 0, 1, 0.05, vigSlider.get, vigSlider.set),
-    sliderRow(section, 'CRT Phosphor', 0, 1, 0.05, phosSlider.get, phosSlider.set),
-  ];
+  addToggle(perfSection, perfCheckboxes, 'lavaHeatWaves', 'Lava Heat Waves');
+  addToggle(perfSection, perfCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
+  addToggle(perfSection, perfCheckboxes, 'particleTrails', 'Projectile Particle Trails');
+  addToggle(perfSection, perfCheckboxes, 'bloomEnabled', 'Bloom Post-Processing');
+  addToggle(perfSection, perfCheckboxes, 'refractionEnabled', 'Refraction (ULTRA)');
 
   const tierRow = document.createElement('div');
   tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;';
@@ -136,21 +108,10 @@ export function buildGraphicsTab(parent: HTMLElement): void {
     };
     tierRow.appendChild(btn);
   }
-  section.appendChild(tierRow);
+  perfSection.appendChild(tierRow);
 
-  const syncControls = (s: GraphicsSettings): void => {
-    for (const key of Object.keys(checkboxes) as (keyof GraphicsSettings)[]) {
-      const box = checkboxes[key];
-      if (box) box.checked = s[key] as boolean;
-    }
-    presetSelect.refresh();
-    for (const slider of sliders) slider.refresh();
-  };
-
-  subscribeGraphicsSettings(() => syncControls(getGraphicsSettings()));
-
-  const presetRow = document.createElement('div');
-  presetRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+  const devRow = document.createElement('div');
+  devRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
 
   const recordBaselineBtn = document.createElement('button');
   recordBaselineBtn.textContent = 'Record Baseline p95';
@@ -176,10 +137,10 @@ export function buildGraphicsTab(parent: HTMLElement): void {
     location.reload();
   };
 
-  presetRow.appendChild(recordBaselineBtn);
-  presetRow.appendChild(loseCtxBtn);
-  presetRow.appendChild(canvas2dBtn);
-  section.appendChild(presetRow);
+  devRow.appendChild(recordBaselineBtn);
+  devRow.appendChild(loseCtxBtn);
+  devRow.appendChild(canvas2dBtn);
+  perfSection.appendChild(devRow);
 
   const highQualityBtn = document.createElement('button');
   highQualityBtn.textContent = 'Reset Toggles (High)';
@@ -189,7 +150,77 @@ export function buildGraphicsTab(parent: HTMLElement): void {
     saveGraphicsSettings(next);
     syncControls(next);
   };
-  section.appendChild(highQualityBtn);
+  perfSection.appendChild(highQualityBtn);
 
-  parent.appendChild(section);
+  parent.appendChild(perfSection);
+
+  // --- RETRO & CRT ENGINE ---
+  const retroSection = document.createElement('div');
+  retroSection.style.cssText = `${retroPanelStyle('cyan')}padding:12px;margin-bottom:16px;`;
+  retroSection.appendChild(sectionHeader('RETRO & CRT ENGINE'));
+
+  addToggle(retroSection, retroCheckboxes, 'crtEnabled', 'CRT Post-Processing');
+  addToggle(retroSection, retroCheckboxes, 'arcadeBezel', 'Arcade Bezel');
+
+  const presetOptions = STYLE_PRESET_IDS.map((id) => ({
+    value: id,
+    label: STYLE_PRESETS[id].label,
+  }));
+  const presetSelect = selectRow(
+    retroSection,
+    'Style Preset',
+    presetOptions,
+    () => getGraphicsSettings().activePreset,
+    (id) => {
+      if (isStylePresetId(id)) {
+        applyStylePreset(id);
+        syncControls(getGraphicsSettings());
+      }
+    },
+  );
+
+  const numeric = (key: keyof GraphicsSettings) => ({
+    get: () => getGraphicsSettings()[key] as number,
+    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
+  });
+
+  const bloomSlider = numeric('bloomIntensity');
+  const thresholdSlider = numeric('bloomThreshold');
+  const scanSlider = numeric('crtScanlineIntensity');
+  const curveSlider = numeric('crtCurvature');
+  const vigSlider = numeric('crtVignette');
+  const phosSlider = numeric('crtPhosphor');
+
+  const sliders = [
+    sliderRow(retroSection, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
+    sliderRow(retroSection, 'Bloom Threshold', 0.2, 0.9, 0.05, thresholdSlider.get, thresholdSlider.set),
+    sliderRow(retroSection, 'CRT Scanlines', 0, 1, 0.05, scanSlider.get, scanSlider.set),
+    sliderRow(retroSection, 'CRT Curvature', 0, 0.5, 0.01, curveSlider.get, curveSlider.set),
+    sliderRow(retroSection, 'CRT Vignette', 0, 1, 0.05, vigSlider.get, vigSlider.set),
+    sliderRow(retroSection, 'CRT Phosphor', 0, 1, 0.05, phosSlider.get, phosSlider.set),
+  ];
+
+  const resetPresetBtn = document.createElement('button');
+  resetPresetBtn.textContent = 'Reset Preset Defaults';
+  resetPresetBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetPresetBtn.onclick = () => {
+    resetStylePresetDefaults();
+    syncControls(getGraphicsSettings());
+  };
+  retroSection.appendChild(resetPresetBtn);
+
+  parent.appendChild(retroSection);
+
+  const syncControls = (s: GraphicsSettings): void => {
+    for (const store of [perfCheckboxes, retroCheckboxes]) {
+      for (const key of Object.keys(store) as (keyof GraphicsSettings)[]) {
+        const box = store[key];
+        if (box) box.checked = s[key] as boolean;
+      }
+    }
+    presetSelect.refresh();
+    for (const slider of sliders) slider.refresh();
+  };
+
+  subscribeGraphicsSettings(() => syncControls(getGraphicsSettings()));
 }

@@ -1,6 +1,7 @@
-import { getGraphicsSettings, subscribeGraphicsSettings } from '../devtools/graphicsSettings';
+import { applyStylePreset, getGraphicsSettings, subscribeGraphicsSettings } from '../devtools/graphicsSettings';
 import {
   STYLE_PRESETS,
+  isStylePresetId,
   type PaletteColors,
   type StylePreset,
   type StylePresetId,
@@ -52,3 +53,9 @@ subscribeGraphicsSettings(() => applyPalette());
 export function getActivePresetId(): StylePresetId {
   return getGraphicsSettings().activePreset;
 }
+
+(window as unknown as { __setStylePreset?: (id: StylePresetId) => void }).__setStylePreset = (
+  id,
+) => {
+  if (isStylePresetId(id)) applyStylePreset(id);
+};

@@ -1,7 +1,7 @@
 import { PRESETS, PRESET_GROUPS } from '../Presets';
 import { ACTION_SLOT_KEYS } from '../../types/cards';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle } from './domHelpers';
+import { buttonStyle, inputStyle } from './domHelpers';
 
 export function buildPresetsTab(
   parent: HTMLElement,
@@ -9,8 +9,7 @@ export function buildPresetsTab(
   jsonTextarea?: HTMLTextAreaElement,
 ): void {
   const select = document.createElement('select');
-  select.style.cssText =
-    'width:100%;padding:8px;margin-bottom:8px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
+  select.style.cssText = inputStyle();
   for (const group of PRESET_GROUPS) {
     const optgroup = document.createElement('optgroup');
     optgroup.label = group.label;

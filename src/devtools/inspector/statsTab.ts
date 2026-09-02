@@ -26,7 +26,7 @@ import {
   getStoredGlobalCooldownMs,
 } from '../../game/settings';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle, sliderRow } from './domHelpers';
+import { buttonStyle, sectionDivider, sectionHeader, sliderRow } from './domHelpers';
 
 function applyProfileToCombatants(
   profile: MovementProfile,
@@ -40,11 +40,8 @@ function applyProfileToCombatants(
 export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void {
   const { world, arenaShrink } = ctx;
   const arenaSection = document.createElement('div');
-  arenaSection.style.cssText =
-    'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-  const arenaTitle = document.createElement('div');
-  arenaTitle.textContent = 'Arena';
-  arenaTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
+  arenaSection.style.cssText = sectionDivider();
+  const arenaTitle = sectionHeader('Arena');
   arenaSection.appendChild(arenaTitle);
   sliderRow(
     arenaSection,
@@ -76,12 +73,8 @@ export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void 
   parent.appendChild(arenaSection);
 
   const pacingSection = document.createElement('div');
-  pacingSection.style.cssText =
-    'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-  const pacingTitle = document.createElement('div');
-  pacingTitle.textContent = 'Combat Pacing';
-  pacingTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-  pacingSection.appendChild(pacingTitle);
+  pacingSection.style.cssText = sectionDivider();
+  pacingSection.appendChild(sectionHeader('Combat Pacing'));
 
   Player.globalCooldownScale = getStoredCooldownScale();
   Player.globalCooldownDurationMs = getStoredGlobalCooldownMs();
@@ -115,12 +108,8 @@ export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void 
   parent.appendChild(pacingSection);
 
   const movementSection = document.createElement('div');
-  movementSection.style.cssText =
-    'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-  const movementTitle = document.createElement('div');
-  movementTitle.textContent = 'Movement';
-  movementTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-  movementSection.appendChild(movementTitle);
+  movementSection.style.cssText = sectionDivider();
+  movementSection.appendChild(sectionHeader('Movement'));
 
   let profile = { ...getMovementProfile() };
   const sliderRefreshes: Array<() => void> = [];

@@ -3,7 +3,8 @@ import { repairAbilityPayload } from '../../ai/synthesizer/llmRepair';
 import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../../types/cards';
 import { normalizeAbilityPayload, validateAbilitySchema } from '../../types/schema';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle } from './domHelpers';
+import { RETRO_COLORS } from '../../ui/tokens';
+import { buttonStyle, inputStyle } from './domHelpers';
 
 export interface JsonTabRefs {
   errorBanner: HTMLElement;
@@ -70,13 +71,12 @@ export function buildJsonTab(parent: HTMLElement, ctx: InspectorContext): JsonTa
     'display:none;padding:8px;margin-bottom:8px;background:rgba(255,50,50,0.2);border-radius:6px;color:#ff6666;font-size:12px;';
 
   const slotSelect = document.createElement('select');
-  slotSelect.style.cssText =
-    'width:100%;padding:8px;margin-bottom:4px;background:#1a1a2e;color:#e0e0e8;border:1px solid rgba(255,255,255,0.15);border-radius:6px;';
+  slotSelect.style.cssText = inputStyle();
   refreshSlotOptions(ctx, slotSelect);
 
   const helperText = document.createElement('div');
   helperText.textContent = 'Editing equipped spell for selected action-bar slot.';
-  helperText.style.cssText = 'font-size:10px;color:#888;margin-bottom:8px;';
+  helperText.style.cssText = `font-size:10px;color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
 
   const jsonTextarea = document.createElement('textarea');
   jsonTextarea.style.cssText = `
@@ -84,10 +84,10 @@ export function buildJsonTab(parent: HTMLElement, ctx: InspectorContext): JsonTa
       height: 200px;
       font-family: monospace;
       font-size: 11px;
-      background: #0a0a14;
-      color: #ccc;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px;
+      background: ${RETRO_COLORS.panelBgOpaque};
+      color: ${RETRO_COLORS.textPrimary};
+      border: 1px solid ${RETRO_COLORS.borderSubtle};
+      border-radius: 4px;
       padding: 8px;
       resize: vertical;
       box-sizing: border-box;

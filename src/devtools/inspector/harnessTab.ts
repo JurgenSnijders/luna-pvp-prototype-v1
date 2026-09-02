@@ -10,7 +10,7 @@ import { Dummy } from '../../entities/Dummy';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle, inputStyle } from './domHelpers';
+import { buttonStyle, inputStyle, sectionDivider, sectionHeader } from './domHelpers';
 
 export function randomHexPosition(ctx: InspectorContext): Vector2D {
   const { world } = ctx;
@@ -27,11 +27,8 @@ export function randomHexPosition(ctx: InspectorContext): Vector2D {
 
 export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): void {
   const aiSection = document.createElement('div');
-  aiSection.style.cssText = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-  const aiTitle = document.createElement('div');
-  aiTitle.textContent = 'AI Synthesizer Settings';
-  aiTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-  aiSection.appendChild(aiTitle);
+  aiSection.style.cssText = sectionDivider();
+  aiSection.appendChild(sectionHeader('AI Synthesizer Settings'));
 
   const settings = getAiSettings();
 
@@ -94,12 +91,8 @@ export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): voi
 
   if (ctx.matchManager) {
     const modeSection = document.createElement('div');
-    modeSection.style.cssText =
-      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const modeTitle = document.createElement('div');
-    modeTitle.textContent = 'Game Mode';
-    modeTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    modeSection.appendChild(modeTitle);
+    modeSection.style.cssText = sectionDivider();
+    modeSection.appendChild(sectionHeader('Game Mode'));
 
     const modeRow = document.createElement('div');
     modeRow.style.cssText = 'display:flex;gap:6px;margin-bottom:8px;';
@@ -166,12 +159,8 @@ export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): voi
     parent.appendChild(modeSection);
 
     const matchSection = document.createElement('div');
-    matchSection.style.cssText =
-      'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);';
-    const matchTitle = document.createElement('div');
-    matchTitle.textContent = 'Match Controls';
-    matchTitle.style.cssText = 'font-weight:bold;margin-bottom:8px;font-size:12px;';
-    matchSection.appendChild(matchTitle);
+    matchSection.style.cssText = sectionDivider();
+    matchSection.appendChild(sectionHeader('Match Controls'));
 
     const matchOnlyControls = document.createElement('div');
 

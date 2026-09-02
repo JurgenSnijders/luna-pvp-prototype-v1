@@ -13,6 +13,17 @@ export function buttonStyle(active: boolean): string {
     `;
 }
 
+export function sectionHeader(title: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.textContent = title;
+  el.style.cssText = `font-weight:bold;margin-bottom:8px;font-size:12px;font-family:${FONTS.mono};color:${RETRO_COLORS.textPrimary};letter-spacing:0.04em;`;
+  return el;
+}
+
+export function sectionDivider(): string {
+  return `margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid ${RETRO_COLORS.borderSubtle};`;
+}
+
 export function sliderRow(
   parent: HTMLElement,
   label: string,
@@ -33,7 +44,8 @@ export function sliderRow(
   input.min = String(min);
   input.max = String(max);
   input.step = String(step);
-  input.style.width = '100%';
+  input.style.cssText =
+    'width:100%;accent-color:var(--retro-neon-cyan, #00e5ff);';
   const update = () => {
     const v = parseFloat(input.value);
     set(v);

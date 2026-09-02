@@ -23,6 +23,7 @@ export interface GraphicsSettings {
   crtVignette: number;
   crtPhosphor: number;
   bloomIntensity: number;
+  bloomThreshold: number;
   arcadeBezel: boolean;
   activePreset: StylePresetId;
 }
@@ -42,6 +43,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   crtVignette: 0.45,
   crtPhosphor: 0.25,
   bloomIntensity: 0.8,
+  bloomThreshold: 0.6,
   arcadeBezel: true,
   activePreset: 'CYBER_NEON',
 };
@@ -161,7 +163,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
   const bloomIntensity = tier === 'LOW' ? 0 : s.bloomIntensity;
-  const bloomThreshold = tier === 'ULTRA' ? 0.5 : 0.6;
+  const bloomThreshold = s.bloomThreshold;
   const presetCrt = getActivePresetCrt();
   const tintColor = presetCrt.tintColor;
   const tintAmount = presetCrt.tintAmount;
@@ -245,6 +247,7 @@ function loadFromStorage(): GraphicsSettings {
       crtVignette: parsed.crtVignette ?? DEFAULT_GRAPHICS_SETTINGS.crtVignette,
       crtPhosphor: parsed.crtPhosphor ?? DEFAULT_GRAPHICS_SETTINGS.crtPhosphor,
       bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
+      bloomThreshold: parsed.bloomThreshold ?? DEFAULT_GRAPHICS_SETTINGS.bloomThreshold,
       arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
       activePreset:
         parsed.activePreset && isStylePresetId(parsed.activePreset)
@@ -304,4 +307,9 @@ export function applyStylePreset(id: StylePresetId): GraphicsSettings {
   };
   saveGraphicsSettings(next);
   return next;
+}
+
+/** Re-applies CRT numerics from the current preset without changing activePreset. */
+export function resetStylePresetDefaults(): GraphicsSettings {
+  return applyStylePreset(getGraphicsSettings().activePreset);
 }
