@@ -23,7 +23,7 @@ export const BASELINE_INSTABILITY_ON_HIT = 10;
 export const LAVA_DAMAGE_PER_SEC = 25;
 
 export function getInstabilityScale(instabilityPct: number): number {
-  return 1 + (instabilityPct / 100) * 1.5;
+  return 1 + (instabilityPct / Math.max(1, Entity.knockbackScaleRef)) * 1.5;
 }
 const LAVA_DRAG = 0.15;
 const DEFAULT_COLLISION_RESTITUTION = 0.3;

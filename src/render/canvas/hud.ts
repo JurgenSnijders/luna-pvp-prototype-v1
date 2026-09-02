@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import { Entity } from '../../entities/Entity';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
@@ -17,7 +18,9 @@ export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
   OVERHEAD_INSTABILITY_BAR_HEIGHT +
   OVERHEAD_INSTABILITY_LABEL_GAP;
 
-const INSTABILITY_BAR_CAP = 100;
+function getInstabilityBarCap(): number {
+  return Math.max(1, Entity.maxInstability);
+}
 
 export function drawOverheadHUD(
   ctx: CanvasRenderingContext2D,
@@ -65,7 +68,8 @@ export function drawOverheadHUD(
     ctx.stroke();
 
     if (hitFeedbackConfig.ghostInstabilityBar) {
-      const ghostRatio = Math.min(1, Math.max(0, entity.ghostInstability / INSTABILITY_BAR_CAP));
+      const barCap = getInstabilityBarCap();
+      const ghostRatio = Math.min(1, Math.max(0, entity.ghostInstability / barCap));
       const ghostWidth = fillMaxWidth * ghostRatio;
       if (ghostWidth > 0) {
         ctx.beginPath();
@@ -82,7 +86,8 @@ export function drawOverheadHUD(
     }
 
     const pct = entity.instabilityPct;
-    const instabRatio = Math.min(1, Math.max(0, pct / INSTABILITY_BAR_CAP));
+    const barCap = getInstabilityBarCap();
+    const instabRatio = Math.min(1, Math.max(0, pct / barCap));
     const instabWidth = fillMaxWidth * instabRatio;
     if (instabWidth > 0) {
       ctx.beginPath();

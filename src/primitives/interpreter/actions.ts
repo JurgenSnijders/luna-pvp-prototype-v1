@@ -1,7 +1,7 @@
 import { clampToHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import { MAX_ENTITIES, getInstabilityScale, type PhysicsWorld } from '../../engine/PhysicsWorld';
-import type { Entity } from '../../entities/Entity';
+import { Entity } from '../../entities/Entity';
 import { Obstacle } from '../../entities/Obstacle';
 import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
@@ -410,7 +410,10 @@ export function applyModifyStat(
       entity.baseLinearDrag = entity.linearDrag;
       break;
     case 'instabilityPct':
-      entity.instabilityPct = Math.min(500, Math.max(0, apply(entity.instabilityPct)));
+      entity.instabilityPct = Math.min(
+        Entity.maxInstability,
+        Math.max(0, apply(entity.instabilityPct)),
+      );
       break;
     case 'moveSpeed':
       if (entity instanceof Player) {

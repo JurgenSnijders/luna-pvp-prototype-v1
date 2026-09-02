@@ -4,6 +4,7 @@ import {
   MIN_COMBATANT_RADIUS,
   MIN_HEX_RADIUS,
 } from '../../engine/PhysicsWorld';
+import { Entity } from '../../entities/Entity';
 import { Player } from '../../entities/Player';
 import {
   applyMovementPreset,
@@ -18,15 +19,24 @@ import {
   COMBATANT_RADIUS_KEY,
   COOLDOWN_SCALE_KEY,
   GLOBAL_COOLDOWN_MS_KEY,
+  KNOCKBACK_SCALE_REF_KEY,
+  MAX_INSTABILITY_KEY,
   MAX_COOLDOWN_SCALE,
   MAX_GLOBAL_COOLDOWN_MS,
+  MAX_KNOCKBACK_SCALE_REF,
+  MAX_MAX_INSTABILITY,
   MIN_COOLDOWN_SCALE,
   MIN_GLOBAL_COOLDOWN_MS,
+  MIN_KNOCKBACK_SCALE_REF,
+  MIN_MAX_INSTABILITY,
+  applyInstabilitySettings,
+  clampCombatantInstability,
   getStoredCooldownScale,
   getStoredGlobalCooldownMs,
 } from '../../game/settings';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle, sectionDivider, sectionHeader, sliderRow } from './domHelpers';
+import { buttonStyle, helperText, numberRow, numberSliderRow, sectionDivider, sectionHeader, sliderRow } from './domHelpers';
+import { MIN_PANEL_HEIGHT, MIN_PANEL_WIDTH } from './floatingPanel';
 
 function applyProfileToCombatants(
   profile: MovementProfile,
@@ -38,6 +48,52 @@ function applyProfileToCombatants(
 }
 
 export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void {
+  const layoutApi = ctx.inspectorLayout;
+  if (layoutApi) {
+    const panelSection = document.createElement('div');
+    panelSection.style.cssText = sectionDivider();
+    panelSection.appendChild(sectionHeader('Inspector Panel'));
+    helperText(
+      panelSection,
+      'Drag the DEVTOOLS title to move, or type X / Y / Width / Height here. Resize from any edge or corner.',
+    );
+    const refreshes: Array<() => void> = [];
+    const bindLayoutField = (
+      label: string,
+      key: 'x' | 'y' | 'w' | 'h',
+      min: number,
+      max: number,
+      unit: string,
+    ): void => {
+      const { refresh } = numberRow(
+        panelSection,
+        label,
+        min,
+        max,
+        1,
+        () => layoutApi.get()[key],
+        (v) => layoutApi.set({ [key]: v }),
+        unit,
+      );
+      refreshes.push(refresh);
+    };
+    bindLayoutField('Panel X', 'x', 0, window.innerWidth, 'px');
+    bindLayoutField('Panel Y', 'y', 0, window.innerHeight, 'px');
+    bindLayoutField('Panel Width', 'w', MIN_PANEL_WIDTH, window.innerWidth, 'px');
+    bindLayoutField('Panel Height', 'h', MIN_PANEL_HEIGHT, window.innerHeight, 'px');
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.textContent = 'Reset Layout';
+    resetBtn.style.cssText = buttonStyle(false);
+    resetBtn.onclick = () => layoutApi.reset();
+    panelSection.appendChild(resetBtn);
+    layoutApi.subscribe(() => {
+      if (!panelSection.isConnected) return;
+      for (const refresh of refreshes) refresh();
+    });
+    parent.appendChild(panelSection);
+  }
+
   const { world, arenaShrink } = ctx;
   const arenaSection = document.createElement('div');
   arenaSection.style.cssText = sectionDivider();
@@ -177,8 +233,73 @@ export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void 
 
   parent.appendChild(movementSection);
 
+  const instabilitySection = document.createElement('div');
+  instabilitySection.style.cssText = sectionDivider();
+  instabilitySection.appendChild(sectionHeader('Instability'));
+  helperText(
+    instabilitySection,
+    'Higher instability amplifies knockback. Tune the cap and ramp separately.',
+  );
+
+  applyInstabilitySettings();
+
   const p = ctx.player;
-  sliderRow(parent, 'Instability %', 0, 400, 1, () => p.instabilityPct, (v) => {
-    p.instabilityPct = v;
-  });
+  let instabSliderRefresh: (() => void) | undefined;
+
+  numberSliderRow(
+    instabilitySection,
+    'Max Instability',
+    MIN_MAX_INSTABILITY,
+    MAX_MAX_INSTABILITY,
+    10,
+    () => Entity.maxInstability,
+    (v) => {
+      Entity.maxInstability = v;
+      localStorage.setItem(MAX_INSTABILITY_KEY, String(v));
+      clampCombatantInstability(ctx.world);
+      instabSliderRefresh?.();
+    },
+  );
+  helperText(
+    instabilitySection,
+    'Meter ceiling for all combatants. Higher max = stronger knockback at the top.',
+  );
+
+  numberSliderRow(
+    instabilitySection,
+    'Knockback Scale Ref',
+    MIN_KNOCKBACK_SCALE_REF,
+    MAX_KNOCKBACK_SCALE_REF,
+    10,
+    () => Entity.knockbackScaleRef,
+    (v) => {
+      Entity.knockbackScaleRef = v;
+      localStorage.setItem(KNOCKBACK_SCALE_REF_KEY, String(v));
+    },
+  );
+  helperText(
+    instabilitySection,
+    'Knockback ramp speed. Higher ref = same % hits softer; takes longer to build force.',
+  );
+
+  const instabPctControl = sliderRow(
+    instabilitySection,
+    'Instability %',
+    0,
+    Entity.maxInstability,
+    1,
+    () => p.instabilityPct,
+    (v) => {
+      p.instabilityPct = Math.min(Entity.maxInstability, Math.max(0, v));
+    },
+  );
+  instabSliderRefresh = () => {
+    instabPctControl.refresh();
+    instabPctControl.setMax(Entity.maxInstability);
+  };
+  instabSliderRefresh();
+
+  helperText(instabilitySection, 'Debug: set your local player instability % directly.');
+
+  parent.appendChild(instabilitySection);
 }

@@ -2,16 +2,26 @@ import {
   DEFAULT_ARENA_HEX_RADIUS,
   DEFAULT_COOLDOWN_SCALE,
   DEFAULT_GLOBAL_COOLDOWN_MS,
+  DEFAULT_KNOCKBACK_SCALE_REF,
+  DEFAULT_MAX_INSTABILITY,
   MAX_COOLDOWN_SCALE,
   MAX_GLOBAL_COOLDOWN_MS,
+  MAX_KNOCKBACK_SCALE_REF,
+  MAX_MAX_INSTABILITY,
   MIN_COOLDOWN_SCALE,
   MIN_GLOBAL_COOLDOWN_MS,
+  MIN_KNOCKBACK_SCALE_REF,
+  MIN_MAX_INSTABILITY,
   applyCooldownPacingSettings,
+  applyInstabilitySettings,
   getStoredCombatantRadius,
   getStoredCooldownScale,
   getStoredGlobalCooldownMs,
   getStoredHexRadius,
+  getStoredKnockbackScaleRef,
+  getStoredMaxInstability,
 } from '../src/game/settings';
+import { Entity } from '../src/entities/Entity';
 import { Player } from '../src/entities/Player';
 import {
   DEFAULT_COMBATANT_RADIUS,
@@ -19,6 +29,7 @@ import {
   MAX_HEX_RADIUS,
   MIN_COMBATANT_RADIUS,
   MIN_HEX_RADIUS,
+  getInstabilityScale,
 } from '../src/engine/PhysicsWorld';
 
 interface SettingsSnapshot {
@@ -35,6 +46,13 @@ interface SettingsSnapshot {
   globalCooldownMsClampedLow: number;
   globalCooldownMsClampedHigh: number;
   pacingApplied: { scale: number; durationMs: number };
+  maxInstabilityDefault: number;
+  maxInstabilityClampedLow: number;
+  maxInstabilityClampedHigh: number;
+  knockbackScaleRefDefault: number;
+  knockbackScaleRefClampedLow: number;
+  knockbackScaleRefClampedHigh: number;
+  instabilityApplied: { max: number; ref: number };
 }
 
 const memoryStorage = new Map<string, string>();
@@ -62,6 +80,8 @@ function captureSettings(): SettingsSnapshot {
   memoryStorage.clear();
   Player.globalCooldownScale = 1;
   Player.globalCooldownDurationMs = 0;
+  Entity.maxInstability = 1;
+  Entity.knockbackScaleRef = 1;
 
   const hexRadiusDefault = getStoredHexRadius();
 
@@ -106,6 +126,32 @@ function captureSettings(): SettingsSnapshot {
     durationMs: Player.globalCooldownDurationMs,
   };
 
+  memoryStorage.clear();
+  const maxInstabilityDefault = getStoredMaxInstability();
+
+  memoryStorage.set('LUNA_MAX_INSTABILITY', String(MIN_MAX_INSTABILITY - 10));
+  const maxInstabilityClampedLow = getStoredMaxInstability();
+
+  memoryStorage.set('LUNA_MAX_INSTABILITY', String(MAX_MAX_INSTABILITY + 100));
+  const maxInstabilityClampedHigh = getStoredMaxInstability();
+
+  memoryStorage.clear();
+  const knockbackScaleRefDefault = getStoredKnockbackScaleRef();
+
+  memoryStorage.set('LUNA_KNOCKBACK_SCALE_REF', String(MIN_KNOCKBACK_SCALE_REF - 5));
+  const knockbackScaleRefClampedLow = getStoredKnockbackScaleRef();
+
+  memoryStorage.set('LUNA_KNOCKBACK_SCALE_REF', String(MAX_KNOCKBACK_SCALE_REF + 100));
+  const knockbackScaleRefClampedHigh = getStoredKnockbackScaleRef();
+
+  memoryStorage.set('LUNA_MAX_INSTABILITY', '750');
+  memoryStorage.set('LUNA_KNOCKBACK_SCALE_REF', '200');
+  applyInstabilitySettings();
+  const instabilityApplied = {
+    max: Entity.maxInstability,
+    ref: Entity.knockbackScaleRef,
+  };
+
   return {
     hexRadiusDefault,
     hexRadiusClampedLow,
@@ -120,6 +166,13 @@ function captureSettings(): SettingsSnapshot {
     globalCooldownMsClampedLow,
     globalCooldownMsClampedHigh,
     pacingApplied,
+    maxInstabilityDefault,
+    maxInstabilityClampedLow,
+    maxInstabilityClampedHigh,
+    knockbackScaleRefDefault,
+    knockbackScaleRefClampedLow,
+    knockbackScaleRefClampedHigh,
+    instabilityApplied,
   };
 }
 
@@ -194,13 +247,79 @@ function run(): void {
     failures.push(`pacing durationMs: expected 425, got ${snapshot.pacingApplied.durationMs}`);
   }
 
+  if (snapshot.maxInstabilityDefault !== DEFAULT_MAX_INSTABILITY) {
+    failures.push(
+      `maxInstability default: expected ${DEFAULT_MAX_INSTABILITY}, got ${snapshot.maxInstabilityDefault}`,
+    );
+  }
+  if (snapshot.maxInstabilityClampedLow !== MIN_MAX_INSTABILITY) {
+    failures.push(
+      `maxInstability clamp low: expected ${MIN_MAX_INSTABILITY}, got ${snapshot.maxInstabilityClampedLow}`,
+    );
+  }
+  if (snapshot.maxInstabilityClampedHigh !== MAX_MAX_INSTABILITY) {
+    failures.push(
+      `maxInstability clamp high: expected ${MAX_MAX_INSTABILITY}, got ${snapshot.maxInstabilityClampedHigh}`,
+    );
+  }
+
+  if (snapshot.knockbackScaleRefDefault !== DEFAULT_KNOCKBACK_SCALE_REF) {
+    failures.push(
+      `knockbackScaleRef default: expected ${DEFAULT_KNOCKBACK_SCALE_REF}, got ${snapshot.knockbackScaleRefDefault}`,
+    );
+  }
+  if (snapshot.knockbackScaleRefClampedLow !== MIN_KNOCKBACK_SCALE_REF) {
+    failures.push(
+      `knockbackScaleRef clamp low: expected ${MIN_KNOCKBACK_SCALE_REF}, got ${snapshot.knockbackScaleRefClampedLow}`,
+    );
+  }
+  if (snapshot.knockbackScaleRefClampedHigh !== MAX_KNOCKBACK_SCALE_REF) {
+    failures.push(
+      `knockbackScaleRef clamp high: expected ${MAX_KNOCKBACK_SCALE_REF}, got ${snapshot.knockbackScaleRefClampedHigh}`,
+    );
+  }
+
+  if (snapshot.instabilityApplied.max !== 750) {
+    failures.push(`instability max applied: expected 750, got ${snapshot.instabilityApplied.max}`);
+  }
+  if (snapshot.instabilityApplied.ref !== 200) {
+    failures.push(`instability ref applied: expected 200, got ${snapshot.instabilityApplied.ref}`);
+  }
+
+  Entity.maxInstability = DEFAULT_MAX_INSTABILITY;
+  Entity.knockbackScaleRef = DEFAULT_KNOCKBACK_SCALE_REF;
+  const pct = 200;
+  const legacyScale = 1 + (pct / 100) * 1.5;
+  const defaultScale = getInstabilityScale(pct);
+  if (Math.abs(defaultScale - legacyScale) > 1e-9) {
+    failures.push(`instability scale default: expected ${legacyScale}, got ${defaultScale}`);
+  }
+
+  Entity.maxInstability = 2000;
+  Entity.knockbackScaleRef = DEFAULT_KNOCKBACK_SCALE_REF;
+  const scaleWithHigherMax = getInstabilityScale(pct);
+  if (Math.abs(scaleWithHigherMax - defaultScale) > 1e-9) {
+    failures.push(
+      `instability scale with higher max: expected ${defaultScale}, got ${scaleWithHigherMax}`,
+    );
+  }
+
+  Entity.knockbackScaleRef = DEFAULT_KNOCKBACK_SCALE_REF * 2;
+  const scaleWithDoubledRef = getInstabilityScale(pct);
+  const expectedHalvedBonus = 1 + (legacyScale - 1) / 2;
+  if (Math.abs(scaleWithDoubledRef - expectedHalvedBonus) > 1e-9) {
+    failures.push(
+      `instability scale with doubled ref: expected ${expectedHalvedBonus}, got ${scaleWithDoubledRef}`,
+    );
+  }
+
   if (failures.length > 0) {
     console.error('test:settings  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
     process.exit(1);
   }
 
-  console.log('test:settings  OK  13 settings checks passed');
+  console.log('test:settings  OK  22 settings checks passed');
 }
 
 run();

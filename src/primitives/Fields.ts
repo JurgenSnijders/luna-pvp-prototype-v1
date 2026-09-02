@@ -1,7 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
 import { isAlliedTo } from '../engine/allegiance';
-import type { Entity } from '../entities/Entity';
+import { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
@@ -72,7 +72,7 @@ export function applyField(
     case 'RADIAL_IMPULSE': {
       if (!radialDir) break;
       entity.instabilityPct = Math.min(
-        500,
+        Entity.maxInstability,
         entity.instabilityPct +
           Math.abs(zone.config.strength) * 0.005 * dt * tuning.tickInstabilityScale,
       );
@@ -89,7 +89,7 @@ export function applyField(
     case 'VORTEX_TANGENT': {
       if (!radialDir) break;
       entity.instabilityPct = Math.min(
-        500,
+        Entity.maxInstability,
         entity.instabilityPct +
           Math.abs(zone.config.strength) * 0.005 * dt * tuning.tickInstabilityScale,
       );
@@ -113,7 +113,7 @@ export function applyField(
       break;
     case 'MASS_ATTRACTOR': {
       entity.instabilityPct = Math.min(
-        500,
+        Entity.maxInstability,
         entity.instabilityPct +
           Math.abs(zone.config.strength) * 0.005 * dt * tuning.tickInstabilityScale,
       );

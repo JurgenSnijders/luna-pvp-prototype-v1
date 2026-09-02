@@ -6,9 +6,10 @@ import { Player } from '../entities/Player';
 import type { Interpreter } from '../primitives/Interpreter';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import { ACTION_SLOT_KEYS } from '../types/cards';
-import { INSPECTOR_COLLAPSED_STORAGE_KEY } from '../game/settings';
+import { INSPECTOR_COLLAPSED_STORAGE_KEY, INSPECTOR_LAYOUT_STORAGE_KEY } from '../game/settings';
 import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 import { buttonStyle } from './inspector/domHelpers';
+import { attachFloatingPanel, type FloatingPanelController, type ResolvedPanelLayout } from './inspector/floatingPanel';
 import { buildGraphicsTab } from './inspector/graphicsTab';
 import { buildHarnessTab } from './inspector/harnessTab';
 import { buildJsonTab, type JsonTabRefs } from './inspector/jsonTab';
@@ -35,6 +36,12 @@ export interface InspectorContext {
   arenaShrink?: ArenaShrink;
   onRestartMatch?: () => void;
   onRespawnCombatants?: () => void;
+  inspectorLayout?: {
+    get(): ResolvedPanelLayout;
+    set(partial: Partial<ResolvedPanelLayout>): void;
+    reset(): void;
+    subscribe(listener: () => void): () => void;
+  };
 }
 
 export class InspectorUI {
@@ -51,6 +58,7 @@ export class InspectorUI {
   private headerEl!: HTMLDivElement;
   private bodyEl!: HTMLDivElement;
   private toggleBtn!: HTMLButtonElement;
+  private floating!: FloatingPanelController;
 
   constructor(
     private root: HTMLElement,
@@ -64,9 +72,9 @@ export class InspectorUI {
     this.container = document.createElement('div');
     this.container.style.cssText = `
       pointer-events: auto;
-      max-height: 100vh;
-      overflow-y: auto;
-      margin: 12px;
+      position: fixed;
+      display: flex;
+      flex-direction: column;
       ${retroPanelStyle('cyan')}
       font-family: ${FONTS.mono};
       font-size: ${FONTS.size.body};
@@ -74,9 +82,14 @@ export class InspectorUI {
     `;
 
     this.headerEl = document.createElement('div');
+    this.headerEl.className = 'inspector-drag-handle';
+    this.headerEl.title = 'Drag to move';
     this.headerEl.style.cssText =
-      'display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;user-select:none;';
-    this.headerEl.onclick = () => this.toggleCollapse();
+      'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;cursor:grab;user-select:none;';
+    this.headerEl.addEventListener('click', () => {
+      if (this.floating.consumeDragClick()) return;
+      if (this.isCollapsed) this.toggleCollapse();
+    });
 
     const title = document.createElement('span');
     title.textContent = 'DEVTOOLS';
@@ -85,12 +98,18 @@ export class InspectorUI {
 
     this.toggleBtn = document.createElement('button');
     this.toggleBtn.type = 'button';
+    this.toggleBtn.title = 'Collapse';
     this.toggleBtn.style.cssText = buttonStyle(false) + 'padding:2px 8px;line-height:1;';
+    this.toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleCollapse();
+    });
 
     this.headerEl.appendChild(title);
     this.headerEl.appendChild(this.toggleBtn);
 
     this.bodyEl = document.createElement('div');
+    this.bodyEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;';
 
     const tabs = ['Stats', 'Presets', 'JSON', 'Graphics', 'Harness'];
     const tabBar = document.createElement('div');
@@ -140,12 +159,25 @@ export class InspectorUI {
     this.container.appendChild(this.headerEl);
     this.container.appendChild(this.bodyEl);
 
-    buildStatsTab(content, this.ctx);
-    tabBar.querySelector('button')!.style.cssText = buttonStyle(true);
-
+    this.root.appendChild(this.container);
+    this.floating = attachFloatingPanel({
+      panel: this.container,
+      dragHandle: this.headerEl,
+      isDragIgnored: (target) =>
+        target instanceof Node && this.toggleBtn.contains(target),
+      storageKey: INSPECTOR_LAYOUT_STORAGE_KEY,
+      collapsed: this.isCollapsed,
+    });
+    this.ctx.inspectorLayout = {
+      get: () => this.floating.getLayout(),
+      set: (partial) => this.floating.setLayout(partial),
+      reset: () => this.floating.resetLayout(),
+      subscribe: (listener) => this.floating.subscribe(listener),
+    };
     this.toggleCollapse(this.isCollapsed);
 
-    this.root.appendChild(this.container);
+    buildStatsTab(content, this.ctx);
+    tabBar.querySelector('button')!.style.cssText = buttonStyle(true);
 
     window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
   }
@@ -156,13 +188,10 @@ export class InspectorUI {
 
     this.bodyEl.style.display = this.isCollapsed ? 'none' : 'block';
     this.toggleBtn.textContent = this.isCollapsed ? '+' : '−';
+    this.toggleBtn.title = this.isCollapsed ? 'Expand' : 'Collapse';
     this.headerEl.style.marginBottom = this.isCollapsed ? '0' : '8px';
-
-    this.container.style.width = this.isCollapsed ? 'auto' : '320px';
     this.container.style.padding = this.isCollapsed ? '6px 10px' : '16px';
-    this.container.style.cursor = this.isCollapsed ? 'pointer' : 'default';
-    this.container.style.maxHeight = this.isCollapsed ? 'none' : '100vh';
-    this.container.style.overflowY = this.isCollapsed ? 'visible' : 'auto';
+    this.floating.setCollapsed(this.isCollapsed);
   }
 
   private handleGlobalKeydown(e: KeyboardEvent): void {

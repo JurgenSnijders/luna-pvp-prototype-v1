@@ -68,10 +68,37 @@
 
       #inspector-root {
         position: fixed;
-        top: 0;
-        right: 0;
-        z-index: 10;
+        inset: 0;
+        z-index: 9100;
         pointer-events: none;
+      }
+
+      #inspector-root .inspector-drag-handle {
+        cursor: grab;
+      }
+
+      #inspector-root .inspector-drag-handle:active {
+        cursor: grabbing;
+      }
+
+      #inspector-root .inspector-resize-n,
+      #inspector-root .inspector-resize-s {
+        cursor: ns-resize;
+      }
+
+      #inspector-root .inspector-resize-e,
+      #inspector-root .inspector-resize-w {
+        cursor: ew-resize;
+      }
+
+      #inspector-root .inspector-resize-ne,
+      #inspector-root .inspector-resize-sw {
+        cursor: nesw-resize;
+      }
+
+      #inspector-root .inspector-resize-nw,
+      #inspector-root .inspector-resize-se {
+        cursor: nwse-resize;
       }
     </style>
   </head>

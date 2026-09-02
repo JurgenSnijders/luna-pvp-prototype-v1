@@ -35,6 +35,7 @@ import { drawPerfOverlay } from './perfOverlay';
 import { runSimulationStep } from './simulation';
 import {
   applyCooldownPacingSettings,
+  applyInstabilitySettings,
   applyMovementSettings,
   getStoredCombatantRadius,
   getStoredHexRadius,
@@ -50,6 +51,7 @@ function init(app: GameApp): void {
   resize(app);
   window.addEventListener('resize', () => resize(app));
   applyCooldownPacingSettings();
+  applyInstabilitySettings();
 
   SpellInventoryManager.initialize();
 

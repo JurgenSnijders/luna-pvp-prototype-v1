@@ -18,6 +18,9 @@ export function generateEntityId(prefix = 'entity'): string {
 }
 
 export class Entity {
+  static maxInstability = 500;
+  static knockbackScaleRef = 100;
+
   id: string;
   pos: Vector2D;
   prevPos: Vector2D;
@@ -186,7 +189,7 @@ export class Entity {
     }
 
     const old = this.instabilityPct;
-    const next = Math.min(500, Math.max(0, old + amount));
+    const next = Math.min(Entity.maxInstability, Math.max(0, old + amount));
     this.instabilityPct = next;
 
     if (world && amount >= 5) {
