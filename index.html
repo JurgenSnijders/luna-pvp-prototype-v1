@@ -21,6 +21,10 @@
         letter-spacing: 0.5px;
       }
 
+      :root {
+        --retro-cursor: crosshair;
+      }
+
       html,
       body {
         width: 100%;
@@ -28,6 +32,30 @@
         overflow: hidden;
         background-color: var(--retro-bg-dark, #06060c);
         color: var(--retro-text-primary, #e0f8ff);
+      }
+
+      #game-canvas,
+      #vfx-canvas {
+        cursor: crosshair;
+      }
+
+      button,
+      select,
+      input,
+      a,
+      label,
+      #inspector-root,
+      #inspector-root * {
+        cursor: inherit;
+      }
+
+      button,
+      select,
+      input[type="range"],
+      input[type="checkbox"],
+      input[type="text"],
+      input[type="password"] {
+        cursor: pointer;
       }
 
       #game-canvas {

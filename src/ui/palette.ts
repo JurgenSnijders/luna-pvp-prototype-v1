@@ -1,4 +1,5 @@
 import { applyStylePreset, getGraphicsSettings, subscribeGraphicsSettings } from '../devtools/graphicsSettings';
+import { buildRetroCrosshairCursor } from './tokens';
 import {
   STYLE_PRESETS,
   isStylePresetId,
@@ -17,6 +18,14 @@ export function getActiveColors(): PaletteColors {
 
 function setCssVar(name: string, value: string): void {
   document.documentElement.style.setProperty(name, value);
+}
+
+/** Browsers do not reliably resolve cursor: var() when the value contains url() fallbacks. */
+function applyArenaCursor(cursor: string): void {
+  const gameCanvas = document.getElementById('game-canvas');
+  if (gameCanvas) gameCanvas.style.cursor = cursor;
+  const vfxCanvas = document.getElementById('vfx-canvas');
+  if (vfxCanvas) vfxCanvas.style.cursor = cursor;
 }
 
 /** Writes resolved preset colors to :root so DOM cssText using RETRO_COLORS vars live-updates. */
@@ -44,8 +53,17 @@ export function applyPalette(): void {
   setCssVar('--retro-glow-magenta', glow.magenta);
   setCssVar('--retro-glow-box-cyan', glow.boxCyan);
   setCssVar('--retro-glow-box-magenta', glow.boxMagenta);
+  const cursor = buildRetroCrosshairCursor(colors.borderNeon || colors.neonCyan);
+  setCssVar('--retro-cursor', cursor);
+  applyArenaCursor(cursor);
 
   document.body.style.backgroundColor = colors.bgDark;
+}
+
+/** Re-apply arena cursor (e.g. after #vfx-canvas is mounted). */
+export function syncArenaCursor(): void {
+  const colors = getActiveColors();
+  applyArenaCursor(buildRetroCrosshairCursor(colors.borderNeon || colors.neonCyan));
 }
 
 subscribeGraphicsSettings(() => applyPalette());
