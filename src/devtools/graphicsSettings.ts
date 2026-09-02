@@ -3,6 +3,7 @@ import {
   type StylePresetId,
   isStylePresetId,
 } from '../render/presets/stylePresets';
+import { type CrosshairStyleId, isCrosshairStyleId } from '../ui/crosshairPresets';
 
 export const STORAGE_KEY_GRAPHICS = 'LUNA_GRAPHICS_SETTINGS';
 
@@ -26,6 +27,7 @@ export interface GraphicsSettings {
   bloomThreshold: number;
   arcadeBezel: boolean;
   activePreset: StylePresetId;
+  crosshairStyle: CrosshairStyleId;
 }
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
@@ -46,6 +48,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   bloomThreshold: 0.6,
   arcadeBezel: true,
   activePreset: 'CYBER_NEON',
+  crosshairStyle: 'TACTICAL',
 };
 
 export interface TierLimits {
@@ -253,6 +256,10 @@ function loadFromStorage(): GraphicsSettings {
         parsed.activePreset && isStylePresetId(parsed.activePreset)
           ? parsed.activePreset
           : DEFAULT_GRAPHICS_SETTINGS.activePreset,
+      crosshairStyle:
+        parsed.crosshairStyle && isCrosshairStyleId(parsed.crosshairStyle)
+          ? parsed.crosshairStyle
+          : DEFAULT_GRAPHICS_SETTINGS.crosshairStyle,
     };
   } catch {
     return { ...DEFAULT_GRAPHICS_SETTINGS };

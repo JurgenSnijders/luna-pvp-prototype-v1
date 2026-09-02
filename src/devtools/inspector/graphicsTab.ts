@@ -11,6 +11,7 @@ import {
   type QualityTier,
 } from '../graphicsSettings';
 import { STYLE_PRESET_IDS, STYLE_PRESETS, isStylePresetId } from '../../render/presets/stylePresets';
+import { CROSSHAIR_PRESETS, CROSSHAIR_STYLE_IDS, isCrosshairStyleId } from '../../ui/crosshairPresets';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../../ui/tokens';
@@ -200,6 +201,23 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   syncIconStyleButtons();
   retroSection.appendChild(iconStyleRow);
 
+  const crosshairOptions = CROSSHAIR_STYLE_IDS.map((id) => ({
+    value: id,
+    label: CROSSHAIR_PRESETS[id].label,
+  }));
+  const crosshairSelect = selectRow(
+    retroSection,
+    'Crosshair Style',
+    crosshairOptions,
+    () => getGraphicsSettings().crosshairStyle,
+    (id) => {
+      if (isCrosshairStyleId(id)) {
+        saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
+        syncControls(getGraphicsSettings());
+      }
+    },
+  );
+
   const presetOptions = STYLE_PRESET_IDS.map((id) => ({
     value: id,
     label: STYLE_PRESETS[id].label,
@@ -257,6 +275,7 @@ export function buildGraphicsTab(parent: HTMLElement): void {
       }
     }
     presetSelect.refresh();
+    crosshairSelect.refresh();
     for (const slider of sliders) slider.refresh();
   };
 

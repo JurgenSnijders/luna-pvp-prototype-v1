@@ -1,5 +1,5 @@
-import { applyStylePreset, getGraphicsSettings, subscribeGraphicsSettings } from '../devtools/graphicsSettings';
-import { buildRetroCrosshairCursor } from './tokens';
+import { applyStylePreset, getGraphicsSettings, saveGraphicsSettings, subscribeGraphicsSettings } from '../devtools/graphicsSettings';
+import { buildCrosshairCursor, isCrosshairStyleId, type CrosshairStyleId } from './crosshairPresets';
 import {
   STYLE_PRESETS,
   isStylePresetId,
@@ -28,6 +28,10 @@ function applyArenaCursor(cursor: string): void {
   if (vfxCanvas) vfxCanvas.style.cursor = cursor;
 }
 
+function resolveArenaCursor(neonColor: string): string {
+  return buildCrosshairCursor(getGraphicsSettings().crosshairStyle, neonColor);
+}
+
 /** Writes resolved preset colors to :root so DOM cssText using RETRO_COLORS vars live-updates. */
 export function applyPalette(): void {
   const preset = getActivePreset();
@@ -53,7 +57,7 @@ export function applyPalette(): void {
   setCssVar('--retro-glow-magenta', glow.magenta);
   setCssVar('--retro-glow-box-cyan', glow.boxCyan);
   setCssVar('--retro-glow-box-magenta', glow.boxMagenta);
-  const cursor = buildRetroCrosshairCursor(colors.borderNeon || colors.neonCyan);
+  const cursor = resolveArenaCursor(colors.borderNeon || colors.neonCyan);
   setCssVar('--retro-cursor', cursor);
   applyArenaCursor(cursor);
 
@@ -63,7 +67,7 @@ export function applyPalette(): void {
 /** Re-apply arena cursor (e.g. after #vfx-canvas is mounted). */
 export function syncArenaCursor(): void {
   const colors = getActiveColors();
-  applyArenaCursor(buildRetroCrosshairCursor(colors.borderNeon || colors.neonCyan));
+  applyArenaCursor(resolveArenaCursor(colors.borderNeon || colors.neonCyan));
 }
 
 subscribeGraphicsSettings(() => applyPalette());
@@ -76,4 +80,12 @@ export function getActivePresetId(): StylePresetId {
   id,
 ) => {
   if (isStylePresetId(id)) applyStylePreset(id);
+};
+
+(window as unknown as { __setCrosshairStyle?: (id: CrosshairStyleId) => void }).__setCrosshairStyle = (
+  id,
+) => {
+  if (isCrosshairStyleId(id)) {
+    saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
+  }
 };

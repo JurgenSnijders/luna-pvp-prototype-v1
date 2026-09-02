@@ -59,21 +59,5 @@ export function canvasFontToken(size: keyof typeof FONTS.size): string {
   return canvasFont(px);
 }
 
-export function buildRetroCrosshairCursor(neonColor: string): string {
-  const shapes = [
-    'M 16 2 L 16 10',
-    'M 16 22 L 16 30',
-    'M 2 16 L 10 16',
-    'M 22 16 L 30 16',
-    'M 11 13 L 11 11 L 13 11',
-    'M 21 11 L 19 11 M 21 11 L 21 13',
-    'M 11 19 L 11 21 L 13 21',
-    'M 21 21 L 19 21 M 21 21 L 21 19',
-  ].join(' ');
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g stroke="#000000" stroke-width="3" stroke-linecap="square" fill="none"><path d="${shapes}"/></g><g stroke="${neonColor}" stroke-width="1.5" stroke-linecap="square" fill="none"><path d="${shapes}"/></g></svg>`;
-
-  return `url(data:image/svg+xml,${encodeURIComponent(svg)}) 16 16, crosshair`;
-}
-
+export { buildCrosshairCursor } from './crosshairPresets';
 export { getActiveColors } from './palette';
