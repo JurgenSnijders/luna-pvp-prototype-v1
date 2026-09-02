@@ -73,8 +73,10 @@ import {
 } from '../game/spellRoles';
 import {
   attachDockSlotDrag,
+  attachForgeCardDrag,
   attachInventoryDropZone,
   attachVaultCardDrag,
+  parseForgeCardDragPayload,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { resolveIconTrajectoryPaths } from '../render/canvas/trajectoryTracer';
@@ -146,6 +148,14 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
 }
 
 const FORGE_TIER_ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
+
+const SLOT_KEY_MAPPINGS: { slot: ActionSlotKey; keyNum: string }[] = [
+  { slot: 'LMB', keyNum: '1' },
+  { slot: 'RMB', keyNum: '2' },
+  { slot: 'Q', keyNum: '3' },
+  { slot: 'E', keyNum: '4' },
+  { slot: 'SPACE', keyNum: '5' },
+];
 
 export function normalizeForgeTierRarity(rarity: string): string {
   const upper = (rarity || 'COMMON').toUpperCase();
@@ -685,6 +695,22 @@ export class DraftModal {
       this.renderTacticalInspector();
     }
   };
+  private readonly onQuickEquipKeyDown = (e: KeyboardEvent): void => {
+    if (!this.open_) return;
+
+    const activeTag = document.activeElement?.tagName.toLowerCase();
+    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+    const activeSpellId = this.hoveredSpellId ?? this.selectedSpellId;
+    if (!activeSpellId) return;
+
+    const targetMapping = SLOT_KEY_MAPPINGS.find((m) => m.keyNum === e.key);
+    if (!targetMapping) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    this.executeQuickEquip(targetMapping.slot, activeSpellId);
+  };
 
   constructor(private callbacks: DraftModalCallbacks) {
     injectStyles();
@@ -905,6 +931,7 @@ export class DraftModal {
     });
     this.callbacks.onOpenChange(true);
     ActionBarHUD.suppress();
+    window.addEventListener('keydown', this.onQuickEquipKeyDown);
     this.setActiveTab('VAULT');
     this.startPrefetch();
   }
@@ -916,6 +943,7 @@ export class DraftModal {
     this.clearSynthesisTimer();
     this.forgeVaultPickerActive = false;
     this.vaultSavedCardIndex = null;
+    window.removeEventListener('keydown', this.onQuickEquipKeyDown);
     this.open_ = false;
     this.overlay.style.opacity = '0';
     this.panel.style.transform = 'scale(0.97)';
@@ -946,6 +974,7 @@ export class DraftModal {
     });
     this.callbacks.onOpenChange(true);
     ActionBarHUD.suppress();
+    window.addEventListener('keydown', this.onQuickEquipKeyDown);
     this.setActiveTab('FORGE');
   }
 
@@ -1397,36 +1426,67 @@ export class DraftModal {
     const equipSection = document.createElement('div');
     equipSection.className = 'inspector-equip-section';
 
-    const equipLabel = document.createElement('div');
+    const labelWrap = document.createElement('div');
+    labelWrap.className = 'inspector-equip-label-wrap';
+
+    const equipLabel = document.createElement('span');
     equipLabel.className = 'inspector-equip-label';
-    equipLabel.textContent = 'EQUIP TO SLOT';
+    equipLabel.textContent = 'EQUIP TO LOADOUT';
+
+    const equipHint = document.createElement('span');
+    equipHint.className = 'inspector-equip-hint';
+    equipHint.textContent = 'PRESS [1-5]';
+
+    labelWrap.appendChild(equipLabel);
+    labelWrap.appendChild(equipHint);
 
     const equipButtons = document.createElement('div');
     equipButtons.className = 'inspector-equip-buttons';
 
-    for (const slotKey of ACTION_SLOT_KEYS) {
+    for (const mapping of SLOT_KEY_MAPPINGS) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'inspector-equip-btn';
-      btn.textContent = slotKey;
-      if (loadout[slotKey] === spell.id) {
+      btn.dataset.slot = mapping.slot;
+
+      const isEquipped = loadout[mapping.slot] === spell.id;
+      if (isEquipped) {
         btn.classList.add('is-active-slot');
       }
+
+      const keynum = document.createElement('span');
+      keynum.className = 'equip-btn-keynum';
+      keynum.textContent = `[${mapping.keyNum}]`;
+
+      const slotname = document.createElement('span');
+      slotname.className = 'equip-btn-slotname';
+      slotname.textContent = mapping.slot;
+
+      btn.appendChild(keynum);
+      btn.appendChild(slotname);
+
+      if (isEquipped) {
+        const check = document.createElement('span');
+        check.className = 'equip-btn-check';
+        check.textContent = '✓';
+        btn.appendChild(check);
+      }
+
       btn.addEventListener('mouseenter', () => {
         btn.classList.add('is-comparing');
-        this.showSlotComparison(slotKey, spell);
+        this.showSlotComparison(mapping.slot, spell);
       });
       btn.addEventListener('mouseleave', () => {
         btn.classList.remove('is-comparing');
         this.clearSlotComparison();
       });
       btn.addEventListener('click', () => {
-        SpellInventoryManager.equipSpell(slotKey, spell.id);
+        this.executeQuickEquip(mapping.slot, spell.id);
       });
       equipButtons.appendChild(btn);
     }
 
-    equipSection.appendChild(equipLabel);
+    equipSection.appendChild(labelWrap);
     equipSection.appendChild(equipButtons);
 
     panel.appendChild(heroWrap);
@@ -1622,7 +1682,7 @@ export class DraftModal {
         });
       }
 
-      attachInventoryDropZone(slot, key);
+      attachInventoryDropZone(slot, key, (e) => this.handleForgeCardDrop(key, e));
       this.bottomLoadoutBay.appendChild(slot);
     }
   }
@@ -1869,6 +1929,40 @@ export class DraftModal {
     this.streamingSlots = null;
     this.forgeVaultPickerActive = true;
     this.renderForgeVaultPickerCards();
+  }
+
+  private getForgePickerCards(): DraftCard[] {
+    return this.cards.filter((card) => card.type === 'ACTIVE_ABILITY');
+  }
+
+  private getForgePickerCard(cardIndex: number): DraftCard | null {
+    return this.getForgePickerCards()[cardIndex] ?? null;
+  }
+
+  private handleForgeCardDrop(targetSlot: ActionSlotKey, event: DragEvent): void {
+    if (!this.forgeVaultPickerActive) return;
+
+    const raw = event.dataTransfer?.getData('text/plain');
+    if (!raw) return;
+
+    const payload = parseForgeCardDragPayload(raw);
+    if (!payload) return;
+
+    const card = this.getForgePickerCard(payload.cardIndex);
+    if (!card?.abilityPayload) return;
+
+    if (this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== payload.cardIndex) {
+      return;
+    }
+
+    if (this.vaultSavedCardIndex === null) {
+      this.saveCardToVault(card, payload.cardIndex);
+    }
+
+    const spellId = card.abilityPayload?.id;
+    if (spellId) {
+      SpellInventoryManager.equipSpell(targetSlot, spellId);
+    }
   }
 
   private saveCardToVault(card: DraftCard, cardIndex: number): void {
@@ -2236,6 +2330,20 @@ export class DraftModal {
     delta.className = `telemetry-delta is-visible ${className}`;
   }
 
+  private executeQuickEquip(slotKey: ActionSlotKey, spellId: string): void {
+    SpellInventoryManager.equipSpell(slotKey, spellId);
+    this.clearSlotComparison();
+    this.renderTacticalInspector();
+
+    const flashBtn = this.inspectorPane.querySelector(
+      `.inspector-equip-btn[data-slot="${slotKey}"]`,
+    ) as HTMLElement | null;
+    if (flashBtn) {
+      flashBtn.classList.add('equip-flash-animation');
+      window.setTimeout(() => flashBtn.classList.remove('equip-flash-animation'), 350);
+    }
+  }
+
   private showSlotComparison(slotKey: ActionSlotKey, inspectedSpell: AbilitySchema): void {
     const banner = this.inspectorPane.querySelector('#inspector-compare-banner');
     if (!banner) return;
@@ -2566,6 +2674,10 @@ export class DraftModal {
       footer.appendChild(saveBtn);
     }
 
+    if (!anotherSaved) {
+      attachForgeCardDrag(glyphFrame, cardIndex);
+    }
+
     root.appendChild(header);
     if (perk) root.appendChild(mutationBanner);
     root.appendChild(glyphFrame);
@@ -2584,7 +2696,7 @@ export class DraftModal {
     if (this.vaultSavedCardIndex === null) {
       const hint = document.createElement('div');
       hint.className = 'forge-vault-picker-hint';
-      hint.textContent = 'Choose one spell to save to your vault.';
+      hint.textContent = 'Choose one spell to save, or drag it to your loadout below.';
       this.cardsContainer.appendChild(hint);
     }
 

@@ -93,3 +93,42 @@ export function attachHudSlotDrag(root: HTMLElement, slotKey: ActionSlotKey): vo
     root.classList.remove('is-dragging');
   });
 }
+
+export interface ForgeCardDragPayload {
+  source: 'FORGE';
+  cardIndex: number;
+}
+
+export function parseForgeCardDragPayload(raw: string): ForgeCardDragPayload | null {
+  if (!raw.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as Record<string, unknown>;
+    if (obj.source !== 'FORGE') return null;
+    if (typeof obj.cardIndex !== 'number' || !Number.isInteger(obj.cardIndex) || obj.cardIndex < 0) {
+      return null;
+    }
+    return { source: 'FORGE', cardIndex: obj.cardIndex };
+  } catch {
+    return null;
+  }
+}
+
+export function serializeForgeCardDragPayload(payload: ForgeCardDragPayload): string {
+  return JSON.stringify(payload);
+}
+
+export function attachForgeCardDrag(element: HTMLElement, cardIndex: number): void {
+  element.draggable = true;
+  element.classList.add('forge-card-drag-handle');
+  element.addEventListener('dragstart', (e) => {
+    element.classList.add('is-dragging');
+    const payload: ForgeCardDragPayload = { source: 'FORGE', cardIndex };
+    e.dataTransfer?.setData('text/plain', serializeForgeCardDragPayload(payload));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+  });
+  element.addEventListener('dragend', () => {
+    element.classList.remove('is-dragging');
+  });
+}

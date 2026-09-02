@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v15';
+export const STYLE_ID = 'luna-workshop-styles-v16';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -536,11 +536,26 @@ export function injectStyles(): void {
       flex-shrink: 0;
     }
 
+    .inspector-equip-label-wrap {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
     .inspector-equip-label {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: Fixedsys, monospace;
       font-size: 10px;
       color: var(--retro-text-muted, #6d8896);
       text-transform: uppercase;
+    }
+
+    .inspector-equip-hint {
+      font-family: Fixedsys, monospace;
+      font-size: 9px;
+      color: var(--retro-neon-cyan, #00e5ff);
+      letter-spacing: 0.5px;
+      opacity: 0.8;
     }
 
     .inspector-equip-buttons {
@@ -550,29 +565,86 @@ export function injectStyles(): void {
     }
 
     .inspector-equip-btn {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
-      font-size: 10px;
-      padding: 6px 2px;
-      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px 2px 5px 2px;
+      background: rgba(10, 14, 26, 0.85);
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
-      color: var(--retro-text-primary, #e0f8ff);
-      border-radius: 3px;
+      border-radius: 4px;
       cursor: pointer;
-      transition: all 0.12s ease;
-      text-align: center;
+      transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+      user-select: none;
     }
 
     .inspector-equip-btn:hover {
       border-color: var(--retro-neon-cyan, #00e5ff);
-      background: rgba(0, 229, 255, 0.15);
-      color: #ffffff;
+      background: rgba(0, 229, 255, 0.12);
+      transform: translateY(-1px);
     }
 
     .inspector-equip-btn.is-active-slot {
-      border-color: var(--retro-neon-cyan, #00e5ff);
-      background: rgba(0, 229, 255, 0.25);
-      box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
+      border-color: var(--retro-neon-cyan, #00e5ff) !important;
+      background: linear-gradient(180deg, rgba(0, 229, 255, 0.25) 0%, rgba(0, 229, 255, 0.08) 100%) !important;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.5), inset 0 0 6px rgba(0, 229, 255, 0.3) !important;
+    }
+
+    .equip-btn-keynum {
+      font-family: Fixedsys, monospace;
+      font-size: 8px;
+      line-height: 1;
+      color: var(--retro-text-muted, #6d8896);
+      padding: 1px 3px;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 2px;
+    }
+
+    .inspector-equip-btn.is-active-slot .equip-btn-keynum {
+      color: #000000;
+      background: var(--retro-neon-cyan, #00e5ff);
+      font-weight: bold;
+    }
+
+    .equip-btn-slotname {
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .inspector-equip-btn.is-active-slot .equip-btn-slotname {
       color: #ffffff;
+      font-weight: bold;
+      text-shadow: 0 0 4px rgba(0, 229, 255, 0.8);
+    }
+
+    .equip-btn-check {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--retro-neon-cyan, #00e5ff);
+      color: #000000;
+      font-size: 8px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 6px var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .equip-flash-animation {
+      animation: equipFlash 0.35s ease-out;
+    }
+
+    @keyframes equipFlash {
+      0% { transform: scale(1.15); box-shadow: 0 0 16px #00e5ff; }
+      100% { transform: scale(1); box-shadow: 0 0 10px rgba(0, 229, 255, 0.5); }
     }
 
     .inspector-equip-btn.is-comparing {
@@ -896,6 +968,20 @@ export function injectStyles(): void {
       background: rgba(4, 6, 12, 0.85);
       border: 1px solid var(--retro-border-subtle);
       border-radius: 4px;
+    }
+
+    .forge-card-drag-handle {
+      cursor: grab;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .forge-card-drag-handle:hover {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.25);
+    }
+
+    .forge-card-drag-handle.is-dragging {
+      cursor: grabbing;
     }
 
     .forge-card-info {
