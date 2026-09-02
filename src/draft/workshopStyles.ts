@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v5';
+export const STYLE_ID = 'luna-workshop-styles-v6';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -117,6 +117,42 @@ export function injectStyles(): void {
       color: var(--retro-text-muted, #6d8896);
       line-height: 1.4;
       padding: 16px;
+    }
+
+    .inspector-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .inspector-preview-name {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--retro-text-primary, #e0f8ff);
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .inspector-preview-archetype {
+      display: inline-block;
+      align-self: flex-start;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 3px 8px;
+      border-radius: 3px;
+      border: 1px solid currentColor;
+    }
+
+    .inspector-preview-hint {
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--retro-text-muted, #6d8896);
+      line-height: 1.4;
+      margin-top: 4px;
     }
 
     .bottom-loadout-bay {
@@ -269,36 +305,88 @@ export function injectStyles(): void {
       box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
     }
 
-    .spell-grid {
+    .spell-grid-square {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+      gap: 10px;
+      padding: 8px 4px 16px 4px;
+      overflow-y: auto;
     }
 
-    .inventory-card {
+    .spell-tile {
       position: relative;
-      display: flex;
-      gap: 12px;
-      padding: 12px;
-      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
-      border-left-width: 3px;
-      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      width: 72px;
+      height: 72px;
+      box-sizing: border-box;
+      background: var(--retro-panel-bg, #080c18);
+      background-image:
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+      background-size: 8px 8px;
+      border: 1.5px solid var(--retro-border-subtle, #1a2236);
       border-radius: 4px;
-      cursor: grab;
-      transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, opacity 0.1s;
+      display: flex;
       align-items: center;
+      justify-content: center;
+      cursor: grab;
+      transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+      user-select: none;
     }
 
-    .inventory-card:hover {
-      border-color: var(--retro-neon-cyan, #00e5ff);
-      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
-      transform: translateY(-1px);
+    .spell-tile:hover,
+    .spell-tile.tile-selected {
+      transform: scale(1.06);
+      z-index: 2;
     }
 
-    .inventory-card.is-dragging {
+    .spell-tile.tile-selected {
+      border-color: #ffffff !important;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    }
+
+    .spell-tile.is-dragging {
       opacity: 0.4;
       transform: scale(0.98);
       cursor: grabbing;
+    }
+
+    .tile-icon-wrap {
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .tile-equipped-badge {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      padding: 1px 3px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 9px;
+      line-height: 1;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid var(--retro-neon-cyan, #00e5ff);
+      color: var(--retro-neon-cyan, #00e5ff);
+      border-radius: 2px;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .tile-new-dot {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--retro-neon-magenta, #ff007f);
+      box-shadow: 0 0 6px var(--retro-neon-magenta, #ff007f);
+      animation: newBadgePulse 1s ease-in-out infinite alternate;
+      z-index: 3;
+      pointer-events: none;
     }
 
     .is-dragging {
@@ -318,23 +406,6 @@ export function injectStyles(): void {
       transform: scale(1.05);
     }
 
-    .card-icon-container {
-      flex-shrink: 0;
-      width: 48px;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .card-details {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-      flex: 1;
-    }
-
     .card-title {
       font-size: 18px;
       font-weight: 700;
@@ -342,18 +413,6 @@ export function injectStyles(): void {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-
-    .card-archetype {
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .card-stats {
-      font-size: 12px;
-      color: var(--retro-text-muted, #6d8896);
     }
 
     .action-slot.drop-zone {
@@ -377,26 +436,6 @@ export function injectStyles(): void {
         box-shadow: 0 0 12px rgba(255, 0, 127, 0.85);
         opacity: 1;
       }
-    }
-
-    .card-new-badge {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      font-size: 10px;
-      border: 1px solid var(--retro-neon-magenta, #ff007f);
-      color: var(--retro-neon-magenta, #ff007f);
-      text-shadow: var(--retro-glow-magenta, 0 0 8px rgba(255, 0, 127, 0.6));
-      background: rgba(255, 0, 127, 0.15);
-      padding: 2px 5px;
-      border-radius: 2px;
-      text-transform: uppercase;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      pointer-events: none;
-      animation: newBadgePulse 1.4s ease-in-out infinite;
-      z-index: 2;
     }
 
     .quick-equip-menu {

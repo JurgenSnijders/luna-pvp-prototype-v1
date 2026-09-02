@@ -46,13 +46,11 @@ import {
   chipStyle,
   injectStyles,
   renderPowerBar,
-  roleBadgeStyle,
   showQuickEquipMenu,
 } from './workshopStyles';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   getSpellRoleLabel,
-  getSpellRoles,
   SPELL_ROLES,
   spellMatchesMetaFilter,
   spellMatchesRoleFilter,
@@ -136,14 +134,18 @@ export class DraftModal {
   private vaultRoleFilters = new Set<SpellRole>();
   private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
+  private selectedSpellId: string | null = null;
+  private hoveredSpellId: string | null = null;
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
       this.renderVaultGrid();
     }
   };
   private readonly onLoadoutChanged = (): void => {
-    if (this.open_) {
-      this.renderBottomLoadoutBay();
+    if (!this.open_) return;
+    this.renderBottomLoadoutBay();
+    if (this.activeTab === 'VAULT') {
+      this.renderVaultGrid();
     }
   };
 
@@ -318,10 +320,6 @@ export class DraftModal {
 
     this.inspectorPane = document.createElement('div');
     this.inspectorPane.className = 'workspace-inspector-pane';
-    const inspectorEmpty = document.createElement('div');
-    inspectorEmpty.className = 'inspector-empty';
-    inspectorEmpty.textContent = 'Select or hover a spell to inspect telemetry';
-    this.inspectorPane.appendChild(inspectorEmpty);
 
     this.workspaceSplit = document.createElement('div');
     this.workspaceSplit.className = 'workspace-split';
@@ -511,7 +509,7 @@ export class DraftModal {
     this.buildVaultFilterChips();
 
     this.spellGrid = document.createElement('div');
-    this.spellGrid.className = 'spell-grid';
+    this.spellGrid.className = 'spell-grid-square';
     this.vaultRoot.appendChild(this.spellGrid);
   }
 
@@ -611,6 +609,10 @@ export class DraftModal {
     const loadoutSpellIds = new Set(
       Object.values(loadout).filter((id): id is string => id !== null),
     );
+    const equippedSlotBySpellId = new Map<string, ActionSlotKey>();
+    for (const [slot, id] of Object.entries(loadout)) {
+      if (id) equippedSlotBySpellId.set(id, slot as ActionSlotKey);
+    }
     const metaContext = {
       loadoutSpellIds,
       isNewSpell: (id: string) => SpellInventoryManager.isNewSpell(id),
@@ -632,83 +634,139 @@ export class DraftModal {
       return true;
     });
 
+    const spellIds = new Set(spells.map((s) => s.id));
+    if (
+      this.selectedSpellId === null ||
+      !spellIds.has(this.selectedSpellId)
+    ) {
+      const defaultId = loadout.LMB ?? spells[0]?.id ?? null;
+      this.selectedSpellId = defaultId;
+    }
+
     if (spells.length === 0) {
       const empty = document.createElement('div');
       empty.textContent = this.hasVaultFiltersActive()
         ? 'No spells match your filters.'
         : 'No spells in inventory.';
-      empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};`;
+      empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};grid-column:1/-1;`;
       this.spellGrid.appendChild(empty);
+      this.updateInspectorPreview(null);
       return;
     }
 
     for (const spell of spells) {
-      this.spellGrid.appendChild(this.createInventoryCard(spell));
+      this.spellGrid.appendChild(this.createSpellTile(spell, equippedSlotBySpellId));
     }
+
+    this.updateInspectorPreview(this.getInspectorPreviewSpell(spells));
   }
 
-  private createInventoryCard(spell: AbilitySchema): HTMLElement {
+  private getInspectorPreviewSpell(spells: AbilitySchema[]): AbilitySchema | null {
+    if (this.hoveredSpellId) {
+      const hovered = spells.find((s) => s.id === this.hoveredSpellId);
+      if (hovered) return hovered;
+    }
+    if (this.selectedSpellId) {
+      const selected = spells.find((s) => s.id === this.selectedSpellId);
+      if (selected) return selected;
+    }
+    return spells[0] ?? null;
+  }
+
+  private updateInspectorPreview(spell: AbilitySchema | null): void {
+    this.inspectorPane.innerHTML = '';
+
+    if (!spell) {
+      const empty = document.createElement('div');
+      empty.className = 'inspector-empty';
+      empty.textContent = 'Select or hover a spell to inspect telemetry';
+      this.inspectorPane.appendChild(empty);
+      return;
+    }
+
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
-    const card = document.createElement('div');
-    card.className = 'inventory-card';
-    card.style.borderLeftColor = archetypeColor;
+    const preview = document.createElement('div');
+    preview.className = 'inspector-preview';
 
-    const iconContainer = document.createElement('div');
-    iconContainer.className = 'card-icon-container';
-    iconContainer.appendChild(generateSpellIcon(spell, 48));
-
-    const details = document.createElement('div');
-    details.className = 'card-details';
-
-    const title = document.createElement('span');
-    title.className = 'card-title';
-    title.textContent = spell.name;
+    const name = document.createElement('div');
+    name.className = 'inspector-preview-name';
+    name.textContent = spell.name;
 
     const archetype = document.createElement('span');
-    archetype.className = 'card-archetype';
+    archetype.className = 'inspector-preview-archetype';
     archetype.textContent = spell.archetype ?? 'UNKNOWN';
     archetype.style.color = archetypeColor;
+    archetype.style.borderColor = archetypeColor;
+    archetype.style.background = `${archetypeColor}18`;
 
-    const stats = document.createElement('span');
-    stats.className = 'card-stats';
-    stats.textContent = `CD ${spell.cooldownMs}ms`;
+    const hint = document.createElement('div');
+    hint.className = 'inspector-preview-hint';
+    hint.textContent = 'Hover or click tile to preview. Full telemetry in next pass.';
 
-    const roles = getSpellRoles(spell);
-    const roleRow = document.createElement('div');
-    roleRow.className = 'card-role-row';
-    roleRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;';
-    const visibleRoles = roles.slice(0, 3);
-    for (const role of visibleRoles) {
-      const pill = document.createElement('span');
-      pill.textContent = getSpellRoleLabel(role);
-      pill.style.cssText = roleBadgeStyle(role);
-      roleRow.appendChild(pill);
-    }
-    if (roles.length > 3) {
-      const more = document.createElement('span');
-      more.textContent = `+${roles.length - 3}`;
-      more.style.cssText = `font-size:${FONTS.size.badge};color:${RETRO_COLORS.textMuted};`;
-      roleRow.appendChild(more);
-    }
+    preview.appendChild(name);
+    preview.appendChild(archetype);
+    preview.appendChild(hint);
+    this.inspectorPane.appendChild(preview);
+  }
 
-    details.appendChild(title);
-    details.appendChild(archetype);
-    details.appendChild(stats);
-    if (roles.length > 0) {
-      details.appendChild(roleRow);
+  private createSpellTile(
+    spell: AbilitySchema,
+    equippedSlotBySpellId: Map<string, ActionSlotKey>,
+  ): HTMLElement {
+    const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const tile = document.createElement('div');
+    tile.className = 'spell-tile';
+    tile.dataset.spellId = spell.id;
+    tile.style.borderColor = archetypeColor;
+
+    if (this.selectedSpellId === spell.id) {
+      tile.classList.add('tile-selected');
     }
 
-    card.appendChild(iconContainer);
-    card.appendChild(details);
+    const equippedSlot = equippedSlotBySpellId.get(spell.id);
+    if (equippedSlot) {
+      const badge = document.createElement('div');
+      badge.className = 'tile-equipped-badge';
+      badge.textContent = equippedSlot;
+      tile.appendChild(badge);
+    }
 
     if (SpellInventoryManager.isNewSpell(spell.id)) {
-      const newBadge = document.createElement('span');
-      newBadge.className = 'card-new-badge';
-      newBadge.textContent = 'NEW';
-      card.appendChild(newBadge);
+      const dot = document.createElement('div');
+      dot.className = 'tile-new-dot';
+      tile.appendChild(dot);
     }
 
-    card.addEventListener('contextmenu', (e) => {
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'tile-icon-wrap';
+    iconWrap.appendChild(generateSpellIcon(spell, 56));
+    tile.appendChild(iconWrap);
+
+    tile.addEventListener('mouseenter', () => {
+      this.hoveredSpellId = spell.id;
+      if (!tile.classList.contains('tile-selected')) {
+        tile.style.boxShadow = `0 0 8px ${archetypeColor}66`;
+      }
+      this.updateInspectorPreview(spell);
+    });
+
+    tile.addEventListener('mouseleave', () => {
+      this.hoveredSpellId = null;
+      if (!tile.classList.contains('tile-selected')) {
+        tile.style.boxShadow = '';
+      }
+      const selected = this.selectedSpellId
+        ? (SpellInventoryManager.getSpell(this.selectedSpellId) ?? null)
+        : null;
+      this.updateInspectorPreview(selected);
+    });
+
+    tile.addEventListener('click', () => {
+      this.selectedSpellId = spell.id;
+      this.renderVaultGrid();
+    });
+
+    tile.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const items = ACTION_SLOT_KEYS.map((slotKey) => ({
         label: `[${slotKey}] ${getCategoryLabel(SLOT_CATEGORY_MAP[slotKey])}`,
@@ -720,8 +778,8 @@ export class DraftModal {
       showQuickEquipMenu(e.clientX, e.clientY, items);
     });
 
-    attachVaultCardDrag(card, spell.id);
-    return card;
+    attachVaultCardDrag(tile, spell.id);
+    return tile;
   }
 
   private renderForge(): void {
