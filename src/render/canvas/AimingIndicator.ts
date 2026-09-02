@@ -141,7 +141,7 @@ function drawFrostAccents(
   shaftWidth: number,
   color: string,
 ): void {
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 1.5;
   const tickLen = 8;
   for (let x = shaftStart + 20; x < shaftEnd; x += 28) {
@@ -160,7 +160,7 @@ function drawFrostAccents(
   ctx.lineTo(tipX + 20, 0);
   ctx.lineTo(tipX + 10, shaftWidth * 0.5);
   ctx.closePath();
-  ctx.fillStyle = hexToRgba(color, 0.5);
+  ctx.fillStyle = hexToRgba(color, 0.35);
   ctx.fill();
   ctx.stroke();
 }
@@ -172,7 +172,7 @@ function drawFireAccents(
   color: string,
   now: number,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.7);
+  ctx.strokeStyle = hexToRgba(color, 0.4);
   ctx.lineWidth = 2;
   const pulse = (now / 300) % 1;
   for (let i = 0; i < 5; i++) {
@@ -192,7 +192,7 @@ function drawLightningAccents(
   range: number,
   color: string,
 ): void {
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 2;
   const endX = range - 36;
   const segments = 6;
@@ -230,7 +230,7 @@ function drawVoidAccents(
   ctx.strokeStyle = hexToRgba(color, 0.35);
   ctx.lineWidth = 5;
   ctx.stroke();
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 2;
   ctx.stroke();
 }
@@ -241,7 +241,7 @@ function drawKineticAccents(
   range: number,
   color: string,
 ): void {
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 2;
   ctx.setLineDash([6, 6]);
   ctx.beginPath();
@@ -309,8 +309,9 @@ export function drawSkillshotArrow(
   ctx.rotate(state.angle);
 
   const grad = ctx.createLinearGradient(shaftStart, 0, len, 0);
-  grad.addColorStop(0, hexToRgba(color, 0.15));
-  grad.addColorStop(1, hexToRgba(color, 0.35));
+  grad.addColorStop(0, hexToRgba(color, 0.04));
+  grad.addColorStop(0.55, hexToRgba(color, 0.12));
+  grad.addColorStop(1, hexToRgba(color, 0.22));
 
   ctx.beginPath();
   ctx.moveTo(shaftStart, -shaftWidth / 2);
@@ -324,11 +325,11 @@ export function drawSkillshotArrow(
   ctx.fillStyle = grad;
   ctx.fill();
 
-  ctx.strokeStyle = hexToRgba(color, 0.35);
-  ctx.lineWidth = 6;
+  ctx.strokeStyle = hexToRgba(color, 0.16);
+  ctx.lineWidth = 5;
   ctx.stroke();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = hexToRgba(color, 0.42);
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 
   switch (archetype) {
