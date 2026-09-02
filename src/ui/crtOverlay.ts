@@ -1,5 +1,5 @@
 import { getEffectiveCrtSettings } from '../devtools/graphicsSettings';
-import { RETRO_COLORS } from './tokens';
+import { getActiveColors } from './palette';
 
 const OVERLAY_ID = 'crt-overlay';
 
@@ -35,8 +35,9 @@ export function applyCrtOverlay(): void {
   }
 
   el.style.display = 'block';
-  const scan = rgba(RETRO_COLORS.bgDark, crt.scanlineIntensity * 0.35);
-  const vig = rgba(RETRO_COLORS.bgDark, crt.vignette * 0.65);
+  const colors = getActiveColors();
+  const scan = rgba(colors.bgDark, crt.scanlineIntensity * 0.35);
+  const vig = rgba(colors.bgDark, crt.vignette * 0.65);
   el.style.background = `
     repeating-linear-gradient(0deg, transparent, transparent 2px, ${scan} 2px, ${scan} 4px),
     radial-gradient(ellipse at center, transparent 40%, ${vig} 100%)

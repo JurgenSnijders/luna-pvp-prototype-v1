@@ -40,6 +40,7 @@ import {
 import { subscribeGraphicsSettings } from '../devtools/graphicsSettings';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
+import { applyPalette } from '../ui/palette';
 
 function init(app: GameApp): void {
   resize(app);
@@ -66,12 +67,14 @@ function init(app: GameApp): void {
   if (glCtx) {
     (window as unknown as { __lunaGlCtx?: typeof glCtx }).__lunaGlCtx = glCtx;
   }
+  applyPalette();
   applyCrtOverlay();
   applyArcadeBezel();
   // A tier change moves dprCap, so the world canvas has to be re-sized in step
   // with the GL drawing buffer or the CRT world texture samples at the wrong scale.
   subscribeGraphicsSettings(() => {
     resize(app);
+    applyPalette();
     applyCrtOverlay();
     applyArcadeBezel();
   });

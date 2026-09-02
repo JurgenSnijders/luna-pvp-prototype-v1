@@ -1,5 +1,6 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getHexVertices } from '../../math/HexMath';
+import { getActiveColors } from '../../ui/tokens';
 import type { CanvasRenderCtx } from './renderCtx';
 
 export function drawHexPlatform(
@@ -28,10 +29,12 @@ export function drawHexPlatform(
   ctx.closePath();
   ctx.fillStyle = '#12121e';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0, 229, 255, 0.3)';
+  const colors = getActiveColors();
+  const neonRgb = hexToRgb(colors.neonCyan);
+  ctx.strokeStyle = `rgba(${neonRgb.r}, ${neonRgb.g}, ${neonRgb.b}, 0.3)`;
   ctx.lineWidth = 9;
   ctx.stroke();
-  ctx.strokeStyle = '#00e5ff';
+  ctx.strokeStyle = colors.neonCyan;
   ctx.lineWidth = 3;
   ctx.stroke();
 
@@ -51,4 +54,9 @@ export function drawHexPlatform(
     ctx.lineWidth = width;
     ctx.stroke();
   }
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }

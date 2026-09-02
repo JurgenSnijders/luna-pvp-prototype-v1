@@ -23,6 +23,8 @@ export interface CrtPresentParams {
   bloomIntensity: number;
   bloomPasses: number;
   bloomThreshold: number;
+  tintColor: [number, number, number];
+  tintAmount: number;
 }
 
 export class PostFX {
@@ -217,6 +219,13 @@ export class PostFX {
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_curvature')!, params.curvature);
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_vignette')!, params.vignette);
     gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_phosphor')!, params.phosphor);
+    gl.uniform3f(
+      gl.getUniformLocation(this.crtProgram, 'u_tintColor')!,
+      params.tintColor[0],
+      params.tintColor[1],
+      params.tintColor[2],
+    );
+    gl.uniform1f(gl.getUniformLocation(this.crtProgram, 'u_tintAmount')!, params.tintAmount);
     this.drawFullscreen();
   }
 

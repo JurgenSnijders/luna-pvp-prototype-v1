@@ -60,3 +60,34 @@ export function inputStyle(): string {
       border-radius:4px;font-size:12px;font-family:${FONTS.mono};
     `;
 }
+
+export function selectRow(
+  parent: HTMLElement,
+  label: string,
+  options: { value: string; label: string }[],
+  get: () => string,
+  set: (v: string) => void,
+): { refresh: () => void; select: HTMLSelectElement } {
+  const row = document.createElement('div');
+  row.style.marginBottom = '10px';
+  const lbl = document.createElement('label');
+  lbl.style.cssText = `display:block;margin-bottom:4px;font-size:12px;color:${RETRO_COLORS.textMuted};`;
+  lbl.textContent = label;
+  const select = document.createElement('select');
+  select.style.cssText = inputStyle();
+  for (const opt of options) {
+    const el = document.createElement('option');
+    el.value = opt.value;
+    el.textContent = opt.label;
+    select.appendChild(el);
+  }
+  const refresh = () => {
+    select.value = get();
+  };
+  select.onchange = () => set(select.value);
+  refresh();
+  row.appendChild(lbl);
+  row.appendChild(select);
+  parent.appendChild(row);
+  return { refresh, select };
+}

@@ -1,3 +1,9 @@
+import {
+  STYLE_PRESETS,
+  type StylePresetId,
+  isStylePresetId,
+} from '../render/presets/stylePresets';
+
 export const STORAGE_KEY_GRAPHICS = 'LUNA_GRAPHICS_SETTINGS';
 
 export type QualityTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'ULTRA' | 'AUTO';
@@ -18,6 +24,7 @@ export interface GraphicsSettings {
   crtPhosphor: number;
   bloomIntensity: number;
   arcadeBezel: boolean;
+  activePreset: StylePresetId;
 }
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
@@ -36,6 +43,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   crtPhosphor: 0.25,
   bloomIntensity: 0.8,
   arcadeBezel: true,
+  activePreset: 'CYBER_NEON',
 };
 
 export interface TierLimits {
@@ -64,6 +72,8 @@ export interface EffectiveCrtSettings {
   bloomIntensity: number;
   bloomThreshold: number;
   arcadeBezel: boolean;
+  tintColor: [number, number, number];
+  tintAmount: number;
 }
 
 const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
@@ -142,11 +152,19 @@ export function getEffectiveDprCap(): number {
   return Math.min(native, cap);
 }
 
+function getActivePresetCrt() {
+  const preset = STYLE_PRESETS[getGraphicsSettings().activePreset];
+  return preset.crt;
+}
+
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
   const bloomIntensity = tier === 'LOW' ? 0 : s.bloomIntensity;
   const bloomThreshold = tier === 'ULTRA' ? 0.5 : 0.6;
+  const presetCrt = getActivePresetCrt();
+  const tintColor = presetCrt.tintColor;
+  const tintAmount = presetCrt.tintAmount;
 
   if (!s.crtEnabled) {
     return {
@@ -160,6 +178,8 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       bloomIntensity,
       bloomThreshold,
       arcadeBezel: s.arcadeBezel,
+      tintColor,
+      tintAmount,
     };
   }
 
@@ -176,6 +196,8 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       bloomIntensity,
       bloomThreshold,
       arcadeBezel: s.arcadeBezel,
+      tintColor,
+      tintAmount,
     };
   }
 
@@ -191,6 +213,8 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     bloomIntensity,
     bloomThreshold,
     arcadeBezel: s.arcadeBezel,
+    tintColor,
+    tintAmount,
   };
 }
 
@@ -222,6 +246,10 @@ function loadFromStorage(): GraphicsSettings {
       crtPhosphor: parsed.crtPhosphor ?? DEFAULT_GRAPHICS_SETTINGS.crtPhosphor,
       bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
       arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
+      activePreset:
+        parsed.activePreset && isStylePresetId(parsed.activePreset)
+          ? parsed.activePreset
+          : DEFAULT_GRAPHICS_SETTINGS.activePreset,
     };
   } catch {
     return { ...DEFAULT_GRAPHICS_SETTINGS };
@@ -258,6 +286,21 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     bloomEnabled: limits.bloomPasses > 0,
     refractionEnabled: limits.refraction,
     crtEnabled: tier !== 'LOW',
+  };
+  saveGraphicsSettings(next);
+  return next;
+}
+
+export function applyStylePreset(id: StylePresetId): GraphicsSettings {
+  const preset = STYLE_PRESETS[id];
+  const next: GraphicsSettings = {
+    ...getGraphicsSettings(),
+    activePreset: id,
+    crtScanlineIntensity: preset.crt.crtScanlineIntensity,
+    crtCurvature: preset.crt.crtCurvature,
+    crtVignette: preset.crt.crtVignette,
+    crtPhosphor: preset.crt.crtPhosphor,
+    bloomIntensity: preset.crt.bloomIntensity,
   };
   saveGraphicsSettings(next);
   return next;

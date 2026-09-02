@@ -1,7 +1,7 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
-import { RETRO_COLORS } from '../../ui/tokens';
+import { getActiveColors } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 
@@ -14,16 +14,17 @@ export function drawCombatants(
   for (const player of world.players) {
     if (player.isDead) continue;
     const pos = lerpPos(player, alpha);
+    const colors = getActiveColors();
     const isBot = player.tags.has('bot');
-    const baseColor = isBot ? RETRO_COLORS.botOrange : RETRO_COLORS.playerCyan;
-    const aimColor = isBot ? RETRO_COLORS.botOrangeAim : RETRO_COLORS.playerCyanAim;
+    const baseColor = isBot ? colors.botOrange : colors.playerCyan;
+    const aimColor = isBot ? colors.botOrangeAim : colors.playerCyanAim;
     drawCombatantBody(ctx, state, player, pos, baseColor, aimColor);
   }
 
   for (const dummy of world.dummies) {
     if (dummy.isDead) continue;
     const pos = lerpPos(dummy, alpha);
-    drawCombatantBody(ctx, state, dummy, pos, RETRO_COLORS.botOrange);
+    drawCombatantBody(ctx, state, dummy, pos, getActiveColors().botOrange);
   }
 }
 

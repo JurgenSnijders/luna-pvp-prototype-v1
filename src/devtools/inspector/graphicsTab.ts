@@ -1,15 +1,18 @@
 import {
   DEFAULT_GRAPHICS_SETTINGS,
+  applyStylePreset,
   applyTierPreset,
   getEffectiveTier,
   getGraphicsSettings,
   saveGraphicsSettings,
+  subscribeGraphicsSettings,
   type GraphicsSettings,
   type QualityTier,
 } from '../graphicsSettings';
+import { STYLE_PRESET_IDS, STYLE_PRESETS, isStylePresetId } from '../../render/presets/stylePresets';
 import { perfMonitor } from '../PerfMonitor';
 import { setForcedBackend } from '../../render/backends/createParticleBackend';
-import { buttonStyle, sliderRow } from './domHelpers';
+import { buttonStyle, selectRow, sliderRow } from './domHelpers';
 
 export function buildGraphicsTab(parent: HTMLElement): void {
   const section = document.createElement('div');
@@ -79,6 +82,23 @@ export function buildGraphicsTab(parent: HTMLElement): void {
   addToggle('crtEnabled', 'CRT Post-Processing');
   addToggle('arcadeBezel', 'Arcade Bezel');
 
+  const presetOptions = STYLE_PRESET_IDS.map((id) => ({
+    value: id,
+    label: STYLE_PRESETS[id].label,
+  }));
+  const presetSelect = selectRow(
+    section,
+    'Style Preset',
+    presetOptions,
+    () => getGraphicsSettings().activePreset,
+    (id) => {
+      if (isStylePresetId(id)) {
+        applyStylePreset(id);
+        syncControls(getGraphicsSettings());
+      }
+    },
+  );
+
   const numeric = (key: keyof GraphicsSettings) => ({
     get: () => getGraphicsSettings()[key] as number,
     set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
@@ -123,8 +143,11 @@ export function buildGraphicsTab(parent: HTMLElement): void {
       const box = checkboxes[key];
       if (box) box.checked = s[key] as boolean;
     }
+    presetSelect.refresh();
     for (const slider of sliders) slider.refresh();
   };
+
+  subscribeGraphicsSettings(() => syncControls(getGraphicsSettings()));
 
   const presetRow = document.createElement('div');
   presetRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';

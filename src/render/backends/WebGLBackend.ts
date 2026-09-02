@@ -143,6 +143,8 @@ export class WebGLBackend implements ParticleBackend {
           bloomIntensity: crt.bloomIntensity,
           bloomPasses: limits.bloomPasses,
           bloomThreshold: crt.bloomThreshold,
+          tintColor: crt.tintColor,
+          tintAmount: crt.tintAmount,
         },
         bufferW,
         bufferH,
