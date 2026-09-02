@@ -286,6 +286,7 @@ export function dispatchAction(
             pos: { x: t.pos.x, y: t.pos.y },
             value: healAmount,
             archetype: ctx.ability?.archetype,
+            targetId: t.id,
           });
         }
       }

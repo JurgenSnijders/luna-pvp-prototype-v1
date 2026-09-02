@@ -70,6 +70,7 @@ export interface CombatVisualEvent {
   archetype?: SpellArchetype;
   label?: string;
   entityRadius?: number;
+  targetId?: string;
 }
 
 export interface HitMarkerEvent {
@@ -527,6 +528,7 @@ export class PhysicsWorld {
       type: 'DAMAGE',
       pos: { x: entity.pos.x, y: entity.pos.y },
       value: displayDmg,
+      targetId: entity.id,
     });
   }
 

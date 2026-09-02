@@ -62,6 +62,17 @@ interface SpatialFctLane {
   alternateSign: number;
 }
 
+interface PendingValueCluster {
+  total: number;
+  pos: { x: number; y: number };
+  type: FCTType;
+  colorOverride?: string;
+  kinematicProfile: FCTKinematicProfile;
+  remainingMs: number;
+}
+
+const CLUSTERABLE_TYPES = new Set<FCTType>(['DAMAGE', 'HEAL']);
+
 const FCT_COLORS = {
   FROST: '#88ddff',
   FIRE: '#ff4400',
@@ -81,6 +92,9 @@ const SPAWN_Y_OFFSET = 24;
 const SPATIAL_CELL_SIZE = 80;
 const LANE_STAGGER_MS = 75;
 const LANE_MIN_STAGGER_MS = 35;
+const CLUSTER_WINDOW_MS = 400;
+const CLUSTER_PER_TICK_MAX = 8;
+const CLUSTER_INSTANT_FLUSH = 15;
 const GRAVITY_PX_S2 = 420;
 const SCALE_PUNCH_MS = 120;
 const FADE_OUT_MS = 250;
@@ -91,6 +105,20 @@ const isHeadless = typeof document === 'undefined';
 
 function getLaneKey(pos: { x: number; y: number }): string {
   return `${Math.floor(pos.x / SPATIAL_CELL_SIZE)}_${Math.floor(pos.y / SPATIAL_CELL_SIZE)}`;
+}
+
+function getClusterKey(
+  type: FCTType,
+  targetId: string | undefined,
+  pos: { x: number; y: number },
+): string {
+  const id = targetId ?? getLaneKey(pos);
+  return `${type}:${id}`;
+}
+
+function formatClusterText(type: FCTType, total: number): string {
+  const n = Math.round(total);
+  return type === 'HEAL' ? `+${n}` : `-${n}`;
 }
 
 function computeFctBaseScale(type: FCTType, text: string, value?: number): number {
@@ -205,6 +233,7 @@ export function combatEventToFct(event: CombatVisualEvent): {
 export class FloatingCombatTextManager {
   private particles: FloatingTextParticle[] = [];
   private lanes: Map<string, SpatialFctLane> = new Map();
+  private clusters: Map<string, PendingValueCluster> = new Map();
 
   spawn(
     text: string,
@@ -213,9 +242,71 @@ export class FloatingCombatTextManager {
     colorOverride?: string,
     value?: number,
     kinematicProfile: FCTKinematicProfile = 'FOUNTAIN',
+    targetId?: string,
   ): void {
     if (isHeadless) return;
 
+    if (CLUSTERABLE_TYPES.has(type) && value !== undefined && value > 0) {
+      const clusterKey = getClusterKey(type, targetId, pos);
+
+      if (value > CLUSTER_PER_TICK_MAX) {
+        this.flushCluster(clusterKey);
+        this.enqueueSpawn(text, pos, type, colorOverride, value, kinematicProfile);
+        return;
+      }
+
+      let cluster = this.clusters.get(clusterKey);
+      if (!cluster) {
+        cluster = {
+          total: 0,
+          pos: { x: pos.x, y: pos.y },
+          type,
+          colorOverride,
+          kinematicProfile,
+          remainingMs: CLUSTER_WINDOW_MS,
+        };
+        this.clusters.set(clusterKey, cluster);
+      }
+
+      cluster.total += value;
+      cluster.pos = { x: pos.x, y: pos.y };
+      cluster.remainingMs = CLUSTER_WINDOW_MS;
+
+      if (cluster.total >= CLUSTER_INSTANT_FLUSH) {
+        this.flushCluster(clusterKey);
+      }
+      return;
+    }
+
+    this.enqueueSpawn(text, pos, type, colorOverride, value, kinematicProfile);
+  }
+
+  private flushCluster(clusterKey: string): void {
+    const cluster = this.clusters.get(clusterKey);
+    if (!cluster) return;
+
+    const total = Math.round(cluster.total);
+    this.clusters.delete(clusterKey);
+    if (total <= 0) return;
+
+    this.enqueueSpawn(
+      formatClusterText(cluster.type, total),
+      cluster.pos,
+      cluster.type,
+      cluster.colorOverride,
+      total,
+      cluster.kinematicProfile,
+    );
+  }
+
+  private enqueueSpawn(
+    text: string,
+    pos: { x: number; y: number },
+    type: FCTType,
+    colorOverride?: string,
+    value?: number,
+    kinematicProfile: FCTKinematicProfile = 'FOUNTAIN',
+  ): void {
     const baseScale = computeFctBaseScale(type, text, value);
 
     const laneKey = getLaneKey(pos);
@@ -374,6 +465,17 @@ export class FloatingCombatTextManager {
     if (isHeadless) return;
 
     const dtMs = dt * 1000;
+
+    const expiredClusters: string[] = [];
+    for (const [clusterKey, cluster] of this.clusters) {
+      cluster.remainingMs -= dtMs;
+      if (cluster.remainingMs <= 0) {
+        expiredClusters.push(clusterKey);
+      }
+    }
+    for (const clusterKey of expiredClusters) {
+      this.flushCluster(clusterKey);
+    }
 
     for (const [laneKey, lane] of this.lanes) {
       lane.cooldownMs -= dtMs;

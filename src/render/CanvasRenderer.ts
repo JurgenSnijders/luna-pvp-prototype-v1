@@ -83,7 +83,7 @@ export class CanvasRenderer {
 
     for (const event of world.drainCombatVisualEvents()) {
       const { text, type, color, value, kinematicProfile } = combatEventToFct(event);
-      this.fctManager.spawn(text, event.pos, type, color, value, kinematicProfile);
+      this.fctManager.spawn(text, event.pos, type, color, value, kinematicProfile, event.targetId);
     }
 
     if (aimingPlayer) {
