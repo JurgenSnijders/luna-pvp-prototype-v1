@@ -340,9 +340,9 @@ export class PostFX {
 
     const grade = params.grade;
     const lutMix = grade.lutEnabled ? grade.lutMix : 0;
-    if (grade.lutEnabled) {
-      this.ensureLutTexture(grade.lutId);
-    }
+    // CRT always samples u_lut (sampler3D). Bind it on unit 3 even when mix is 0
+    // so it never shares a unit with the 2D scene/bloom/streak samplers.
+    this.ensureLutTexture(grade.lutId);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
@@ -363,11 +363,10 @@ export class PostFX {
       hasStreak ? this.bloomFboB!.texture : hasBloom ? this.bloomFboA!.texture : sourceTex,
     );
     gl.uniform1i(this.uniform(this.crtProgram, 'u_streak')!, 2);
-    if (grade.lutEnabled && this.lutTexture) {
-      gl.activeTexture(gl.TEXTURE3);
-      gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
-      gl.uniform1i(this.uniform(this.crtProgram, 'u_lut')!, 3);
-    }
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindTexture(gl.TEXTURE_3D, this.lutTexture);
+    gl.uniform1i(this.uniform(this.crtProgram, 'u_lut')!, 3);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_hasBloom')!, hasBloom ? 1 : 0);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_hasStreak')!, hasStreak ? 1 : 0);
     gl.uniform1f(
@@ -392,7 +391,6 @@ export class PostFX {
     );
     gl.uniform1f(this.uniform(this.crtProgram, 'u_tintAmount')!, params.tintAmount);
     gl.uniform1f(this.uniform(this.crtProgram, 'u_brightness')!, params.brightness);
-    gl.uniform1f(this.uniform(this.crtProgram, 'u_time')!, params.time);
     for (const [name, value] of Object.entries(params.effectUniforms)) {
       gl.uniform1f(this.uniform(this.crtProgram, name)!, value);
     }

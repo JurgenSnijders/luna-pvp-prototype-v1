@@ -17,7 +17,6 @@ import { helperText, selectRow, sliderRow, toggleRow } from './domHelpers';
 
 const GROUP_LABELS: Record<PostEffectGroup, string> = {
   CRT: 'CRT Effects',
-  ANALOG: 'Analog Artifacts',
   RETRO: 'Retro Console',
   REACTIVE: 'Gameplay Reactive',
   GRADE: 'Color Grading',
