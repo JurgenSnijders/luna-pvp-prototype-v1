@@ -1236,33 +1236,41 @@ export class DraftModal {
     header.appendChild(title);
     header.appendChild(archetypeTag);
 
+    const compareBanner = document.createElement('div');
+    compareBanner.className = 'inspector-compare-banner';
+    compareBanner.id = 'inspector-compare-banner';
+
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'inspector-telemetry-grid';
 
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
+      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec, 'cooldown'),
     );
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
+      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`, 'recoil'),
     );
 
     const repulseVal = document.createElement('span');
     repulseVal.className = 'telemetry-value val-repulse';
     repulseVal.textContent = `${telemetry.repulseForce} Force`;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
+      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal, 'repulse'),
     );
 
     const instabilityVal = document.createElement('span');
     instabilityVal.className = 'telemetry-value val-instability';
     instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
+      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal, 'instability'),
     );
 
     if (telemetry.directDamage > 0) {
       telemetryGrid.appendChild(
-        this.buildInspectorTelemetryCell('DIRECT DAMAGE', `${telemetry.directDamage} HP`),
+        this.buildInspectorTelemetryCell(
+          'DIRECT DAMAGE',
+          `${telemetry.directDamage} HP`,
+          'damage',
+        ),
       );
     }
 
@@ -1270,7 +1278,7 @@ export class DraftModal {
     deliveryVal.className = 'telemetry-value val-delivery';
     deliveryVal.textContent = telemetry.deliveryText;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
+      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, undefined, true),
     );
 
     const profileCard = this.buildImpactProfileCard(profile);
@@ -1315,6 +1323,14 @@ export class DraftModal {
       if (loadout[slotKey] === spell.id) {
         btn.classList.add('is-active-slot');
       }
+      btn.addEventListener('mouseenter', () => {
+        btn.classList.add('is-comparing');
+        this.showSlotComparison(slotKey, spell);
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.classList.remove('is-comparing');
+        this.clearSlotComparison();
+      });
       btn.addEventListener('click', () => {
         SpellInventoryManager.equipSpell(slotKey, spell.id);
       });
@@ -1326,6 +1342,7 @@ export class DraftModal {
 
     panel.appendChild(heroWrap);
     panel.appendChild(header);
+    panel.appendChild(compareBanner);
     panel.appendChild(telemetryGrid);
     panel.appendChild(profileCard);
     panel.appendChild(tagsRow);
@@ -2090,6 +2107,7 @@ export class DraftModal {
   private buildInspectorTelemetryCell(
     label: string,
     valueContent: string | HTMLElement,
+    metricKey?: string,
     fullWidth = false,
   ): HTMLElement {
     const cellEl = document.createElement('div');
@@ -2099,18 +2117,123 @@ export class DraftModal {
     labelEl.className = 'telemetry-label';
     labelEl.textContent = label;
 
+    cellEl.appendChild(labelEl);
+
     if (typeof valueContent === 'string') {
       const valueEl = document.createElement('span');
       valueEl.className = 'telemetry-value';
       valueEl.textContent = valueContent;
-      cellEl.appendChild(labelEl);
       cellEl.appendChild(valueEl);
     } else {
-      cellEl.appendChild(labelEl);
       cellEl.appendChild(valueContent);
     }
 
+    if (metricKey) {
+      const delta = document.createElement('span');
+      delta.className = 'telemetry-delta';
+      delta.dataset.metric = metricKey;
+      cellEl.appendChild(delta);
+    }
+
     return cellEl;
+  }
+
+  private updateTelemetryDelta(metric: string, text: string, className: string): void {
+    const delta = this.inspectorPane.querySelector(
+      `.telemetry-delta[data-metric="${metric}"]`,
+    );
+    if (!delta) return;
+    delta.textContent = text;
+    delta.className = `telemetry-delta is-visible ${className}`;
+  }
+
+  private showSlotComparison(slotKey: ActionSlotKey, inspectedSpell: AbilitySchema): void {
+    const banner = this.inspectorPane.querySelector('#inspector-compare-banner');
+    if (!banner) return;
+
+    const loadout = SpellInventoryManager.getLoadout();
+    const equippedId = loadout[slotKey];
+    const equippedSpell = equippedId ? (SpellInventoryManager.getSpell(equippedId) ?? null) : null;
+
+    if (!equippedSpell) {
+      banner.textContent = `COMPARING VS [${slotKey}]: EMPTY SLOT (ALL NEW STATS)`;
+      banner.classList.add('is-visible');
+      for (const delta of this.inspectorPane.querySelectorAll('.telemetry-delta')) {
+        delta.textContent = '(NEW)';
+        delta.className = 'telemetry-delta is-visible delta-better';
+      }
+      return;
+    }
+
+    if (equippedSpell.id === inspectedSpell.id) {
+      this.clearSlotComparison();
+      banner.textContent = `ALREADY EQUIPPED IN [${slotKey}]`;
+      banner.classList.add('is-visible');
+      return;
+    }
+
+    const inspectedTel = extractSpellTelemetry(inspectedSpell);
+    const targetTel = extractSpellTelemetry(equippedSpell);
+
+    const diffMs = inspectedSpell.cooldownMs - equippedSpell.cooldownMs;
+    const cdFormatted = `${diffMs >= 0 ? '+' : ''}${(diffMs / 1000).toFixed(1)}s`;
+    this.updateTelemetryDelta(
+      'cooldown',
+      diffMs !== 0 ? `(${cdFormatted})` : '(±0)',
+      diffMs < 0 ? 'delta-better' : diffMs > 0 ? 'delta-worse' : 'delta-neutral',
+    );
+
+    const diffRecoil = (inspectedSpell.recoilKick ?? 0) - (equippedSpell.recoilKick ?? 0);
+    const recoilFormatted = `${diffRecoil >= 0 ? '+' : ''}${diffRecoil}`;
+    this.updateTelemetryDelta(
+      'recoil',
+      diffRecoil !== 0 ? `(${recoilFormatted})` : '(±0)',
+      diffRecoil < 0 ? 'delta-better' : diffRecoil > 0 ? 'delta-worse-recoil' : 'delta-neutral',
+    );
+
+    const diffRepulse = inspectedTel.repulseForce - targetTel.repulseForce;
+    const repulseFormatted = `${diffRepulse >= 0 ? '+' : ''}${diffRepulse}`;
+    this.updateTelemetryDelta(
+      'repulse',
+      diffRepulse !== 0 ? `(${repulseFormatted})` : '(±0)',
+      diffRepulse > 0 ? 'delta-better' : diffRepulse < 0 ? 'delta-worse' : 'delta-neutral',
+    );
+
+    const diffInstab = inspectedTel.instabilityYield - targetTel.instabilityYield;
+    const instabFormatted = `${diffInstab >= 0 ? '+' : ''}${diffInstab}%`;
+    this.updateTelemetryDelta(
+      'instability',
+      diffInstab !== 0 ? `(${instabFormatted})` : '(±0)',
+      diffInstab > 0 ? 'delta-better' : diffInstab < 0 ? 'delta-worse' : 'delta-neutral',
+    );
+
+    const damageDelta = this.inspectorPane.querySelector(
+      '.telemetry-delta[data-metric="damage"]',
+    );
+    if (damageDelta) {
+      const diffDmg = inspectedTel.directDamage - targetTel.directDamage;
+      const dmgFormatted = `${diffDmg >= 0 ? '+' : ''}${diffDmg} HP`;
+      this.updateTelemetryDelta(
+        'damage',
+        diffDmg !== 0 ? `(${dmgFormatted})` : '(±0)',
+        diffDmg > 0 ? 'delta-better' : diffDmg < 0 ? 'delta-worse' : 'delta-neutral',
+      );
+    }
+
+    banner.textContent = `COMPARING VS [${slotKey}] ${equippedSpell.name}`;
+    banner.classList.add('is-visible');
+  }
+
+  private clearSlotComparison(): void {
+    const banner = this.inspectorPane.querySelector('#inspector-compare-banner');
+    if (banner) {
+      banner.classList.remove('is-visible');
+      banner.textContent = '';
+    }
+    for (const delta of this.inspectorPane.querySelectorAll('.telemetry-delta')) {
+      delta.textContent = '';
+      delta.className = 'telemetry-delta';
+    }
   }
 
   private buildImpactProfileCard(profile: CombatImpactProfile): HTMLElement {

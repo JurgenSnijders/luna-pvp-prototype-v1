@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v13';
+export const STYLE_ID = 'luna-workshop-styles-v14';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -245,6 +245,61 @@ export function injectStyles(): void {
 
     .telemetry-value.val-delivery {
       color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .telemetry-delta {
+      display: inline-block;
+      font-family: Fixedsys, monospace;
+      font-size: 10px;
+      margin-left: 6px;
+      font-weight: normal;
+      opacity: 0;
+      transform: translateX(-3px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+
+    .telemetry-delta.is-visible {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    .telemetry-delta.delta-better {
+      color: #00ff88;
+      text-shadow: 0 0 6px rgba(0, 255, 136, 0.4);
+    }
+
+    .telemetry-delta.delta-worse {
+      color: #ff3366;
+      text-shadow: 0 0 6px rgba(255, 51, 102, 0.4);
+    }
+
+    .telemetry-delta.delta-worse-recoil {
+      color: #ffaa00;
+      text-shadow: 0 0 6px rgba(255, 170, 0, 0.4);
+    }
+
+    .telemetry-delta.delta-neutral {
+      color: var(--retro-text-muted, #6d8896);
+    }
+
+    .inspector-compare-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: Fixedsys, monospace;
+      font-size: 9px;
+      padding: 2px 6px;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px dashed rgba(0, 229, 255, 0.4);
+      color: var(--retro-neon-cyan, #00e5ff);
+      border-radius: 2px;
+      margin-bottom: 4px;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .inspector-compare-banner.is-visible {
+      opacity: 1;
     }
 
     .inspector-profile-card {
@@ -518,6 +573,13 @@ export function injectStyles(): void {
       background: rgba(0, 229, 255, 0.25);
       box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
       color: #ffffff;
+    }
+
+    .inspector-equip-btn.is-comparing {
+      border-color: #ffffff !important;
+      background: rgba(255, 255, 255, 0.2) !important;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.5) !important;
+      transform: translateY(-2px);
     }
 
     .bottom-loadout-bay {
