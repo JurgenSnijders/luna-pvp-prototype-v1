@@ -1,190 +1,11 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
-import type { ActiveStatusTimer } from '../../entities/Entity';
-import type { SpellArchetype } from '../../types/schema';
 import { Vector2D } from '../../math/Vector2D';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { getActiveColors } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
-
-function statusProgress(entity: Entity, archetype: SpellArchetype): number {
-  const timers = entity.getActiveStatusTimers();
-  const match = timers.find((t) => t.archetype === archetype);
-  return match?.progress ?? 1;
-}
-
-function intensityAlpha(progress: number, base = 0.6): number {
-  return base * (0.4 + 0.6 * progress);
-}
-
-function drawStatusAuras(
-  ctx: CanvasRenderingContext2D,
-  entity: Entity,
-  pos: Vector2D,
-  nowMs: number,
-  physicsPos: Vector2D,
-): void {
-  const radius = entity.effectiveRadius;
-  const statuses = entity.getActiveStatusTimers();
-  if (statuses.length === 0) return;
-
-  const statusSet = new Set(statuses.map((s: ActiveStatusTimer) => s.archetype));
-
-  if (statusSet.has('FROST')) {
-    const progress = statusProgress(entity, 'FROST');
-    const ringAlpha = intensityAlpha(progress, 0.6);
-    const ringR = radius + 4;
-    const rotation = nowMs * 0.001;
-
-    ctx.strokeStyle = `rgba(0, 229, 255, ${ringAlpha})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, ringR, 0, Math.PI * 2);
-    ctx.stroke();
-
-    for (let i = 0; i < 6; i++) {
-      const angle = rotation + (i * Math.PI * 2) / 6;
-      const inner = ringR - 3;
-      const outer = ringR + 5;
-      const ix = pos.x + Math.cos(angle) * inner;
-      const iy = pos.y + Math.sin(angle) * inner;
-      const ox = pos.x + Math.cos(angle) * outer;
-      const oy = pos.y + Math.sin(angle) * outer;
-      ctx.beginPath();
-      ctx.moveTo(ix, iy);
-      ctx.lineTo(ox, oy);
-      ctx.stroke();
-    }
-
-    if (entity.vel.magSq() > 100) {
-      const back = entity.vel.magSq() > 0 ? entity.vel.normalize().scale(-1) : Vector2D.fromAngle(0, -1);
-      const treadStart = pos.add(back.scale(radius * 0.6));
-      const treadEnd = treadStart.add(back.scale(18));
-      ctx.strokeStyle = `rgba(180, 240, 255, ${ringAlpha * 0.5})`;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(treadStart.x, treadStart.y);
-      ctx.lineTo(treadEnd.x, treadEnd.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
-
-  if (statusSet.has('KINETIC') && entity.vel.magSq() > 200) {
-    const back = entity.vel.normalize().scale(-1);
-    const perp = new Vector2D(-back.y, back.x);
-    const base = pos.add(back.scale(radius * 0.5));
-    const skidLen = 24;
-    const offsets = [-3, 3];
-    for (const off of offsets) {
-      const start = base.add(perp.scale(off));
-      const end = start.add(back.scale(skidLen));
-      ctx.strokeStyle = off < 0 ? 'rgba(224, 248, 255, 0.85)' : 'rgba(0, 229, 255, 0.75)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
-    }
-  }
-
-  if (statusSet.has('EARTH')) {
-    const progress = statusProgress(entity, 'EARTH');
-    const alpha = intensityAlpha(progress, 0.75);
-    const bracketR = radius + 6;
-    ctx.strokeStyle = `rgba(212, 163, 115, ${alpha})`;
-    ctx.lineWidth = 2.5;
-
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const angle = (i * Math.PI * 2) / 8 - Math.PI / 2;
-      const x = pos.x + Math.cos(angle) * bracketR;
-      const y = pos.y + Math.sin(angle) * bracketR;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.stroke();
-
-    for (let i = 0; i < 4; i++) {
-      const angle = Math.PI / 2 + ((i - 1.5) * Math.PI) / 6;
-      const baseX = pos.x + Math.cos(angle) * (radius + 2);
-      const baseY = pos.y + Math.sin(angle) * (radius + 2);
-      const tipX = pos.x + Math.cos(angle) * (radius + 14);
-      const tipY = pos.y + Math.sin(angle) * (radius + 14);
-      ctx.beginPath();
-      ctx.moveTo(baseX, baseY);
-      ctx.lineTo(tipX, tipY);
-      ctx.stroke();
-    }
-  }
-
-  if (statusSet.has('GRAVITY')) {
-    const progress = statusProgress(entity, 'GRAVITY');
-    const haloAlpha = intensityAlpha(progress, 0.4);
-    ctx.strokeStyle = `rgba(179, 136, 255, ${haloAlpha})`;
-    ctx.fillStyle = `rgba(179, 136, 255, ${haloAlpha * 0.25})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(pos.x, pos.y - radius - 8, radius * 0.9, radius * 0.35, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    ctx.beginPath();
-    ctx.ellipse(
-      physicsPos.x,
-      physicsPos.y + radius * 0.15,
-      radius * 0.7,
-      radius * 0.2,
-      0,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fill();
-  }
-
-  if (statusSet.has('FIRE')) {
-    const speedFactor = Math.min(1, entity.vel.mag() / 400);
-    if (speedFactor > 0.05) {
-      const back = entity.vel.magSq() > 0 ? entity.vel.normalize().scale(-1) : Vector2D.fromAngle(Math.PI, 1);
-      const flareLen = 8 + speedFactor * 22;
-      const flareStart = pos.add(back.scale(radius));
-      const flareEnd = flareStart.add(back.scale(flareLen));
-      ctx.strokeStyle = `rgba(255, 68, 0, ${0.35 + speedFactor * 0.55})`;
-      ctx.lineWidth = 2 + speedFactor * 3;
-      ctx.beginPath();
-      ctx.moveTo(flareStart.x, flareStart.y);
-      ctx.lineTo(flareEnd.x, flareEnd.y);
-      ctx.stroke();
-
-      ctx.strokeStyle = `rgba(255, 170, 0, ${0.25 + speedFactor * 0.4})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius + 2 + speedFactor * 4, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
-
-  if (statusSet.has('PLASMA') && entity.instabilityPct >= 70) {
-    const sparkAlpha = 0.5 + 0.5 * Math.sin(nowMs * 0.02);
-    ctx.strokeStyle = `rgba(255, 0, 127, ${sparkAlpha})`;
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 4; i++) {
-      const edgeAngle = (nowMs * 0.003 + i * Math.PI * 0.5) % (Math.PI * 2);
-      const edgeX = pos.x + Math.cos(edgeAngle) * radius;
-      const edgeY = pos.y + Math.sin(edgeAngle) * radius;
-      const floorX = edgeX + (Math.random() - 0.5) * 8;
-      const floorY = pos.y + radius + 6 + Math.random() * 10;
-      ctx.beginPath();
-      ctx.moveTo(edgeX, edgeY);
-      ctx.lineTo(floorX, floorY);
-      ctx.stroke();
-    }
-  }
-}
+import { drawStatusAuras } from './statusAuras';
 
 function lerpColor(a: string, b: string, t: number): string {
   const parse = (hex: string): [number, number, number] => {
@@ -217,19 +38,20 @@ export function drawCombatants(
     const isBot = player.tags.has('bot');
     const baseColor = isBot ? colors.botOrange : colors.playerCyan;
     const aimColor = isBot ? colors.botOrangeAim : colors.playerCyanAim;
-    drawCombatantBody(ctx, state, player, pos, baseColor, aimColor);
+    drawCombatantBody(ctx, state, world, player, pos, baseColor, aimColor);
   }
 
   for (const dummy of world.dummies) {
     if (dummy.isDead) continue;
     const pos = lerpPos(dummy, alpha);
-    drawCombatantBody(ctx, state, dummy, pos, getActiveColors().botOrange);
+    drawCombatantBody(ctx, state, world, dummy, pos, getActiveColors().botOrange);
   }
 }
 
 function drawCombatantBody(
   ctx: CanvasRenderingContext2D,
   state: CanvasRenderCtx,
+  world: PhysicsWorld,
   entity: Entity,
   pos: Vector2D,
   fillColor: string,
@@ -247,7 +69,7 @@ function drawCombatantBody(
   const gravityBob = hasGravity ? Math.sin(nowMs * 0.006) * 3 : 0;
   const visualPos = physicsPos.add(new Vector2D(0, gravityBob));
 
-  drawStatusAuras(ctx, entity, visualPos, nowMs, physicsPos);
+  drawStatusAuras(ctx, entity, visualPos, nowMs, physicsPos, world);
 
   const radius = entity.effectiveRadius;
   const drawColor = entity.activeMorph ? '#6a7a8a' : fillColor;

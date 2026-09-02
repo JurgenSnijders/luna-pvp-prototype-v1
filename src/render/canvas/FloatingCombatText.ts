@@ -2,6 +2,7 @@ import type { CombatVisualEvent } from '../../engine/PhysicsWorld';
 import { fctClusterConfig } from '../../render/fctClusterConfig';
 import type { SpellArchetype } from '../../types/schema';
 import { canvasFont } from '../../ui/tokens';
+import { getArchetypeColor } from './SpellIconGenerator';
 
 export type FCTType =
   | 'DAMAGE'
@@ -17,7 +18,10 @@ export type FCTKinematicProfile =
   | 'HEAVY_DROP'
   | 'WEIGHTLESS'
   | 'SLIDE'
-  | 'JITTER';
+  | 'JITTER'
+  | 'SCATTER'
+  | 'BOUNCE'
+  | 'DRIP';
 
 const ARCHETYPE_ACTION_TAGS: Partial<
   Record<SpellArchetype, { tag: string; profile: FCTKinematicProfile }>
@@ -30,6 +34,17 @@ const ARCHETYPE_ACTION_TAGS: Partial<
   PLASMA: { tag: '[VOLATILE]', profile: 'FOUNTAIN' },
   CHRONO: { tag: '[TIME LOCKED]', profile: 'FLOAT_UP' },
   ARCANE: { tag: '[ABSORB]', profile: 'FLOAT_UP' },
+  CHAOS: { tag: '[SCRAMBLED]', profile: 'SCATTER' },
+  BLOOD: { tag: '[LEECHING]', profile: 'DRIP' },
+  SONIC: { tag: '[RESONANT]', profile: 'BOUNCE' },
+  LIGHTNING: { tag: '[SHOCKED]', profile: 'JITTER' },
+  AERO: { tag: '[FRICTIONLESS]', profile: 'SLIDE' },
+  MAGNETIC: { tag: '[MAGNETIZED]', profile: 'SLIDE' },
+  VOID: { tag: '[RIFTED]', profile: 'FLOAT_UP' },
+  HOLY: { tag: '[REPELLED]', profile: 'FLOAT_UP' },
+  TOXIC: { tag: '[CORRODED]', profile: 'WEIGHTLESS' },
+  PHASE: { tag: '[PHASED]', profile: 'WEIGHTLESS' },
+  NATURE: { tag: '[TETHERED]', profile: 'FLOAT_UP' },
 };
 
 export interface FloatingTextParticle {
@@ -46,6 +61,8 @@ export interface FloatingTextParticle {
   kinematicProfile: FCTKinematicProfile;
   jitterOffset: number;
   horizontalDrag: number;
+  bounceFloorY: number | null;
+  hasBounced: boolean;
 }
 
 interface QueuedCombatText {
@@ -135,25 +152,14 @@ function computeFctBaseScale(type: FCTType, text: string, value?: number): numbe
   return Math.min(2.3, Math.max(0.75, scale));
 }
 
+const FCT_ARCHETYPE_COLOR_OVERRIDES: Partial<Record<SpellArchetype, string>> = {
+  FROST: FCT_COLORS.FROST,
+  EARTH: FCT_COLORS.EARTH,
+  HOLY: FCT_COLORS.HEAL,
+};
+
 export function archetypeFctColor(archetype: SpellArchetype): string {
-  switch (archetype) {
-    case 'FROST':
-      return FCT_COLORS.FROST;
-    case 'FIRE':
-      return FCT_COLORS.FIRE;
-    case 'EARTH':
-      return FCT_COLORS.EARTH;
-    case 'LIGHTNING':
-      return FCT_COLORS.LIGHTNING;
-    case 'VOID':
-      return FCT_COLORS.VOID;
-    case 'PLASMA':
-      return FCT_COLORS.PLASMA;
-    case 'HOLY':
-      return FCT_COLORS.HEAL;
-    default:
-      return '#cccccc';
-  }
+  return FCT_ARCHETYPE_COLOR_OVERRIDES[archetype] ?? getArchetypeColor(archetype);
 }
 
 export function combatEventToFct(event: CombatVisualEvent): {
@@ -335,101 +341,88 @@ export class FloatingCombatTextManager {
     const spawnPos = { x: item.pos.x, y: item.pos.y - SPAWN_Y_OFFSET };
     const color = item.colorOverride ?? FCT_COLORS.DEFAULT_DAMAGE;
 
+    const push = (
+      vel: { x: number; y: number },
+      gravity: number,
+      horizontalDrag: number,
+      lifeMs: number,
+      scale = item.scale,
+      bounceFloorY: number | null = null,
+    ): void => {
+      this.particles.push({
+        id: `fct_${nextParticleId++}`,
+        text: item.text,
+        pos: spawnPos,
+        vel,
+        gravity,
+        color,
+        scale,
+        baseScale: item.scale,
+        lifeMs,
+        maxLifeMs: lifeMs,
+        kinematicProfile: profile,
+        jitterOffset: 0,
+        horizontalDrag,
+        bounceFloorY,
+        hasBounced: false,
+      });
+    };
+
     switch (profile) {
       case 'FLOAT_UP':
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: { x: 0, y: -75 },
-          gravity: 0,
-          color,
-          scale: item.scale,
-          baseScale: item.scale,
-          lifeMs: LINEAR_UPWARD_LIFE_MS,
-          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-          kinematicProfile: profile,
-          jitterOffset: 0,
-          horizontalDrag: 0.35,
-        });
+        push({ x: 0, y: -75 }, 0, 0.35, LINEAR_UPWARD_LIFE_MS);
         return;
 
       case 'SLIDE': {
         const lateralVel = lane.alternateSign * (160 + Math.random() * 40);
         lane.alternateSign *= -1;
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: { x: lateralVel, y: -30 },
-          gravity: 40,
-          color,
-          scale: item.scale,
-          baseScale: item.scale,
-          lifeMs: LINEAR_UPWARD_LIFE_MS,
-          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-          kinematicProfile: profile,
-          jitterOffset: 0,
-          horizontalDrag: 0.7,
-        });
+        push({ x: lateralVel, y: -30 }, 40, 0.7, LINEAR_UPWARD_LIFE_MS);
         return;
       }
 
       case 'HEAVY_DROP': {
         const lateralVel = lane.alternateSign * 25;
         lane.alternateSign *= -1;
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: { x: lateralVel, y: -60 },
-          gravity: 850,
-          color,
-          scale: item.scale,
-          baseScale: item.scale,
-          lifeMs: LINEAR_UPWARD_LIFE_MS,
-          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-          kinematicProfile: profile,
-          jitterOffset: 0,
-          horizontalDrag: 0.35,
-        });
+        push({ x: lateralVel, y: -60 }, 850, 0.35, LINEAR_UPWARD_LIFE_MS);
         return;
       }
 
       case 'WEIGHTLESS':
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: { x: (Math.random() - 0.5) * 15, y: -35 },
-          gravity: 0,
-          color,
-          scale: item.scale,
-          baseScale: item.scale,
-          lifeMs: LINEAR_UPWARD_LIFE_MS,
-          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-          kinematicProfile: profile,
-          jitterOffset: 0,
-          horizontalDrag: 0.35,
-        });
+        push({ x: (Math.random() - 0.5) * 15, y: -35 }, 0, 0.35, LINEAR_UPWARD_LIFE_MS);
         return;
 
       case 'JITTER':
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: { x: 0, y: -65 },
-          gravity: 0,
-          color,
-          scale: item.scale,
-          baseScale: item.scale,
-          lifeMs: LINEAR_UPWARD_LIFE_MS,
-          maxLifeMs: LINEAR_UPWARD_LIFE_MS,
-          kinematicProfile: profile,
-          jitterOffset: 0,
-          horizontalDrag: 0.35,
-        });
+        push({ x: 0, y: -65 }, 0, 0.35, LINEAR_UPWARD_LIFE_MS);
+        return;
+
+      case 'SCATTER': {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 90 + Math.random() * 70;
+        push(
+          { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed - 40 },
+          120,
+          0.5,
+          LINEAR_UPWARD_LIFE_MS,
+        );
+        return;
+      }
+
+      case 'BOUNCE': {
+        const lateralVel = lane.alternateSign * (40 + Math.random() * 30);
+        lane.alternateSign *= -1;
+        push(
+          { x: lateralVel, y: -140 - Math.random() * 30 },
+          GRAVITY_PX_S2,
+          0.35,
+          1100 + Math.random() * 200,
+          item.scale * 1.2,
+          spawnPos.y + 36,
+        );
+        return;
+      }
+
+      case 'DRIP':
+        push({ x: (Math.random() - 0.5) * 10, y: 20 }, 65, 0.4, LINEAR_UPWARD_LIFE_MS);
         return;
 
       case 'FOUNTAIN':
@@ -437,24 +430,13 @@ export class FloatingCombatTextManager {
         const maxLifeMs = 950 + Math.random() * 250;
         const lateralVel = lane.alternateSign * (50 + Math.random() * 35);
         lane.alternateSign *= -1;
-        this.particles.push({
-          id: `fct_${nextParticleId++}`,
-          text: item.text,
-          pos: spawnPos,
-          vel: {
-            x: lateralVel,
-            y: -170 - Math.random() * 40,
-          },
-          gravity: GRAVITY_PX_S2,
-          color,
-          scale: item.scale * 1.35,
-          baseScale: item.scale,
-          lifeMs: maxLifeMs,
+        push(
+          { x: lateralVel, y: -170 - Math.random() * 40 },
+          GRAVITY_PX_S2,
+          0.35,
           maxLifeMs,
-          kinematicProfile: 'FOUNTAIN',
-          jitterOffset: 0,
-          horizontalDrag: 0.35,
-        });
+          item.scale * 1.35,
+        );
       }
     }
   }
@@ -497,6 +479,14 @@ export class FloatingCombatTextManager {
       p.vel.x *= Math.pow(p.horizontalDrag, dt);
       p.pos.x += p.vel.x * dt;
       p.pos.y += p.vel.y * dt;
+
+      if (p.kinematicProfile === 'BOUNCE' && p.bounceFloorY !== null && !p.hasBounced) {
+        if (p.pos.y >= p.bounceFloorY && p.vel.y > 0) {
+          p.pos.y = p.bounceFloorY;
+          p.vel.y *= -0.55;
+          p.hasBounced = true;
+        }
+      }
 
       if (p.kinematicProfile === 'JITTER') {
         p.jitterOffset = Math.sin(p.lifeMs * 0.05) * 1.5;

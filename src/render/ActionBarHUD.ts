@@ -211,6 +211,8 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
 }
 
 export class ActionBarHUD {
+  private static activeInstance: ActionBarHUD | null = null;
+
   private root: HTMLElement;
   private slots: SlotElements[] = [];
   private tooltipEl: HTMLDivElement;
@@ -221,12 +223,15 @@ export class ActionBarHUD {
   constructor(private callbacks: ActionBarHUDCallbacks) {
     injectStyles();
     this.injectAimingStyles();
+    this.injectSuppressionStyles();
     this.root = document.createElement('div');
+    this.root.id = 'action-bar-hud';
     this.root.style.cssText = `
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
       z-index: 10050; display: flex; gap: 12px; pointer-events: auto;
       font-family: ${FONTS.mono};
     `;
+    ActionBarHUD.activeInstance = this;
 
     for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
       const key = ACTION_SLOT_KEYS[i];
@@ -262,6 +267,39 @@ export class ActionBarHUD {
         slot.lastAbilityId = null;
       }
     });
+  }
+
+  static suppress(): void {
+    ActionBarHUD.activeInstance?.suppress();
+  }
+
+  static restore(): void {
+    ActionBarHUD.activeInstance?.restore();
+  }
+
+  suppress(): void {
+    this.root.classList.add('hud-suppressed');
+  }
+
+  restore(): void {
+    this.root.classList.remove('hud-suppressed');
+  }
+
+  private injectSuppressionStyles(): void {
+    if (document.getElementById('action-bar-suppression-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'action-bar-suppression-styles';
+    style.textContent = `
+      #action-bar-hud {
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      #action-bar-hud.hud-suppressed {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-50%) translateY(24px);
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   private injectAimingStyles(): void {

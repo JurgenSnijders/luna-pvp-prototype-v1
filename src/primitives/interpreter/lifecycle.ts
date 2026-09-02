@@ -7,7 +7,7 @@ import { screenShake } from '../../render/ScreenShake';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
-import type { ActionPayload, ImpactVfx, TriggerNode, TriggerType } from '../../types/schema';
+import type { ActionPayload, ImpactVfx, SpellArchetype, TriggerNode, TriggerType } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
@@ -22,33 +22,63 @@ function projectileHeading(projectile: Projectile): Vector2D {
     : Vector2D.fromAngle(projectile.aimAngle);
 }
 
+const ARCHETYPE_IMPACT_VFX: Partial<Record<SpellArchetype, ImpactVfx>> = {
+  KINETIC: 'SHOCKWAVE',
+  VOID: 'IMPLOSION',
+  FROST: 'SHATTER',
+  LIGHTNING: 'LIGHTNING_FORK',
+  PLASMA: 'PLASMA_BLOOM',
+  EARTH: 'SHATTER',
+  SONIC: 'SHOCKWAVE',
+  GRAVITY: 'IMPLOSION',
+  MAGNETIC: 'IMPLOSION',
+  AERO: 'VORTEX_SWIRL',
+  TOXIC: 'VORTEX_SWIRL',
+  ARCANE: 'RUNE_FLASH',
+  HOLY: 'RUNE_FLASH',
+  CHRONO: 'RUNE_FLASH',
+  PHASE: 'IMPLOSION',
+  FIRE: 'MINI_NUKE',
+  BLOOD: 'SPARKS',
+  NATURE: 'SPARKS',
+};
+
+const CHAOS_IMPACT_POOL: ImpactVfx[] = ['SHOCKWAVE', 'LIGHTNING_FORK', 'VORTEX_SWIRL', 'SPARKS'];
+
+const DIRECTIONAL_RING_ARCHETYPES = new Set<SpellArchetype>(['KINETIC', 'SONIC', 'EARTH', 'BLOOD']);
+
+function resolveImpactVfx(archetype: SpellArchetype | undefined, authoredVfx: ImpactVfx): ImpactVfx {
+  const isGeneric = authoredVfx === 'SPARKS';
+  if (!isGeneric) return authoredVfx;
+  if (!archetype) return authoredVfx;
+  if (archetype === 'CHAOS') {
+    return CHAOS_IMPACT_POOL[Math.floor(Math.random() * CHAOS_IMPACT_POOL.length)];
+  }
+  return ARCHETYPE_IMPACT_VFX[archetype] ?? authoredVfx;
+}
+
 function emitArchetypeImpact(
   interp: Interpreter,
   hit: { projectile: Projectile; hitPos: Vector2D },
   color: string,
   sec: string,
   scale: number,
-  fallbackVfx: ImpactVfx,
+  authoredVfx: ImpactVfx,
 ): void {
   const archetype = hit.projectile.spellArchetype;
   const heading = projectileHeading(hit.projectile);
+  const vfx = resolveImpactVfx(archetype, authoredVfx);
 
-  switch (archetype) {
-    case 'KINETIC':
-      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'SHOCKWAVE', sec, scale);
-      interp.particles?.spawnDirectionalImpactRing(hit.hitPos, heading, color);
-      break;
-    case 'VOID':
-      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'IMPLOSION', sec, scale);
-      break;
-    case 'FROST':
-      interp.particles?.triggerImpactBurst(hit.hitPos, color, 'SHATTER', sec, scale);
-      break;
-    default:
-      interp.particles?.triggerImpactBurst(hit.hitPos, color, fallbackVfx, sec, scale);
-      if (hitFeedbackConfig.directionalBlastRings) {
-        interp.particles?.spawnDirectionalImpactRing(hit.hitPos, heading, color);
-      }
+  interp.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
+
+  const useDirectionalRing =
+    (archetype !== undefined && DIRECTIONAL_RING_ARCHETYPES.has(archetype)) ||
+    (hitFeedbackConfig.directionalBlastRings &&
+      archetype !== 'VOID' &&
+      archetype !== 'FROST');
+
+  if (useDirectionalRing) {
+    interp.particles?.spawnDirectionalImpactRing(hit.hitPos, heading, color);
   }
 }
 

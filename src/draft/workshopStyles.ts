@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v4';
+export const STYLE_ID = 'luna-workshop-styles-v5';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -65,20 +65,121 @@ export function injectStyles(): void {
       flex-direction: column;
       flex: 1 1 auto;
       min-height: 0;
-      gap: 16px;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+      gap: 12px;
     }
 
-    .arsenal-dock-section {
-      flex: 0 0 auto;
+    .workspace-split {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .workspace-main {
+      flex: 1 1 auto;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
     }
 
-    .arsenal-dock-section .loadout-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 8px;
+    .workspace-main .workspace-content {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    .workspace-inspector-pane {
+      flex: 0 0 320px;
+      display: flex;
+      flex-direction: column;
+      background: rgba(10, 14, 26, 0.75);
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      padding: 16px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+
+    .inspector-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 13px;
+      color: var(--retro-text-muted, #6d8896);
+      line-height: 1.4;
+      padding: 16px;
+    }
+
+    .bottom-loadout-bay {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: rgba(6, 9, 18, 0.85);
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 6px;
+      box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+    }
+
+    .bottom-slot {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    }
+
+    .bottom-slot:hover {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      transform: translateY(-2px);
+    }
+
+    .bottom-slot.is-dragging {
+      cursor: grabbing;
+    }
+
+    .bottom-slot-badge {
+      position: absolute;
+      top: 3px;
+      left: 4px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 11px;
+      color: var(--retro-text-muted, #6d8896);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .bottom-slot-name {
+      position: absolute;
+      bottom: 2px;
+      left: 2px;
+      right: 2px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-size: 9px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--retro-text-primary, #e0f8ff);
+      z-index: 2;
+      pointer-events: none;
     }
 
     .workspace-tabs {
@@ -114,12 +215,6 @@ export function injectStyles(): void {
       border-color: var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       background: rgba(0, 200, 255, 0.1);
       box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
-    }
-
-    .workspace-content {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-y: auto;
     }
 
     .forge-root {
@@ -259,23 +354,6 @@ export function injectStyles(): void {
     .card-stats {
       font-size: 12px;
       color: var(--retro-text-muted, #6d8896);
-    }
-
-    .dock-icon-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 0;
-    }
-
-    .dock-icon {
-      flex-shrink: 0;
-      width: 36px;
-      height: 36px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
     }
 
     .action-slot.drop-zone {

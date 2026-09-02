@@ -40,12 +40,10 @@ import {
 } from './synthesisPrefetch';
 import {
   RARITY_COLORS,
-  SLOT_ACCENT,
   SUGGEST_CHIPS,
   btnStyle,
   btnStyleRarity,
   chipStyle,
-  hexToRgba,
   injectStyles,
   renderPowerBar,
   roleBadgeStyle,
@@ -67,6 +65,7 @@ import {
   attachVaultCardDrag,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
+import { ActionBarHUD } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
 type WorkshopTab = 'VAULT' | 'FORGE';
@@ -80,10 +79,11 @@ export interface DraftModalCallbacks {
 export class DraftModal {
   private overlay: HTMLElement;
   private panel: HTMLElement;
-  private loadoutBar: HTMLElement;
   private workshopContainer!: HTMLElement;
-  private dockSection!: HTMLElement;
-  private workspaceTabs!: HTMLElement;
+  private workspaceSplit!: HTMLElement;
+  private workspaceMain!: HTMLElement;
+  private inspectorPane!: HTMLElement;
+  private bottomLoadoutBay!: HTMLElement;
   private workspaceContent!: HTMLElement;
   private vaultRoot!: HTMLElement;
   private forgeRoot!: HTMLElement;
@@ -143,7 +143,7 @@ export class DraftModal {
   };
   private readonly onLoadoutChanged = (): void => {
     if (this.open_) {
-      this.renderLoadoutOverview();
+      this.renderBottomLoadoutBay();
     }
   };
 
@@ -178,6 +178,24 @@ export class DraftModal {
     title.textContent = 'Synthesizer Workshop';
     title.style.cssText = `margin:0;font-size:${FONTS.size.title};letter-spacing:0.02em;flex-shrink:0;`;
 
+    this.vaultTabBtn = document.createElement('button');
+    this.vaultTabBtn.type = 'button';
+    this.vaultTabBtn.className = 'workspace-tab active';
+    this.vaultTabBtn.textContent = 'SPELL VAULT';
+    this.vaultTabBtn.onclick = () => this.setActiveTab('VAULT');
+
+    this.forgeTabBtn = document.createElement('button');
+    this.forgeTabBtn.type = 'button';
+    this.forgeTabBtn.className = 'workspace-tab';
+    this.forgeTabBtn.textContent = 'FORGE';
+    this.forgeTabBtn.onclick = () => this.setActiveTab('FORGE');
+
+    const tabGroup = document.createElement('div');
+    tabGroup.className = 'workspace-tabs';
+    tabGroup.style.cssText = 'margin-bottom:0;border-bottom:none;padding-bottom:0;flex-shrink:0;';
+    tabGroup.appendChild(this.vaultTabBtn);
+    tabGroup.appendChild(this.forgeTabBtn);
+
     this.apiStatusPill = document.createElement('div');
     this.apiStatusPill.style.cssText = `
       margin-left:auto;margin-right:8px;padding:4px 10px;border-radius:999px;font-size:${FONTS.size.sm};
@@ -197,6 +215,7 @@ export class DraftModal {
     closeBtn.style.cssText = btnStyle();
     closeBtn.onclick = () => this.close();
     header.appendChild(title);
+    header.appendChild(tabGroup);
     header.appendChild(this.apiStatusPill);
     header.appendChild(this.latencyBadgeEl);
     header.appendChild(closeBtn);
@@ -207,19 +226,6 @@ export class DraftModal {
       background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);
       color:#fcd34d;font-size:${FONTS.size.body};line-height:1.35;
     `;
-
-    const overviewLabel = document.createElement('div');
-    overviewLabel.textContent = 'ARSENAL DOCK';
-    overviewLabel.style.cssText =
-      `font-size:${FONTS.size.badge};letter-spacing:0.08em;color:#889;font-weight:600;flex-shrink:0;`;
-
-    this.loadoutBar = document.createElement('div');
-    this.loadoutBar.className = 'loadout-grid';
-
-    this.dockSection = document.createElement('div');
-    this.dockSection.className = 'arsenal-dock-section';
-    this.dockSection.appendChild(overviewLabel);
-    this.dockSection.appendChild(this.loadoutBar);
 
     this.modeRow = document.createElement('div');
     this.modeRow.style.cssText =
@@ -306,28 +312,29 @@ export class DraftModal {
     this.workspaceContent.appendChild(this.vaultRoot);
     this.workspaceContent.appendChild(this.forgeRoot);
 
-    this.vaultTabBtn = document.createElement('button');
-    this.vaultTabBtn.type = 'button';
-    this.vaultTabBtn.className = 'workspace-tab active';
-    this.vaultTabBtn.textContent = 'SPELL VAULT';
-    this.vaultTabBtn.onclick = () => this.setActiveTab('VAULT');
+    this.workspaceMain = document.createElement('div');
+    this.workspaceMain.className = 'workspace-main';
+    this.workspaceMain.appendChild(this.workspaceContent);
 
-    this.forgeTabBtn = document.createElement('button');
-    this.forgeTabBtn.type = 'button';
-    this.forgeTabBtn.className = 'workspace-tab';
-    this.forgeTabBtn.textContent = 'FORGE';
-    this.forgeTabBtn.onclick = () => this.setActiveTab('FORGE');
+    this.inspectorPane = document.createElement('div');
+    this.inspectorPane.className = 'workspace-inspector-pane';
+    const inspectorEmpty = document.createElement('div');
+    inspectorEmpty.className = 'inspector-empty';
+    inspectorEmpty.textContent = 'Select or hover a spell to inspect telemetry';
+    this.inspectorPane.appendChild(inspectorEmpty);
 
-    this.workspaceTabs = document.createElement('div');
-    this.workspaceTabs.className = 'workspace-tabs';
-    this.workspaceTabs.appendChild(this.vaultTabBtn);
-    this.workspaceTabs.appendChild(this.forgeTabBtn);
+    this.workspaceSplit = document.createElement('div');
+    this.workspaceSplit.className = 'workspace-split';
+    this.workspaceSplit.appendChild(this.workspaceMain);
+    this.workspaceSplit.appendChild(this.inspectorPane);
+
+    this.bottomLoadoutBay = document.createElement('div');
+    this.bottomLoadoutBay.className = 'bottom-loadout-bay';
 
     this.workshopContainer = document.createElement('div');
     this.workshopContainer.className = 'workshop-container';
-    this.workshopContainer.appendChild(this.dockSection);
-    this.workshopContainer.appendChild(this.workspaceTabs);
-    this.workshopContainer.appendChild(this.workspaceContent);
+    this.workshopContainer.appendChild(this.workspaceSplit);
+    this.workshopContainer.appendChild(this.bottomLoadoutBay);
 
     this.panel.appendChild(header);
     this.panel.appendChild(this.apiWarningBanner);
@@ -360,6 +367,7 @@ export class DraftModal {
       this.panel.style.transform = 'scale(1)';
     });
     this.callbacks.onOpenChange(true);
+    ActionBarHUD.suppress();
     this.setActiveTab('VAULT');
     this.startPrefetch();
   }
@@ -374,6 +382,7 @@ export class DraftModal {
       if (!this.open_) this.overlay.style.display = 'none';
     }, 200);
     this.callbacks.onOpenChange(false);
+    ActionBarHUD.restore();
   }
 
   toggle(): void {
@@ -395,6 +404,7 @@ export class DraftModal {
       this.panel.style.transform = 'scale(1)';
     });
     this.callbacks.onOpenChange(true);
+    ActionBarHUD.suppress();
     this.setActiveTab('FORGE');
   }
 
@@ -428,7 +438,7 @@ export class DraftModal {
   private refreshUI(): void {
     this.syncTabChrome();
     this.renderApiStatusPill();
-    this.renderLoadoutOverview();
+    this.renderBottomLoadoutBay();
     this.renderWorkspace();
   }
 
@@ -769,151 +779,49 @@ export class DraftModal {
     }
   }
 
-  private renderLoadoutOverview(): void {
-    this.loadoutBar.innerHTML = '';
-    const loadout = this.callbacks.getLoadout();
+  private renderBottomLoadoutBay(): void {
+    this.bottomLoadoutBay.innerHTML = '';
+    const equipped = SpellInventoryManager.getEquippedAbilities();
 
     for (const key of ACTION_SLOT_KEYS) {
-      const idx = ACTION_SLOT_INDEX[key];
-      const ability = loadout.abilities[idx];
-      const category = SLOT_CATEGORY_MAP[key];
-      const accent = SLOT_ACCENT[key];
+      const spell = equipped[key];
       const isEvolveSource =
         this.mode === 'EVOLVE_EXISTING' && this.evolutionContext?.slotKey === key;
-      const isPreset =
-        !isEvolveSource && this.presetSlot === key && this.mode === 'FORGE_NEW';
 
-      const panel = document.createElement('div');
-      panel.style.cssText = `
-        display:flex;flex-direction:column;justify-content:space-between;
-        height:100px;padding:8px 10px;border-radius:10px;overflow:hidden;
-        background:${hexToRgba(accent, 0.06)};
-        border:1px solid ${hexToRgba(accent, 0.22)};
-        border-left:3px solid ${accent};
-        ${isPreset ? `box-shadow:inset 0 0 0 1px ${accent};` : ''}
-      `;
+      const slot = document.createElement('div');
+      slot.className = 'bottom-slot drop-zone';
+      slot.dataset.slotKey = key;
       if (isEvolveSource) {
-        panel.classList.add('evolve-source');
-        panel.dataset.evolveActive = 'true';
+        slot.classList.add('evolve-source');
       }
 
-      const topRow = document.createElement('div');
-      topRow.style.cssText =
-        'display:flex;justify-content:space-between;align-items:flex-start;gap:4px;';
+      const badge = document.createElement('span');
+      badge.className = 'bottom-slot-badge';
+      badge.textContent = key;
+      slot.appendChild(badge);
 
-      const slotLabel = document.createElement('div');
-      slotLabel.textContent = `${key} · ${getCategoryLabel(category)}`;
-      slotLabel.style.cssText = `font-size:${FONTS.size.badge};color:${accent};font-weight:600;flex-shrink:0;`;
+      if (spell) {
+        slot.appendChild(generateSpellIcon(spell, 48));
 
-      const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
+        const name = document.createElement('span');
+        name.className = 'bottom-slot-name';
+        name.textContent = spell.name;
+        slot.appendChild(name);
 
-      const evolveBtn = document.createElement('button');
-      evolveBtn.textContent = 'Evolve';
-      evolveBtn.draggable = false;
-      evolveBtn.disabled = !ability;
-      evolveBtn.style.cssText =
-        btnStyle(true) + 'padding:3px 6px;line-height:1.2;';
-      if (!ability) evolveBtn.style.opacity = '0.4';
-      evolveBtn.onclick = () => {
-        if (!ability) return;
-        this.invalidatePrefetch();
-        this.evolutionContext = {
-          baseAbility: structuredClone(ability),
-          slotKey: key,
-          category,
-        };
-        this.presetSlot = key;
-        this.selectedCategory = category;
-        this.mode = 'EVOLVE_EXISTING';
-        this.setActiveTab('FORGE');
-        this.startPrefetch();
-      };
-
-      const replaceBtn = document.createElement('button');
-      replaceBtn.textContent = 'Replace';
-      replaceBtn.draggable = false;
-      replaceBtn.style.cssText =
-        btnStyle(false) + 'padding:3px 6px;line-height:1.2;';
-      replaceBtn.onclick = () => {
-        this.invalidatePrefetch();
-        this.presetSlot = key;
-        this.selectedCategory = category;
-        this.evolutionContext = null;
-        this.mode = 'FORGE_NEW';
-        this.setActiveTab('FORGE');
-        this.startPrefetch();
-      };
-
-      actions.appendChild(evolveBtn);
-      actions.appendChild(replaceBtn);
-      topRow.appendChild(slotLabel);
-      topRow.appendChild(actions);
-
-      const nameRow = document.createElement('div');
-      nameRow.className = 'dock-icon-row';
-
-      if (ability) {
-        const iconWrap = document.createElement('div');
-        iconWrap.className = 'dock-icon';
-        iconWrap.appendChild(generateSpellIcon(ability, 36));
-        nameRow.appendChild(iconWrap);
-      }
-
-      const name = document.createElement('div');
-      name.textContent = ability?.name ?? 'Empty';
-      name.style.cssText = `
-        font-size:${FONTS.size.sm};font-weight:bold;color:${ability ? '#eee' : '#666'};
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;
-      `;
-      nameRow.appendChild(name);
-
-      const bottom = document.createElement('div');
-      bottom.style.cssText = 'display:flex;flex-direction:column;gap:3px;min-height:0;';
-
-      const stats = document.createElement('div');
-      if (ability) {
-        stats.textContent = `CD ${ability.cooldownMs}ms · Recoil ${ability.recoilKick}`;
-        stats.style.cssText = `font-size:${FONTS.size.badge};color:#888;`;
-      } else {
-        stats.textContent = 'No ability equipped';
-        stats.style.cssText = `font-size:${FONTS.size.badge};color:#555;`;
-      }
-
-      const badges = document.createElement('div');
-      badges.style.cssText =
-        'display:flex;flex-wrap:nowrap;gap:3px;overflow:hidden;';
-      if (ability) {
-        for (const b of extractMechanicBadgesFromAbility(ability).slice(0, 3)) {
-          badges.appendChild(renderBadge(b.label, b.kind));
-        }
-      }
-
-      bottom.appendChild(stats);
-      bottom.appendChild(badges);
-
-      panel.appendChild(topRow);
-      panel.appendChild(nameRow);
-      panel.appendChild(bottom);
-
-      panel.classList.add('drop-zone');
-      panel.dataset.slotKey = key;
-      attachInventoryDropZone(panel, key);
-      panel.draggable = !!ability;
-      if (ability) {
-        attachDockSlotDrag(panel, ability.id, key);
-        panel.addEventListener('contextmenu', (e) => {
+        attachDockSlotDrag(slot, spell.id, key);
+        slot.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           showQuickEquipMenu(e.clientX, e.clientY, [
             {
-              label: 'Unequip Slot',
+              label: 'Unequip',
               onSelect: () => SpellInventoryManager.unequipSlot(key),
             },
           ]);
         });
       }
 
-      this.loadoutBar.appendChild(panel);
+      attachInventoryDropZone(slot, key);
+      this.bottomLoadoutBay.appendChild(slot);
     }
   }
 
@@ -983,7 +891,7 @@ export class DraftModal {
       this.evolutionBanner.style.display = 'block';
       this.evolutionBanner.innerHTML = '';
       const text = document.createElement('div');
-      text.textContent = 'Select a filled slot above and click Evolve to choose a base spell.';
+      text.textContent = 'Equip a spell in the loadout bay below, then describe your mutation.';
       text.style.cssText = `font-size:${FONTS.size.body};color:#aaa;`;
       this.evolutionBanner.appendChild(text);
     } else {
