@@ -3,6 +3,7 @@ import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { Dummy } from '../src/entities/Dummy';
 import { Player } from '../src/entities/Player';
+import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
@@ -444,6 +445,68 @@ function formatTelemetry(t: SimulationTelemetry): string {
   ].join(' | ');
 }
 
+const GRAVITY_WELL_CONFIG = {
+  fieldType: 'MASS_ATTRACTOR' as const,
+  radius: 250,
+  strength: 6000,
+  durationMs: 5000,
+};
+
+function assertOwnerFieldImmunity(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+
+  const ownWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  ownWorld.setViewportBounds(2000, 2000);
+  const caster = new Player(new Vector2D(50, 0));
+  caster.tags.add('kinematic');
+  const allyTarget = new Dummy(new Vector2D(120, 0));
+  ownWorld.addPlayer(caster);
+  ownWorld.addDummy(allyTarget);
+  ownWorld.addZone(new SpatialZone(Vector2D.zero(), GRAVITY_WELL_CONFIG, caster.id, 'GRAVITY'));
+
+  caster.accel = Vector2D.zero();
+  allyTarget.accel = Vector2D.zero();
+  applyField(ownWorld.zones[0], caster, dt, ownWorld);
+  applyField(ownWorld.zones[0], allyTarget, dt, ownWorld);
+
+  const ownWellCasterAccel = caster.accel.mag();
+  const ownWellTargetAccel = allyTarget.accel.mag();
+
+  if (ownWellTargetAccel < 1) {
+    return { pass: false, reason: 'own well: expected dummy field acceleration' };
+  }
+  if (ownWellCasterAccel > 0.01) {
+    return {
+      pass: false,
+      reason: `own well: caster should be immune (accel=${ownWellCasterAccel.toFixed(2)})`,
+    };
+  }
+
+  const enemyWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  enemyWorld.setViewportBounds(2000, 2000);
+  const victim = new Player(new Vector2D(50, 0));
+  const enemy = new Player(new Vector2D(500, 0));
+  enemyWorld.addPlayer(victim);
+  enemyWorld.addPlayer(enemy);
+  enemyWorld.addZone(new SpatialZone(Vector2D.zero(), GRAVITY_WELL_CONFIG, enemy.id, 'GRAVITY'));
+
+  victim.accel = Vector2D.zero();
+  applyField(enemyWorld.zones[0], victim, dt, enemyWorld);
+
+  const enemyWellVictimAccel = victim.accel.mag();
+  if (enemyWellVictimAccel < 1) {
+    return {
+      pass: false,
+      reason: 'enemy well: expected caster to receive field acceleration',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `own well casterAccel=${ownWellCasterAccel.toFixed(2)} targetAccel=${ownWellTargetAccel.toFixed(0)} | enemy well victimAccel=${enemyWellVictimAccel.toFixed(0)}`,
+  };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -475,10 +538,17 @@ function run(): void {
     if (result.pass) passed++;
   }
 
-  console.log('');
-  console.log(`${passed}/${suite.length} passed`);
+  const ownerImmunity = assertOwnerFieldImmunity();
+  const ownerTag = ownerImmunity.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${ownerTag} Owner field immunity`);
+  console.log(`  ${DIM}${ownerImmunity.reason}${RESET}`);
+  if (ownerImmunity.pass) passed++;
+  const totalCases = suite.length + 1;
 
-  if (passed < suite.length) {
+  console.log('');
+  console.log(`${passed}/${totalCases} passed`);
+
+  if (passed < totalCases) {
     process.exit(1);
   }
 }

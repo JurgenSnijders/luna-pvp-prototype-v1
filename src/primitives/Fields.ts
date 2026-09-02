@@ -1,5 +1,6 @@
 import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
+import { isAlliedTo } from '../engine/allegiance';
 import type { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
 import { CombatLogger } from '../telemetry/CombatLogger';
@@ -57,6 +58,7 @@ export function applyField(
 ): void {
   if (entity.tags.has('projectile') || entity.tags.has('zone')) return;
   if (!entity.tags.has('combatant')) return;
+  if (isAlliedTo(zone.ownerId, entity)) return;
 
   const dist = entity.pos.dist(zone.pos);
   if (dist > zone.config.radius + entity.radius) return;

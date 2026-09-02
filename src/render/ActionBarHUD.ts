@@ -271,12 +271,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px rgba(0, 229, 255, 0.35), 0 0 8px rgba(0, 229, 255, 0.45);
-          border-color: rgba(0, 229, 255, 0.75);
+          box-shadow: inset 0 0 12px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 35%, transparent),
+            0 0 8px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 45%, transparent);
+          border-color: color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.55), 0 0 18px rgba(0, 229, 255, 0.85);
-          border-color: rgba(0, 229, 255, 1);
+          box-shadow: inset 0 0 20px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 55%, transparent),
+            0 0 18px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 85%, transparent);
+          border-color: var(--slot-archetype-color, #00e5ff);
         }
       }
       .slot-aiming {
@@ -450,6 +452,8 @@ export class ActionBarHUD {
       ]);
     });
 
+    root.style.setProperty('--slot-archetype-color', accent.color);
+
     return {
       root,
       iconContainer,
@@ -470,6 +474,11 @@ export class ActionBarHUD {
     };
   }
 
+  private applySlotBorderColor(slot: SlotElements, color: string, alphaHex: string): void {
+    slot.root.style.borderColor = `${color}${alphaHex}`;
+    slot.root.style.setProperty('--slot-archetype-color', color);
+  }
+
   private updateSlotIcon(slotIndex: number, ability: AbilitySchema | null): void {
     const slot = this.slots[slotIndex];
     const nextId = ability?.id ?? null;
@@ -485,7 +494,7 @@ export class ActionBarHUD {
       slot.label.textContent = ability.name;
       slot.label.style.color = '#ccc';
       slot.archetypeColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
-      slot.root.style.borderColor = `${slot.archetypeColor}4d`;
+      this.applySlotBorderColor(slot, slot.archetypeColor, '4d');
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
       slot.root.draggable = true;
@@ -668,10 +677,14 @@ export class ActionBarHUD {
       }
 
       if (ready && ability && this.aimingSlotIndex !== i) {
-        slot.root.style.borderColor = accent;
-        slot.root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 10px ${accent}59`;
+        slot.root.style.borderColor = slot.archetypeColor;
+        slot.root.style.boxShadow = `0 0 10px ${slot.archetypeColor}59`;
       } else if (!slot.root.matches(':hover') && this.aimingSlotIndex !== i) {
-        slot.root.style.borderColor = ability ? `${slot.archetypeColor}4d` : `${accent}40`;
+        if (ability) {
+          this.applySlotBorderColor(slot, slot.archetypeColor, '4d');
+        } else {
+          this.applySlotBorderColor(slot, accent, '40');
+        }
         slot.root.style.boxShadow = '';
       }
     }
