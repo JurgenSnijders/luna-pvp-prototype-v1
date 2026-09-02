@@ -3,6 +3,8 @@ import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotK
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
+import { injectStyles } from '../draft/workshopStyles';
+import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
@@ -216,11 +218,12 @@ export class ActionBarHUD {
   private aimingSlotIndex: number | null = null;
 
   constructor(private callbacks: ActionBarHUDCallbacks) {
+    injectStyles();
     this.injectAimingStyles();
     this.root = document.createElement('div');
     this.root.style.cssText = `
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 9500; display: flex; gap: 12px; pointer-events: auto;
+      z-index: 10050; display: flex; gap: 12px; pointer-events: auto;
       font-family: ${FONTS.mono};
     `;
 
@@ -240,7 +243,7 @@ export class ActionBarHUD {
 
     this.tooltipEl = document.createElement('div');
     this.tooltipEl.style.cssText = `
-      position: fixed; display: none; pointer-events: none; z-index: 10000;
+      position: fixed; display: none; pointer-events: none; z-index: 10050;
       width: 250px; background: ${RETRO_COLORS.panelBg};
       border: 1px solid ${RETRO_COLORS.borderSubtle}; border-radius: 4px;
       padding: 10px 12px;
@@ -300,6 +303,7 @@ export class ActionBarHUD {
   private createSlot(slotIndex: number, key: ActionSlotKey): SlotElements {
     const accent = BADGE_STYLES[key];
     const root = document.createElement('div');
+    root.classList.add('drop-zone', 'action-slot');
     root.style.cssText = `
       width: 80px; height: 80px; position: relative; overflow: hidden;
       backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
@@ -403,21 +407,7 @@ export class ActionBarHUD {
     root.appendChild(lockoutOverlay);
     root.appendChild(countdown);
 
-    root.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      root.style.borderColor = accent.color;
-      root.style.boxShadow = `${RETRO_GLOW.boxCyan}, 0 0 12px ${accent.color}66`;
-    });
-
-    root.addEventListener('dragleave', () => {
-      root.style.borderColor = '';
-      root.style.boxShadow = '';
-    });
-
-    root.addEventListener('drop', (e) => {
-      e.preventDefault();
-      root.style.borderColor = '';
-      root.style.boxShadow = '';
+    attachInventoryDropZone(root, key, (e) => {
       const raw = e.dataTransfer?.getData('application/json');
       if (!raw) return;
       try {
@@ -428,6 +418,7 @@ export class ActionBarHUD {
         // ignore invalid drop payload
       }
     });
+    attachHudSlotDrag(root, key);
 
     root.addEventListener('click', () => {
       const ability = root.dataset.hasAbility === 'true';
@@ -484,12 +475,16 @@ export class ActionBarHUD {
       slot.archetypeColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
       slot.root.style.borderColor = `${slot.archetypeColor}4d`;
       slot.root.dataset.hasAbility = 'true';
+      slot.root.dataset.equippedSpellId = ability.id;
+      slot.root.draggable = true;
       slot.root.style.borderStyle = 'solid';
     } else {
       slot.label.textContent = '+ Assign';
       slot.label.style.color = '#666';
       slot.archetypeColor = slot.accent;
       slot.root.dataset.hasAbility = 'false';
+      delete slot.root.dataset.equippedSpellId;
+      slot.root.draggable = false;
       slot.root.style.borderStyle = 'dashed';
     }
   }

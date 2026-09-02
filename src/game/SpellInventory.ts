@@ -60,6 +60,42 @@ export interface LoadoutChangedDetail {
   spellId: string | null;
 }
 
+export type SpellDragSource = 'VAULT' | 'DOCK' | 'HUD';
+
+export interface SpellDragPayload {
+  source: SpellDragSource;
+  spellId: string;
+  slotKey?: ActionSlotKey;
+}
+
+const SPELL_DRAG_SOURCES = new Set<string>(['VAULT', 'DOCK', 'HUD']);
+
+export function parseSpellDragPayload(raw: string): SpellDragPayload | null {
+  if (!raw.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.source !== 'string' || !SPELL_DRAG_SOURCES.has(obj.source)) return null;
+    if (typeof obj.spellId !== 'string' || !obj.spellId.trim()) return null;
+    const payload: SpellDragPayload = {
+      source: obj.source as SpellDragSource,
+      spellId: obj.spellId,
+    };
+    if (obj.slotKey !== undefined) {
+      if (typeof obj.slotKey !== 'string' || !isActionSlotKey(obj.slotKey)) return null;
+      payload.slotKey = obj.slotKey;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export function serializeSpellDragPayload(payload: SpellDragPayload): string {
+  return JSON.stringify(payload);
+}
+
 class SpellInventoryStore {
   private inventory = new Map<string, AbilitySchema>();
   private loadout: LoadoutMap = createEmptyLoadout();
@@ -224,6 +260,23 @@ class SpellInventoryStore {
       equipped[slotKey] = spellId ? (this.getSpell(spellId) ?? null) : null;
     }
     return equipped;
+  }
+
+  applySpellDrop(targetSlot: ActionSlotKey, payload: SpellDragPayload): void {
+    if (!isActionSlotKey(targetSlot) || !payload.spellId) return;
+
+    if (payload.source === 'VAULT') {
+      this.equipSpell(targetSlot, payload.spellId);
+      return;
+    }
+
+    if (payload.source !== 'DOCK' && payload.source !== 'HUD') return;
+    if (!payload.slotKey || !isActionSlotKey(payload.slotKey)) return;
+    if (payload.slotKey === targetSlot) return;
+
+    const displaced = this.loadout[targetSlot];
+    this.equipSpell(targetSlot, payload.spellId);
+    this.equipSpell(payload.slotKey, displaced);
   }
 }
 

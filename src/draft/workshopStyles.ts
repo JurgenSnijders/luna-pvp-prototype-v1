@@ -27,7 +27,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v2';
+export const STYLE_ID = 'luna-workshop-styles-v3';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -175,8 +175,8 @@ export function injectStyles(): void {
       border-left-width: 3px;
       background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
       border-radius: 4px;
-      cursor: pointer;
-      transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s;
+      cursor: grab;
+      transition: transform 0.1s, border-color 0.15s, box-shadow 0.15s, opacity 0.1s;
       align-items: center;
     }
 
@@ -184,6 +184,29 @@ export function injectStyles(): void {
       border-color: var(--retro-neon-cyan, #00e5ff);
       box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
       transform: translateY(-1px);
+    }
+
+    .inventory-card.is-dragging {
+      opacity: 0.4;
+      transform: scale(0.98);
+      cursor: grabbing;
+    }
+
+    .is-dragging {
+      opacity: 0.4;
+      transform: scale(0.98);
+      cursor: grabbing;
+    }
+
+    .drop-zone {
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    }
+
+    .drop-zone.drag-over {
+      border-color: var(--retro-neon-cyan, #00e5ff) !important;
+      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6)) !important;
+      background: rgba(0, 229, 255, 0.1) !important;
+      transform: scale(1.05);
     }
 
     .card-icon-container {
@@ -238,6 +261,19 @@ export function injectStyles(): void {
       display: flex;
       align-items: center;
       justify-content: center;
+      pointer-events: none;
+    }
+
+    .action-slot.drop-zone {
+      cursor: pointer;
+    }
+
+    .action-slot.drop-zone[draggable='true'] {
+      cursor: grab;
+    }
+
+    .action-slot.is-dragging {
+      cursor: grabbing;
     }
   `;
   document.head.appendChild(style);

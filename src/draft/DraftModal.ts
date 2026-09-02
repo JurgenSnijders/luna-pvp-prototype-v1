@@ -50,6 +50,11 @@ import {
   renderPowerBar,
 } from './workshopStyles';
 import { SpellInventoryManager } from '../game/SpellInventory';
+import {
+  attachDockSlotDrag,
+  attachInventoryDropZone,
+  attachVaultCardDrag,
+} from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
@@ -119,6 +124,11 @@ export class DraftModal {
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
       this.renderVaultGrid();
+    }
+  };
+  private readonly onLoadoutChanged = (): void => {
+    if (this.open_) {
+      this.renderLoadoutOverview();
     }
   };
 
@@ -311,6 +321,7 @@ export class DraftModal {
     document.body.appendChild(this.overlay);
 
     window.addEventListener('inventoryupdated', this.onInventoryUpdated);
+    window.addEventListener('loadoutchanged', this.onLoadoutChanged);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.open_) this.close();
     });
@@ -508,6 +519,7 @@ export class DraftModal {
 
     card.appendChild(iconContainer);
     card.appendChild(details);
+    attachVaultCardDrag(card, spell.id);
     return card;
   }
 
@@ -607,6 +619,7 @@ export class DraftModal {
 
       const evolveBtn = document.createElement('button');
       evolveBtn.textContent = 'Evolve';
+      evolveBtn.draggable = false;
       evolveBtn.disabled = !ability;
       evolveBtn.style.cssText =
         btnStyle(true) + 'padding:3px 6px;line-height:1.2;';
@@ -628,6 +641,7 @@ export class DraftModal {
 
       const replaceBtn = document.createElement('button');
       replaceBtn.textContent = 'Replace';
+      replaceBtn.draggable = false;
       replaceBtn.style.cssText =
         btnStyle(false) + 'padding:3px 6px;line-height:1.2;';
       replaceBtn.onclick = () => {
@@ -690,6 +704,15 @@ export class DraftModal {
       panel.appendChild(topRow);
       panel.appendChild(nameRow);
       panel.appendChild(bottom);
+
+      panel.classList.add('drop-zone');
+      panel.dataset.slotKey = key;
+      attachInventoryDropZone(panel, key);
+      panel.draggable = !!ability;
+      if (ability) {
+        attachDockSlotDrag(panel, ability.id, key);
+      }
+
       this.loadoutBar.appendChild(panel);
     }
   }
