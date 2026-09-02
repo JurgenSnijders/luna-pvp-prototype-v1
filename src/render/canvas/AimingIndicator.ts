@@ -134,17 +134,26 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+function longitudinalT(x: number, startX: number, endX: number): number {
+  return Math.max(0, Math.min(1, (x - startX) / Math.max(1, endX - startX)));
+}
+
+function fadeAlpha(x: number, startX: number, endX: number, maxAlpha: number): number {
+  return Math.pow(longitudinalT(x, startX, endX), 1.6) * maxAlpha;
+}
+
 function drawFrostAccents(
   ctx: CanvasRenderingContext2D,
-  shaftStart: number,
+  startX: number,
+  endX: number,
   shaftEnd: number,
   shaftWidth: number,
   color: string,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 1.5;
   const tickLen = 8;
-  for (let x = shaftStart + 20; x < shaftEnd; x += 28) {
+  for (let x = startX + 20; x < shaftEnd; x += 28) {
+    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
     const side = ((x / 28) % 2 === 0) ? 1 : -1;
     const y = (shaftWidth / 2 + 4) * side;
     ctx.beginPath();
@@ -154,30 +163,34 @@ function drawFrostAccents(
     ctx.stroke();
   }
   const tipX = shaftEnd + 18;
+  const tipAlpha = fadeAlpha(tipX, startX, endX, 0.85);
   ctx.beginPath();
   ctx.moveTo(tipX, 0);
   ctx.lineTo(tipX + 10, -shaftWidth * 0.5);
   ctx.lineTo(tipX + 20, 0);
   ctx.lineTo(tipX + 10, shaftWidth * 0.5);
   ctx.closePath();
-  ctx.fillStyle = hexToRgba(color, 0.35);
+  ctx.fillStyle = hexToRgba(color, tipAlpha * 0.45);
   ctx.fill();
+  ctx.strokeStyle = hexToRgba(color, tipAlpha);
   ctx.stroke();
 }
 
 function drawFireAccents(
   ctx: CanvasRenderingContext2D,
-  shaftStart: number,
-  range: number,
+  startX: number,
+  endX: number,
   color: string,
   now: number,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.4);
   ctx.lineWidth = 2;
   const pulse = (now / 300) % 1;
+  const lineEnd = endX - 45;
+  const span = Math.max(1, lineEnd - startX);
   for (let i = 0; i < 5; i++) {
     const t = ((i / 5 + pulse) % 1);
-    const x = shaftStart + t * (range - shaftStart - 36);
+    const x = startX + 20 + t * span;
+    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
     ctx.beginPath();
     ctx.moveTo(x - 6, -8);
     ctx.lineTo(x, 0);
@@ -188,26 +201,33 @@ function drawFireAccents(
 
 function drawLightningAccents(
   ctx: CanvasRenderingContext2D,
-  shaftStart: number,
-  range: number,
+  startX: number,
+  endX: number,
   color: string,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 2;
-  const endX = range - 36;
+  const lineEnd = endX - 45;
   const segments = 6;
-  ctx.beginPath();
-  ctx.moveTo(shaftStart, 0);
+  let prevX = startX + 20;
+  let prevY = 0;
   for (let i = 1; i <= segments; i++) {
-    const x = shaftStart + (endX - shaftStart) * (i / segments);
+    const x = startX + 20 + (lineEnd - (startX + 20)) * (i / segments);
     const y = (i % 2 === 0 ? 1 : -1) * (6 + (i % 3) * 3);
+    const midX = (prevX + x) / 2;
+    ctx.strokeStyle = hexToRgba(color, fadeAlpha(midX, startX, endX, 0.85));
+    ctx.beginPath();
+    ctx.moveTo(prevX, prevY);
     ctx.lineTo(x, y);
+    ctx.stroke();
+    prevX = x;
+    prevY = y;
   }
-  ctx.stroke();
 }
 
 function drawVoidAccents(
   ctx: CanvasRenderingContext2D,
+  startX: number,
+  endX: number,
   shaftStart: number,
   shaftEnd: number,
   shaftWidth: number,
@@ -215,7 +235,12 @@ function drawVoidAccents(
   range: number,
   color: string,
 ): void {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  const voidFillGrad = ctx.createLinearGradient(startX, 0, endX, 0);
+  voidFillGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  voidFillGrad.addColorStop(0.35, 'rgba(0, 0, 0, 0.06)');
+  voidFillGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.18)');
+  voidFillGrad.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+
   ctx.beginPath();
   ctx.moveTo(shaftStart, -shaftWidth / 2);
   ctx.lineTo(shaftEnd, -shaftWidth / 2);
@@ -225,64 +250,44 @@ function drawVoidAccents(
   ctx.lineTo(shaftEnd, shaftWidth / 2);
   ctx.lineTo(shaftStart, shaftWidth / 2);
   ctx.closePath();
+  ctx.fillStyle = voidFillGrad;
   ctx.fill();
 
-  ctx.strokeStyle = hexToRgba(color, 0.35);
-  ctx.lineWidth = 5;
-  ctx.stroke();
-  ctx.strokeStyle = hexToRgba(color, 0.45);
+  const voidStrokeGrad = ctx.createLinearGradient(startX, 0, endX, 0);
+  voidStrokeGrad.addColorStop(0, hexToRgba(color, 0));
+  voidStrokeGrad.addColorStop(0.25, hexToRgba(color, 0.12));
+  voidStrokeGrad.addColorStop(0.65, hexToRgba(color, 0.35));
+  voidStrokeGrad.addColorStop(1, hexToRgba(color, 0.45));
+  ctx.strokeStyle = voidStrokeGrad;
   ctx.lineWidth = 2;
   ctx.stroke();
 }
 
 function drawKineticAccents(
   ctx: CanvasRenderingContext2D,
-  shaftStart: number,
-  range: number,
+  startX: number,
+  endX: number,
   color: string,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.45);
   ctx.lineWidth = 2;
-  ctx.setLineDash([6, 6]);
-  ctx.beginPath();
-  ctx.moveTo(shaftStart, 0);
-  ctx.lineTo(range - 36, 0);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  const lineEnd = endX - 45;
 
-  const endX = range - 36;
-  for (let x = shaftStart + 30; x < endX; x += 40) {
+  for (let x = startX + 20; x < lineEnd; x += 12) {
+    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(Math.min(x + 6, lineEnd), 0);
+    ctx.stroke();
+  }
+
+  for (let x = startX + 20; x < endX - 45; x += 32) {
+    ctx.strokeStyle = hexToRgba(color, fadeAlpha(x, startX, endX, 0.85));
     ctx.beginPath();
     ctx.moveTo(x, -5);
     ctx.lineTo(x + 10, 0);
     ctx.lineTo(x, 5);
     ctx.stroke();
   }
-}
-
-function drawTerminalReticle(
-  ctx: CanvasRenderingContext2D,
-  tipX: number,
-  color: string,
-  size: number,
-): void {
-  const s = size;
-  ctx.strokeStyle = hexToRgba(color, 0.4);
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(tipX, 0, s, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(tipX, 0, s, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(tipX - s - 4, 0);
-  ctx.lineTo(tipX + s + 4, 0);
-  ctx.moveTo(tipX, -s - 4);
-  ctx.lineTo(tipX, s + 4);
-  ctx.stroke();
 }
 
 export function drawSkillshotArrow(
@@ -303,15 +308,24 @@ export function drawSkillshotArrow(
   const shaftStart = state.playerRadius;
   const shaftEnd = len - 36;
   const headBase = len - 36;
+  const startX = state.playerRadius + 6;
+  const endX = len;
 
   ctx.save();
   ctx.translate(state.origin.x, state.origin.y);
   ctx.rotate(state.angle);
 
-  const grad = ctx.createLinearGradient(shaftStart, 0, len, 0);
-  grad.addColorStop(0, hexToRgba(color, 0.04));
-  grad.addColorStop(0.55, hexToRgba(color, 0.12));
-  grad.addColorStop(1, hexToRgba(color, 0.22));
+  const fillGrad = ctx.createLinearGradient(startX, 0, endX, 0);
+  fillGrad.addColorStop(0, hexToRgba(color, 0));
+  fillGrad.addColorStop(0.35, hexToRgba(color, 0.06));
+  fillGrad.addColorStop(0.7, hexToRgba(color, 0.22));
+  fillGrad.addColorStop(1, hexToRgba(color, 0.45));
+
+  const strokeGrad = ctx.createLinearGradient(startX, 0, endX, 0);
+  strokeGrad.addColorStop(0, hexToRgba(color, 0));
+  strokeGrad.addColorStop(0.25, hexToRgba(color, 0.15));
+  strokeGrad.addColorStop(0.65, hexToRgba(color, 0.65));
+  strokeGrad.addColorStop(1, hexToRgba(color, 1));
 
   ctx.beginPath();
   ctx.moveTo(shaftStart, -shaftWidth / 2);
@@ -322,38 +336,46 @@ export function drawSkillshotArrow(
   ctx.lineTo(shaftEnd, shaftWidth / 2);
   ctx.lineTo(shaftStart, shaftWidth / 2);
   ctx.closePath();
-  ctx.fillStyle = grad;
+  ctx.fillStyle = fillGrad;
+  ctx.strokeStyle = strokeGrad;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
   ctx.fill();
-
-  ctx.strokeStyle = hexToRgba(color, 0.16);
-  ctx.lineWidth = 5;
   ctx.stroke();
-  ctx.strokeStyle = hexToRgba(color, 0.42);
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
 
   switch (archetype) {
     case 'FROST':
-      drawFrostAccents(ctx, shaftStart, shaftEnd, shaftWidth, color);
+      drawFrostAccents(ctx, startX, endX, shaftEnd, shaftWidth, color);
       break;
     case 'FIRE':
     case 'PLASMA':
-      drawFireAccents(ctx, shaftStart, len, color, now);
+      drawFireAccents(ctx, startX, endX, color, now);
       break;
     case 'LIGHTNING':
     case 'CHAOS':
-      drawLightningAccents(ctx, shaftStart, len, color);
+      drawLightningAccents(ctx, startX, endX, color);
       break;
     case 'VOID':
     case 'ARCANE':
-      drawVoidAccents(ctx, shaftStart, shaftEnd, shaftWidth, headBase, len, color);
+      drawVoidAccents(
+        ctx,
+        startX,
+        endX,
+        shaftStart,
+        shaftEnd,
+        shaftWidth,
+        headBase,
+        len,
+        color,
+      );
       break;
     default:
-      drawKineticAccents(ctx, shaftStart, len, color);
+      drawKineticAccents(ctx, startX, endX, color);
       break;
   }
-
-  drawTerminalReticle(ctx, len, color, 10);
 
   ctx.restore();
 }
