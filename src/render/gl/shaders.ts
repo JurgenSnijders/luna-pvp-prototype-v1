@@ -216,7 +216,7 @@ float fbm(vec2 p, int octaves) {
 }
 
 vec3 deepLayer(vec2 world) {
-  vec2 p = world * 0.0015 + u_cameraPos * 0.15;
+  vec2 p = world * 0.0015 + u_cameraPos * 0.055;
   float grid = 0.0;
   vec2 g = abs(fract(p * 0.08) - 0.5);
   grid = smoothstep(0.48, 0.5, min(g.x, g.y)) * 0.12;
@@ -225,8 +225,8 @@ vec3 deepLayer(vec2 world) {
 }
 
 vec3 lavaLayer(vec2 world) {
-  vec2 p = world * 0.0022 + u_cameraPos * 0.40;
-  float t = u_time * 0.3;
+  vec2 p = world * 0.0022 + u_cameraPos * 0.14;
+  float t = u_time * 0.18;
   int octaves = u_tier >= 2 ? 2 : 1;
   float n = fbm(p + vec2(t * 0.4, t * 0.25), octaves);
   float veins = 1.0 - abs(fbm(p * 1.8 - vec2(t * 0.15, t * 0.35), octaves) * 2.0 - 1.0);

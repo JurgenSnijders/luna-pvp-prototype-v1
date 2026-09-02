@@ -52,6 +52,7 @@ import { Vector2D } from '../math/Vector2D';
 
 import { hitFeedbackConfig } from './hitFeedbackConfig';
 
+import { getEffectiveDprCap } from '../devtools/graphicsSettings';
 import { flashArenaCrosshair } from '../ui/palette';
 
 
@@ -82,16 +83,17 @@ export class CanvasRenderer {
 
   private useWebGLBackground = false;
 
+  private webglBackgroundCanvas: HTMLCanvasElement | null = null;
+
 
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
 
 
-  setUseWebGLBackground(enabled: boolean): void {
-
+  setWebGLBackground(enabled: boolean, canvas: HTMLCanvasElement | null = null): void {
     this.useWebGLBackground = enabled;
-
+    this.webglBackgroundCanvas = enabled ? canvas : null;
   }
 
 
@@ -202,14 +204,21 @@ export class CanvasRenderer {
 
     const rect = camera.getVisibleWorldRect();
 
-    ctx.clearRect(rect.minX, rect.minY, rect.width, rect.height);
-
-
-
-    if (!this.useWebGLBackground) {
-
+    if (this.useWebGLBackground && this.webglBackgroundCanvas) {
+      const dpr = getEffectiveDprCap();
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.drawImage(
+        this.webglBackgroundCanvas,
+        0,
+        0,
+        window.innerWidth,
+        window.innerHeight,
+      );
+      ctx.restore();
+    } else {
+      ctx.clearRect(rect.minX, rect.minY, rect.width, rect.height);
       drawLavaSeaFallback(ctx, world, camera);
-
     }
 
 

@@ -41,7 +41,7 @@ import {
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
-import { subscribeGraphicsSettings, getGraphicsSettings, getEffectiveCrtSettings, getEffectiveDprCap } from '../devtools/graphicsSettings';
+import { subscribeGraphicsSettings, getGraphicsSettings } from '../devtools/graphicsSettings';
 import { BackgroundRenderer, createBackgroundCanvas } from '../render/gl/BackgroundRenderer';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
@@ -56,7 +56,10 @@ function syncWebGLBackground(app: GameApp): void {
   const active =
     settings.webglBackground && renderer !== null && renderer.isAvailable();
   renderer?.setVisible(active);
-  app.renderer.setUseWebGLBackground(active);
+  app.renderer.setWebGLBackground(
+    active,
+    active && renderer ? renderer.getCanvas() : null,
+  );
 }
 
 function init(app: GameApp): void {
@@ -435,24 +438,6 @@ function init(app: GameApp): void {
       const webglBg = settings.webglBackground && bg !== null && bg.isAvailable();
       if (webglBg) {
         bg.render(app.camera, app.world.hexRadius, performance.now());
-      }
-
-      const crt = getEffectiveCrtSettings();
-      const needsCrtBridge = webglBg && crt.webglCrt;
-
-      if (needsCrtBridge) {
-        const dpr = getEffectiveDprCap();
-        app.ctx.save();
-        app.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        app.ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        app.ctx.drawImage(
-          bg.getCanvas(),
-          0,
-          0,
-          window.innerWidth,
-          window.innerHeight,
-        );
-        app.ctx.restore();
       }
 
       app.ctx.save();
