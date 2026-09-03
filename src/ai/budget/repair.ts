@@ -855,6 +855,115 @@ function clampContinuousFieldStrength(schema: AbilitySchema): void {
   });
 }
 
+/** World-placement actions that must not run twice when ON_HIT + ON_EXPIRY overlap. */
+function placementKey(action: ActionPayload): string | null {
+  switch (action.type) {
+    case 'SPAWN_FIELD':
+      return `SPAWN_FIELD:${action.field.fieldType}`;
+    case 'SPAWN_PROJECTILE':
+      return 'SPAWN_PROJECTILE';
+    case 'SPAWN_ACTOR':
+      return `SPAWN_ACTOR:${action.actor.actorArchetype}`;
+    case 'CAST_CHILD_PAYLOAD':
+      return 'CAST_CHILD_PAYLOAD';
+    case 'SPAWN_OBSTACLE':
+      return `SPAWN_OBSTACLE:${action.obstacle.shape}`;
+    case 'MUTATE_TERRAIN':
+      return `MUTATE_TERRAIN:${action.mutation.type}`;
+    default:
+      return null;
+  }
+}
+
+function hasPlacementAction(actions: ActionPayload[]): boolean {
+  return actions.some((action) => placementKey(action) !== null);
+}
+
+function triggerNodeHasBody(node: TriggerNode): boolean {
+  if (node.actions.length > 0) return true;
+  if (node.ifFalseActions && node.ifFalseActions.length > 0) return true;
+  if (node.children && node.children.length > 0) return true;
+  if (node.conditions && node.conditions.length > 0) return true;
+  return false;
+}
+
+function mapNestedPlacementActions(actions: ActionPayload[]): ActionPayload[] {
+  return actions.map((action) => {
+    if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
+      return { ...action, triggers: collapseHitExpiryInTriggerTree(action.triggers) };
+    }
+    if (action.type === 'SPAWN_ACTOR' && action.actor.triggers) {
+      return {
+        ...action,
+        actor: {
+          ...action.actor,
+          triggers: collapseHitExpiryInTriggerTree(action.actor.triggers),
+        },
+      };
+    }
+    if (action.type === 'CAST_CHILD_PAYLOAD') {
+      return {
+        ...action,
+        payload: {
+          ...action.payload,
+          triggers: collapseHitExpiryInTriggerTree(action.payload.triggers ?? []),
+        },
+      };
+    }
+    return action;
+  });
+}
+
+/**
+ * LLMs often copy the same well/trap onto both ON_HIT and ON_EXPIRY "to be safe".
+ * Enemy contact already runs ON_EXPIRY (fireOnHitDeath defaults true), so keep the
+ * placement on ON_EXPIRY (covers hit + timeout) and strip the duplicate from ON_HIT.
+ * Distinct placements on both nodes are treated as hit-vs-timeout branches: disable
+ * fireOnHitDeath so they do not stack on contact.
+ */
+function collapseHitExpiryDuplicates(nodes: TriggerNode[]): TriggerNode[] {
+  const onHitNodes = nodes.filter((node) => node.trigger === 'ON_HIT');
+  const onExpiryNodes = nodes.filter((node) => node.trigger === 'ON_EXPIRY');
+  if (onHitNodes.length === 0 || onExpiryNodes.length === 0) return nodes;
+
+  const expiryKeys = new Set<string>();
+  for (const node of onExpiryNodes) {
+    for (const action of node.actions) {
+      const key = placementKey(action);
+      if (key) expiryKeys.add(key);
+    }
+  }
+
+  for (const node of onHitNodes) {
+    node.actions = node.actions.filter((action) => {
+      const key = placementKey(action);
+      return key === null || !expiryKeys.has(key);
+    });
+  }
+
+  const remainingHit = onHitNodes.some((node) => hasPlacementAction(node.actions));
+  const remainingExpiry = onExpiryNodes.some((node) => hasPlacementAction(node.actions));
+  if (remainingHit && remainingExpiry) {
+    for (const node of onExpiryNodes) {
+      if (node.fireOnHitDeath !== false) node.fireOnHitDeath = false;
+    }
+  }
+
+  return nodes.filter((node) => node.trigger !== 'ON_HIT' || triggerNodeHasBody(node));
+}
+
+function collapseHitExpiryInTriggerTree(nodes: TriggerNode[]): TriggerNode[] {
+  const mapped = nodes.map((node) => ({
+    ...node,
+    actions: mapNestedPlacementActions(node.actions),
+    ifFalseActions: node.ifFalseActions
+      ? mapNestedPlacementActions(node.ifFalseActions)
+      : undefined,
+    children: node.children ? collapseHitExpiryInTriggerTree(node.children) : undefined,
+  }));
+  return collapseHitExpiryDuplicates(mapped);
+}
+
 /** Patches concept semantics and injects knockback when offensive spells omit displacement. */
 export function repairAbilitySemantics(
   payload: AbilitySchema,
@@ -882,6 +991,7 @@ export function repairAbilitySemantics(
 
   const result = ensureDisplacementSemantics(cloned, text, isHeadlessMode);
   clampContinuousFieldStrength(result);
+  result.triggers = collapseHitExpiryInTriggerTree(result.triggers);
   return result;
 }
 

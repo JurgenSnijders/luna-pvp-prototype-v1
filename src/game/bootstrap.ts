@@ -1,4 +1,4 @@
-import { Camera2D } from '../camera/Camera2D';
+import { Camera2D, type StreakBody } from '../camera/Camera2D';
 import { InspectorUI } from '../devtools/InspectorUI';
 import { SpellLibrary } from '../devtools/SpellLibrary';
 import { perfMonitor } from '../devtools/PerfMonitor';
@@ -49,6 +49,34 @@ import { applyPalette } from '../ui/palette';
 import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { lerpPos } from '../render/canvas/helpers';
+import { STREAK_BODY_CAP } from '../render/gl/postEffects';
+
+const COMBATANT_GLOW_PAD = 14;
+
+function packStreakBodies(world: PhysicsWorld, alpha: number): StreakBody[] {
+  const bodies: StreakBody[] = [];
+  const push = (x: number, y: number, r: number): void => {
+    if (bodies.length >= STREAK_BODY_CAP) return;
+    bodies.push({ x, y, r });
+  };
+  for (const entity of world.players) {
+    if (entity.isDead) continue;
+    const pos = lerpPos(entity, alpha);
+    push(pos.x, pos.y, entity.effectiveRadius + COMBATANT_GLOW_PAD);
+  }
+  for (const dummy of world.dummies) {
+    if (dummy.isDead) continue;
+    const pos = lerpPos(dummy, alpha);
+    push(pos.x, pos.y, dummy.effectiveRadius + COMBATANT_GLOW_PAD);
+  }
+  for (const summon of world.summons) {
+    if (summon.isDead) continue;
+    const pos = lerpPos(summon, alpha);
+    const radius = summon.config.radius ?? summon.radius;
+    push(pos.x, pos.y, radius + COMBATANT_GLOW_PAD);
+  }
+  return bodies;
+}
 
 function syncWebGLBackground(app: GameApp): void {
   const settings = getGraphicsSettings();
@@ -463,7 +491,13 @@ function init(app: GameApp): void {
         drawPerfOverlay(app);
       }
 
-      const cameraView = app.camera.getView(shake.x, shake.y);
+      const cameraView = {
+        ...app.camera.getView(shake.x, shake.y),
+        hexCenterX: app.world.hexCenter.x,
+        hexCenterY: app.world.hexCenter.y,
+        hexRadius: app.world.hexRadius,
+        streakBodies: packStreakBodies(app.world, alpha),
+      };
       const vfxStats = app.particles.render(
         window.innerWidth,
         window.innerHeight,

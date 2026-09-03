@@ -97,12 +97,18 @@ secondaryColor should contrast with color. glowIntensity tracks power (0.6 subtl
 TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.
 IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWARDS_ORIGIN | ALONG_TRAJECTORY | PERPENDICULAR_TRAJECTORY | CUSTOM
 APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
-Always set target + directionMode on APPLY_IMPULSE. Ensure damaging spells actually move the target by including APPLY_IMPULSE on ON_HIT or ON_EXPIRY.
+Always set target + directionMode on APPLY_IMPULSE. Put APPLY_IMPULSE on ON_HIT (needs a live TARGET) — do not copy the same impulse onto ON_EXPIRY.
 
 TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT (projectile-only — requires root trajectory or SPAWN_PROJECTILE)
 TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, conditions?, actions[], ifFalseActions?, children? }
   triggerDistance: required on ON_DISTANCE_TRAVELED (distance in world units before firing)
-  fireOnHitDeath: optional boolean — fire trigger when projectile kills its target on hit
+  fireOnHitDeath: optional boolean on ON_EXPIRY. DEFAULT TRUE. When a projectile dies from an enemy hit, ON_HIT fires first, then ON_EXPIRY also fires unless fireOnHitDeath is false. This is projectile-death-from-hit, NOT "when the target dies".
+HIT vs EXPIRY (do not double-detonate):
+  Enemy contact: ON_HIT, then ON_EXPIRY (default). Timeout/range: ON_EXPIRY only. Wall: ON_HIT_WALL only.
+  NEVER put the same SPAWN_FIELD / SPAWN_ACTOR / SPAWN_PROJECTILE / CAST_CHILD_PAYLOAD / SPAWN_OBSTACLE / MUTATE_TERRAIN on both ON_HIT and ON_EXPIRY.
+  Contact-only well/trap: ON_HIT only.
+  Contact AND timeout well/trap: ON_EXPIRY only (covers both).
+  Different payloads on hit vs timeout: both nodes, and set fireOnHitDeath:false on ON_EXPIRY.
 CONDITIONS:
   STAT_THRESHOLD { stat: health|instabilityPct, comparison: LT|GT|EQ|LTE|GTE, value, target? }
   TAG_CHECK { value: string, target? } — runtime entity tag, e.g. "in_lava"
@@ -136,7 +142,7 @@ SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_
 DEPLOYABLES: An entity that persists and acts autonomously. Use actorArchetype (TURRET|DECOY) on the actor object — NOT the spell-level archetype field (FROST, VOID, etc.).
 Two shapes:
 - PLACED (instant, at the caster): NO root trajectory. ON_CAST -> SPAWN_ACTOR. Autonomous behavior MUST live in actor.triggers, NOT in the ability's root triggers.
-- THROWN (lands then deploys): root trajectory LINEAR + ON_HIT or ON_EXPIRY -> SPAWN_ACTOR at impact position.
+- THROWN (lands then deploys): root trajectory LINEAR + ON_EXPIRY -> SPAWN_ACTOR at impact (ON_EXPIRY also fires on enemy hit). Use ON_HIT instead only if it must NOT deploy on timeout. NEVER duplicate the same SPAWN_ACTOR on both.
 Root-level ON_TICK binds to a flying projectile carrier — it NEVER executes on a deployed SPAWN_ACTOR entity.
 
 DEPLOYABLE JSON SKELETON (copy this structure for turrets, traps, pylons):
@@ -167,6 +173,7 @@ Set the root AbilitySchema.archetype separately for spell element (e.g. "FROST" 
 SEMANTIC RECIPE BOOK (map user verbs to these patterns):
 Harpoon/Pull: ON_HIT -> APPLY_IMPULSE { baseForce:600, target:"TARGET", directionMode:"TOWARDS_CASTER" } + SPAWN_CONSTRAINT { type:"SPRING_TETHER", source:"CASTER", target:"TARGET", durationMs:2000 }
 Vortex/Black Hole: ON_TICK -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:90, durationMs:3000 } }
+Thrown Singularity: trajectory LINEAR + ON_EXPIRY -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:false, strength:5000, radius:180, durationMs:4000 } } — do NOT also put this field on ON_HIT
 Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursionDepth:1, payload:{ ON_CAST SPAWN_PROJECTILE fan } }
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }

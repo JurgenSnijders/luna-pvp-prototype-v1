@@ -25,12 +25,22 @@ export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
 
 const EDGE_PAN_MARGIN_PX = 24;
 
+export interface StreakBody {
+  x: number;
+  y: number;
+  r: number;
+}
+
 export interface CameraView {
   camX: number;
   camY: number;
   zoom: number;
   shakeX: number;
   shakeY: number;
+  hexCenterX?: number;
+  hexCenterY?: number;
+  hexRadius?: number;
+  streakBodies?: StreakBody[];
 }
 
 export class Camera2D {

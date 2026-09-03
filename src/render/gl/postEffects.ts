@@ -63,6 +63,40 @@ export interface PostEffectParam {
 
 export type PostEffectGroup = 'CRT' | 'RETRO' | 'REACTIVE' | 'GRADE';
 
+export type StreakTarget =
+  | 'COMBAT_ONLY'
+  | 'COMBAT_NO_ENTITIES'
+  | 'ALL_NO_ENTITIES'
+  | 'ALL';
+
+export const STREAK_BODY_CAP = 16;
+
+export const STREAK_TARGET_OPTIONS = [
+  { value: 0, label: 'Combat VFX Only' },
+  { value: 2, label: 'Combat VFX (no entities)' },
+  { value: 3, label: 'Full Scene (no entities)' },
+  { value: 1, label: 'Full Scene' },
+] as const;
+
+export function resolveStreakTarget(value: number): StreakTarget {
+  if (value === 1) return 'ALL';
+  if (value === 2) return 'COMBAT_NO_ENTITIES';
+  if (value === 3) return 'ALL_NO_ENTITIES';
+  return 'COMBAT_ONLY';
+}
+
+export function streakTargetNeedsExtract(target: StreakTarget): boolean {
+  return target !== 'ALL';
+}
+
+export function streakTargetFiltersArena(target: StreakTarget): boolean {
+  return target === 'COMBAT_ONLY' || target === 'COMBAT_NO_ENTITIES';
+}
+
+export function streakTargetFiltersEntities(target: StreakTarget): boolean {
+  return target === 'COMBAT_NO_ENTITIES' || target === 'ALL_NO_ENTITIES';
+}
+
 export type PostEffectPass = 'CRT' | 'PERSISTENCE' | 'RETRO' | 'REACTIVE';
 
 export interface PostEffectDef {
@@ -506,6 +540,17 @@ export const POST_EFFECTS: Record<PostEffectId, PostEffectDef> = {
         step: 1,
         defaultValue: 8,
         storage: { kind: 'effect' },
+      },
+      {
+        key: 'target',
+        label: 'Streak Target',
+        min: 0,
+        max: 3,
+        step: 1,
+        defaultValue: 0,
+        storage: { kind: 'effect' },
+        widget: 'select',
+        options: [...STREAK_TARGET_OPTIONS],
       },
     ],
   },

@@ -100,16 +100,18 @@ export function getActivePresetId(): StylePresetId {
   return getGraphicsSettings().activePreset;
 }
 
-(window as unknown as { __setStylePreset?: (id: StylePresetId) => void }).__setStylePreset = (
-  id,
-) => {
-  if (isStylePresetId(id)) applyStylePreset(id);
-};
+if (typeof window !== 'undefined') {
+  (window as unknown as { __setStylePreset?: (id: StylePresetId) => void }).__setStylePreset = (
+    id,
+  ) => {
+    if (isStylePresetId(id)) applyStylePreset(id);
+  };
 
-(window as unknown as { __setCrosshairStyle?: (id: CrosshairStyleId) => void }).__setCrosshairStyle = (
-  id,
-) => {
-  if (isCrosshairStyleId(id)) {
-    saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
-  }
-};
+  (window as unknown as { __setCrosshairStyle?: (id: CrosshairStyleId) => void }).__setCrosshairStyle = (
+    id,
+  ) => {
+    if (isCrosshairStyleId(id)) {
+      saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
+    }
+  };
+}

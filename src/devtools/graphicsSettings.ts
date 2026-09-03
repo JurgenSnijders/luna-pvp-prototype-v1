@@ -2,6 +2,8 @@ import {
   POST_EFFECTS,
   POST_EFFECT_IDS,
   type PostEffectId,
+  type StreakTarget,
+  resolveStreakTarget,
   tierMeetsMinimum,
 } from '../render/gl/postEffects';
 import {
@@ -129,6 +131,7 @@ export interface EffectiveCrtSettings {
   grade: {
     streakIntensity: number;
     streakLength: number;
+    streakTarget: StreakTarget;
     lutEnabled: boolean;
     lutId: number;
     lutMix: number;
@@ -407,6 +410,7 @@ function resolveReactive(): {
 function resolveGrade(): {
   streakIntensity: number;
   streakLength: number;
+  streakTarget: StreakTarget;
   lutEnabled: boolean;
   lutId: number;
   lutMix: number;
@@ -415,9 +419,11 @@ function resolveGrade(): {
 } {
   const anamorphicOn = isPostEffectEnabled('ANAMORPHIC');
   const lutOn = isPostEffectEnabled('LUT');
+  const streakTarget = resolveStreakTarget(getPostEffectParam('ANAMORPHIC', 'target'));
   return {
     streakIntensity: anamorphicOn ? getPostEffectParam('ANAMORPHIC', 'intensity') : 0,
     streakLength: getPostEffectParam('ANAMORPHIC', 'length'),
+    streakTarget,
     lutEnabled: lutOn,
     lutId: getPostEffectParam('LUT', 'id'),
     lutMix: lutOn ? getPostEffectParam('LUT', 'mix') : 0,
@@ -451,6 +457,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const gradeOff = {
     streakIntensity: 0,
     streakLength: 8,
+    streakTarget: 'COMBAT_ONLY' as StreakTarget,
     lutEnabled: false,
     lutId: 0,
     lutMix: 0,

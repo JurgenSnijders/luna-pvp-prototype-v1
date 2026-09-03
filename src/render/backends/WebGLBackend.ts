@@ -223,6 +223,7 @@ export class WebGLBackend implements ParticleBackend {
         bufferH,
         width,
         height,
+        view,
       );
 
       this.prevCamX = view.camX;
@@ -244,7 +245,9 @@ export class WebGLBackend implements ParticleBackend {
         (crt.grade.streakIntensity > 0 &&
         limits.bloomPasses > 0 &&
         crt.bloomIntensity > 0
-          ? 1
+          ? crt.grade.streakTarget !== 'ALL'
+            ? 2
+            : 1
           : 0),
       instanceCount: stats.instanceCount,
       uploadBytes: stats.uploadBytes,

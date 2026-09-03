@@ -181,6 +181,79 @@ void main() {
 }
 `;
 
+export const STREAK_EXTRACT_SHADER = `#version 300 es
+precision mediump float;
+in vec2 v_texCoord;
+
+uniform sampler2D u_source;
+uniform float u_threshold;
+uniform vec2 u_resolution;
+uniform vec2 u_cameraPos;
+uniform float u_cameraZoom;
+uniform vec2 u_shake;
+uniform vec2 u_hexCenter;
+uniform float u_hexRadius;
+uniform int u_filterArena;
+uniform int u_filterEntities;
+uniform int u_bodyCount;
+uniform vec4 u_bodies[16];
+
+out vec4 fragColor;
+
+float sdHexagon(vec2 p, float r) {
+  const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+  p = abs(p);
+  p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+  p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+  return length(p) * sign(p.y);
+}
+
+void main() {
+  vec4 col = texture(u_source, v_texCoord);
+  float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float contrib = max(lum - u_threshold, 0.0) / max(lum, 0.0001);
+  if (contrib <= 0.0) {
+    fragColor = vec4(0.0);
+    return;
+  }
+  col.rgb *= contrib;
+
+  if (u_filterArena == 1 || u_filterEntities == 1) {
+    vec2 screen = vec2(v_texCoord.x, 1.0 - v_texCoord.y) * u_resolution - u_shake;
+    vec2 worldPos = (screen - 0.5 * u_resolution) / u_cameraZoom + u_cameraPos;
+
+    if (u_filterArena == 1) {
+      float hexDist = sdHexagon(worldPos - u_hexCenter, u_hexRadius);
+      if (abs(hexDist) < 18.0) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      if (hexDist > 18.0) {
+        float spatialDelta = length(fwidth(col.rgb));
+        if (spatialDelta < 0.10) {
+          fragColor = vec4(0.0);
+          return;
+        }
+      }
+    }
+
+    if (u_filterEntities == 1) {
+      for (int i = 0; i < 16; i++) {
+        if (i >= u_bodyCount) break;
+        vec2 bp = u_bodies[i].xy;
+        float br = u_bodies[i].z;
+        if (length(worldPos - bp) < br) {
+          fragColor = vec4(0.0);
+          return;
+        }
+      }
+    }
+  }
+
+  fragColor = col;
+}
+`;
+
 export const STREAK_SHADER = `#version 300 es
 precision mediump float;
 in vec2 v_texCoord;

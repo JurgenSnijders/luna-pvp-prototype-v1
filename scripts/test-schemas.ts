@@ -336,12 +336,217 @@ function runPresetContractAssertions(): string[] {
   return failures;
 }
 
+function countMassAttractors(schema: AbilitySchema): number {
+  let count = 0;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' && v.action.field.fieldType === 'MASS_ATTRACTOR') {
+      count += 1;
+    }
+  });
+  return count;
+}
+
+function runHitExpiryDedupeAssertions(): string[] {
+  const failures: string[] = [];
+  const attractorField = {
+    fieldType: 'MASS_ATTRACTOR' as const,
+    radius: 200,
+    strength: 5500,
+    durationMs: 4000,
+    attachToSource: false,
+  };
+
+  const eventHorizon: AbilitySchema = {
+    id: 'event_horizon',
+    name: 'Event Horizon',
+    cooldownMs: 1309,
+    recoilKick: 38,
+    trajectory: { type: 'LINEAR', speed: 300, maxRange: 450 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+      },
+      {
+        trigger: 'ON_EXPIRY',
+        actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+      },
+    ],
+  };
+
+  const repairedHorizon = repairAbilitySemantics(
+    eventHorizon,
+    'Inward crushing singularity that pulls nearby targets',
+    true,
+  );
+  const horizonHit = repairedHorizon.triggers.find((t) => t.trigger === 'ON_HIT');
+  const horizonExpiry = repairedHorizon.triggers.find((t) => t.trigger === 'ON_EXPIRY');
+  if (horizonHit) {
+    failures.push('Event Horizon: duplicate ON_HIT SPAWN_FIELD must be stripped');
+  }
+  if (!horizonExpiry?.actions.some((a) => a.type === 'SPAWN_FIELD')) {
+    failures.push('Event Horizon: ON_EXPIRY SPAWN_FIELD must be kept');
+  }
+  if (horizonExpiry?.fireOnHitDeath === false) {
+    failures.push('Event Horizon: fireOnHitDeath must stay default so the well still lands on hit');
+  }
+  if (countMassAttractors(repairedHorizon) !== 1) {
+    failures.push(
+      `Event Horizon: expected 1 MASS_ATTRACTOR after repair, got ${countMassAttractors(repairedHorizon)}`,
+    );
+  }
+
+  const twice = repairAbilitySemantics(repairedHorizon, 'Inward crushing singularity', true);
+  if (JSON.stringify(repairedHorizon) !== JSON.stringify(twice)) {
+    failures.push('Event Horizon: hit/expiry collapse must be idempotent');
+  }
+
+  const nested: AbilitySchema = {
+    id: 'nested_double_well',
+    name: 'Nested Double Well',
+    cooldownMs: 1000,
+    recoilKick: 20,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+            triggers: [
+              {
+                trigger: 'ON_HIT',
+                actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+              },
+              {
+                trigger: 'ON_EXPIRY',
+                actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const repairedNested = repairAbilitySemantics(nested, '', true);
+  const spawn = repairedNested.triggers
+    .find((t) => t.trigger === 'ON_CAST')
+    ?.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+  const nestedTriggers = spawn && spawn.type === 'SPAWN_PROJECTILE' ? spawn.triggers ?? [] : [];
+  if (
+    nestedTriggers.some(
+      (t) => t.trigger === 'ON_HIT' && t.actions.some((a) => a.type === 'SPAWN_FIELD'),
+    )
+  ) {
+    failures.push('Nested projectile: duplicate ON_HIT SPAWN_FIELD must be stripped');
+  }
+  if (!nestedTriggers.some((t) => t.trigger === 'ON_EXPIRY')) {
+    failures.push('Nested projectile: ON_EXPIRY SPAWN_FIELD must be kept');
+  }
+
+  const branched: AbilitySchema = {
+    id: 'hit_field_expiry_child',
+    name: 'Hit Field Expiry Child',
+    cooldownMs: 1000,
+    recoilKick: 20,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+      },
+      {
+        trigger: 'ON_EXPIRY',
+        actions: [
+          {
+            type: 'CAST_CHILD_PAYLOAD',
+            inheritVelocity: true,
+            maxRecursionDepth: 1,
+            payload: {
+              id: 'hit_field_expiry_child_payload',
+              name: 'Split',
+              cooldownMs: 0,
+              recoilKick: 0,
+              trajectory: { type: 'LINEAR', speed: 350, maxRange: 250 },
+              triggers: [
+                {
+                  trigger: 'ON_HIT',
+                  actions: [
+                    {
+                      type: 'APPLY_IMPULSE',
+                      baseForce: 500,
+                      target: 'TARGET',
+                      directionMode: 'AWAY_FROM_ORIGIN',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const repairedBranch = repairAbilitySemantics(branched, '', true);
+  const branchHit = repairedBranch.triggers.find((t) => t.trigger === 'ON_HIT');
+  const branchExpiry = repairedBranch.triggers.find((t) => t.trigger === 'ON_EXPIRY');
+  if (!branchHit?.actions.some((a) => a.type === 'SPAWN_FIELD')) {
+    failures.push('Distinct payloads: ON_HIT SPAWN_FIELD must remain');
+  }
+  if (!branchExpiry?.actions.some((a) => a.type === 'CAST_CHILD_PAYLOAD')) {
+    failures.push('Distinct payloads: ON_EXPIRY CAST_CHILD_PAYLOAD must remain');
+  }
+  if (branchExpiry?.fireOnHitDeath !== false) {
+    failures.push('Distinct payloads: ON_EXPIRY must set fireOnHitDeath false');
+  }
+
+  const knockbackPlusWell: AbilitySchema = {
+    id: 'knockback_plus_well',
+    name: 'Knockback Plus Well',
+    cooldownMs: 1000,
+    recoilKick: 20,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 600,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
+      {
+        trigger: 'ON_EXPIRY',
+        actions: [{ type: 'SPAWN_FIELD', field: { ...attractorField } }],
+      },
+    ],
+  };
+  const repairedKnock = repairAbilitySemantics(knockbackPlusWell, '', true);
+  const knockHit = repairedKnock.triggers.find((t) => t.trigger === 'ON_HIT');
+  const knockExpiry = repairedKnock.triggers.find((t) => t.trigger === 'ON_EXPIRY');
+  if (!knockHit?.actions.some((a) => a.type === 'APPLY_IMPULSE')) {
+    failures.push('Impulse+well: ON_HIT APPLY_IMPULSE must remain');
+  }
+  if (!knockExpiry?.actions.some((a) => a.type === 'SPAWN_FIELD')) {
+    failures.push('Impulse+well: ON_EXPIRY SPAWN_FIELD must remain');
+  }
+  if (knockExpiry?.fireOnHitDeath === false) {
+    failures.push('Impulse+well: well must still detonate on hit (default fireOnHitDeath)');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
     ...runDeployableRepairAssertions(),
+    ...runHitExpiryDedupeAssertions(),
     ...runPresetContractAssertions(),
   ];
 

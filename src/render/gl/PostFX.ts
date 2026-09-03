@@ -8,8 +8,17 @@ import {
   PERSISTENCE_SHADER,
   REACTIVE_SHADER,
   RETRO_SHADER,
+  STREAK_EXTRACT_SHADER,
   STREAK_SHADER,
 } from './postShaders';
+import {
+  STREAK_BODY_CAP,
+  streakTargetFiltersArena,
+  streakTargetFiltersEntities,
+  streakTargetNeedsExtract,
+  type StreakTarget,
+} from './postEffects';
+import type { CameraView } from '../../camera/Camera2D';
 import { getLutData, LUT_SIZE } from './gradeLuts';
 import { getPaletteSize, packPaletteUniform } from './retroPalettes';
 import {
@@ -66,6 +75,7 @@ export interface CrtPresentParams {
   grade: {
     streakIntensity: number;
     streakLength: number;
+    streakTarget: StreakTarget;
     lutEnabled: boolean;
     lutId: number;
     lutMix: number;
@@ -84,10 +94,12 @@ export class PostFX {
   private retroProgram: WebGLProgram;
   private reactiveProgram: WebGLProgram;
   private streakProgram: WebGLProgram;
+  private streakExtractProgram: WebGLProgram;
   private fsVao: WebGLVertexArrayObject;
   private sceneFbo: FramebufferTarget | null = null;
   private bloomFboA: FramebufferTarget | null = null;
   private bloomFboB: FramebufferTarget | null = null;
+  private streakFbo: FramebufferTarget | null = null;
   private vfxCompositeFbo: FramebufferTarget | null = null;
   private persistFboA: FramebufferTarget | null = null;
   private persistFboB: FramebufferTarget | null = null;
@@ -103,6 +115,7 @@ export class PostFX {
   private worldTexH = 0;
   private width = 0;
   private height = 0;
+  private streakBodyData = new Float32Array(STREAK_BODY_CAP * 4);
   private uniformCache = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
 
   constructor(private gl: WebGL2RenderingContext) {
@@ -116,6 +129,7 @@ export class PostFX {
     const fsRetro = compileShader(gl, gl.FRAGMENT_SHADER, RETRO_SHADER);
     const fsReactive = compileShader(gl, gl.FRAGMENT_SHADER, REACTIVE_SHADER);
     const fsStreak = compileShader(gl, gl.FRAGMENT_SHADER, STREAK_SHADER);
+    const fsStreakExtract = compileShader(gl, gl.FRAGMENT_SHADER, STREAK_EXTRACT_SHADER);
     this.thresholdProgram = linkProgram(gl, vs, fsT);
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
@@ -125,6 +139,7 @@ export class PostFX {
     this.retroProgram = linkProgram(gl, vs, fsRetro);
     this.reactiveProgram = linkProgram(gl, vs, fsReactive);
     this.streakProgram = linkProgram(gl, vs, fsStreak);
+    this.streakExtractProgram = linkProgram(gl, vs, fsStreakExtract);
     gl.deleteShader(vs);
     gl.deleteShader(fsT);
     gl.deleteShader(fsB);
@@ -135,6 +150,7 @@ export class PostFX {
     gl.deleteShader(fsRetro);
     gl.deleteShader(fsReactive);
     gl.deleteShader(fsStreak);
+    gl.deleteShader(fsStreakExtract);
     const quad = createFullscreenQuad(gl);
     this.fsVao = quad.vao;
   }
@@ -154,6 +170,7 @@ export class PostFX {
       this.sceneFbo,
       this.bloomFboA,
       this.bloomFboB,
+      this.streakFbo,
       this.vfxCompositeFbo,
       this.persistFboA,
       this.persistFboB,
@@ -167,6 +184,7 @@ export class PostFX {
     this.sceneFbo = null;
     this.bloomFboA = null;
     this.bloomFboB = null;
+    this.streakFbo = null;
     this.vfxCompositeFbo = null;
     this.persistFboA = null;
     this.persistFboB = null;
@@ -197,11 +215,13 @@ export class PostFX {
       this.sceneFbo = createFramebuffer(this.gl, width, height);
       this.bloomFboA = createFramebuffer(this.gl, bw, bh);
       this.bloomFboB = createFramebuffer(this.gl, bw, bh);
+      this.streakFbo = createFramebuffer(this.gl, bw, bh);
       this.vfxCompositeFbo = createFramebuffer(this.gl, width, height);
     } else {
       resizeFramebuffer(this.gl, this.sceneFbo, width, height);
       resizeFramebuffer(this.gl, this.bloomFboA!, bw, bh);
       resizeFramebuffer(this.gl, this.bloomFboB!, bw, bh);
+      resizeFramebuffer(this.gl, this.streakFbo!, bw, bh);
       resizeFramebuffer(this.gl, this.vfxCompositeFbo!, width, height);
     }
     if (this.persistFboA) {
@@ -281,6 +301,7 @@ export class PostFX {
     bufferHeight: number,
     effectWidth: number,
     effectHeight: number,
+    view: CameraView,
   ): void {
     const gl = this.gl;
     this.ensureWorldTexture(worldCanvas.width, worldCanvas.height);
@@ -334,7 +355,15 @@ export class PostFX {
       this.extractBloom(sourceTex, params.bloomPasses, params.bloomThreshold);
       if (params.grade.streakIntensity > 0) {
         hasStreak = true;
-        this.applyStreak(params.grade.streakLength);
+        this.applyStreak(
+          params.grade.streakLength,
+          params.grade.streakTarget,
+          sourceTex,
+          params.bloomThreshold,
+          effectWidth,
+          effectHeight,
+          view,
+        );
       }
     }
 
@@ -588,15 +617,86 @@ export class PostFX {
     return target.texture;
   }
 
-  private applyStreak(streakLength: number): void {
+  private applyStreak(
+    streakLength: number,
+    target: StreakTarget,
+    sourceTex: WebGLTexture,
+    threshold: number,
+    effectWidth: number,
+    effectHeight: number,
+    view: CameraView,
+  ): void {
     const gl = this.gl;
     const bloomA = this.bloomFboA!;
     const bloomB = this.bloomFboB!;
+    const hexApothem = (view.hexRadius ?? 200) * 0.866025404;
+    const filterArena = streakTargetFiltersArena(target);
+    const filterEntities = streakTargetFiltersEntities(target);
+
+    let blurSource: WebGLTexture;
+    if (streakTargetNeedsExtract(target)) {
+      const streakFbo = this.streakFbo!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, streakFbo.fbo);
+      gl.viewport(0, 0, streakFbo.width, streakFbo.height);
+      gl.useProgram(this.streakExtractProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, sourceTex);
+      gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_source')!, 0);
+      gl.uniform1f(this.uniform(this.streakExtractProgram, 'u_threshold')!, threshold);
+      gl.uniform2f(
+        this.uniform(this.streakExtractProgram, 'u_resolution')!,
+        effectWidth,
+        effectHeight,
+      );
+      gl.uniform2f(
+        this.uniform(this.streakExtractProgram, 'u_cameraPos')!,
+        view.camX,
+        view.camY,
+      );
+      gl.uniform1f(this.uniform(this.streakExtractProgram, 'u_cameraZoom')!, view.zoom);
+      gl.uniform2f(
+        this.uniform(this.streakExtractProgram, 'u_shake')!,
+        view.shakeX,
+        view.shakeY,
+      );
+      gl.uniform2f(
+        this.uniform(this.streakExtractProgram, 'u_hexCenter')!,
+        view.hexCenterX ?? 0,
+        view.hexCenterY ?? 0,
+      );
+      gl.uniform1f(this.uniform(this.streakExtractProgram, 'u_hexRadius')!, hexApothem);
+      gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_filterArena')!, filterArena ? 1 : 0);
+      gl.uniform1i(
+        this.uniform(this.streakExtractProgram, 'u_filterEntities')!,
+        filterEntities ? 1 : 0,
+      );
+
+      const bodies = view.streakBodies ?? [];
+      const bodyCount = Math.min(bodies.length, STREAK_BODY_CAP);
+      this.streakBodyData.fill(0);
+      for (let i = 0; i < bodyCount; i++) {
+        const body = bodies[i];
+        const o = i * 4;
+        this.streakBodyData[o] = body.x;
+        this.streakBodyData[o + 1] = body.y;
+        this.streakBodyData[o + 2] = body.r;
+      }
+      gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_bodyCount')!, bodyCount);
+      gl.uniform4fv(
+        this.uniform(this.streakExtractProgram, 'u_bodies[0]')!,
+        this.streakBodyData,
+      );
+      this.drawFullscreen();
+      blurSource = streakFbo.texture;
+    } else {
+      blurSource = bloomA.texture;
+    }
+
     gl.bindFramebuffer(gl.FRAMEBUFFER, bloomB.fbo);
     gl.viewport(0, 0, bloomB.width, bloomB.height);
     gl.useProgram(this.streakProgram);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, bloomA.texture);
+    gl.bindTexture(gl.TEXTURE_2D, blurSource);
     gl.uniform1i(this.uniform(this.streakProgram, 'u_source')!, 0);
     gl.uniform2f(
       this.uniform(this.streakProgram, 'u_texelSize')!,

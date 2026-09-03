@@ -365,6 +365,7 @@ export interface TriggerNode {
   trigger: TriggerType;
   tickIntervalMs?: number;
   triggerDistance?: number;
+  /** On ON_EXPIRY: if false, skip this node when the projectile dies from an enemy hit. Default true (expiry also runs on hit). */
   fireOnHitDeath?: boolean;
   conditions?: ConditionNode[];
   actions: ActionPayload[];
