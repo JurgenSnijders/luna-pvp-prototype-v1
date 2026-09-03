@@ -194,9 +194,8 @@ uniform vec2 u_shake;
 uniform vec2 u_hexCenter;
 uniform float u_hexRadius;
 uniform int u_filterArena;
-uniform int u_filterEntities;
 uniform int u_bodyCount;
-uniform vec4 u_bodies[16];
+uniform vec4 u_bodies[48];
 
 out vec4 fragColor;
 
@@ -206,6 +205,13 @@ float sdHexagon(vec2 p, float r) {
   p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
   p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
   return length(p) * sign(p.y);
+}
+
+float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0001), 0.0, 1.0);
+  return length(pa - ba * h) - r;
 }
 
 void main() {
@@ -218,7 +224,7 @@ void main() {
   }
   col.rgb *= contrib;
 
-  if (u_filterArena == 1 || u_filterEntities == 1) {
+  if (u_filterArena == 1 || u_bodyCount > 0) {
     vec2 screen = vec2(v_texCoord.x, 1.0 - v_texCoord.y) * u_resolution - u_shake;
     vec2 worldPos = (screen - 0.5 * u_resolution) / u_cameraZoom + u_cameraPos;
 
@@ -237,15 +243,15 @@ void main() {
       }
     }
 
-    if (u_filterEntities == 1) {
-      for (int i = 0; i < 16; i++) {
-        if (i >= u_bodyCount) break;
-        vec2 bp = u_bodies[i].xy;
-        float br = u_bodies[i].z;
-        if (length(worldPos - bp) < br) {
-          fragColor = vec4(0.0);
-          return;
-        }
+    for (int i = 0; i < 48; i++) {
+      if (i >= u_bodyCount) break;
+      vec2 bp = u_bodies[i].xy;
+      float br = u_bodies[i].z;
+      float up = u_bodies[i].w;
+      vec2 top = bp - vec2(0.0, max(up, 0.0));
+      if (sdCapsule(worldPos, bp, top, br) < 0.0) {
+        fragColor = vec4(0.0);
+        return;
       }
     }
   }

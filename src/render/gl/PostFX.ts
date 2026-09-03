@@ -14,7 +14,6 @@ import {
 import {
   STREAK_BODY_CAP,
   streakTargetFiltersArena,
-  streakTargetFiltersEntities,
   streakTargetNeedsExtract,
   type StreakTarget,
 } from './postEffects';
@@ -631,7 +630,6 @@ export class PostFX {
     const bloomB = this.bloomFboB!;
     const hexApothem = (view.hexRadius ?? 200) * 0.866025404;
     const filterArena = streakTargetFiltersArena(target);
-    const filterEntities = streakTargetFiltersEntities(target);
 
     let blurSource: WebGLTexture;
     if (streakTargetNeedsExtract(target)) {
@@ -666,10 +664,6 @@ export class PostFX {
       );
       gl.uniform1f(this.uniform(this.streakExtractProgram, 'u_hexRadius')!, hexApothem);
       gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_filterArena')!, filterArena ? 1 : 0);
-      gl.uniform1i(
-        this.uniform(this.streakExtractProgram, 'u_filterEntities')!,
-        filterEntities ? 1 : 0,
-      );
 
       const bodies = view.streakBodies ?? [];
       const bodyCount = Math.min(bodies.length, STREAK_BODY_CAP);
@@ -680,6 +674,7 @@ export class PostFX {
         this.streakBodyData[o] = body.x;
         this.streakBodyData[o + 1] = body.y;
         this.streakBodyData[o + 2] = body.r;
+        this.streakBodyData[o + 3] = body.up ?? 0;
       }
       gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_bodyCount')!, bodyCount);
       gl.uniform4fv(

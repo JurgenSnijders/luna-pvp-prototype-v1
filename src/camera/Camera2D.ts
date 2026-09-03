@@ -29,6 +29,8 @@ export interface StreakBody {
   x: number;
   y: number;
   r: number;
+  /** Extra world-space length upward (negative Y) for a vertical capsule. */
+  up?: number;
 }
 
 export interface CameraView {

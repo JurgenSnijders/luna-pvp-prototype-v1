@@ -2,9 +2,9 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
-import { repairAbilitySemantics } from '../src/ai/budget/repair';
-import { PRESETS } from '../src/devtools/Presets';
-import type { AbilitySchema, ValidationIssue } from '../src/types/schema';
+import { applyHitExpiryOverlapRepair, repairAbilitySemantics } from '../src/ai/budget/repair';
+import { PRESETS, KINETIC_RECIPES } from '../src/devtools/Presets';
+import type { AbilitySchema, ActionPayload, TriggerNode, ValidationIssue } from '../src/types/schema';
 import { validateAbilitySchema, walkActions } from '../src/types/schema';
 import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
 
@@ -346,6 +346,64 @@ function countMassAttractors(schema: AbilitySchema): number {
   return count;
 }
 
+function testPlacementKey(action: ActionPayload): string | null {
+  switch (action.type) {
+    case 'SPAWN_FIELD':
+      return `SPAWN_FIELD:${action.field.fieldType}`;
+    case 'SPAWN_PROJECTILE':
+      return 'SPAWN_PROJECTILE';
+    case 'SPAWN_ACTOR':
+      return `SPAWN_ACTOR:${action.actor.actorArchetype}`;
+    case 'CAST_CHILD_PAYLOAD':
+      return 'CAST_CHILD_PAYLOAD';
+    case 'SPAWN_OBSTACLE':
+      return `SPAWN_OBSTACLE:${action.obstacle.shape}`;
+    case 'MUTATE_TERRAIN':
+      return `MUTATE_TERRAIN:${action.mutation.type}`;
+    default:
+      return null;
+  }
+}
+
+function collectTriggerLists(nodes: TriggerNode[] | undefined, out: TriggerNode[][]): void {
+  if (!nodes || nodes.length === 0) return;
+  out.push(nodes);
+  for (const node of nodes) {
+    if (node.children) collectTriggerLists(node.children, out);
+    const actions = [...node.actions, ...(node.ifFalseActions ?? [])];
+    for (const action of actions) {
+      if (action.type === 'SPAWN_PROJECTILE') collectTriggerLists(action.triggers, out);
+      if (action.type === 'SPAWN_ACTOR') collectTriggerLists(action.actor.triggers, out);
+      if (action.type === 'CAST_CHILD_PAYLOAD') {
+        collectTriggerLists(action.payload.triggers, out);
+      }
+    }
+  }
+}
+
+function findHitExpiryPlacementOverlap(schema: AbilitySchema): string | null {
+  const lists: TriggerNode[][] = [];
+  collectTriggerLists(schema.triggers, lists);
+  for (const nodes of lists) {
+    const expiryKeys = new Set<string>();
+    for (const node of nodes) {
+      if (node.trigger !== 'ON_EXPIRY') continue;
+      for (const action of node.actions) {
+        const key = testPlacementKey(action);
+        if (key) expiryKeys.add(key);
+      }
+    }
+    for (const node of nodes) {
+      if (node.trigger !== 'ON_HIT') continue;
+      for (const action of node.actions) {
+        const key = testPlacementKey(action);
+        if (key && expiryKeys.has(key)) return key;
+      }
+    }
+  }
+  return null;
+}
+
 function runHitExpiryDedupeAssertions(): string[] {
   const failures: string[] = [];
   const attractorField = {
@@ -535,6 +593,20 @@ function runHitExpiryDedupeAssertions(): string[] {
   }
   if (knockExpiry?.fireOnHitDeath === false) {
     failures.push('Impulse+well: well must still detonate on hit (default fireOnHitDeath)');
+  }
+
+  for (const [name, schema] of [
+    ...Object.entries(PRESETS).map(([n, s]) => [`preset ${n}`, s] as const),
+    ...Object.entries(KINETIC_RECIPES).map(([n, s]) => [`recipe ${n}`, s] as const),
+  ]) {
+    const overlap = findHitExpiryPlacementOverlap(schema);
+    if (overlap) {
+      failures.push(`${name}: duplicate ${overlap} on ON_HIT and ON_EXPIRY`);
+    }
+    const rebaked = applyHitExpiryOverlapRepair(structuredClone(schema));
+    if (findHitExpiryPlacementOverlap(rebaked)) {
+      failures.push(`${name}: overlap remains after applyHitExpiryOverlapRepair`);
+    }
   }
 
   return failures;

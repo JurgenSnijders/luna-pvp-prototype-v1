@@ -1,4 +1,5 @@
 import type { CombatVisualEvent } from '../../engine/PhysicsWorld';
+import type { StreakBody } from '../../camera/Camera2D';
 import { fctClusterConfig } from '../../render/fctClusterConfig';
 import type { SpellArchetype } from '../../types/schema';
 import { canvasFont } from '../../ui/tokens';
@@ -534,5 +535,19 @@ export class FloatingCombatTextManager {
     ctx.shadowColor = 'transparent';
     ctx.textAlign = prevAlign;
     ctx.globalAlpha = prevAlpha;
+  }
+
+  collectStreakBodies(bodies: StreakBody[], cap: number): void {
+    for (const p of this.particles) {
+      if (bodies.length >= cap) return;
+      const fontSize = Math.round(16 * p.scale);
+      const halfW = Math.min(80, Math.max(14, p.text.length * fontSize * 0.32 + 8));
+      bodies.push({
+        x: p.pos.x + p.jitterOffset,
+        y: p.pos.y,
+        r: halfW,
+        up: fontSize,
+      });
+    }
   }
 }

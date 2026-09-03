@@ -1,6 +1,6 @@
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 
-import type { Camera2D } from '../camera/Camera2D';
+import type { Camera2D, StreakBody } from '../camera/Camera2D';
 
 import type { ParticleSystem } from './ParticleSystem';
 
@@ -14,7 +14,12 @@ import { drawDebugOverlay, type DebugOptions } from './canvas/debug';
 
 import { drawCombatants, drawSummons } from './canvas/entities';
 
-import { drawOverheadHUD } from './canvas/hud';
+import {
+  drawOverheadHUD,
+  OVERHEAD_INSTABILITY_FONT_SIZE,
+  OVERHEAD_INSTABILITY_LABEL_OFFSET,
+  OVERHEAD_STATUS_BAR_TOTAL_WIDTH,
+} from './canvas/hud';
 
 import { drawProjectiles } from './canvas/projectiles';
 
@@ -53,6 +58,7 @@ import { Vector2D } from '../math/Vector2D';
 import { hitFeedbackConfig } from './hitFeedbackConfig';
 
 import { getEffectiveDprCap } from '../devtools/graphicsSettings';
+import { STREAK_BODY_CAP } from './gl/postEffects';
 import { flashArenaCrosshair } from '../ui/palette';
 
 
@@ -94,6 +100,67 @@ export class CanvasRenderer {
   setWebGLBackground(enabled: boolean, canvas: HTMLCanvasElement | null = null): void {
     this.useWebGLBackground = enabled;
     this.webglBackgroundCanvas = enabled ? canvas : null;
+  }
+
+  collectStreakBodies(
+    world: PhysicsWorld,
+    alpha: number,
+    includeEntities: boolean,
+  ): StreakBody[] {
+    const bodies: StreakBody[] = [];
+    const push = (body: StreakBody): void => {
+      if (bodies.length >= STREAK_BODY_CAP) return;
+      bodies.push(body);
+    };
+    const hudHalfW = OVERHEAD_STATUS_BAR_TOTAL_WIDTH * 0.5 + 6;
+    const hudUp = OVERHEAD_INSTABILITY_LABEL_OFFSET + OVERHEAD_INSTABILITY_FONT_SIZE;
+    const glowPad = 14;
+
+    const addCombatant = (
+      isDead: boolean,
+      stealthed: boolean,
+      pos: { x: number; y: number },
+      radius: number,
+    ): void => {
+      if (isDead) return;
+      if (includeEntities) {
+        push({
+          x: pos.x,
+          y: pos.y,
+          r: Math.max(radius + glowPad, hudHalfW),
+          up: radius + hudUp,
+        });
+        return;
+      }
+      if (stealthed) return;
+      push({
+        x: pos.x,
+        y: pos.y - radius,
+        r: hudHalfW,
+        up: hudUp,
+      });
+    };
+
+    for (const entity of world.players) {
+      const pos = lerpPos(entity, alpha);
+      addCombatant(entity.isDead, entity.isStealthed(), pos, entity.effectiveRadius);
+    }
+    for (const dummy of world.dummies) {
+      const pos = lerpPos(dummy, alpha);
+      addCombatant(dummy.isDead, dummy.isStealthed(), pos, dummy.effectiveRadius);
+    }
+    for (const summon of world.summons) {
+      const pos = lerpPos(summon, alpha);
+      addCombatant(
+        summon.isDead,
+        summon.isStealthed(),
+        pos,
+        summon.config.radius ?? summon.radius,
+      );
+    }
+
+    this.fctManager.collectStreakBodies(bodies, STREAK_BODY_CAP);
+    return bodies;
   }
 
 

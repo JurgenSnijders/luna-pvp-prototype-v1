@@ -69,7 +69,7 @@ export type StreakTarget =
   | 'ALL_NO_ENTITIES'
   | 'ALL';
 
-export const STREAK_BODY_CAP = 16;
+export const STREAK_BODY_CAP = 48;
 
 export const STREAK_TARGET_OPTIONS = [
   { value: 0, label: 'Combat VFX Only' },

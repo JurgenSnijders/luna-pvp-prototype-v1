@@ -1,4 +1,5 @@
 import type { AbilitySchema } from '../../types/schema';
+import { applyHitExpiryOverlapRepair } from '../../ai/budget/repair';
 import { CORE_PRESETS } from './core';
 import { KINETIC_RECIPES, KINETIC_RECIPE_PRESETS } from './kineticRecipes';
 import { INPUT_PROFILE_PRESETS } from './inputProfiles';
@@ -157,6 +158,12 @@ function mergePresets(...maps: Record<string, AbilitySchema>[]): Record<string, 
   return Object.assign({}, ...maps);
 }
 
+function bakeHitExpiryOverlap(map: Record<string, AbilitySchema>): void {
+  for (const schema of Object.values(map)) {
+    applyHitExpiryOverlapRepair(schema);
+  }
+}
+
 export const PRESETS: Record<string, AbilitySchema> = mergePresets(
   CORE_PRESETS,
   KINETIC_RECIPE_PRESETS,
@@ -170,6 +177,9 @@ export const PRESETS: Record<string, AbilitySchema> = mergePresets(
   DIAGNOSTIC_PRESETS,
   VFX_SHOWCASE_PRESETS,
 );
+
+bakeHitExpiryOverlap(PRESETS);
+bakeHitExpiryOverlap(KINETIC_RECIPES);
 
 export const PRESET_NAMES = Object.keys(PRESETS);
 

@@ -1,5 +1,6 @@
 import { PRESETS } from '../devtools/Presets';
 import { inferSpellRoles } from './spellRoles';
+import { applyHitExpiryOverlapRepair } from '../ai/budget/repair';
 import {
   ACTION_SLOT_KEYS,
   type ActionSlotKey,
@@ -113,7 +114,8 @@ class SpellInventoryStore {
     this.insertionOrder = [];
     for (const schema of Object.values(PRESETS)) {
       this.presetIds.add(schema.id);
-      this.inventory.set(schema.id, structuredClone(schema));
+      const copy = applyHitExpiryOverlapRepair(structuredClone(schema));
+      this.inventory.set(schema.id, copy);
       this.insertionOrder.push(schema.id);
     }
 
@@ -141,6 +143,7 @@ class SpellInventoryStore {
         const validated = validateAbilitySchema(item);
         if (!validated) continue;
         if (this.presetIds.has(validated.id)) continue;
+        applyHitExpiryOverlapRepair(validated);
         this.inventory.set(validated.id, validated);
         if (!this.insertionOrder.includes(validated.id)) {
           this.insertionOrder.push(validated.id);
@@ -248,7 +251,7 @@ class SpellInventoryStore {
   }
 
   addSpell(spell: AbilitySchema, isNewlyForged = false): AbilitySchema {
-    const stored = structuredClone(spell);
+    const stored = applyHitExpiryOverlapRepair(structuredClone(spell));
     if (this.needsUniqueId(stored.id)) {
       stored.id = mintSpellId();
     }

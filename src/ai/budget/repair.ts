@@ -964,6 +964,12 @@ function collapseHitExpiryInTriggerTree(nodes: TriggerNode[]): TriggerNode[] {
   return collapseHitExpiryDuplicates(mapped);
 }
 
+/** Strip duplicate ON_HIT/ON_EXPIRY world-placements in place (presets, inventory, offline gen). */
+export function applyHitExpiryOverlapRepair(schema: AbilitySchema): AbilitySchema {
+  schema.triggers = collapseHitExpiryInTriggerTree(schema.triggers ?? []);
+  return schema;
+}
+
 /** Patches concept semantics and injects knockback when offensive spells omit displacement. */
 export function repairAbilitySemantics(
   payload: AbilitySchema,
