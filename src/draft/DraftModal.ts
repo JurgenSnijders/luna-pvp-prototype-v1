@@ -268,7 +268,8 @@ export function resolveSuperchargedMetricKey(
   return best.score > 0 ? best.key : null;
 }
 
-const SCOPE_SIZE = 112;
+const SCOPE_WIDTH = 240;
+const SCOPE_HEIGHT = 120;
 
 export interface ScopeHudData {
   channels: string;
@@ -1308,14 +1309,13 @@ export class DraftModal {
 
     const scopeCanvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio || 1;
-    scopeCanvas.width = SCOPE_SIZE * dpr;
-    scopeCanvas.height = SCOPE_SIZE * dpr;
-    scopeCanvas.style.width = `${SCOPE_SIZE}px`;
-    scopeCanvas.style.height = `${SCOPE_SIZE}px`;
+    scopeCanvas.width = SCOPE_WIDTH * dpr;
+    scopeCanvas.height = SCOPE_HEIGHT * dpr;
+    scopeCanvas.style.width = `${SCOPE_WIDTH}px`;
+    scopeCanvas.style.height = `${SCOPE_HEIGHT}px`;
     heroWrap.appendChild(scopeCanvas);
 
-    const scopePadding = Math.round(SCOPE_SIZE * 0.16);
-    this.activePlaybackRecording = recordSpellPlayback(spell, SCOPE_SIZE, scopePadding);
+    this.activePlaybackRecording = recordSpellPlayback(spell, SCOPE_WIDTH, SCOPE_HEIGHT, 16);
     const scopeCtx = scopeCanvas.getContext('2d');
     if (scopeCtx) {
       scopeCtx.scale(dpr, dpr);
@@ -2134,17 +2134,18 @@ export class DraftModal {
         totalFrames > 0 ? Math.floor(timestamp / (1000 / 60)) % totalFrames : 0;
       const frame = recording.frames[frameIndex];
 
-      ctx.clearRect(0, 0, SCOPE_SIZE, SCOPE_SIZE);
+      ctx.clearRect(0, 0, recording.canvasWidth, recording.canvasHeight);
       this.drawScopeBackground(
         ctx,
-        SCOPE_SIZE,
+        recording.canvasWidth,
+        recording.canvasHeight,
         timestamp,
         archetypeColor,
         recording.originCanvasPos,
       );
 
       if (!frame || totalFrames === 0) {
-        this.drawScopeEmptyCrosshair(ctx);
+        this.drawScopeEmptyCrosshair(ctx, recording.canvasWidth, recording.canvasHeight);
         this.heroScopeAnimId = requestAnimationFrame(animate);
         return;
       }
@@ -2179,11 +2180,15 @@ export class DraftModal {
     this.heroScopeAnimId = requestAnimationFrame(animate);
   }
 
-  private drawScopeEmptyCrosshair(ctx: CanvasRenderingContext2D): void {
+  private drawScopeEmptyCrosshair(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+  ): void {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 0.5;
-    const cx = SCOPE_SIZE / 2;
-    const cy = SCOPE_SIZE / 2;
+    const cx = width / 2;
+    const cy = height / 2;
     ctx.beginPath();
     ctx.moveTo(cx - 4, cy);
     ctx.lineTo(cx + 4, cy);
@@ -2197,7 +2202,7 @@ export class DraftModal {
     origin: { x: number; y: number },
     color: string,
   ): void {
-    const radius = Math.max(2, SCOPE_SIZE * 0.04);
+    const radius = Math.max(2, SCOPE_HEIGHT * 0.04);
     ctx.fillStyle = hexToRgba(color, 0.6);
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, radius, 0, Math.PI * 2);
@@ -2282,36 +2287,38 @@ export class DraftModal {
 
   private drawScopeBackground(
     ctx: CanvasRenderingContext2D,
-    size: number,
+    width: number,
+    height: number,
     timestamp: number,
     color: string,
     origin: { x: number; y: number },
   ): void {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.lineWidth = 0.5;
-    for (let x = 0; x <= size; x += 8) {
+    for (let x = 0; x <= width; x += 8) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, size);
+      ctx.lineTo(x, height);
       ctx.stroke();
     }
-    for (let y = 0; y <= size; y += 8) {
+    for (let y = 0; y <= height; y += 8) {
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(size, y);
+      ctx.lineTo(width, y);
       ctx.stroke();
     }
 
-    const scanY = (timestamp * 0.04) % size;
+    const scanY = (timestamp * 0.04) % height;
     const scanGrad = ctx.createLinearGradient(0, scanY - 1, 0, scanY + 1);
     scanGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
     scanGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)');
     scanGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = scanGrad;
-    ctx.fillRect(0, scanY - 1, size, 2);
+    ctx.fillRect(0, scanY - 1, width, 2);
 
-    const sonarRad = (timestamp * 0.03) % (size / 2);
-    const sonarAlpha = 1 - sonarRad / (size / 2);
+    const sonarMax = Math.min(width, height) / 2;
+    const sonarRad = (timestamp * 0.03) % sonarMax;
+    const sonarAlpha = 1 - sonarRad / sonarMax;
     ctx.strokeStyle = hexToRgba(color, sonarAlpha * 0.25);
     ctx.lineWidth = 1;
     ctx.beginPath();

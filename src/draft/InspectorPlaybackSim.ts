@@ -45,6 +45,8 @@ export interface PlaybackRecording {
   frames: PlaybackFrame[];
   originCanvasPos: { x: number; y: number };
   targetCanvasPos: { x: number; y: number };
+  canvasWidth: number;
+  canvasHeight: number;
   scale: number;
   totalDurationMs: number;
 }
@@ -212,7 +214,8 @@ function transformRecording(
   rawFrames: PlaybackFrame[],
   casterPos: Vector2D,
   targetPos: Vector2D,
-  canvasSize: number,
+  canvasWidth: number,
+  canvasHeight: number,
   padding: number,
 ): PlaybackRecording {
   let minX = casterPos.x;
@@ -242,16 +245,23 @@ function transformRecording(
     }
   }
 
-  const w = Math.max(maxX - minX, 40);
-  const h = Math.max(maxY - minY, 40);
-  const avail = canvasSize - padding * 2;
-  const scale = avail / Math.max(w, h);
-  const offX = padding + (avail - w * scale) / 2 - minX * scale;
-  const offY = padding + (avail - h * scale) / 2 - minY * scale;
+  const bboxW = Math.max(maxX - minX, 120);
+  const bboxH = Math.max(maxY - minY, 80);
+  const availW = canvasWidth - padding * 2;
+  const availH = canvasHeight - padding * 2;
+  const scale = Math.min(availW / bboxW, availH / bboxH);
+
+  const bboxCenterX = (minX + maxX) / 2;
+  const bboxCenterY = (minY + maxY) / 2;
+  const canvasCenterX = canvasWidth / 2;
+  const canvasCenterY = canvasHeight / 2;
+
+  const toCanvasX = (wx: number) => canvasCenterX + (wx - bboxCenterX) * scale;
+  const toCanvasY = (wy: number) => canvasCenterY + (wy - bboxCenterY) * scale;
 
   const mapPoint = (x: number, y: number) => ({
-    x: x * scale + offX,
-    y: y * scale + offY,
+    x: toCanvasX(x),
+    y: toCanvasY(y),
   });
 
   const frames = rawFrames.map((frame) => ({
@@ -276,6 +286,8 @@ function transformRecording(
     frames,
     originCanvasPos: mapPoint(casterPos.x, casterPos.y),
     targetCanvasPos: mapPoint(targetPos.x, targetPos.y),
+    canvasWidth,
+    canvasHeight,
     scale,
     totalDurationMs: (rawFrames.length / 60) * 1000,
   };
@@ -338,10 +350,11 @@ function runSandboxSimulation(spell: AbilitySchema): {
 
 export function recordSpellPlayback(
   spell: AbilitySchema,
-  canvasSize = 112,
-  padding = 18,
+  canvasWidth = 240,
+  canvasHeight = 120,
+  padding = 16,
 ): PlaybackRecording {
-  const cacheKey = spell.id ?? spell.name;
+  const cacheKey = `${spell.id ?? spell.name}|${canvasWidth}x${canvasHeight}|${padding}`;
   const cached = recordingCache.get(cacheKey);
   if (cached) return cached;
 
@@ -358,7 +371,8 @@ export function recordSpellPlayback(
       rawFrames.length > 0 ? rawFrames : [{ projectiles: [], zones: [], impacts: [] }],
       casterPos,
       targetPos,
-      canvasSize,
+      canvasWidth,
+      canvasHeight,
       padding,
     );
     recordingCache.set(cacheKey, recording);
