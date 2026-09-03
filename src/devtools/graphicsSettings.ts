@@ -39,6 +39,12 @@ export interface GraphicsSettings {
   bloomIntensity: number;
   bloomThreshold: number;
   arcadeBezel: boolean;
+  /** 0 = screen-locked, 1 = world-locked camera follow for the void/star layer. */
+  bgParallaxVoid: number;
+  /** 0 = screen-locked, 1 = world-locked camera follow for the lava sea. */
+  bgParallaxLava: number;
+  /** Time multiplier for lava vein drift. */
+  bgLavaScrollSpeed: number;
   activePreset: StylePresetId;
   crosshairStyle: CrosshairStyleId;
   postEffects: Record<string, PostEffectState>;
@@ -63,6 +69,9 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   bloomIntensity: 0.8,
   bloomThreshold: 0.6,
   arcadeBezel: true,
+  bgParallaxVoid: 0.18,
+  bgParallaxLava: 0.32,
+  bgLavaScrollSpeed: 0.18,
   activePreset: 'CYBER_NEON',
   crosshairStyle: 'TACTICAL',
   postEffects: {},
@@ -521,6 +530,15 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   };
 }
 
+function clampRange(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampUnit(value: number): number {
+  return clampRange(value, 0, 1);
+}
+
 function loadFromStorage(): GraphicsSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_GRAPHICS);
@@ -557,6 +575,17 @@ function loadFromStorage(): GraphicsSettings {
       bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
       bloomThreshold: parsed.bloomThreshold ?? DEFAULT_GRAPHICS_SETTINGS.bloomThreshold,
       arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
+      bgParallaxVoid: clampUnit(
+        parsed.bgParallaxVoid ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
+      ),
+      bgParallaxLava: clampUnit(
+        parsed.bgParallaxLava ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
+      ),
+      bgLavaScrollSpeed: clampRange(
+        parsed.bgLavaScrollSpeed ?? DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
+        0,
+        1,
+      ),
       activePreset:
         parsed.activePreset && isStylePresetId(parsed.activePreset)
           ? parsed.activePreset

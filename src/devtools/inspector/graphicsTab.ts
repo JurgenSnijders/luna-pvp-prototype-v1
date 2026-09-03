@@ -170,6 +170,47 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   };
 
   addToggle(perfSection, perfCheckboxes, 'webglBackground', 'WebGL Arena Background');
+
+  const bgHelper = document.createElement('div');
+  bgHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:0 0 8px;line-height:1.35;`;
+  bgHelper.textContent =
+    'Parallax: 0 = locked to screen, 1 = locked to world. Lower = slower camera drift.';
+  perfSection.appendChild(bgHelper);
+
+  const bgNumeric = (key: 'bgParallaxVoid' | 'bgParallaxLava' | 'bgLavaScrollSpeed') => ({
+    get: () => getGraphicsSettings()[key],
+    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
+  });
+  const bgParallaxSliders = [
+    sliderRow(
+      perfSection,
+      'Void Parallax',
+      0,
+      1,
+      0.01,
+      bgNumeric('bgParallaxVoid').get,
+      bgNumeric('bgParallaxVoid').set,
+    ),
+    sliderRow(
+      perfSection,
+      'Lava Parallax',
+      0,
+      1,
+      0.01,
+      bgNumeric('bgParallaxLava').get,
+      bgNumeric('bgParallaxLava').set,
+    ),
+    sliderRow(
+      perfSection,
+      'Lava Drift Speed',
+      0,
+      1,
+      0.01,
+      bgNumeric('bgLavaScrollSpeed').get,
+      bgNumeric('bgLavaScrollSpeed').set,
+    ),
+  ];
+
   addToggle(perfSection, perfCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
   addToggle(perfSection, perfCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
   addToggle(perfSection, perfCheckboxes, 'particleTrails', 'Projectile Particle Trails');
@@ -440,6 +481,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     presetSelect.refresh();
     crosshairSelect.refresh();
     for (const slider of bloomSliders) slider.refresh();
+    for (const slider of bgParallaxSliders) slider.refresh();
     postEffectsControls.sync();
   };
 

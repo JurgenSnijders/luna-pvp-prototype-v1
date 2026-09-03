@@ -1,5 +1,5 @@
 import type { Camera2D } from '../../camera/Camera2D';
-import { getEffectiveDprCap, getEffectiveTier } from '../../devtools/graphicsSettings';
+import { getEffectiveDprCap, getEffectiveTier, getGraphicsSettings } from '../../devtools/graphicsSettings';
 import {
   compileShader,
   createFullscreenQuad,
@@ -25,6 +25,9 @@ export class BackgroundRenderer {
   private locTime: WebGLUniformLocation | null = null;
   private locHexRadius: WebGLUniformLocation | null = null;
   private locTier: WebGLUniformLocation | null = null;
+  private locParallaxVoid: WebGLUniformLocation | null = null;
+  private locParallaxLava: WebGLUniformLocation | null = null;
+  private locLavaScroll: WebGLUniformLocation | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', {
@@ -52,6 +55,9 @@ export class BackgroundRenderer {
       this.locTime = gl.getUniformLocation(this.program, 'u_time');
       this.locHexRadius = gl.getUniformLocation(this.program, 'u_hexRadius');
       this.locTier = gl.getUniformLocation(this.program, 'u_tier');
+      this.locParallaxVoid = gl.getUniformLocation(this.program, 'u_parallaxVoid');
+      this.locParallaxLava = gl.getUniformLocation(this.program, 'u_parallaxLava');
+      this.locLavaScroll = gl.getUniformLocation(this.program, 'u_lavaScroll');
     } catch (err) {
       console.warn('[BackgroundRenderer] init failed:', err);
       this.destroy();
@@ -90,6 +96,8 @@ export class BackgroundRenderer {
     const tier = getEffectiveTier();
     const tierLod = TIER_LOD[tier] ?? 2;
 
+    const settings = getGraphicsSettings();
+
     gl.useProgram(program);
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.locResolution!, this.canvas.width, this.canvas.height);
@@ -98,6 +106,9 @@ export class BackgroundRenderer {
     gl.uniform1f(this.locTime!, nowMs * 0.001);
     gl.uniform1f(this.locHexRadius!, hexRadius);
     gl.uniform1i(this.locTier!, tierLod);
+    gl.uniform1f(this.locParallaxVoid!, settings.bgParallaxVoid);
+    gl.uniform1f(this.locParallaxLava!, settings.bgParallaxLava);
+    gl.uniform1f(this.locLavaScroll!, settings.bgLavaScrollSpeed);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
   }

@@ -174,6 +174,9 @@ uniform float u_cameraZoom;
 uniform float u_time;
 uniform float u_hexRadius;
 uniform int u_tier;
+uniform float u_parallaxVoid;
+uniform float u_parallaxLava;
+uniform float u_lavaScroll;
 
 out vec4 fragColor;
 
@@ -185,6 +188,11 @@ const vec3 VOID_COLOR = vec3(0.02, 0.01, 0.03);
 vec2 worldPos(vec2 uv) {
   vec2 screen = uv * u_resolution;
   return u_cameraPos + (screen - u_resolution * 0.5) / u_cameraZoom;
+}
+
+// follow=1 is world-locked; follow=0 is screen-locked. Distant layers use low follow.
+vec2 parallaxPos(vec2 world, float follow) {
+  return mix(world - u_cameraPos, world, follow);
 }
 
 float hash21(vec2 p) {
@@ -216,7 +224,7 @@ float fbm(vec2 p, int octaves) {
 }
 
 vec3 deepLayer(vec2 world) {
-  vec2 p = world * 0.0015 + u_cameraPos * 0.055;
+  vec2 p = parallaxPos(world, u_parallaxVoid) * 0.0015;
   float grid = 0.0;
   vec2 g = abs(fract(p * 0.08) - 0.5);
   grid = smoothstep(0.48, 0.5, min(g.x, g.y)) * 0.12;
@@ -225,8 +233,8 @@ vec3 deepLayer(vec2 world) {
 }
 
 vec3 lavaLayer(vec2 world) {
-  vec2 p = world * 0.0022 + u_cameraPos * 0.14;
-  float t = u_time * 0.18;
+  vec2 p = parallaxPos(world, u_parallaxLava) * 0.0022;
+  float t = u_time * u_lavaScroll;
   int octaves = u_tier >= 2 ? 2 : 1;
   float n = fbm(p + vec2(t * 0.4, t * 0.25), octaves);
   float veins = 1.0 - abs(fbm(p * 1.8 - vec2(t * 0.15, t * 0.35), octaves) * 2.0 - 1.0);
