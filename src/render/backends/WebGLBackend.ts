@@ -5,7 +5,7 @@ import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsS
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
 import { PostFX } from '../gl/PostFX';
-import { REACTIVE_SHOCK_DURATION, reactiveFx } from '../gl/reactiveFx';
+import { reactiveFx } from '../gl/reactiveFx';
 import { PrimitiveLayer } from '../PrimitiveLayer';
 import {
   type ParticleBackend,
@@ -155,7 +155,7 @@ export class WebGLBackend implements ParticleBackend {
       ? Math.min((now - this.lastRenderTime) / 1000, 0.1)
       : 1 / 60;
     this.lastRenderTime = now;
-    reactiveFx.update(frameDt);
+    reactiveFx.update(frameDt, crt.reactive);
 
     let reactiveActive = false;
     if (worldCanvas) {
@@ -169,7 +169,7 @@ export class WebGLBackend implements ParticleBackend {
       const decay = Math.pow(crt.persistence.decay, frameDt * 60);
 
       const snap = reactiveFx.snapshot();
-      const shockLive = snap.shockAge < REACTIVE_SHOCK_DURATION;
+      const shockLive = snap.shockAge < reactiveFx.getShockDuration();
       const sx = width / 2 + view.shakeX + (snap.worldX - view.camX) * view.zoom;
       const sy = height / 2 + view.shakeY + (snap.worldY - view.camY) * view.zoom;
       const reactiveBlur = crt.reactive.blurAmount * snap.blur;

@@ -4,6 +4,9 @@ import { Vector2D } from '../../math/Vector2D';
 import type { ProjectileStyle } from '../../types/schema';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
+import { SpriteCache } from './SpriteCache';
+
+const scopeSpriteCache = new SpriteCache();
 
 export function drawProjectiles(
   ctx: CanvasRenderingContext2D,
@@ -255,6 +258,212 @@ function drawPlasmaTendrilProjectile(
   ctx.strokeStyle = '#ffffff';
   ctx.globalAlpha = 0.9;
   ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+export function drawScopeProjectile(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  heading: number,
+  style: ProjectileStyle,
+  color: string,
+  timeMs: number,
+): void {
+  const r = Math.max(3, Math.min(12, radius));
+
+  switch (style) {
+    case 'BEAM': {
+      const sprite = scopeSpriteCache.getSprite('BEAM', color, r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      ctx.restore();
+      break;
+    }
+    case 'PULSING_ORB': {
+      const sprite = scopeSpriteCache.getSprite('ORB', color, r);
+      const scale = (r + Math.sin(timeMs * 0.01) * 2) / r;
+      const w = sprite.w * scale;
+      const h = sprite.h * scale;
+      ctx.drawImage(sprite.canvas, x - w / 2, y - h / 2, w, h);
+      break;
+    }
+    case 'SHURIKEN': {
+      const sprite = scopeSpriteCache.getSprite('SHURIKEN', color, r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading + timeMs * 0.02);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      ctx.restore();
+      break;
+    }
+    case 'CHAOS_LIGHTNING':
+      drawScopeChaosLightning(ctx, x, y, r, heading, color);
+      break;
+    case 'PRISM': {
+      const sprite = scopeSpriteCache.getSprite('PRISM', color, r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      const glint = 0.35 + Math.sin(timeMs * 0.02) * 0.25;
+      ctx.globalAlpha = glint;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(sprite.w * 0.05, -sprite.h * 0.08, sprite.w * 0.12, sprite.h * 0.16);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      break;
+    }
+    case 'RUNE_SIGIL': {
+      const sprite = scopeSpriteCache.getSprite('RUNE_SIGIL', color, r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading + timeMs * 0.003);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      ctx.restore();
+      break;
+    }
+    case 'VOID_RIFT': {
+      const sprite = scopeSpriteCache.getSprite('VOID_RIFT', color, r);
+      const scale = 1 + 0.15 * Math.sin(timeMs * 0.01);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading);
+      ctx.scale(scale, scale);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      ctx.restore();
+      break;
+    }
+    case 'CRYSTAL_SHARD': {
+      const sprite = scopeSpriteCache.getSprite('CRYSTAL_SHARD', color, r);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(heading);
+      ctx.drawImage(sprite.canvas, -sprite.w / 2, -sprite.h / 2, sprite.w, sprite.h);
+      ctx.restore();
+      break;
+    }
+    case 'PLASMA_TENDRIL':
+      drawScopePlasmaTendril(ctx, x, y, r, heading, color, timeMs);
+      break;
+    case 'DISC':
+    default: {
+      const sprite = scopeSpriteCache.getSprite('DISC', color, r);
+      ctx.drawImage(sprite.canvas, x - sprite.w / 2, y - sprite.h / 2, sprite.w, sprite.h);
+      break;
+    }
+  }
+}
+
+function drawScopeChaosLightning(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  heading: number,
+  color: string,
+): void {
+  const tailLen = radius * 3;
+  const dirX = Math.cos(heading);
+  const dirY = Math.sin(heading);
+  const perpX = -dirY;
+  const perpY = dirX;
+  const startX = x - dirX * tailLen;
+  const startY = y - dirY * tailLen;
+  const dx = x - startX;
+  const dy = y - startY;
+
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.22;
+  ctx.lineWidth = radius * 1.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+
+  const bolts = 3;
+  const segments = 5;
+  for (let b = 0; b < bolts; b++) {
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments;
+      const jitter = (Math.random() - 0.5) * radius * 1.8;
+      ctx.lineTo(
+        startX + dx * t + perpX * jitter,
+        startY + dy * t + perpY * jitter,
+      );
+    }
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = b === 0 ? '#ffffff' : color;
+    ctx.lineWidth = b === 0 ? Math.max(1, radius * 0.35) : Math.max(0.8, radius * 0.5);
+    ctx.globalAlpha = b === 0 ? 0.95 : 0.7 - b * 0.15;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'butt';
+
+  const dot = scopeSpriteCache.getSprite('DOT', color, Math.max(2, Math.round(radius * 0.35)));
+  ctx.drawImage(dot.canvas, x - dot.w / 2, y - dot.h / 2, dot.w, dot.h);
+}
+
+function drawScopePlasmaTendril(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  heading: number,
+  color: string,
+  timeMs: number,
+): void {
+  const dirX = Math.cos(heading);
+  const dirY = Math.sin(heading);
+  const perpX = -dirY;
+  const perpY = dirX;
+  const length = radius * 3;
+  const amplitude = radius * 0.45;
+  const segments = 12;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  for (const sign of [1, -1]) {
+    ctx.beginPath();
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const along = t * length;
+      const wave = Math.sin(timeMs * 0.015 + along * 0.3) * amplitude * sign;
+      const px = x - dirX * along + perpX * wave;
+      const py = y - dirY * along + perpY * wave;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const along = t * length;
+    const wave = Math.sin(timeMs * 0.015 + along * 0.3) * amplitude * 0.35;
+    const px = x - dirX * along + perpX * wave;
+    const py = y - dirY * along + perpY * wave;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.restore();

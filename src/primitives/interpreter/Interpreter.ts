@@ -8,7 +8,12 @@ import type { TriggerContext, ExecutionOverrides } from '../../types/triggerCont
 import { vecTelemetry } from '../../types/telemetry';
 import { DEFAULT_VISUALS, MAX_DEPTH } from './constants';
 import { buildTriggerMap, safeNormalize } from './helpers';
-import { dispatchRecast as dispatchRecastImpl, processLifecycleEvents as processLifecycleEventsImpl, updateTrajectories as updateTrajectoriesImpl } from './lifecycle';
+import {
+  dispatchRecast as dispatchRecastImpl,
+  processLifecycleEvents as processLifecycleEventsImpl,
+  updateTrajectories as updateTrajectoriesImpl,
+  type LifecycleFx,
+} from './lifecycle';
 import { dispatchTriggerNode } from './triggers';
 
 export class Interpreter {
@@ -105,8 +110,8 @@ export class Interpreter {
     dispatchRecastImpl(this, casterId, abilityName, world);
   }
 
-  processLifecycleEvents(world: PhysicsWorld, dt: number): void {
-    processLifecycleEventsImpl(this, world, dt);
+  processLifecycleEvents(world: PhysicsWorld, dt: number, fx?: LifecycleFx): void {
+    processLifecycleEventsImpl(this, world, dt, fx);
   }
 
   updateTrajectories(world: PhysicsWorld, dt: number): void {

@@ -1,12 +1,12 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
-import { getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
+import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
 import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
-import { decalManager, mapArchetypeToDecal } from '../../render/canvas/decals';
+import { decalManager, mapArchetypeToDecal, type DecalType } from '../../render/canvas/decals';
 import { floorGridManager } from '../../render/canvas/floorGrid';
 import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
@@ -57,10 +57,50 @@ const wasOnPlatform = new Map<string, boolean>();
 let zoneVfxFrame = 0;
 let statusVfxFrame = 0;
 
+export interface LifecycleFx {
+  /** False for sandbox runs: also skips the modules that memoize entity ids. */
+  readonly persistsWorldFx: boolean;
+  decal(x: number, y: number, radius: number, type: DecalType, color: string): void;
+  ripple(x: number, y: number, radius: number, intensity: number, color: string): void;
+  shake(intensity: number, durationSec: number): void;
+  reactivePulse(x: number, y: number, isHeavy: boolean): void;
+  hitstop(frames: number): void;
+}
+
+export const LIVE_LIFECYCLE_FX: LifecycleFx = {
+  persistsWorldFx: true,
+  decal(x, y, radius, type, color) {
+    decalManager.addDecal(x, y, radius, type, color);
+  },
+  ripple(x, y, radius, intensity, color) {
+    floorGridManager.addRipple(x, y, radius, intensity, color);
+  },
+  shake(intensity, durationSec) {
+    screenShake.trigger(intensity, durationSec);
+  },
+  reactivePulse(x, y, isHeavy) {
+    reactiveFx.setTuning(getEffectiveCrtSettings().reactive);
+    reactiveFx.pulse(x, y, isHeavy);
+  },
+  hitstop(frames) {
+    requestHitstop(frames);
+  },
+};
+
+export const HEADLESS_LIFECYCLE_FX: LifecycleFx = {
+  persistsWorldFx: false,
+  decal() {},
+  ripple() {},
+  shake() {},
+  reactivePulse() {},
+  hitstop() {},
+};
+
 function stampImpactDecal(
   hit: { projectile: Projectile; hitPos: Vector2D },
   scale: number,
   isHeavy: boolean,
+  fx: LifecycleFx,
 ): void {
   const velocity = hit.projectile.vel.mag();
   if (!isHeavy && velocity < 300) return;
@@ -69,10 +109,10 @@ function stampImpactDecal(
   const type = mapArchetypeToDecal(archetype);
   const color = hit.projectile.visuals?.color ?? '#ff6644';
   const radius = 12 + scale * 8;
-  decalManager.addDecal(hit.hitPos.x, hit.hitPos.y, radius, type, color);
+  fx.decal(hit.hitPos.x, hit.hitPos.y, radius, type, color);
 }
 
-function stampZoneExpirationDecals(world: PhysicsWorld): void {
+function stampZoneExpirationDecals(world: PhysicsWorld, fx: LifecycleFx): void {
   const liveIds = new Set(world.zones.map((z) => z.id));
 
   for (const zone of world.zones) {
@@ -94,7 +134,7 @@ function stampZoneExpirationDecals(world: PhysicsWorld): void {
     } else if (zone.config.fieldType === 'FRICTION_OVERRIDE') {
       type = 'FROST_CRACK';
     }
-    decalManager.addDecal(zone.pos.x, zone.pos.y, radius, type, color);
+    fx.decal(zone.pos.x, zone.pos.y, radius, type, color);
   }
 
   for (const id of stampedZoneIds) {
@@ -102,19 +142,23 @@ function stampZoneExpirationDecals(world: PhysicsWorld): void {
   }
 }
 
-function processObstacleDestructions(interp: Interpreter, world: PhysicsWorld): void {
+function processObstacleDestructions(
+  interp: Interpreter,
+  world: PhysicsWorld,
+  fx: LifecycleFx,
+): void {
   for (const death of world.pendingObstacleDestructions) {
     if (!death.isDestructible) continue;
     if (!isInsideHex(death.pos, world.hexCenter, world.hexRadius)) continue;
 
-    decalManager.addDecal(
+    fx.decal(
       death.pos.x,
       death.pos.y,
       death.radius * 1.2,
       'KINETIC_CRATER',
       '#aa8844',
     );
-    floorGridManager.addRipple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
+    fx.ripple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
     interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
   }
 }
@@ -140,7 +184,7 @@ function processZoneParticleTicks(interp: Interpreter, world: PhysicsWorld): voi
   }
 }
 
-function processLavaBoundaryRipples(world: PhysicsWorld): void {
+function processLavaBoundaryRipples(world: PhysicsWorld, fx: LifecycleFx): void {
   const liveIds = new Set<string>();
 
   for (const entity of world.getCombatants()) {
@@ -148,7 +192,7 @@ function processLavaBoundaryRipples(world: PhysicsWorld): void {
     const onPlatform = isInsideHex(entity.pos, world.hexCenter, world.hexRadius);
     if (wasOnPlatform.get(entity.id) === true && !onPlatform) {
       const boundary = clampToHex(entity.pos, world.hexCenter, world.hexRadius);
-      floorGridManager.addRipple(boundary.x, boundary.y, 200, 0.85, '#ffaa00');
+      fx.ripple(boundary.x, boundary.y, 200, 0.85, '#ffaa00');
     }
     wasOnPlatform.set(entity.id, onPlatform);
   }
@@ -370,6 +414,7 @@ export function processLifecycleEvents(
   interp: Interpreter,
   world: PhysicsWorld,
   dt: number,
+  fx: LifecycleFx = LIVE_LIFECYCLE_FX,
 ): void {
   for (const hit of world.pendingHits) {
     const visuals = hit.projectile.visuals;
@@ -382,7 +427,7 @@ export function processLifecycleEvents(
 
     emitArchetypeImpact(interp, hit, color, sec, scale, vfx);
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
-    if (shake > 0) screenShake.trigger(shake * 4, 0.12);
+    if (shake > 0) fx.shake(shake * 4, 0.12);
 
     const detonated = hit.target.plasmaDetonatedThisFrame || detonatedBefore;
     hit.target.plasmaDetonatedThisFrame = false;
@@ -390,10 +435,12 @@ export function processLifecycleEvents(
     const isHeavy = instabDelta >= 25 || detonated;
 
     if (isInsideHex(hit.hitPos, world.hexCenter, world.hexRadius)) {
-      stampImpactDecal(hit, scale, isHeavy);
+      if (fx.persistsWorldFx) {
+        stampImpactDecal(hit, scale, isHeavy, fx);
+      }
       const forceProxy = hit.projectile.vel.mag();
       if (isHeavy || forceProxy >= 300) {
-        floorGridManager.addRipple(
+        fx.ripple(
           hit.hitPos.x,
           hit.hitPos.y,
           Math.min(320, 160 + forceProxy * 0.2),
@@ -402,7 +449,7 @@ export function processLifecycleEvents(
         );
       }
     }
-    reactiveFx.pulse(hit.hitPos.x, hit.hitPos.y, isHeavy ? 1 : 0.45);
+    fx.reactivePulse(hit.hitPos.x, hit.hitPos.y, isHeavy);
 
     dispatchProjectileTriggers(
       interp,
@@ -415,7 +462,7 @@ export function processLifecycleEvents(
     );
 
     if (hitFeedbackConfig.microHitstop && isHeavy) {
-      requestHitstop(2);
+      fx.hitstop(2);
     }
 
     world.emitHitMarkerEvent({
@@ -566,9 +613,11 @@ export function processLifecycleEvents(
     );
   }
 
-  stampZoneExpirationDecals(world);
-  processObstacleDestructions(interp, world);
-  processLavaBoundaryRipples(world);
+  if (fx.persistsWorldFx) {
+    stampZoneExpirationDecals(world, fx);
+    processObstacleDestructions(interp, world, fx);
+    processLavaBoundaryRipples(world, fx);
+  }
   processZoneParticleTicks(interp, world);
   processStatusParticleTicks(interp, world);
 }

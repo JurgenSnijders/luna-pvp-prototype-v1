@@ -25,7 +25,6 @@ import type {
   AbilitySchema,
   ActionPayload,
   EmitterConfig,
-  ProjectileStyle,
   SpellArchetype,
   TrajectoryConfig,
   TriggerNode,
@@ -80,7 +79,8 @@ import {
   parseForgeCardDragPayload,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
-import { resolveIconTrajectoryPaths } from '../render/canvas/trajectoryTracer';
+import { recordSpellPlayback, type PlaybackRecording } from './InspectorPlaybackSim';
+import { drawScopeProjectile } from '../render/canvas/projectiles';
 import { ActionBarHUD } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
@@ -269,7 +269,6 @@ export function resolveSuperchargedMetricKey(
 }
 
 const SCOPE_SIZE = 112;
-const SCOPE_PULSE_PERIOD_MS = 1200;
 
 export interface ScopeHudData {
   channels: string;
@@ -301,38 +300,6 @@ function buildScopeCornerHud(text: string, position: string): HTMLElement {
   el.className = `scope-corner-hud ${position}`;
   el.textContent = text;
   return el;
-}
-
-function samplePathAtProgress(
-  points: { x: number; y: number }[],
-  t: number,
-): { x: number; y: number } {
-  if (points.length === 0) return { x: 0, y: 0 };
-  if (points.length === 1 || t <= 0) return points[0];
-  if (t >= 1) return points[points.length - 1];
-
-  const segments: number[] = [];
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-    segments.push(len);
-    total += len;
-  }
-  if (total === 0) return points[0];
-
-  let target = t * total;
-  for (let i = 1; i < points.length; i++) {
-    const segLen = segments[i - 1];
-    if (target <= segLen) {
-      const frac = segLen > 0 ? target / segLen : 0;
-      return {
-        x: points[i - 1].x + (points[i].x - points[i - 1].x) * frac,
-        y: points[i - 1].y + (points[i].y - points[i - 1].y) * frac,
-      };
-    }
-    target -= segLen;
-  }
-  return points[points.length - 1];
 }
 
 function formatEnumLabel(value: string): string {
@@ -705,6 +672,7 @@ export class DraftModal {
   private selectedSpellId: string | null = null;
   private hoveredSpellId: string | null = null;
   private heroScopeAnimId: number | null = null;
+  private activePlaybackRecording: PlaybackRecording | null = null;
   private tooltipEl: HTMLElement | null = null;
   private readonly onInventoryUpdated = (): void => {
     if (this.open_ && this.activeTab === 'VAULT') {
@@ -1347,22 +1315,15 @@ export class DraftModal {
     heroWrap.appendChild(scopeCanvas);
 
     const scopePadding = Math.round(SCOPE_SIZE * 0.16);
-    const { origin, paths, endpoints } = resolveIconTrajectoryPaths(
-      spell,
-      SCOPE_SIZE,
-      scopePadding,
-    );
+    this.activePlaybackRecording = recordSpellPlayback(spell, SCOPE_SIZE, scopePadding);
     const scopeCtx = scopeCanvas.getContext('2d');
     if (scopeCtx) {
       scopeCtx.scale(dpr, dpr);
       this.startHeroScopeAnimation(
         scopeCanvas,
         scopeCtx,
-        origin,
-        paths,
-        endpoints,
+        this.activePlaybackRecording,
         archetypeColor,
-        spell.visuals?.projectileStyle,
       );
     }
 
@@ -2159,11 +2120,8 @@ export class DraftModal {
   private startHeroScopeAnimation(
     canvas: HTMLCanvasElement,
     ctx: CanvasRenderingContext2D,
-    origin: { x: number; y: number },
-    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
-    endpoints: { x: number; y: number }[],
+    recording: PlaybackRecording,
     archetypeColor: string,
-    payloadStyle?: ProjectileStyle,
   ): void {
     const animate = (timestamp: number): void => {
       if (!canvas.isConnected) {
@@ -2171,15 +2129,155 @@ export class DraftModal {
         return;
       }
 
+      const totalFrames = recording.frames.length;
+      const frameIndex =
+        totalFrames > 0 ? Math.floor(timestamp / (1000 / 60)) % totalFrames : 0;
+      const frame = recording.frames[frameIndex];
+
       ctx.clearRect(0, 0, SCOPE_SIZE, SCOPE_SIZE);
-      this.drawScopeBackground(ctx, SCOPE_SIZE, timestamp, archetypeColor, origin);
-      this.drawScopePaths(ctx, origin, paths, endpoints, archetypeColor, payloadStyle);
-      this.drawScopePulses(ctx, paths, timestamp, archetypeColor);
+      this.drawScopeBackground(
+        ctx,
+        SCOPE_SIZE,
+        timestamp,
+        archetypeColor,
+        recording.originCanvasPos,
+      );
+
+      if (!frame || totalFrames === 0) {
+        this.drawScopeEmptyCrosshair(ctx);
+        this.heroScopeAnimId = requestAnimationFrame(animate);
+        return;
+      }
+
+      this.drawScopeCasterHub(ctx, recording.originCanvasPos, archetypeColor);
+      this.drawScopeTargetReticle(ctx, recording.targetCanvasPos, archetypeColor);
+
+      for (const zone of frame.zones) {
+        this.drawScopeZone(ctx, zone.x, zone.y, zone.radius, zone.color, timestamp);
+      }
+
+      for (const proj of frame.projectiles) {
+        drawScopeProjectile(
+          ctx,
+          proj.x,
+          proj.y,
+          proj.radius,
+          proj.heading,
+          proj.style,
+          proj.color,
+          timestamp,
+        );
+      }
+
+      for (const impact of frame.impacts) {
+        this.drawScopeImpact(ctx, impact.x, impact.y, impact.radius, impact.color, impact.age);
+      }
 
       this.heroScopeAnimId = requestAnimationFrame(animate);
     };
 
     this.heroScopeAnimId = requestAnimationFrame(animate);
+  }
+
+  private drawScopeEmptyCrosshair(ctx: CanvasRenderingContext2D): void {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 0.5;
+    const cx = SCOPE_SIZE / 2;
+    const cy = SCOPE_SIZE / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy);
+    ctx.lineTo(cx + 4, cy);
+    ctx.moveTo(cx, cy - 4);
+    ctx.lineTo(cx, cy + 4);
+    ctx.stroke();
+  }
+
+  private drawScopeCasterHub(
+    ctx: CanvasRenderingContext2D,
+    origin: { x: number; y: number },
+    color: string,
+  ): void {
+    const radius = Math.max(2, SCOPE_SIZE * 0.04);
+    ctx.fillStyle = hexToRgba(color, 0.6);
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawScopeTargetReticle(
+    ctx: CanvasRenderingContext2D,
+    target: { x: number; y: number },
+    color: string,
+  ): void {
+    const r = 5;
+    ctx.strokeStyle = hexToRgba(color, 0.35);
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(target.x - r - 2, target.y);
+    ctx.lineTo(target.x - r + 1, target.y);
+    ctx.moveTo(target.x + r - 1, target.y);
+    ctx.lineTo(target.x + r + 2, target.y);
+    ctx.moveTo(target.x, target.y - r - 2);
+    ctx.lineTo(target.x, target.y - r + 1);
+    ctx.moveTo(target.x, target.y + r - 1);
+    ctx.lineTo(target.x, target.y + r + 2);
+    ctx.stroke();
+  }
+
+  private drawScopeZone(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    color: string,
+    timestamp: number,
+  ): void {
+    const rotation = (timestamp * 0.001) % (Math.PI * 2);
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    glow.addColorStop(0, color);
+    glow.addColorStop(0.6, color.replace(/[\d.]+\)$/, '0.12)'));
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.strokeStyle = color.replace(/[\d.]+\)$/, '0.55)');
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  private drawScopeImpact(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    color: string,
+    age: number,
+  ): void {
+    const alpha = Math.max(0, 1 - age);
+    const expandedRadius = radius * (1 + age * 1.5);
+    ctx.strokeStyle = hexToRgba(color, alpha * 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, expandedRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexToRgba('#ffffff', alpha * 0.4);
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    ctx.arc(x, y, expandedRadius * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   private drawScopeBackground(
@@ -2219,136 +2317,6 @@ export class DraftModal {
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, sonarRad, 0, Math.PI * 2);
     ctx.stroke();
-  }
-
-  private drawScopePaths(
-    ctx: CanvasRenderingContext2D,
-    origin: { x: number; y: number },
-    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
-    endpoints: { x: number; y: number }[],
-    color: string,
-    payloadStyle?: ProjectileStyle,
-  ): void {
-    if (paths.length === 0) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.lineWidth = 0.5;
-      const cx = SCOPE_SIZE / 2;
-      const cy = SCOPE_SIZE / 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - 4, cy);
-      ctx.lineTo(cx + 4, cy);
-      ctx.moveTo(cx, cy - 4);
-      ctx.lineTo(cx, cy + 4);
-      ctx.stroke();
-      return;
-    }
-
-    const originRadius = Math.max(2, SCOPE_SIZE * 0.04);
-    const lineWidth = Math.max(1.5, SCOPE_SIZE * 0.035);
-    const markerSize = SCOPE_SIZE * 0.1;
-
-    ctx.fillStyle = hexToRgba(color, 0.6);
-    ctx.beginPath();
-    ctx.arc(origin.x, origin.y, originRadius, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (const path of paths) {
-      if (path.points.length < 2) continue;
-
-      const start = path.points[0];
-      const end = path.points[path.points.length - 1];
-      const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
-      gradient.addColorStop(0, hexToRgba(color, 0.15));
-      gradient.addColorStop(0.7, hexToRgba(color, 0.7));
-      gradient.addColorStop(1, hexToRgba(color, 1));
-
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = lineWidth;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 4;
-
-      ctx.beginPath();
-      ctx.moveTo(path.points[0].x, path.points[0].y);
-      for (let i = 1; i < path.points.length; i++) {
-        ctx.lineTo(path.points[i].x, path.points[i].y);
-      }
-      if (path.isClosed) {
-        ctx.closePath();
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-
-    for (const endpoint of endpoints) {
-      this.drawScopeEndpointMarker(ctx, endpoint.x, endpoint.y, color, markerSize, payloadStyle);
-    }
-  }
-
-  private drawScopeEndpointMarker(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    color: string,
-    markerSize: number,
-    payloadStyle?: ProjectileStyle,
-  ): void {
-    const r = markerSize * 0.5;
-    ctx.fillStyle = hexToRgba(color, 0.85);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-
-    if (payloadStyle === 'BEAM') {
-      ctx.beginPath();
-      ctx.moveTo(x - r * 0.6, y + r * 0.6);
-      ctx.lineTo(x + r * 0.6, y - r * 0.6);
-      ctx.stroke();
-      return;
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(x, y - r);
-    ctx.lineTo(x + r, y);
-    ctx.lineTo(x, y + r);
-    ctx.lineTo(x - r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  private drawScopePulses(
-    ctx: CanvasRenderingContext2D,
-    paths: { points: { x: number; y: number }[]; isClosed: boolean }[],
-    timestamp: number,
-    color: string,
-  ): void {
-    const progress = (timestamp % SCOPE_PULSE_PERIOD_MS) / SCOPE_PULSE_PERIOD_MS;
-
-    for (const path of paths) {
-      if (path.points.length < 2) continue;
-
-      const tailStart = Math.max(0, progress - 0.05);
-      const tailSteps = 5;
-      for (let i = 0; i <= tailSteps; i++) {
-        const t = tailStart + ((progress - tailStart) * i) / tailSteps;
-        const pos = samplePathAtProgress(path.points, t);
-        const alpha = 0.15 + (i / tailSteps) * 0.35;
-        ctx.fillStyle = hexToRgba(color, alpha);
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      const head = samplePathAtProgress(path.points, progress);
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(head.x, head.y, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
   }
 
   private buildInspectorTelemetryCell(

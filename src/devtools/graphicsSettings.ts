@@ -7,6 +7,14 @@ import {
   tierMeetsMinimum,
 } from '../render/gl/postEffects';
 import {
+  DEFAULT_BLUR_HALF_LIFE,
+  DEFAULT_GLITCH_HALF_LIFE,
+  DEFAULT_HEAVY_PULSE,
+  DEFAULT_LIGHT_PULSE,
+  DEFAULT_SHOCK_DURATION,
+  type ReactiveFxTuning,
+} from '../render/gl/reactiveFx';
+import {
   STYLE_PRESETS,
   type StylePresetId,
   isStylePresetId,
@@ -118,7 +126,7 @@ export interface EffectiveCrtSettings {
     paletteMix: number;
     dither: number;
   };
-  reactive: {
+  reactive: ReactiveFxTuning & {
     enabled: boolean;
     blurAmount: number;
     shockStrength: number;
@@ -382,28 +390,28 @@ function resolveRetro(): {
   };
 }
 
-function resolveReactive(): {
-  enabled: boolean;
-  blurAmount: number;
-  shockStrength: number;
-  shockSpeed: number;
-  shockWidth: number;
-  glitchAmount: number;
-  glitchSlices: number;
-  glitchChroma: number;
-} {
+function resolveReactive(): EffectiveCrtSettings['reactive'] {
   const blurOn = isPostEffectEnabled('RADIAL_BLUR');
   const shockOn = isPostEffectEnabled('SHOCKWAVE');
   const glitchOn = isPostEffectEnabled('HIT_GLITCH');
   return {
     enabled: blurOn || shockOn || glitchOn,
     blurAmount: blurOn ? getPostEffectParam('RADIAL_BLUR', 'amount') : 0,
+    blurHalfLife: getPostEffectParam('RADIAL_BLUR', 'halfLife'),
+    blurLight: getPostEffectParam('RADIAL_BLUR', 'light'),
+    blurHeavy: getPostEffectParam('RADIAL_BLUR', 'heavy'),
     shockStrength: shockOn ? getPostEffectParam('SHOCKWAVE', 'strength') : 0,
     shockSpeed: getPostEffectParam('SHOCKWAVE', 'speed'),
     shockWidth: getPostEffectParam('SHOCKWAVE', 'width'),
+    shockDuration: getPostEffectParam('SHOCKWAVE', 'duration'),
+    shockLight: getPostEffectParam('SHOCKWAVE', 'light'),
+    shockHeavy: getPostEffectParam('SHOCKWAVE', 'heavy'),
     glitchAmount: glitchOn ? getPostEffectParam('HIT_GLITCH', 'amount') : 0,
     glitchSlices: getPostEffectParam('HIT_GLITCH', 'slices'),
     glitchChroma: getPostEffectParam('HIT_GLITCH', 'chroma'),
+    glitchHalfLife: getPostEffectParam('HIT_GLITCH', 'halfLife'),
+    glitchLight: getPostEffectParam('HIT_GLITCH', 'light'),
+    glitchHeavy: getPostEffectParam('HIT_GLITCH', 'heavy'),
   };
 }
 
@@ -447,12 +455,21 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const reactiveOff = {
     enabled: false,
     blurAmount: 0,
+    blurHalfLife: DEFAULT_BLUR_HALF_LIFE,
+    blurLight: DEFAULT_LIGHT_PULSE,
+    blurHeavy: DEFAULT_HEAVY_PULSE,
     shockStrength: 0,
     shockSpeed: 1.1,
     shockWidth: 0.06,
+    shockDuration: DEFAULT_SHOCK_DURATION,
+    shockLight: DEFAULT_LIGHT_PULSE,
+    shockHeavy: DEFAULT_HEAVY_PULSE,
     glitchAmount: 0,
     glitchSlices: 12,
     glitchChroma: 0.5,
+    glitchHalfLife: DEFAULT_GLITCH_HALF_LIFE,
+    glitchLight: DEFAULT_LIGHT_PULSE,
+    glitchHeavy: DEFAULT_HEAVY_PULSE,
   };
   const gradeOff = {
     streakIntensity: 0,

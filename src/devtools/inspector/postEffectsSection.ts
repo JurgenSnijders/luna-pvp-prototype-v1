@@ -13,7 +13,7 @@ import {
   type PostEffectId,
 } from '../../render/gl/postEffects';
 import { FONTS, RETRO_COLORS } from '../../ui/tokens';
-import { helperText, selectRow, sliderRow, toggleRow } from './domHelpers';
+import { helperText, numberSliderRow, selectRow, sliderRow, toggleRow } from './domHelpers';
 
 const GROUP_LABELS: Record<PostEffectGroup, string> = {
   CRT: 'CRT Effects',
@@ -42,6 +42,12 @@ export function buildPostEffectsSection(parent: HTMLElement): { sync: () => void
     groupLabel.textContent = GROUP_LABELS[group];
     groupLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:12px 0 6px;letter-spacing:0.04em;`;
     parent.appendChild(groupLabel);
+    if (group === 'REACTIVE') {
+      helperText(
+        parent,
+        'Drag sliders or type exact values. Half-life and duration are seconds. Light/Heavy scale each hit pulse independently of Amount.',
+      );
+    }
 
     for (const id of ids) {
       const def = POST_EFFECTS[id];
@@ -81,7 +87,8 @@ export function buildPostEffectsSection(parent: HTMLElement): { sync: () => void
           );
           paramControls.push(control);
         } else {
-          const control = sliderRow(
+          const rowFn = param.widget === 'numberSlider' ? numberSliderRow : sliderRow;
+          const control = rowFn(
             paramsContainer,
             param.label,
             param.min,
@@ -89,6 +96,7 @@ export function buildPostEffectsSection(parent: HTMLElement): { sync: () => void
             param.step,
             () => getPostEffectParam(id, param.key),
             (v) => setPostEffectParam(id, param.key, v),
+            param.unit ?? '',
           );
           paramControls.push(control);
         }

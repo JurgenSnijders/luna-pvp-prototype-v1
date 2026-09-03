@@ -131,10 +131,11 @@ export function numberSliderRow(
 ): { refresh: () => void } {
   const row = document.createElement('div');
   row.style.marginBottom = '10px';
+  const header = document.createElement('div');
+  header.style.cssText =
+    'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;';
   const lbl = document.createElement('label');
-  lbl.style.display = 'block';
-  lbl.style.marginBottom = '4px';
-  lbl.style.fontSize = FONTS.size.sm;
+  lbl.style.cssText = `flex:1;margin:0;font-size:${FONTS.size.sm};`;
 
   const slider = document.createElement('input');
   slider.type = 'range';
@@ -142,17 +143,21 @@ export function numberSliderRow(
   slider.max = String(max);
   slider.step = String(step);
   slider.style.cssText =
-    'width:100%;margin-bottom:6px;accent-color:var(--retro-neon-cyan, #00e5ff);';
+    'width:100%;margin:0;accent-color:var(--retro-neon-cyan, #00e5ff);';
+
+  const decimals =
+    step > 0 && step < 1
+      ? Math.min(6, Math.max(2, Math.ceil(-Math.log10(step))))
+      : 0;
+  const formatValue = (v: number): string =>
+    decimals > 0 ? v.toFixed(decimals) : String(Math.round(v));
 
   const number = document.createElement('input');
   number.type = 'number';
   number.min = String(min);
   number.max = String(max);
   number.step = String(step);
-  number.style.cssText = inputStyle();
-
-  const formatValue = (v: number): string =>
-    step < 1 ? v.toFixed(2) : String(Math.round(v));
+  number.style.cssText = `${inputStyle()}width:7.5em;margin:0;padding:4px 6px;flex:0 0 7.5em;`;
 
   const updateLabel = (v: number): void => {
     lbl.textContent = `${label}: ${formatValue(v)}${unit}`;
@@ -161,7 +166,7 @@ export function numberSliderRow(
   const commit = (raw: number): void => {
     const v = Number.isFinite(raw) ? Math.max(min, Math.min(max, raw)) : get();
     slider.value = String(v);
-    number.value = String(v);
+    number.value = formatValue(v);
     set(v);
     updateLabel(v);
   };
@@ -169,7 +174,7 @@ export function numberSliderRow(
   const refresh = (): void => {
     const v = get();
     slider.value = String(v);
-    number.value = String(v);
+    number.value = formatValue(v);
     updateLabel(v);
   };
 
@@ -184,9 +189,10 @@ export function numberSliderRow(
   };
 
   refresh();
-  row.appendChild(lbl);
+  header.appendChild(lbl);
+  header.appendChild(number);
+  row.appendChild(header);
   row.appendChild(slider);
-  row.appendChild(number);
   parent.appendChild(row);
   return { refresh };
 }
