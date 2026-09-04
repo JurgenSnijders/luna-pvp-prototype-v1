@@ -58,6 +58,7 @@ export class Summon extends Entity {
     this.spellArchetype = options.spellArchetype;
     this.abilityName = options.abilityName ?? '';
     this.facingAngle = 0;
+    this.hitHeight = this.radius * 1.6;
   }
 
   override isImmovable(): boolean {

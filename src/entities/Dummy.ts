@@ -18,6 +18,7 @@ export class Dummy extends Entity {
     this.isAiActive = false;
     this.moveSpeed = 120;
     this.chaseVector = Vector2D.zero();
+    this.hitHeight = this.radius * 1.6;
   }
 
   /** Returns a normalized chase vector toward the nearest player, or zero. */

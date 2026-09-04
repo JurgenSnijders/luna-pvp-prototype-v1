@@ -146,6 +146,7 @@ export class Player extends Entity {
     this.slotCompiling = [false, false, false, false, false];
     this.slotInputs = Array.from({ length: SLOT_COUNT }, () => createDefaultSlotInput());
     this.slotResources = Array.from({ length: SLOT_COUNT }, () => createDefaultSlotResource());
+    this.hitHeight = this.radius * 1.6;
   }
 
   initSlotResourceState(slotIndex: number): void {

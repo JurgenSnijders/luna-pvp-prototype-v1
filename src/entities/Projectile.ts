@@ -76,6 +76,7 @@ export class Projectile extends Entity {
 
     const speed = config.speed ?? 400;
     this.vel = Vector2D.fromAngle(aimAngle, speed);
+    this.hitHeight = this.radius;
   }
 
   registerHit(entityId: string): boolean {

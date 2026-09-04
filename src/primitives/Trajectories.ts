@@ -26,6 +26,7 @@ export function updateTrajectory(
   if (proj.isDead) return;
 
   proj.prevPos.copyFrom(proj.pos);
+  proj.prevZ = proj.z;
 
   const config = proj.config;
   const speed = config.speed ?? 400;

@@ -1,0 +1,9 @@
+export const WORLD_GRAVITY = 1400; // px/s^2 (~0.76s hang time for 100px apex)
+export const Z_EPSILON = 0.5; // px (ground contact tolerance)
+export const VZ_SETTLE = 45; // px/s (below this, vertical motion snaps to rest)
+export const GROUND_SLAM_VZ = 300; // px/s (threshold for seismic floor ripples)
+export const HAZARD_CLEARANCE_Z = 12; // px (vertical ceiling for ground hazard fields)
+export const LIP_HEIGHT = 14; // px (arena hex platform extrusion clearance)
+export const MAX_GROUND_SUBSTEPS = 4; // max ground bounce iterations per frame
+export const MAX_ABS_VZ = 4000; // px/s (anti-explosion safety clamp)
+export const Z_TO_SCREEN = 1.0; // screen pixel offset per world Z unit

@@ -35,6 +35,15 @@ export class Entity {
   prevPos: Vector2D;
   vel: Vector2D;
   accel: Vector2D;
+  // Pseudo-3D vertical kinematics (scalar; never heap-allocated)
+  z = 0;
+  prevZ = 0;
+  vz = 0;
+  gravityScale = 0;
+  groundRestitution = 0.12;
+  groundFriction = 0.15;
+  hitHeight = 0;
+  isGrounded = true;
   mass: number;
   radius: number;
   linearDrag: number;
@@ -156,6 +165,14 @@ export class Entity {
 
   get effectiveRadius(): number {
     return this.activeMorph?.radius ?? this.radius;
+  }
+
+  get zTop(): number {
+    return this.z + this.hitHeight;
+  }
+
+  get zBottom(): number {
+    return this.z;
   }
 
   getEffectiveMass(): number {
@@ -429,6 +446,7 @@ export class Entity {
     if (this.stasisRemainingMs > 0) return;
 
     this.prevPos.copyFrom(this.pos);
+    this.prevZ = this.z;
     this.vel.addScaledMut(this.accel, dt);
     const preDragSpeed = this.vel.mag();
     const dragCoeff = this.getEffectiveLinearDrag() + this.quadraticDrag * preDragSpeed;

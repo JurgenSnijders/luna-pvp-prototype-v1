@@ -17,6 +17,9 @@ import {
 } from '../types/debug';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
+import { MAX_ABS_VZ, WORLD_GRAVITY, Z_EPSILON } from './verticalConstants';
+
+const obstacleEntityScratch: Entity[] = [];
 
 export const MAX_ENTITIES = 256;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
@@ -115,6 +118,11 @@ export class PhysicsWorld {
   debugPhysicsEnabled = false;
   debugVectors: DebugForceVector[] = [];
   collisionRestitution = DEFAULT_COLLISION_RESTITUTION;
+  airborneCount = 0;
+
+  get verticalActive(): boolean {
+    return this.airborneCount > 0;
+  }
 
   constructor(hexCenter: Vector2D, hexRadius: number) {
     this.hexCenter = hexCenter;
@@ -606,6 +614,8 @@ export class PhysicsWorld {
       if (!entity.tags.has('kinematic')) entity.integrate(dt, this);
     }
 
+    this.stepVerticalKinematics(dt);
+
     this.updateConstraints(dt);
 
     this.resolveCircleCollisions(dt);
@@ -614,6 +624,44 @@ export class PhysicsWorld {
     this.resolveProjectileHits();
     this.collectExpirations();
     this.pruneDead();
+  }
+
+  private stepVerticalKinematics(dt: number): void {
+    let activeAirborne = 0;
+
+    const integrateEntity = (e: Entity): void => {
+      if (e.isDead) return;
+
+      if (e.gravityScale === 0 && e.vz === 0 && e.z <= Z_EPSILON) {
+        e.z = 0;
+        e.isGrounded = true;
+        return;
+      }
+
+      e.prevZ = e.z;
+      e.vz -= WORLD_GRAVITY * e.gravityScale * dt;
+      if (e.vz > MAX_ABS_VZ) e.vz = MAX_ABS_VZ;
+      else if (e.vz < -MAX_ABS_VZ) e.vz = -MAX_ABS_VZ;
+
+      e.z += e.vz * dt;
+
+      if (e.z <= 0) {
+        e.z = 0;
+        e.vz = 0;
+        e.gravityScale = 0;
+        e.isGrounded = true;
+      } else {
+        e.isGrounded = false;
+        activeAirborne++;
+      }
+    };
+
+    for (const e of this.players) integrateEntity(e);
+    for (const e of this.dummies) integrateEntity(e);
+    for (const e of this.summons) integrateEntity(e);
+    for (const e of this.projectiles) integrateEntity(e);
+
+    this.airborneCount = activeAirborne;
   }
 
   private resolveCircleCollisions(dt: number): void {
@@ -870,24 +918,24 @@ export class PhysicsWorld {
   private resolveObstacleCollisions(): void {
     if (this.obstacles.length === 0) return;
 
-    const entities: Entity[] = [];
+    obstacleEntityScratch.length = 0;
     for (const p of this.players) {
-      if (!p.isDead) entities.push(p);
+      if (!p.isDead) obstacleEntityScratch.push(p);
     }
     for (const d of this.dummies) {
-      if (!d.isDead) entities.push(d);
+      if (!d.isDead) obstacleEntityScratch.push(d);
     }
     for (const s of this.summons) {
-      if (!s.isDead) entities.push(s);
+      if (!s.isDead) obstacleEntityScratch.push(s);
     }
     for (const proj of this.projectiles) {
-      if (!proj.isDead) entities.push(proj);
+      if (!proj.isDead) obstacleEntityScratch.push(proj);
     }
 
     for (const obstacle of this.obstacles) {
       if (obstacle.isDead) continue;
 
-      for (const entity of entities) {
+      for (const entity of obstacleEntityScratch) {
         const penetration = this.getObstaclePenetration(entity, obstacle);
         if (!penetration) continue;
 
