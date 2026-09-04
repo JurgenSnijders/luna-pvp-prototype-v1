@@ -23,7 +23,12 @@ export function initBallisticKinematics(
   if (trajectory.spawnAltitude && trajectory.spawnAltitude > 0) {
     proj.z = trajectory.spawnAltitude;
     proj.prevZ = proj.z;
-    proj.vz = -(trajectory.fallSpeed ?? 900);
+    proj.vz = -(trajectory.fallSpeed ?? 1200);
+    proj.apexReached = true;
+    if (trajectory.speed === 0) {
+      proj.vel = Vector2D.zero();
+    }
+    proj.maxLifetimeMs = Math.min(proj.maxLifetimeMs, 5000);
   } else {
     const apex = trajectory.lobApex ?? 80;
     proj.vz = Math.sqrt(2 * WORLD_GRAVITY * proj.gravityScale * apex);
@@ -240,9 +245,18 @@ function updateBallisticArc(
   speed: number,
   maxRange: number,
 ): void {
-  proj.vel = Vector2D.fromAngle(proj.aimAngle, speed);
-  proj.pos = proj.pos.add(proj.vel.scale(dt));
-  proj.distanceTraveled += speed * dt;
+  const isPlumbDrop = speed === 0 || proj.vel.magSq() === 0;
+
+  if (!isPlumbDrop) {
+    proj.vel = Vector2D.fromAngle(proj.aimAngle, speed);
+    proj.pos = proj.pos.add(proj.vel.scale(dt));
+    proj.distanceTraveled += speed * dt;
+
+    if (proj.distanceTraveled >= maxRange) {
+      proj.isDead = true;
+      proj.expiryReason = 'range';
+    }
+  }
 
   if (!proj.apexReached && proj.vz <= 0) {
     proj.apexReached = true;
@@ -256,10 +270,5 @@ function updateBallisticArc(
   ) {
     proj.isDead = true;
     proj.expiryReason = 'lifetime';
-  }
-
-  if (proj.distanceTraveled >= maxRange) {
-    proj.isDead = true;
-    proj.expiryReason = 'range';
   }
 }

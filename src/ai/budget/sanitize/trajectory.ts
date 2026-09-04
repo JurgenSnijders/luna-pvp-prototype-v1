@@ -7,11 +7,26 @@ export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'LINEAR';
   const type = (TRAJECTORY_TYPES.has(typeRaw) ? typeRaw : 'LINEAR') as TrajectoryType;
 
+  const spawnAltitude = clamp(ensureFiniteNumber(obj.spawnAltitude, 0), 0, 1200);
+  const isSkyDrop = spawnAltitude > 0;
+  const minSpeed = isSkyDrop ? 0 : 150;
+
   const config: TrajectoryConfig = {
     type,
-    speed: clamp(ensureFiniteNumber(obj.speed, 400), 150, 1600),
+    speed: clamp(ensureFiniteNumber(obj.speed, isSkyDrop ? 0 : 400), minSpeed, 1600),
     maxRange: clamp(ensureFiniteNumber(obj.maxRange, 500), 50, 1200),
   };
+
+  if (isSkyDrop || obj.spawnAltitude !== undefined) {
+    config.spawnAltitude = spawnAltitude;
+  }
+  if (isSkyDrop || obj.fallSpeed !== undefined) {
+    config.fallSpeed = clamp(
+      ensureFiniteNumber(obj.fallSpeed, isSkyDrop ? 1200 : 0),
+      0,
+      3000,
+    );
+  }
 
   if (obj.turnAccel !== undefined) {
     config.turnAccel = ensureFiniteNumber(obj.turnAccel, 800);

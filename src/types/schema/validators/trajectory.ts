@@ -79,6 +79,22 @@ export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | nul
     if (v === null) return null;
     config.detonateAtZ = v;
   }
+  if (value.spawnAltitude !== undefined) {
+    const v = clampOptional(value.spawnAltitude, 0, 1200);
+    if (v === null) return null;
+    config.spawnAltitude = v;
+  }
+  if (value.fallSpeed !== undefined) {
+    const v = clampOptional(value.fallSpeed, 0, 3000);
+    if (v === null) return null;
+    config.fallSpeed = v;
+  }
+
+  const isSkyDrop = (config.spawnAltitude ?? 0) > 0;
+  if (config.speed !== undefined) {
+    if (!Number.isFinite(config.speed) || config.speed < 0) return null;
+    if (!isSkyDrop && config.speed < 50) return null;
+  }
 
   return config;
 }

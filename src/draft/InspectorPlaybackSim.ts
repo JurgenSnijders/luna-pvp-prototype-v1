@@ -310,9 +310,17 @@ function runSandboxSimulation(spell: AbilitySchema): {
   const caster = new Player(Vector2D.zero(), ['player', 'combatant', 'kinematic']);
   world.addPlayer(caster);
 
+  const trajectory = resolveRootTrajectory(spell);
+  const isGroundTarget =
+    spell.targetingMode === 'GROUND_POINT' || (trajectory?.spawnAltitude ?? 0) > 0;
+
   const { aimAngle, targetDistance } = resolveAimConfig(spell);
-  const heading = Vector2D.fromAngle(aimAngle);
-  const targetPos = heading.scale(targetDistance);
+  const targetPos = isGroundTarget
+    ? caster.pos.add(new Vector2D(80, -60))
+    : Vector2D.fromAngle(aimAngle).scale(targetDistance);
+  const heading = isGroundTarget
+    ? targetPos.sub(caster.pos).normalize()
+    : Vector2D.fromAngle(aimAngle);
   const dummy = new Dummy(targetPos);
   dummy.tags.add('kinematic');
   world.addDummy(dummy);
