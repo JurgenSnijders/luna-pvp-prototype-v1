@@ -43,7 +43,12 @@ export const RETRO_GLOW = {
 export function retroPanelStyle(glowColor: 'cyan' | 'magenta' = 'cyan'): string {
   const glow = glowColor === 'cyan' ? RETRO_GLOW.boxCyan : RETRO_GLOW.boxMagenta;
   const border = glowColor === 'cyan' ? RETRO_COLORS.neonCyan : RETRO_COLORS.neonMagenta;
-  return `background: ${RETRO_COLORS.panelBg}; border: 1px solid ${border}; box-shadow: ${glow}; backdrop-filter: blur(8px); border-radius: 4px;`;
+  const blur = 'var(--panel-backdrop-filter, blur(8px))';
+  return `background: ${RETRO_COLORS.panelBg}; border: 1px solid ${border}; box-shadow: ${glow}; backdrop-filter: ${blur}; border-radius: 4px;`;
+}
+
+export function scaledPx(basePx: number): string {
+  return `calc(${basePx}px * var(--ui-scale, 1))`;
 }
 
 export function fontStyle(size: keyof typeof FONTS.size, extra = ''): string {

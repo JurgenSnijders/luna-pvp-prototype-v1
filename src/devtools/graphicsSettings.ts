@@ -61,7 +61,7 @@ export interface GraphicsSettings {
 }
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
-  tier: 'HIGH',
+  tier: 'AUTO',
   webglBackground: true,
   floorSubGrid: true,
   ambientEmbers: true,
@@ -96,6 +96,23 @@ export interface TierLimits {
   trailDensity: number;
   maxPrimitives: number;
   groundDecals: boolean;
+  /** Multiplier applied after DPR cap (internal resolution). */
+  renderScale: number;
+  /** Max CSS-pixel edge for canvas backing stores; 0 = unlimited. */
+  maxBackingEdge: number;
+  /** Minimum ms between present frames; 0 = uncapped (every rAF). */
+  presentIntervalMs: number;
+}
+
+export interface EffectiveFeatureFlags {
+  webglBackground: boolean;
+  floorSubGrid: boolean;
+  ambientEmbers: boolean;
+  particleTrails: boolean;
+  bloomEnabled: boolean;
+  refractionEnabled: boolean;
+  crtEnabled: boolean;
+  arcadeBezel: boolean;
 }
 
 /**
@@ -158,6 +175,9 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
     trailDensity: 0.5,
     maxPrimitives: 64,
     groundDecals: false,
+    renderScale: 0.75,
+    maxBackingEdge: 1280,
+    presentIntervalMs: 33,
   },
   MEDIUM: {
     particleBudget: 4096,
@@ -168,6 +188,9 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
     trailDensity: 0.8,
     maxPrimitives: 256,
     groundDecals: true,
+    renderScale: 1,
+    maxBackingEdge: 0,
+    presentIntervalMs: 0,
   },
   HIGH: {
     particleBudget: 16384,
@@ -178,6 +201,9 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
     trailDensity: 1.0,
     maxPrimitives: 1024,
     groundDecals: true,
+    renderScale: 1,
+    maxBackingEdge: 0,
+    presentIntervalMs: 0,
   },
   ULTRA: {
     particleBudget: 65536,
@@ -188,12 +214,68 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
     trailDensity: 1.4,
     maxPrimitives: 4096,
     groundDecals: true,
+    renderScale: 1,
+    maxBackingEdge: 0,
+    presentIntervalMs: 0,
   },
 };
 
 let cache: GraphicsSettings | null = null;
-let effectiveTier: Exclude<QualityTier, 'AUTO'> = 'HIGH';
+let effectiveTier: Exclude<QualityTier, 'AUTO'> = 'MEDIUM';
+let adaptiveTierInitialized = false;
 const listeners = new Set<() => void>();
+
+function notifyGraphicsListeners(): void {
+  for (const listener of listeners) listener();
+}
+
+export function isCheapUi(): boolean {
+  return getEffectiveTier() === 'LOW';
+}
+
+export function getEffectiveFeatureFlags(): EffectiveFeatureFlags {
+  const s = getGraphicsSettings();
+  const tier = getEffectiveTier();
+  if (tier === 'LOW') {
+    return {
+      webglBackground: false,
+      floorSubGrid: false,
+      ambientEmbers: false,
+      particleTrails: s.particleTrails,
+      bloomEnabled: false,
+      refractionEnabled: false,
+      crtEnabled: false,
+      arcadeBezel: false,
+    };
+  }
+  const limits = TIER_LIMITS[tier];
+  return {
+    webglBackground: s.webglBackground,
+    floorSubGrid: s.floorSubGrid,
+    ambientEmbers: s.ambientEmbers,
+    particleTrails: s.particleTrails,
+    bloomEnabled: s.bloomEnabled && limits.bloomPasses > 0,
+    refractionEnabled: s.refractionEnabled && limits.refraction,
+    crtEnabled: s.crtEnabled,
+    arcadeBezel: s.arcadeBezel,
+  };
+}
+
+export function initializeAdaptiveTier(
+  seed: Exclude<QualityTier, 'AUTO'>,
+): void {
+  if (adaptiveTierInitialized) return;
+  effectiveTier = seed;
+  adaptiveTierInitialized = true;
+}
+
+/** Test-only: force the in-memory adaptive tier without persisting settings. */
+export function seedEffectiveTierForTests(
+  tier: Exclude<QualityTier, 'AUTO'>,
+): void {
+  effectiveTier = tier;
+  adaptiveTierInitialized = true;
+}
 
 export function getEffectiveTier(): Exclude<QualityTier, 'AUTO'> {
   const s = getGraphicsSettings();
@@ -202,30 +284,47 @@ export function getEffectiveTier(): Exclude<QualityTier, 'AUTO'> {
 }
 
 export function setAdaptiveEffectiveTier(tier: Exclude<QualityTier, 'AUTO'>): void {
-  if (!getGraphicsSettings().manualTierOverride && getGraphicsSettings().tier === 'AUTO') {
-    effectiveTier = tier;
-  }
+  const s = getGraphicsSettings();
+  if (s.manualTierOverride || s.tier !== 'AUTO') return;
+  if (effectiveTier === tier) return;
+  effectiveTier = tier;
+  notifyGraphicsListeners();
 }
 
 export function getTierLimits(): TierLimits {
   const tier = getEffectiveTier();
   const base = TIER_LIMITS[tier];
-  const s = getGraphicsSettings();
+  const flags = getEffectiveFeatureFlags();
   return {
     ...base,
-    refraction: base.refraction && s.refractionEnabled,
-    bloomPasses: s.bloomEnabled ? base.bloomPasses : 0,
+    refraction: base.refraction && flags.refractionEnabled,
+    bloomPasses: flags.bloomEnabled ? base.bloomPasses : 0,
   };
+}
+
+export function getPresentIntervalMs(): number {
+  return getTierLimits().presentIntervalMs;
 }
 
 export function areGroundDecalsEnabled(): boolean {
   return getTierLimits().groundDecals;
 }
 
-export function getEffectiveDprCap(): number {
-  const cap = getTierLimits().dprCap;
-  const native = window.devicePixelRatio || 1;
-  return Math.min(native, cap);
+export function getEffectiveDprCap(
+  cssWidth = typeof window !== 'undefined' ? window.innerWidth : 1920,
+  cssHeight = typeof window !== 'undefined' ? window.innerHeight : 1080,
+): number {
+  const limits = getTierLimits();
+  const native = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  let ratio = Math.min(native, limits.dprCap) * limits.renderScale;
+
+  if (limits.maxBackingEdge > 0) {
+    const longest = Math.max(cssWidth, cssHeight);
+    const maxRatio = limits.maxBackingEdge / Math.max(1, longest);
+    ratio = Math.min(ratio, maxRatio);
+  }
+
+  return Math.max(0.25, ratio);
 }
 
 function getActivePresetCrt() {
@@ -443,13 +542,14 @@ function resolveGrade(): {
 export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const s = getGraphicsSettings();
   const tier = getEffectiveTier();
-  const bloomIntensity = tier === 'LOW' ? 0 : s.bloomIntensity;
+  const flags = getEffectiveFeatureFlags();
+  const bloomIntensity = flags.bloomEnabled ? s.bloomIntensity : 0;
   const bloomThreshold = s.bloomThreshold;
   const presetCrt = getActivePresetCrt();
   const tintColor = presetCrt.tintColor;
   const tintAmount = resolveTintAmount(presetCrt.tintAmount);
   const brightness = s.crtBrightness;
-  const effectUniforms = s.crtEnabled ? getEffectUniforms() : {};
+  const effectUniforms = flags.crtEnabled ? getEffectUniforms() : {};
   const persistenceOff = { enabled: false, decay: 0.85, threshold: 0 };
   const retroOff = { enabled: false, pixelSize: 1, paletteId: 0, paletteMix: 0, dither: 0 };
   const reactiveOff = {
@@ -482,7 +582,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     contrast: 1,
   };
 
-  if (!s.crtEnabled) {
+  if (!flags.crtEnabled) {
     return {
       crtEnabled: false,
       webglCrt: false,
@@ -494,7 +594,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       maskType: 0,
       bloomIntensity,
       bloomThreshold,
-      arcadeBezel: s.arcadeBezel,
+      arcadeBezel: flags.arcadeBezel,
       tintColor,
       tintAmount: 0,
       brightness: 1,
@@ -506,34 +606,9 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     };
   }
 
-  // LOW has no budget for the world-texture upload, so it degrades to the CSS overlay.
-  if (tier === 'LOW') {
-    return {
-      crtEnabled: true,
-      webglCrt: false,
-      cssOverlay: true,
-      scanlineIntensity: resolveScanlineIntensity(),
-      curvature: 0,
-      vignette: resolveVignette(),
-      phosphor: 0,
-      maskType: 0,
-      bloomIntensity,
-      bloomThreshold,
-      arcadeBezel: s.arcadeBezel,
-      tintColor,
-      tintAmount,
-      brightness,
-      effectUniforms: {},
-      persistence: persistenceOff,
-      retro: retroOff,
-      reactive: reactiveOff,
-      grade: gradeOff,
-    };
-  }
-
   return {
     crtEnabled: true,
-    webglCrt: true,
+    webglCrt: tier !== 'LOW',
     cssOverlay: false,
     scanlineIntensity: resolveScanlineIntensity(),
     curvature: resolveCurvature(),
@@ -542,7 +617,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     maskType: resolveMaskType(),
     bloomIntensity,
     bloomThreshold,
-    arcadeBezel: s.arcadeBezel,
+    arcadeBezel: flags.arcadeBezel,
     tintColor,
     tintAmount,
     brightness,
@@ -642,7 +717,17 @@ export function getGraphicsSettings(): GraphicsSettings {
 export function saveGraphicsSettings(settings: GraphicsSettings): void {
   cache = { ...settings };
   localStorage.setItem(STORAGE_KEY_GRAPHICS, JSON.stringify(cache));
-  for (const listener of listeners) listener();
+  notifyGraphicsListeners();
+}
+
+export function applyBalancedPreset(): GraphicsSettings {
+  saveGraphicsSettings({
+    ...getGraphicsSettings(),
+    tier: 'AUTO',
+    manualTierOverride: false,
+  });
+  setAdaptiveEffectiveTier('MEDIUM');
+  return getGraphicsSettings();
 }
 
 export function subscribeGraphicsSettings(listener: () => void): () => void {

@@ -3,6 +3,7 @@ import type { StreakBody } from '../../camera/Camera2D';
 import { fctClusterConfig } from '../../render/fctClusterConfig';
 import type { SpellArchetype } from '../../types/schema';
 import { canvasFont } from '../../ui/tokens';
+import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getArchetypeColor } from './SpellIconGenerator';
 
 export type FCTType =
@@ -526,8 +527,10 @@ export class FloatingCombatTextManager {
       ctx.strokeStyle = '#000000';
       ctx.fillStyle = p.color;
       ctx.strokeText(p.text, drawX, p.pos.y);
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 8;
+      if (!useCheapCanvasEffects()) {
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+      }
       ctx.fillText(p.text, drawX, p.pos.y);
       ctx.shadowBlur = 0;
     }

@@ -1,4 +1,5 @@
 import type { CameraView } from '../../camera/Camera2D';
+import { getTierLimits } from '../../devtools/graphicsSettings';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx } from '../../types/schema';
@@ -70,13 +71,16 @@ export class Canvas2DBackend implements ParticleBackend {
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    const budget = Math.min(POOL_SIZE, getTierLimits().particleBudget);
+    let drawn = 0;
     for (const p of this.pool) {
       if (!p.active) continue;
+      if (drawn >= budget) break;
+      drawn++;
       ctx.globalAlpha = p.alpha;
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.pos.x, p.pos.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
+      const s = Math.max(2, p.size * 2);
+      ctx.fillRect(p.pos.x - s * 0.5, p.pos.y - s * 0.5, s, s);
     }
     ctx.globalAlpha = 1;
   }
@@ -103,6 +107,7 @@ export class Canvas2DBackend implements ParticleBackend {
     size: number,
     initialAlpha = 1,
   ): void {
+    if (this.getLiveParticleCount() >= Math.min(POOL_SIZE, getTierLimits().particleBudget)) return;
     if (this.freeList.length === 0) return;
     const index = this.freeList.pop()!;
     const slot = this.pool[index];

@@ -60,7 +60,7 @@ export class MatchHUD {
     this.countdownBanner = document.createElement('div');
     this.countdownBanner.style.cssText = `
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      font-size: 72px; font-weight: 800; color: #fff;
+      font-size: var(--match-countdown-size, 72px); font-weight: 800; color: #fff;
       text-shadow: ${RETRO_GLOW.cyan};
       opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease;
       letter-spacing: 0.05em;
@@ -79,7 +79,8 @@ export class MatchHUD {
     this.lobbyBtn = document.createElement('button');
     this.lobbyBtn.textContent = 'START MATCH';
     this.lobbyBtn.style.cssText = `
-      position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+      position: absolute; bottom: calc(var(--action-bar-height, 120px) + 16px); left: 50%;
+      transform: translateX(-50%);
       pointer-events: auto; padding: 14px 36px; font-size: 16px; font-weight: 700;
       letter-spacing: 0.1em; border-radius: 4px; cursor: pointer;
       border: 2px solid ${RETRO_COLORS.neonCyan}; background: rgba(0, 200, 255, 0.15);

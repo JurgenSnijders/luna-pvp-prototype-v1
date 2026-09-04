@@ -1,4 +1,6 @@
-import { getGraphicsSettings } from '../devtools/graphicsSettings';
+import {
+  getEffectiveFeatureFlags,
+} from '../devtools/graphicsSettings';
 import { adaptiveQuality } from '../render/AdaptiveQuality';
 import { applyField } from '../primitives/Fields';
 import { CombatLogger } from '../telemetry/CombatLogger';
@@ -77,7 +79,7 @@ export function runSimulationStep(app: GameApp, dt: number): void {
       app.particles.ember(entity.pos);
     }
   }
-  if (getGraphicsSettings().ambientEmbers) {
+  if (getEffectiveFeatureFlags().ambientEmbers) {
     const viewRect = app.camera.getVisibleWorldRect();
     for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
       app.particles.spawnAmbientEmber(

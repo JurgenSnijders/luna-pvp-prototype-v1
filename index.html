@@ -22,6 +22,20 @@
 
       :root {
         --retro-cursor: crosshair;
+        --ui-scale: 1;
+        --action-bar-slot-size: 80px;
+        --action-bar-gap: 12px;
+        --action-bar-height: 120px;
+        --match-countdown-size: 72px;
+        --panel-backdrop-filter: blur(8px);
+      }
+
+      html[data-cheap-ui='1'] {
+        --panel-backdrop-filter: none;
+      }
+
+      html[data-cheap-ui='1'] #action-bar-hud .action-slot {
+        backdrop-filter: none !important;
       }
 
       html,

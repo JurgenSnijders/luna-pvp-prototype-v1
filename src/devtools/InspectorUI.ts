@@ -8,6 +8,7 @@ import type { Interpreter } from '../primitives/Interpreter';
 import type { CanvasRenderer, DebugOptions } from '../render/CanvasRenderer';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import { INSPECTOR_COLLAPSED_STORAGE_KEY, INSPECTOR_LAYOUT_STORAGE_KEY } from '../game/settings';
+import { isCompactViewport } from '../ui/viewportLayout';
 import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 import { buttonStyle } from './inspector/domHelpers';
 import { attachFloatingPanel, type FloatingPanelController, type ResolvedPanelLayout } from './inspector/floatingPanel';
@@ -54,8 +55,11 @@ export class InspectorUI {
   private telemetryEl!: HTMLElement;
   private telemetryRefs: TelemetryRefs | null = null;
   private jsonTabRefs: JsonTabRefs | null = null;
-  private isCollapsed: boolean =
-    localStorage.getItem(INSPECTOR_COLLAPSED_STORAGE_KEY) === 'true';
+  private isCollapsed: boolean = (() => {
+    const stored = localStorage.getItem(INSPECTOR_COLLAPSED_STORAGE_KEY);
+    if (stored !== null) return stored === 'true';
+    return isCompactViewport();
+  })();
   private container!: HTMLDivElement;
   private headerEl!: HTMLDivElement;
   private bodyEl!: HTMLDivElement;

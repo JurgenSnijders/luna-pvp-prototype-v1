@@ -2,10 +2,13 @@ import {
   DEFAULT_GRAPHICS_SETTINGS,
   STORAGE_KEY_GRAPHICS,
   applyTierPreset,
+  getEffectiveDprCap,
+  getEffectiveFeatureFlags,
   getGraphicsSettings,
   getPostEffectUserEnabled,
   parseGraphicsSettings,
   saveGraphicsSettings,
+  seedEffectiveTierForTests,
   setPostEffectEnabled,
 } from '../src/devtools/graphicsSettings';
 import {
@@ -45,15 +48,16 @@ function installMockLocalStorage(): void {
   });
 }
 
-function installMockWindow(): void {
-  if (typeof globalThis.window === 'undefined') {
-    Object.defineProperty(globalThis, 'window', {
-      value: {
-        dispatchEvent: () => true,
-      },
-      configurable: true,
-    });
-  }
+function installMockWindow(dpr = 1, width = 1920, height = 1080): void {
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      innerWidth: width,
+      innerHeight: height,
+      devicePixelRatio: dpr,
+      dispatchEvent: () => true,
+    },
+    configurable: true,
+  });
 }
 
 function resetGraphicsState(): void {
@@ -234,13 +238,36 @@ function run(): void {
     failures.push('applyTierPreset(LOW): PIXELATE should be disabled below min tier');
   }
 
+  resetGraphicsState();
+  installMockWindow(2, 1920, 1080);
+  saveGraphicsSettings({
+    ...getGraphicsSettings(),
+    tier: 'AUTO',
+    manualTierOverride: false,
+    webglBackground: true,
+    crtEnabled: true,
+  });
+  seedEffectiveTierForTests('LOW');
+  const lowFlags = getEffectiveFeatureFlags();
+  if (lowFlags.webglBackground || lowFlags.crtEnabled || lowFlags.arcadeBezel) {
+    failures.push('effective LOW flags should disable heavy features while stored toggles remain');
+  }
+  if (!getGraphicsSettings().webglBackground || !getGraphicsSettings().crtEnabled) {
+    failures.push('effective LOW should not rewrite stored graphics toggles');
+  }
+  const lowDpr = getEffectiveDprCap(1920, 1080);
+  const expectedLowDpr = 1280 / 1920;
+  if (Math.abs(lowDpr - expectedLowDpr) > 0.02) {
+    failures.push(`getEffectiveDprCap LOW: expected ~${expectedLowDpr}, got ${lowDpr}`);
+  }
+
   if (failures.length > 0) {
     console.error('test:graphics-settings  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
     process.exit(1);
   }
 
-  console.log('test:graphics-settings  OK  20 graphics profile checks passed');
+  console.log('test:graphics-settings  OK  23 graphics profile checks passed');
 }
 
 run();

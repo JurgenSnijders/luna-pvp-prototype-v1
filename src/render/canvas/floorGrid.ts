@@ -1,4 +1,4 @@
-import { getGraphicsSettings } from '../../devtools/graphicsSettings';
+import { getEffectiveFeatureFlags } from '../../devtools/graphicsSettings';
 import { Vector2D } from '../../math/Vector2D';
 
 export interface FloorRipple {
@@ -44,7 +44,7 @@ class FloorGridManager {
     intensity = 1.0,
     color = '#00e5ff',
   ): void {
-    if (!getGraphicsSettings().floorSubGrid) return;
+    if (!getEffectiveFeatureFlags().floorSubGrid) return;
 
     if (this.ripples.length >= MAX_RIPPLES) {
       this.ripples.shift();
@@ -77,7 +77,7 @@ class FloorGridManager {
     hexRadius: number,
     themeColor = '#00e5ff',
   ): void {
-    if (!getGraphicsSettings().floorSubGrid) return;
+    if (!getEffectiveFeatureFlags().floorSubGrid) return;
 
     const minX = hexCenter.x - hexRadius;
     const maxX = hexCenter.x + hexRadius;

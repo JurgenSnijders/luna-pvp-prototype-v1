@@ -5,6 +5,7 @@ import type { ProjectileStyle } from '../../types/schema';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 import { SpriteCache } from './SpriteCache';
+import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 const scopeSpriteCache = new SpriteCache();
 
@@ -222,8 +223,10 @@ function drawPlasmaTendrilProjectile(
   const segments = 16;
 
   ctx.save();
-  ctx.shadowBlur = 8;
-  ctx.shadowColor = color;
+  if (!useCheapCanvasEffects()) {
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = color;
+  }
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 

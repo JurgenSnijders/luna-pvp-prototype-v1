@@ -1321,6 +1321,30 @@ export function injectStyles(): void {
       border-color: #ff4444;
       background: rgba(255, 68, 68, 0.2);
     }
+
+    @media (max-width: 1100px), (max-height: 720px) {
+      .workspace-split {
+        flex-direction: column;
+      }
+      .workspace-inspector-pane {
+        flex: 1 1 auto;
+        width: 100%;
+        max-width: 100%;
+      }
+      .forge-cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 800px), (max-height: 600px) {
+      .forge-cards {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    html[data-cheap-ui='1'] .workshop-overlay {
+      backdrop-filter: none !important;
+    }
   `;
   document.head.appendChild(style);
 }

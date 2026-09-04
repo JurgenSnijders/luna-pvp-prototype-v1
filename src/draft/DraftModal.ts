@@ -684,10 +684,11 @@ export class DraftModal {
     injectStyles();
 
     this.overlay = document.createElement('div');
+    this.overlay.className = 'workshop-overlay';
     this.overlay.style.cssText = `
       position: fixed; inset: 0; z-index: 10000;
       display: none; align-items: center; justify-content: center;
-      background: rgba(4,6,14,0.72); backdrop-filter: blur(12px);
+      background: rgba(4,6,14,0.72); backdrop-filter: var(--panel-backdrop-filter, blur(12px));
       opacity: 0; transition: opacity 0.2s ease;
       pointer-events: auto; padding: 16px;
     `;

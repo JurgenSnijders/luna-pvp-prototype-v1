@@ -228,8 +228,9 @@ export class ActionBarHUD {
     this.root.id = 'action-bar-hud';
     this.root.style.cssText = `
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 10050; display: flex; gap: 12px; pointer-events: auto;
-      font-family: ${FONTS.mono};
+      z-index: 10050; display: flex; flex-wrap: wrap; justify-content: center;
+      gap: var(--action-bar-gap, 12px); max-width: calc(100vw - 16px);
+      pointer-events: auto; font-family: ${FONTS.mono};
     `;
     ActionBarHUD.activeInstance = this;
 
@@ -298,6 +299,10 @@ export class ActionBarHUD {
         pointer-events: none;
         transform: translateX(-50%) translateY(24px);
       }
+      html[data-viewport-profile='compact'] .action-slot-assign-label,
+      html[data-viewport-profile='tiny'] .action-slot-assign-label {
+        display: none;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -346,8 +351,10 @@ export class ActionBarHUD {
     const root = document.createElement('div');
     root.classList.add('drop-zone', 'action-slot');
     root.style.cssText = `
-      width: 80px; height: 80px; position: relative; overflow: hidden;
-      backdrop-filter: blur(8px); background: rgba(18, 18, 30, 0.85);
+      width: var(--action-bar-slot-size, 80px); height: var(--action-bar-slot-size, 80px);
+      position: relative; overflow: hidden;
+      backdrop-filter: var(--panel-backdrop-filter, blur(8px));
+      background: rgba(18, 18, 30, 0.85);
       border: 1px solid ${RETRO_COLORS.borderNeon}40; border-radius: 4px;
       box-shadow: ${RETRO_GLOW.boxCyan};
       cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -375,6 +382,7 @@ export class ActionBarHUD {
       text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       pointer-events: none;
     `;
+    label.classList.add('action-slot-assign-label');
 
     const cooldownOverlay = document.createElement('div');
     cooldownOverlay.style.cssText = `

@@ -16,7 +16,7 @@ export interface VisibleWorldRect {
 }
 
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
-  minZoom: 0.4,
+  minZoom: 0.3,
   maxZoom: 2.0,
   zoomSpeed: 0.1,
   followLerp: 0.12,
@@ -197,5 +197,13 @@ export class Camera2D {
 
   getZoomSpeed(): number {
     return this.config.zoomSpeed;
+  }
+
+  getMinZoom(): number {
+    return this.config.minZoom;
+  }
+
+  getMaxZoom(): number {
+    return this.config.maxZoom;
   }
 }

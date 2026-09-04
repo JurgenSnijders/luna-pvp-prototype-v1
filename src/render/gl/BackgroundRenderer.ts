@@ -76,7 +76,7 @@ export class BackgroundRenderer {
     const gl = this.gl;
     if (!gl) return;
 
-    const dpr = getEffectiveDprCap();
+    const dpr = getEffectiveDprCap(cssWidth, cssHeight);
     const pixelW = Math.max(1, Math.floor(cssWidth * dpr));
     const pixelH = Math.max(1, Math.floor(cssHeight * dpr));
     this.canvas.style.width = `${cssWidth}px`;

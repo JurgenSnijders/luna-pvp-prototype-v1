@@ -1,13 +1,17 @@
 import {
+  getEffectiveTier,
   getGraphicsSettings,
+  initializeAdaptiveTier,
   setAdaptiveEffectiveTier,
   type QualityTier,
 } from '../devtools/graphicsSettings';
 import { perfMonitor } from '../devtools/PerfMonitor';
+import { detectSeedTier } from './detectQualityTier';
 
 const TIERS: Exclude<QualityTier, 'AUTO'>[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
 const STEP_DOWN_MS = 14;
 const STEP_UP_MS = 9;
+const STEP_DOWN_MS_LOW = 22;
 const DOWN_HOLD_FRAMES = 90;
 const UP_HOLD_FRAMES = 300;
 const COOLDOWN_MS = 5000;
@@ -16,7 +20,25 @@ export class AdaptiveQuality {
   private aboveCount = 0;
   private belowCount = 0;
   private lastChange = 0;
-  private current: Exclude<QualityTier, 'AUTO'> = 'HIGH';
+  private current: Exclude<QualityTier, 'AUTO'>;
+
+  constructor() {
+    this.current = detectSeedTier(perfMonitor.getCapabilities());
+    initializeAdaptiveTier(this.current);
+  }
+
+  getCurrentTier(): Exclude<QualityTier, 'AUTO'> {
+    return this.current;
+  }
+
+  seedFromProbe(): void {
+    const seed = detectSeedTier(perfMonitor.getCapabilities());
+    this.current = seed;
+    initializeAdaptiveTier(seed);
+    if (getGraphicsSettings().tier === 'AUTO' && !getGraphicsSettings().manualTierOverride) {
+      setAdaptiveEffectiveTier(seed);
+    }
+  }
 
   update(): void {
     const settings = getGraphicsSettings();
@@ -26,7 +48,9 @@ export class AdaptiveQuality {
     if (now - this.lastChange < COOLDOWN_MS) return;
 
     const snap = perfMonitor.getSnapshot();
-    if (snap.frameMsP95 > STEP_DOWN_MS) {
+    const stepDownMs = getEffectiveTier() === 'LOW' ? STEP_DOWN_MS_LOW : STEP_DOWN_MS;
+
+    if (snap.frameMsP95 > stepDownMs) {
       this.aboveCount++;
       this.belowCount = 0;
     } else if (snap.frameMsP95 < STEP_UP_MS) {

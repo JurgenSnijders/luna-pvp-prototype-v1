@@ -272,7 +272,7 @@ export class CanvasRenderer {
     const rect = camera.getVisibleWorldRect();
 
     if (this.useWebGLBackground && this.webglBackgroundCanvas) {
-      const dpr = getEffectiveDprCap();
+      const dpr = getEffectiveDprCap(window.innerWidth, window.innerHeight);
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.drawImage(

@@ -1,7 +1,7 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getHexVertices } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
-import { getGraphicsSettings } from '../../devtools/graphicsSettings';
+import { getEffectiveFeatureFlags } from '../../devtools/graphicsSettings';
 import { getActiveColors } from '../../ui/tokens';
 import { floorGridManager } from './floorGrid';
 import type { CanvasRenderCtx } from './renderCtx';
@@ -130,7 +130,7 @@ export function drawHexPlatform(
   ctx.fill();
 
   const colors = getActiveColors();
-  if (getGraphicsSettings().floorSubGrid) {
+  if (getEffectiveFeatureFlags().floorSubGrid) {
     ctx.save();
     traceHexPath(ctx, vertices);
     ctx.clip();

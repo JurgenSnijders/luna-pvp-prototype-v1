@@ -20,6 +20,7 @@ import { CombatLogger } from '../telemetry/CombatLogger';
 import { TelemetryModal } from '../telemetry/TelemetryModal';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
+import { markUserZoomOverride } from '../camera/cameraArenaFit';
 import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
 import { handleCastInput, cancelPlayerAiming } from './input';
 import { assignDefaultLoadout, storeForgedSpell } from './loadout';
@@ -41,7 +42,8 @@ import {
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
-import { subscribeGraphicsSettings, getGraphicsSettings, getEffectiveCrtSettings } from '../devtools/graphicsSettings';
+import { subscribeGraphicsSettings, getEffectiveCrtSettings, getEffectiveFeatureFlags, isCheapUi } from '../devtools/graphicsSettings';
+import { adaptiveQuality } from '../render/AdaptiveQuality';
 import { streakTargetFiltersEntities, streakTargetNeedsExtract } from '../render/gl/postEffects';
 import { BackgroundRenderer, createBackgroundCanvas } from '../render/gl/BackgroundRenderer';
 import { applyArcadeBezel } from '../ui/arcadeBezel';
@@ -49,13 +51,14 @@ import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
 import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
+import { applyViewportLayout } from '../ui/viewportLayout';
 import { lerpPos } from '../render/canvas/helpers';
 
 function syncWebGLBackground(app: GameApp): void {
-  const settings = getGraphicsSettings();
+  const flags = getEffectiveFeatureFlags();
   const renderer = app.backgroundRenderer;
   const active =
-    settings.webglBackground && renderer !== null && renderer.isAvailable();
+    flags.webglBackground && renderer !== null && renderer.isAvailable();
   renderer?.setVisible(active);
   app.renderer.setWebGLBackground(
     active,
@@ -108,6 +111,7 @@ function init(app: GameApp): void {
   applyPalette();
   applyCrtOverlay();
   applyArcadeBezel();
+  applyViewportLayout(isCheapUi());
   // A tier change moves dprCap, so the world canvas has to be re-sized in step
   // with the GL drawing buffer or the CRT world texture samples at the wrong scale.
   subscribeGraphicsSettings(() => {
@@ -116,11 +120,13 @@ function init(app: GameApp): void {
     applyPalette();
     applyCrtOverlay();
     applyArcadeBezel();
+    applyViewportLayout(isCheapUi());
   });
   app.renderer = new CanvasRenderer(app.ctx);
   syncWebGLBackground(app);
   app.interpreter.setParticleSystem(app.particles);
   perfMonitor.probeCapabilities(app.particles.getGlContext()?.gl ?? null);
+  adaptiveQuality.seedFromProbe();
 
   app.player.applyEquippedLoadout();
   app.player.subscribeLoadoutChanges();
@@ -359,6 +365,7 @@ function init(app: GameApp): void {
   window.addEventListener('wheel', (e) => {
     if (isCameraInputBlocked(e.target)) return;
     e.preventDefault();
+    markUserZoomOverride();
     const delta = -Math.sign(e.deltaY) * app.camera.getZoomSpeed();
     if (app.camera.mode === 'FREE') {
       app.camera.setZoomAtScreen(app.camera.targetZoom + delta, e.clientX, e.clientY);
@@ -429,14 +436,14 @@ function init(app: GameApp): void {
         runSimulationStep(app, dt);
       }
     },
-    onRender(alpha) {
-      const shake = screenShake.update(1 / 60);
+    onRender(alpha, frameDt) {
+      const shake = screenShake.update(frameDt);
       const followPos = lerpPos(app.player, alpha);
-      app.camera.update(1 / 60, followPos);
+      app.camera.update(frameDt, followPos);
 
-      const settings = getGraphicsSettings();
+      const flags = getEffectiveFeatureFlags();
       const bg = app.backgroundRenderer;
-      const webglBg = settings.webglBackground && bg !== null && bg.isAvailable();
+      const webglBg = flags.webglBackground && bg !== null && bg.isAvailable();
       if (webglBg) {
         bg.render(app.camera, app.world.hexRadius, performance.now());
       }
@@ -516,7 +523,8 @@ function init(app: GameApp): void {
 
 export function startGame(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-  const ctx = canvas.getContext('2d', { alpha: true })!;
+  const useAlpha = getEffectiveFeatureFlags().webglBackground;
+  const ctx = canvas.getContext('2d', { alpha: useAlpha })!;
   const app = new GameApp(canvas, ctx);
   init(app);
 }

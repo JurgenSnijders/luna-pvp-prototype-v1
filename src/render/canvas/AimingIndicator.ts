@@ -5,6 +5,7 @@ import {
   resolveRootTrajectory,
   type PredictivePath,
 } from './trajectoryTracer';
+import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 export type AimingMode = 'directional' | 'radial';
 
@@ -236,8 +237,10 @@ function drawPredictivePath(
   ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
+  if (!useCheapCanvasEffects()) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+  }
 
   ctx.beginPath();
   ctx.moveTo(path.points[0].x, path.points[0].y);

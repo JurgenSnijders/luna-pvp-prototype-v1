@@ -2,6 +2,7 @@ import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { Vector2D } from '../../math/Vector2D';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
+import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getActiveColors } from '../../ui/tokens';
 import { lerpPos } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
@@ -146,8 +147,10 @@ function drawCombatantBody(
         flashColor = lerpColor('#ffffff', entity.hitFlashColor, 1 - entity.hitFlashTimer / 0.04);
       }
       const prevShadow = ctx.shadowBlur;
-      ctx.shadowBlur = entity.hitFlashTimer > 0.04 ? 16 : 8;
-      ctx.shadowColor = flashColor;
+      if (!useCheapCanvasEffects()) {
+        ctx.shadowBlur = entity.hitFlashTimer > 0.04 ? 16 : 8;
+        ctx.shadowColor = flashColor;
+      }
       ctx.fillStyle = flashColor;
       ctx.globalAlpha = Math.min(prevAlpha, 0.55 + flashT * 0.45);
       ctx.beginPath();

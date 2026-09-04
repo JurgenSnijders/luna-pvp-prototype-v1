@@ -6,6 +6,7 @@ import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos } from './helpers';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { canvasFont } from '../../ui/tokens';
+import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 export const OVERHEAD_BAR_TOP_OFFSET = 14;
 export const OVERHEAD_BAR_HEIGHT = 5;
@@ -53,8 +54,10 @@ function drawStatusDurationBars(
     const color = getArchetypeColor(status.archetype);
     if (fillW > 0) {
       ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 4;
+      if (!useCheapCanvasEffects()) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+      }
       ctx.fillRect(x, startY, fillW, OVERHEAD_STATUS_BAR_HEIGHT);
       ctx.shadowBlur = 0;
     }

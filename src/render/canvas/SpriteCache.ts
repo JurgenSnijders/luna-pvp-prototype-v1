@@ -1,3 +1,5 @@
+import { getEffectiveDprCap } from '../../devtools/graphicsSettings';
+
 /** Padding around baked sprites so the glow halo is not clipped. */
 const GLOW_PAD = 20;
 const SPRITE_CACHE_MAX = 300;
@@ -36,7 +38,7 @@ export class SpriteCache {
 
   getSprite(kind: SpriteKind, color: string, radius: number): SpriteEntry {
     const r = Math.max(1, Math.round(radius));
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.round(getEffectiveDprCap() * 100) / 100;
     const key = buildSpriteCacheKey(kind, color, r, dpr);
 
     let entry = this.cache.get(key);

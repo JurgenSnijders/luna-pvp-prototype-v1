@@ -17,7 +17,7 @@ export class PhysicsDebugLayer {
   }
 
   resize(cssWidth: number, cssHeight: number): void {
-    const dpr = getEffectiveDprCap();
+    const dpr = getEffectiveDprCap(cssWidth, cssHeight);
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
     this.canvas.width = Math.max(1, Math.floor(cssWidth * dpr));

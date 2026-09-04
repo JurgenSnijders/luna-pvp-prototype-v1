@@ -1,5 +1,14 @@
-import { getEffectiveDprCap } from '../devtools/graphicsSettings';
+import { getEffectiveDprCap, isCheapUi } from '../devtools/graphicsSettings';
 import { Vector2D } from '../math/Vector2D';
+import {
+  clearUserZoomOverride,
+  fitArenaToSafeView,
+} from '../camera/cameraArenaFit';
+import {
+  applyViewportLayout,
+  getSafeViewInsets,
+  isCompactViewport,
+} from '../ui/viewportLayout';
 import type { GameApp } from './GameApp';
 import { getStoredHexRadius } from './settings';
 
@@ -7,21 +16,50 @@ export function getHexCenter(): Vector2D {
   return new Vector2D(0, 0);
 }
 
+function getInspectorExpanded(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem('LUNA_INSPECTOR_COLLAPSED') !== 'true';
+}
+
 export function resize(app: GameApp): void {
-  const dpr = getEffectiveDprCap();
-  const pixelW = Math.max(1, Math.floor(window.innerWidth * dpr));
-  const pixelH = Math.max(1, Math.floor(window.innerHeight * dpr));
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const dpr = getEffectiveDprCap(cssW, cssH);
+  const pixelW = Math.max(1, Math.floor(cssW * dpr));
+  const pixelH = Math.max(1, Math.floor(cssH * dpr));
   app.canvas.width = pixelW;
   app.canvas.height = pixelH;
-  app.canvas.style.width = `${window.innerWidth}px`;
-  app.canvas.style.height = `${window.innerHeight}px`;
+  app.canvas.style.width = `${cssW}px`;
+  app.canvas.style.height = `${cssH}px`;
   app.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  app.camera?.setViewport(window.innerWidth, window.innerHeight);
-  app.world?.setViewportBounds(window.innerWidth, window.innerHeight);
+  app.camera?.setViewport(cssW, cssH);
+  app.world?.setViewportBounds(cssW, cssH);
   app.arenaShrink?.resize(getStoredHexRadius());
-  app.particles?.resize(window.innerWidth, window.innerHeight);
-  app.backgroundRenderer?.resize(window.innerWidth, window.innerHeight);
-  app.physicsDebugLayer?.resize(window.innerWidth, window.innerHeight);
+  app.particles?.resize(cssW, cssH);
+  app.backgroundRenderer?.resize(cssW, cssH);
+  app.physicsDebugLayer?.resize(cssW, cssH);
+
+  applyViewportLayout(isCheapUi());
+
+  if (app.camera) {
+    const insets = getSafeViewInsets(undefined, getInspectorExpanded());
+    fitArenaToSafeView(app.camera, app.world?.hexRadius ?? getStoredHexRadius(), insets);
+  }
+}
+
+export function resetCameraView(app: GameApp): void {
+  if (!app.camera) return;
+  clearUserZoomOverride();
+  app.camera.mode = 'LOCKED';
+  app.camera.snapTo(app.player.pos.x, app.player.pos.y);
+  if (isCompactViewport()) {
+    const insets = getSafeViewInsets(undefined, getInspectorExpanded());
+    fitArenaToSafeView(app.camera, app.world?.hexRadius ?? getStoredHexRadius(), insets, {
+      force: true,
+    });
+  } else {
+    app.camera.setZoom(1);
+  }
 }
 
 export function resetArena(app: GameApp): void {

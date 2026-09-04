@@ -4,10 +4,30 @@ import { fileURLToPath } from 'node:url';
 import { healthBarColor, instabilityColor } from '../src/render/canvas/colors';
 import { buildSpriteCacheKey } from '../src/render/canvas/SpriteCache';
 import { canSpawnAtCount } from '../src/render/backends/webgl/spawnPriority';
+import {
+  clearUserZoomOverride,
+  computeArenaFitZoom,
+  fitArenaToSafeView,
+  getLastFitZoom,
+  markUserZoomOverride,
+} from '../src/camera/cameraArenaFit';
+import { Camera2D } from '../src/camera/Camera2D';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_PATH = join(__dirname, 'render-helpers.snapshot.json');
 const UPDATE_SNAPSHOT = process.argv.includes('--update-snapshot');
+
+function installMockWindow(): void {
+  if (typeof globalThis.window !== 'undefined') return;
+  Object.defineProperty(globalThis, 'window', {
+    value: {
+      innerWidth: 1024,
+      innerHeight: 600,
+      devicePixelRatio: 1,
+    },
+    configurable: true,
+  });
+}
 
 interface RenderSnapshot {
   instabilityColors: Record<string, string>;
@@ -47,6 +67,7 @@ function captureSnapshot(): RenderSnapshot {
 }
 
 function run(): void {
+  installMockWindow();
   const snapshot = captureSnapshot();
   const failures: string[] = [];
 
@@ -87,6 +108,33 @@ function run(): void {
   }
   if (snapshot.spawnAtBudget.AMBIENT !== false) {
     failures.push('spawnAtBudget AMBIENT should be false at budget boundary');
+  }
+
+  const fitZoom = computeArenaFitZoom(1024, 600, 340, 0.3, 2.0, {
+    top: 56,
+    bottom: 100,
+    right: 0,
+  });
+  if (fitZoom < 0.3 || fitZoom > 1.2) {
+    failures.push(`computeArenaFitZoom compact: expected sensible zoom, got ${fitZoom}`);
+  }
+
+  const camera = new Camera2D();
+  camera.setViewport(1024, 600);
+  clearUserZoomOverride();
+  fitArenaToSafeView(camera, 340, { top: 56, bottom: 100, right: 0 }, { force: true });
+  if (camera.targetZoom < 0.3) {
+    failures.push('fitArenaToSafeView: zoom below minZoom');
+  }
+  const fitted = camera.targetZoom;
+  markUserZoomOverride();
+  camera.setZoom(fitted + 0.25);
+  fitArenaToSafeView(camera, 340, { top: 56, bottom: 100, right: 0 });
+  if (Math.abs(camera.targetZoom - (fitted + 0.25)) > 0.01) {
+    failures.push('fitArenaToSafeView should preserve user zoom override');
+  }
+  if (getLastFitZoom() === null) {
+    failures.push('fitArenaToSafeView force should record lastFitZoom');
   }
 
   if (failures.length > 0) {

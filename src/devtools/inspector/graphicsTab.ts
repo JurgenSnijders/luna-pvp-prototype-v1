@@ -1,7 +1,10 @@
 import {
+  applyBalancedPreset,
   applyStylePreset,
   applyTierPreset,
+  getEffectiveFeatureFlags,
   getEffectiveTier,
+  getEffectiveDprCap,
   getGraphicsSettings,
   getTierLimits,
   resetAllGraphicsDefaults,
@@ -42,6 +45,12 @@ import {
   saveFctClusterConfig,
   type FctClusterConfig,
 } from '../../render/fctClusterConfig';
+import {
+  clearUserZoomOverride,
+  fitArenaToSafeView,
+  markUserZoomOverride,
+} from '../../camera/cameraArenaFit';
+import { getSafeViewInsets, isCompactViewport } from '../../ui/viewportLayout';
 import type { InspectorContext } from '../InspectorUI';
 
 export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): void {
@@ -105,6 +114,27 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   }
   qualityBody.appendChild(tierRow);
 
+  const shortcutRow = document.createElement('div');
+  shortcutRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;';
+  const shortcuts: { label: string; run: () => void }[] = [
+    { label: 'Fast', run: () => applyTierPreset('LOW') },
+    { label: 'Balanced', run: () => applyBalancedPreset() },
+    { label: 'Quality', run: () => applyTierPreset('HIGH') },
+  ];
+  for (const { label, run } of shortcuts) {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.cssText = buttonStyle(false);
+    btn.onclick = () => {
+      run();
+      syncControls(getGraphicsSettings());
+      refreshPerf();
+      refreshTierHelper();
+    };
+    shortcutRow.appendChild(btn);
+  }
+  qualityBody.appendChild(shortcutRow);
+
   const tierHelper = document.createElement('div');
   tierHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
   qualityBody.appendChild(tierHelper);
@@ -116,13 +146,16 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const refreshTierHelper = (): void => {
     const s = getGraphicsSettings();
     const limits = getTierLimits();
+    const flags = getEffectiveFeatureFlags();
     if (s.tier === 'AUTO') {
-      tierHelper.textContent = `AUTO · effective ${getEffectiveTier()}. Adaptive tier does not rewrite toggles.`;
+      tierHelper.textContent =
+        `AUTO · effective ${getEffectiveTier()}. Features are gated by effective tier; stored toggles are not rewritten.`;
     } else {
       tierHelper.textContent = `Manual ${s.tier} preset applied to feature toggles, post-effects, and sliders.`;
     }
     budgetHint.textContent =
-      `Budget: particles ${limits.particleBudget.toLocaleString()} · DPR cap ${limits.dprCap} · primitives ${limits.maxPrimitives}`;
+      `Budget: particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ` +
+      `bg ${flags.webglBackground ? 'on' : 'off'} · crt ${flags.crtEnabled ? 'on' : 'off'}`;
   };
   refreshTierHelper();
 
@@ -308,21 +341,29 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const zoomSlider = sliderRow(
     cameraBody,
     'Zoom Level',
-    0.4,
+    0.3,
     2.0,
     0.05,
     () => ctx.camera.targetZoom,
-    (v) => ctx.camera.setZoom(v),
+    (v) => {
+      markUserZoomOverride();
+      ctx.camera.setZoom(v);
+    },
     'x',
   );
 
   const resetCameraBtn = document.createElement('button');
-  resetCameraBtn.textContent = 'Reset Camera (Center & 1.0x)';
+  resetCameraBtn.textContent = 'Reset Camera (Center & Fit)';
   resetCameraBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
   resetCameraBtn.onclick = () => {
+    clearUserZoomOverride();
     ctx.camera.mode = 'LOCKED';
-    ctx.camera.setZoom(1);
     ctx.camera.snapTo(ctx.player.pos.x, ctx.player.pos.y);
+    if (isCompactViewport()) {
+      fitArenaToSafeView(ctx.camera, ctx.world.hexRadius, getSafeViewInsets(), { force: true });
+    } else {
+      ctx.camera.setZoom(1);
+    }
     syncModeButtons();
     zoomSlider.refresh();
   };

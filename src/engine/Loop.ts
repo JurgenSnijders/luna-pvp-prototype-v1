@@ -1,26 +1,34 @@
 import { perfMonitor } from '../devtools/PerfMonitor';
+import { getPresentIntervalMs } from '../devtools/graphicsSettings';
 
 export const FIXED_DT = 1 / 60;
 const MAX_FRAME_DT = 0.1;
 
 export interface LoopCallbacks {
   onUpdate: (dt: number) => void;
-  onRender: (alpha: number) => void;
+  onRender: (alpha: number, frameDt: number) => void;
 }
 
 export class Loop {
   private running = false;
   private lastTime = 0;
+  private lastPresentTime = 0;
+  private lastFrameDt = FIXED_DT;
   private accumulator = 0;
   private rafId = 0;
   private paused = false;
 
   constructor(private callbacks: LoopCallbacks) {}
 
+  getLastFrameDt(): number {
+    return this.lastFrameDt;
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
     this.lastTime = performance.now();
+    this.lastPresentTime = 0;
     this.accumulator = 0;
     this.rafId = requestAnimationFrame(this.frame);
   }
@@ -47,8 +55,9 @@ export class Loop {
 
     perfMonitor.beginFrame();
 
+    let frameDt = FIXED_DT;
     if (!this.paused) {
-      const frameDt = Math.min((now - this.lastTime) / 1000, MAX_FRAME_DT);
+      frameDt = Math.min((now - this.lastTime) / 1000, MAX_FRAME_DT);
       this.lastTime = now;
       this.accumulator += frameDt;
 
@@ -62,10 +71,21 @@ export class Loop {
       this.lastTime = now;
     }
 
-    const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
-    perfMonitor.beginRender();
-    this.callbacks.onRender(alpha);
-    perfMonitor.endRender();
+    this.lastFrameDt = frameDt;
+
+    const presentInterval = getPresentIntervalMs();
+    const shouldPresent =
+      presentInterval <= 0 ||
+      this.lastPresentTime <= 0 ||
+      now - this.lastPresentTime >= presentInterval;
+
+    if (shouldPresent) {
+      this.lastPresentTime = now;
+      const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
+      perfMonitor.beginRender();
+      this.callbacks.onRender(alpha, frameDt);
+      perfMonitor.endRender();
+    }
 
     this.rafId = requestAnimationFrame(this.frame);
   };

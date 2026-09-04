@@ -89,8 +89,7 @@ export class GLContext {
   }
 
   resize(cssWidth: number, cssHeight: number): void {
-    const dprCap = getEffectiveDprCap();
-    const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+    const dpr = getEffectiveDprCap(cssWidth, cssHeight);
     const pixelW = Math.max(1, Math.floor(cssWidth * dpr));
     const pixelH = Math.max(1, Math.floor(cssHeight * dpr));
     this.canvas.style.width = `${cssWidth}px`;
