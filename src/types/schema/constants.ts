@@ -50,6 +50,7 @@ export const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_DISTANCE_TRAVELED',
   'ON_BOUNCE',
   'ON_AIR_APEX',
+  'ON_GROUND_SLAM',
 ]);
 
 export const CONSTRAINT_TYPES: ReadonlySet<string> = new Set([

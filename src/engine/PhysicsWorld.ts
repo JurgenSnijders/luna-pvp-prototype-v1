@@ -18,6 +18,7 @@ import {
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
 import {
+  GROUND_SLAM_VZ,
   HAZARD_CLEARANCE_Z,
   LIP_HEIGHT,
   MAX_ABS_VZ,
@@ -96,6 +97,14 @@ export interface PendingObstacleDestruction {
   isDestructible: boolean;
 }
 
+export interface GroundImpactEvent {
+  entityId: string;
+  pos: Vector2D;
+  vz: number;
+  isProjectile: boolean;
+  archetype?: SpellArchetype;
+}
+
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
@@ -120,6 +129,7 @@ export class PhysicsWorld {
     bounceIndex: number;
   }> = [];
   pendingApexEvents: Projectile[] = [];
+  pendingGroundImpacts: GroundImpactEvent[] = [];
   pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
@@ -519,6 +529,7 @@ export class PhysicsWorld {
     this.pendingWallImpacts = [];
     this.pendingBounceEvents = [];
     this.pendingApexEvents = [];
+    this.pendingGroundImpacts = [];
     this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
@@ -583,6 +594,7 @@ export class PhysicsWorld {
     this.pendingWallImpacts = [];
     this.pendingBounceEvents = [];
     this.pendingApexEvents = [];
+    this.pendingGroundImpacts = [];
     this.pendingObstacleDestructions = [];
 
     this.updateObstaclesAndPatches(dt);
@@ -678,6 +690,22 @@ export class PhysicsWorld {
         const span = zStart - zEnd;
         const tHit = span > 1e-9 ? (zStart / span) * remainingDt : 0;
         const vzImpact = vzStart - WORLD_GRAVITY * e.gravityScale * tHit;
+
+        const impactSpeed = Math.abs(vzImpact);
+        if (impactSpeed >= GROUND_SLAM_VZ) {
+          this.pendingGroundImpacts.push({
+            entityId: e.id,
+            pos: e.pos.clone(),
+            vz: impactSpeed,
+            isProjectile: e.tags.has('projectile'),
+            archetype:
+              e instanceof Projectile
+                ? e.spellArchetype
+                : e instanceof Summon
+                  ? e.spellArchetype
+                  : e.groundSlamArmed?.ability.archetype,
+          });
+        }
 
         e.z = 0;
 

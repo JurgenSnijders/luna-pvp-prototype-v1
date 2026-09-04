@@ -1,6 +1,6 @@
 import { FIELD_TYPES } from '../constants';
 import type { FieldConfig, FieldType } from '../types';
-import { isNumber, isObject, isString } from './helpers';
+import { clamp, isNumber, isObject, isString } from './helpers';
 
 export function validateFieldConfig(value: unknown): FieldConfig | null {
   if (!isObject(value)) return null;
@@ -36,6 +36,19 @@ export function validateFieldConfig(value: unknown): FieldConfig | null {
   if (value.detachOnParentDeath !== undefined) {
     if (typeof value.detachOnParentDeath !== 'boolean') return null;
     config.detachOnParentDeath = value.detachOnParentDeath;
+  }
+
+  if (value.zBase !== undefined) {
+    if (!isNumber(value.zBase)) return null;
+    config.zBase = clamp(value.zBase, 0, 300);
+  }
+  if (value.zHeight !== undefined) {
+    if (!isNumber(value.zHeight)) return null;
+    config.zHeight = clamp(value.zHeight, 12, 500);
+  }
+  if (value.verticalForce !== undefined) {
+    if (!isNumber(value.verticalForce)) return null;
+    config.verticalForce = clamp(value.verticalForce, -4000, 4000);
   }
 
   return config;

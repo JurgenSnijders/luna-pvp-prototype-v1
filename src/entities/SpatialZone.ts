@@ -11,8 +11,9 @@ export class SpatialZone extends Entity {
   parentRef: Entity | null;
   offset: Vector2D;
   detachOnParentDeath: boolean;
-  zBase = 0;
-  zHeight = HAZARD_CLEARANCE_Z;
+  zBase: number;
+  zHeight: number;
+  verticalForce: number;
 
   constructor(
     pos: Vector2D,
@@ -33,6 +34,9 @@ export class SpatialZone extends Entity {
     this.parentRef = null;
     this.offset = Vector2D.zero();
     this.detachOnParentDeath = true;
+    this.zBase = config.zBase ?? 0;
+    this.zHeight = config.zHeight ?? HAZARD_CLEARANCE_Z;
+    this.verticalForce = config.verticalForce ?? 0;
   }
 
   override update(dt: number): void {

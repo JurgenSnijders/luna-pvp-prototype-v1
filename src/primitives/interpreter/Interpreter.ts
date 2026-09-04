@@ -77,6 +77,13 @@ export class Interpreter {
       dispatchTriggerNode(this, node, castCtx, world);
     }
 
+    if (depth === 0) {
+      const slamNodes = schema.triggers.filter((t) => t.trigger === 'ON_GROUND_SLAM');
+      if (slamNodes.length > 0) {
+        castCtx.caster.groundSlamArmed = { ability: schema, depth };
+      }
+    }
+
     if (schema.trajectory) {
       const spawnPos =
         depth === 0

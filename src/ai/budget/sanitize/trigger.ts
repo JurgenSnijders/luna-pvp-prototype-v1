@@ -42,6 +42,7 @@ export function sanitizeTriggerNode(
     'ON_DISTANCE_TRAVELED',
     'ON_BOUNCE',
     'ON_AIR_APEX',
+    'ON_GROUND_SLAM',
   ]);
   if (!validTriggers.has(trigger)) return null;
 

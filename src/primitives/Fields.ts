@@ -1,7 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
 import { bandsOverlap } from '../engine/elevation';
-import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
+import { HAZARD_CLEARANCE_Z, MAX_ABS_VZ } from '../engine/verticalConstants';
 import { isAlliedTo } from '../engine/allegiance';
 import { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
@@ -66,6 +66,13 @@ export function applyField(
     const zBase = zone.zBase;
     const zHeight = zone.zHeight;
     if (!bandsOverlap(entity.zBottom, entity.zTop, zBase, zBase + zHeight)) return;
+  }
+
+  if (zone.verticalForce !== 0) {
+    entity.vz += zone.verticalForce * dt;
+    entity.vz = Math.max(-MAX_ABS_VZ, Math.min(MAX_ABS_VZ, entity.vz));
+    entity.gravityScale = 1;
+    entity.isGrounded = false;
   }
 
   const dist = entity.pos.dist(zone.pos);

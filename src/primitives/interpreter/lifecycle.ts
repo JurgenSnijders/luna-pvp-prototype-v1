@@ -1,4 +1,6 @@
 import { Vector2D } from '../../math/Vector2D';
+import { GROUND_SLAM_VZ } from '../../engine/verticalConstants';
+import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
 import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
@@ -12,7 +14,7 @@ import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
-import type { ActionPayload, ImpactVfx, SpellArchetype, TriggerNode, TriggerType } from '../../types/schema';
+import type { AbilitySchema, ActionPayload, ImpactVfx, SpellArchetype, TriggerNode, TriggerType } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
@@ -20,6 +22,28 @@ import { MAX_DEPTH } from './constants';
 import { safeNormalize, secondaryColor, trailColor } from './helpers';
 import type { TriggerHost } from './TriggerHost';
 import { dispatchTriggerNode } from './triggers';
+
+function resolveImpactColor(archetype?: SpellArchetype): string {
+  return getArchetypeColor(archetype, '#00e5ff');
+}
+
+function buildCasterSlamContext(
+  caster: Entity,
+  ability: AbilitySchema,
+  origin: Vector2D,
+  depth: number,
+): TriggerContext {
+  const heading =
+    caster.vel.magSq() > 0 ? caster.vel.normalize() : Vector2D.fromAngle(0);
+  return {
+    origin: origin.clone(),
+    heading,
+    caster,
+    sourceEntity: caster,
+    depth: depth + 1,
+    ability: { archetype: ability.archetype, name: ability.name },
+  };
+}
 
 function projectileHeading(projectile: Projectile): Vector2D {
   return projectile.vel.magSq() > 0
@@ -521,6 +545,69 @@ export function processLifecycleEvents(
     );
   }
   world.pendingBounceEvents = [];
+
+  for (const impact of world.pendingGroundImpacts) {
+    const intensity = Math.min(2.5, impact.vz / GROUND_SLAM_VZ);
+    const color = resolveImpactColor(impact.archetype);
+
+    if (fx.persistsWorldFx) {
+      fx.ripple(
+        impact.pos.x,
+        impact.pos.y,
+        Math.min(360, 160 + impact.vz * 0.25),
+        intensity,
+        color,
+      );
+      fx.shake(intensity * 3.5, 0.14);
+      if (impact.vz >= 600) {
+        const decalType: DecalType =
+          impact.archetype === 'FIRE' || impact.archetype === 'PLASMA'
+            ? 'SCORCH'
+            : 'KINETIC_CRATER';
+        fx.decal(
+          impact.pos.x,
+          impact.pos.y,
+          Math.min(48, 20 + intensity * 8),
+          decalType,
+          color,
+        );
+      }
+    }
+
+    const entity = world.getEntityById(impact.entityId);
+    if (!entity || entity.isDead) continue;
+
+    if (entity instanceof Projectile) {
+      dispatchProjectileTriggers(
+        interp,
+        entity,
+        'ON_GROUND_SLAM',
+        null,
+        world,
+        impact.pos,
+        entity.depth + 1,
+      );
+    } else if (entity instanceof Summon) {
+      const nodes = entity.getTriggers('ON_GROUND_SLAM');
+      if (nodes.length > 0) {
+        const ctx = buildSummonContext(entity, world);
+        if (ctx) {
+          for (const node of nodes) {
+            dispatchTriggerNode(interp, node, ctx, world);
+          }
+        }
+      }
+    } else if (entity.groundSlamArmed) {
+      const { ability, depth } = entity.groundSlamArmed;
+      const slamNodes = ability.triggers.filter((t) => t.trigger === 'ON_GROUND_SLAM');
+      const ctx = buildCasterSlamContext(entity, ability, impact.pos, depth);
+      for (const node of slamNodes) {
+        dispatchTriggerNode(interp, node, ctx, world);
+      }
+      entity.groundSlamArmed = undefined;
+    }
+  }
+  world.pendingGroundImpacts = [];
 
   for (const projectile of world.pendingExpirations) {
     const reason = projectile.expiryReason;

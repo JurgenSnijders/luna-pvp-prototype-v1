@@ -66,6 +66,9 @@ const fieldConfig = {
       additionalProperties: false,
     },
     detachOnParentDeath: { type: 'boolean' },
+    zBase: { type: 'number' },
+    zHeight: { type: 'number' },
+    verticalForce: { type: 'number' },
   },
   additionalProperties: false,
 };

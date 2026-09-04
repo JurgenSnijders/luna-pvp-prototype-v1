@@ -1,7 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
-import type { MorphConfig, SpellArchetype } from '../types/schema';
+import type { MorphConfig, SpellArchetype, AbilitySchema } from '../types/schema';
 
 let nextEntityId = 1;
 
@@ -80,6 +80,7 @@ export class Entity {
   ghostInstability = 0;
   ghostInstabilityTimer = 0;
   plasmaDetonatedThisFrame = false;
+  groundSlamArmed?: { ability: AbilitySchema; depth: number };
 
   constructor(
     id: string,

@@ -1,7 +1,7 @@
 import type { SkillCategory } from '../../../types/cards';
 import type { ActionPayload, SpellArchetype, TriggerNode } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
-import { MAX_ABS_VZ } from '../../../engine/verticalConstants';
+import { MAX_ABS_VZ, HAZARD_CLEARANCE_Z } from '../../../engine/verticalConstants';
 import { FIELD_TYPES, MAX_DEPTH } from '../constants';
 import {
   clamp,
@@ -153,6 +153,27 @@ export function sanitizeAction(
             : {}),
           ...(typeof fieldObj.detachOnParentDeath === 'boolean'
             ? { detachOnParentDeath: fieldObj.detachOnParentDeath }
+            : {}),
+          ...(fieldObj.zBase !== undefined
+            ? { zBase: clamp(ensureFiniteNumber(fieldObj.zBase, 0), 0, 300) }
+            : {}),
+          ...(fieldObj.zHeight !== undefined
+            ? {
+                zHeight: clamp(
+                  ensureFiniteNumber(fieldObj.zHeight, HAZARD_CLEARANCE_Z),
+                  12,
+                  500,
+                ),
+              }
+            : {}),
+          ...(fieldObj.verticalForce !== undefined
+            ? {
+                verticalForce: clamp(
+                  ensureFiniteNumber(fieldObj.verticalForce, 0),
+                  -4000,
+                  4000,
+                ),
+              }
             : {}),
         },
       };

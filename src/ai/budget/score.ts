@@ -126,6 +126,8 @@ function scoreTriggerNode(node: TriggerNode, depth: number): number {
     total *= 1.15;
   } else if (node.trigger === 'ON_AIR_APEX') {
     total *= 1.1;
+  } else if (node.trigger === 'ON_GROUND_SLAM') {
+    total *= 1.12;
   }
   return total;
 }

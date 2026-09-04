@@ -44,7 +44,8 @@ export type TriggerType =
   | 'ON_HIT_WALL'
   | 'ON_DISTANCE_TRAVELED'
   | 'ON_BOUNCE'
-  | 'ON_AIR_APEX';
+  | 'ON_AIR_APEX'
+  | 'ON_GROUND_SLAM';
 
 export type ConstraintType = 'SPRING_TETHER' | 'DISTANCE_ROD' | 'SURFACE_PIN';
 
@@ -201,6 +202,9 @@ export interface FieldConfig {
   attachToSource?: boolean;
   offset?: { x: number; y: number };
   detachOnParentDeath?: boolean;
+  zBase?: number;
+  zHeight?: number;
+  verticalForce?: number;
 }
 
 export interface EmitterConfig {
