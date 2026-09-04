@@ -1,9 +1,10 @@
 import {
-  DEFAULT_GRAPHICS_SETTINGS,
   applyStylePreset,
   applyTierPreset,
   getEffectiveTier,
   getGraphicsSettings,
+  getTierLimits,
+  resetAllGraphicsDefaults,
   resetStylePresetDefaults,
   saveGraphicsSettings,
   subscribeGraphicsSettings,
@@ -23,8 +24,8 @@ import {
 } from '../../render/gl/retroVfxConfig';
 import {
   buttonStyle,
-  sectionDivider,
-  sectionHeader,
+  collapsibleSection,
+  helperText,
   selectRow,
   sliderRow,
 } from './domHelpers';
@@ -45,106 +46,10 @@ import type { InspectorContext } from '../InspectorUI';
 
 export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): void {
   const settings = getGraphicsSettings();
-  const perfCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
-  const retroCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
-
-  // --- CAMERA & VIEWPORT ---
-  const cameraSection = document.createElement('div');
-  cameraSection.style.cssText = sectionDivider();
-  cameraSection.appendChild(sectionHeader('CAMERA & VIEWPORT'));
-
-  const cameraHelper = document.createElement('div');
-  cameraHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
-  cameraHelper.textContent =
-    'Y/C toggle lock/free · MMB drag pan · wheel zoom · Space = slot 4';
-  cameraSection.appendChild(cameraHelper);
-
-  const modeRow = document.createElement('div');
-  modeRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
-  const modeButtons: Record<'LOCKED' | 'FREE', HTMLButtonElement> = {
-    LOCKED: document.createElement('button'),
-    FREE: document.createElement('button'),
-  };
-  modeButtons.LOCKED.textContent = 'LOCKED';
-  modeButtons.FREE.textContent = 'FREE';
-  const syncModeButtons = (): void => {
-    for (const mode of ['LOCKED', 'FREE'] as const) {
-      modeButtons[mode].style.cssText = buttonStyle(ctx.camera.mode === mode);
-    }
-  };
-  for (const mode of ['LOCKED', 'FREE'] as const) {
-    const btn = modeButtons[mode];
-    btn.onclick = () => {
-      ctx.camera.mode = mode;
-      syncModeButtons();
-    };
-    modeRow.appendChild(btn);
-  }
-  syncModeButtons();
-  cameraSection.appendChild(modeRow);
-
-  const zoomSlider = sliderRow(
-    cameraSection,
-    'Zoom Level',
-    0.4,
-    2.0,
-    0.05,
-    () => ctx.camera.targetZoom,
-    (v) => ctx.camera.setZoom(v),
-    'x',
-  );
-
-  const resetCameraBtn = document.createElement('button');
-  resetCameraBtn.textContent = 'Reset Camera (Center & 1.0x)';
-  resetCameraBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
-  resetCameraBtn.onclick = () => {
-    ctx.camera.mode = 'LOCKED';
-    ctx.camera.setZoom(1);
-    ctx.camera.snapTo(ctx.player.pos.x, ctx.player.pos.y);
-    syncModeButtons();
-    zoomSlider.refresh();
-  };
-  cameraSection.appendChild(resetCameraBtn);
-
-  parent.appendChild(cameraSection);
-
-  setInterval(() => {
-    syncModeButtons();
-    zoomSlider.refresh();
-  }, 250);
-
-  // --- Graphics & Performance ---
-  const perfSection = document.createElement('div');
-  perfSection.style.cssText = sectionDivider();
-  perfSection.appendChild(sectionHeader('Graphics & Performance'));
-
-  const perfBox = document.createElement('pre');
-  perfBox.style.cssText = `font-size:${FONTS.size.sm};line-height:1.35;background:${RETRO_COLORS.panelBgOpaque};padding:8px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;border:1px solid ${RETRO_COLORS.borderSubtle};`;
-  const refreshPerf = (): void => {
-    const caps = perfMonitor.getCapabilities();
-    perfBox.textContent = [
-      perfMonitor.formatOverlayText(),
-      '',
-      caps
-        ? `WebGL2: ${caps.webgl2Available ? 'yes' : 'no'}  DPR: ${caps.dpr}  maxTex: ${caps.maxTextureSize}`
-        : 'Capabilities not probed',
-      caps ? `GPU: ${caps.renderer}` : '',
-      `Tier: ${getEffectiveTier()}  (F3 toggles overlay)`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-  };
-  refreshPerf();
-  setInterval(refreshPerf, 500);
-  perfSection.appendChild(perfBox);
-
-  const caps = perfMonitor.getCapabilities();
-  if (caps) {
-    const capLine = document.createElement('div');
-    capLine.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
-    capLine.textContent = `Extensions: ${caps.extensions.length}`;
-    perfSection.appendChild(capLine);
-  }
+  const qualityCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+  const arenaCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+  const lookCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
+  const tierButtons: Partial<Record<QualityTier, HTMLButtonElement>> = {};
 
   const addToggle = (
     container: HTMLElement,
@@ -170,13 +75,71 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     }
   };
 
-  addToggle(perfSection, perfCheckboxes, 'webglBackground', 'WebGL Arena Background');
+  const numeric = (key: keyof GraphicsSettings) => ({
+    get: () => getGraphicsSettings()[key] as number,
+    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
+  });
 
-  const bgHelper = document.createElement('div');
-  bgHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:0 0 8px;line-height:1.35;`;
-  bgHelper.textContent =
-    'Parallax: 0 = locked to screen, 1 = locked to world. Lower = slower camera drift.';
-  perfSection.appendChild(bgHelper);
+  // --- QUALITY ---
+  const qualitySection = collapsibleSection(parent, 'Quality', true);
+  const qualityBody = qualitySection.body;
+
+  const tierRow = document.createElement('div');
+  tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;';
+  const tiers: QualityTier[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'AUTO'];
+  for (const tier of tiers) {
+    const btn = document.createElement('button');
+    btn.textContent = tier;
+    tierButtons[tier] = btn;
+    btn.onclick = () => {
+      if (tier === 'AUTO') {
+        saveGraphicsSettings({ ...getGraphicsSettings(), tier: 'AUTO', manualTierOverride: false });
+      } else {
+        applyTierPreset(tier);
+      }
+      syncControls(getGraphicsSettings());
+      refreshPerf();
+      refreshTierHelper();
+    };
+    tierRow.appendChild(btn);
+  }
+  qualityBody.appendChild(tierRow);
+
+  const tierHelper = document.createElement('div');
+  tierHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
+  qualityBody.appendChild(tierHelper);
+
+  const budgetHint = document.createElement('div');
+  budgetHint.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
+  qualityBody.appendChild(budgetHint);
+
+  const refreshTierHelper = (): void => {
+    const s = getGraphicsSettings();
+    const limits = getTierLimits();
+    if (s.tier === 'AUTO') {
+      tierHelper.textContent = `AUTO · effective ${getEffectiveTier()}. Adaptive tier does not rewrite toggles.`;
+    } else {
+      tierHelper.textContent = `Manual ${s.tier} preset applied to feature toggles, post-effects, and sliders.`;
+    }
+    budgetHint.textContent =
+      `Budget: particles ${limits.particleBudget.toLocaleString()} · DPR cap ${limits.dprCap} · primitives ${limits.maxPrimitives}`;
+  };
+  refreshTierHelper();
+
+  addToggle(qualityBody, qualityCheckboxes, 'bloomEnabled', 'Bloom Post-Processing');
+  addToggle(qualityBody, qualityCheckboxes, 'refractionEnabled', 'Refraction (ULTRA)');
+  addToggle(qualityBody, qualityCheckboxes, 'particleTrails', 'Projectile Particle Trails');
+  addToggle(qualityBody, qualityCheckboxes, 'crtEnabled', 'CRT Post-Processing');
+
+  // --- ARENA ---
+  const arenaSection = collapsibleSection(parent, 'Arena', true);
+  const arenaBody = arenaSection.body;
+
+  addToggle(arenaBody, arenaCheckboxes, 'webglBackground', 'WebGL Arena Background');
+  helperText(
+    arenaBody,
+    'Parallax: 0 = locked to screen, 1 = locked to world. Lower = slower camera drift.',
+  );
 
   const bgNumeric = (key: 'bgParallaxVoid' | 'bgParallaxLava' | 'bgLavaScrollSpeed') => ({
     get: () => getGraphicsSettings()[key],
@@ -184,7 +147,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   });
   const bgParallaxSliders = [
     sliderRow(
-      perfSection,
+      arenaBody,
       'Void Parallax',
       0,
       1,
@@ -193,7 +156,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       bgNumeric('bgParallaxVoid').set,
     ),
     sliderRow(
-      perfSection,
+      arenaBody,
       'Lava Parallax',
       0,
       1,
@@ -202,7 +165,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       bgNumeric('bgParallaxLava').set,
     ),
     sliderRow(
-      perfSection,
+      arenaBody,
       'Lava Drift Speed',
       0,
       1,
@@ -212,78 +175,241 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     ),
   ];
 
-  addToggle(perfSection, perfCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
-  addToggle(perfSection, perfCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
-  addToggle(perfSection, perfCheckboxes, 'particleTrails', 'Projectile Particle Trails');
-  addToggle(perfSection, perfCheckboxes, 'bloomEnabled', 'Bloom Post-Processing');
-  addToggle(perfSection, perfCheckboxes, 'refractionEnabled', 'Refraction (ULTRA)');
+  addToggle(arenaBody, arenaCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
+  addToggle(arenaBody, arenaCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
 
-  const tierRow = document.createElement('div');
-  tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;';
-  const tiers: QualityTier[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'AUTO'];
-  for (const tier of tiers) {
-    const btn = document.createElement('button');
-    btn.textContent = tier;
-    btn.style.cssText = buttonStyle(getEffectiveTier() === tier || settings.tier === tier);
-    btn.onclick = () => {
-      if (tier === 'AUTO') {
-        saveGraphicsSettings({ ...getGraphicsSettings(), tier: 'AUTO', manualTierOverride: false });
-      } else {
-        applyTierPreset(tier);
+  // --- LOOK ---
+  const lookSection = collapsibleSection(parent, 'Look', true);
+  const lookBody = lookSection.body;
+  lookBody.style.cssText = `${retroPanelStyle('cyan')}padding:12px;border-radius:4px;`;
+
+  const presetOptions = STYLE_PRESET_IDS.map((id) => ({
+    value: id,
+    label: STYLE_PRESETS[id].label,
+  }));
+  const presetSelect = selectRow(
+    lookBody,
+    'Style Preset',
+    presetOptions,
+    () => getGraphicsSettings().activePreset,
+    (id) => {
+      if (isStylePresetId(id)) {
+        applyStylePreset(id);
+        syncControls(getGraphicsSettings());
       }
-      syncControls(getGraphicsSettings());
-      refreshPerf();
+    },
+  );
+
+  addToggle(lookBody, lookCheckboxes, 'arcadeBezel', 'Arcade Bezel');
+
+  const bloomSlider = numeric('bloomIntensity');
+  const thresholdSlider = numeric('bloomThreshold');
+  const brightnessSlider = numeric('crtBrightness');
+
+  const bloomSliders = [
+    sliderRow(lookBody, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
+    sliderRow(lookBody, 'Bloom Threshold', 0.2, 0.9, 0.05, thresholdSlider.get, thresholdSlider.set),
+    sliderRow(lookBody, 'CRT Brightness', 0.5, 2, 0.05, brightnessSlider.get, brightnessSlider.set),
+  ];
+
+  const crosshairOptions = CROSSHAIR_STYLE_IDS.map((id) => ({
+    value: id,
+    label: CROSSHAIR_PRESETS[id].label,
+  }));
+  const crosshairSelect = selectRow(
+    lookBody,
+    'Crosshair Style',
+    crosshairOptions,
+    () => getGraphicsSettings().crosshairStyle,
+    (id) => {
+      if (isCrosshairStyleId(id)) {
+        saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
+        syncControls(getGraphicsSettings());
+      }
+    },
+  );
+
+  const iconStyleLabel = document.createElement('div');
+  iconStyleLabel.textContent = 'Icon Style';
+  iconStyleLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:8px 0 4px;`;
+  lookBody.appendChild(iconStyleLabel);
+
+  const iconStyleRow = document.createElement('div');
+  iconStyleRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+
+  const iconStyleButtons: Record<IconRenderStyle, HTMLButtonElement> = {
+    SEMANTIC_GLYPH: document.createElement('button'),
+    SIMULATION_TRACE: document.createElement('button'),
+  };
+  iconStyleButtons.SEMANTIC_GLYPH.textContent = 'Semantic Glyph';
+  iconStyleButtons.SIMULATION_TRACE.textContent = 'Simulation Trace';
+
+  const syncIconStyleButtons = (): void => {
+    const active = getIconRenderStyle();
+    for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
+      iconStyleButtons[style].style.cssText = buttonStyle(active === style);
+    }
+  };
+
+  for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
+    const btn = iconStyleButtons[style];
+    btn.onclick = () => {
+      setIconRenderStyle(style);
+      syncIconStyleButtons();
     };
-    tierRow.appendChild(btn);
+    iconStyleRow.appendChild(btn);
   }
-  perfSection.appendChild(tierRow);
+  syncIconStyleButtons();
+  lookBody.appendChild(iconStyleRow);
 
-  const devRow = document.createElement('div');
-  devRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+  const resetPresetBtn = document.createElement('button');
+  resetPresetBtn.textContent = 'Reset Preset Defaults';
+  resetPresetBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetPresetBtn.onclick = () => {
+    resetStylePresetDefaults();
+    syncControls(getGraphicsSettings());
+  };
+  lookBody.appendChild(resetPresetBtn);
 
-  const recordBaselineBtn = document.createElement('button');
-  recordBaselineBtn.textContent = 'Record Baseline p95';
-  recordBaselineBtn.style.cssText = buttonStyle(false);
-  recordBaselineBtn.onclick = () => {
-    perfMonitor.baselineP95Ms = perfMonitor.getSnapshot().frameMsP95;
-    refreshPerf();
+  // --- POST EFFECTS ---
+  const postFxSection = collapsibleSection(parent, 'Post Effects', true);
+  const postEffectsControls = buildPostEffectsSection(postFxSection.body);
+
+  // --- CAMERA ---
+  const cameraSection = collapsibleSection(parent, 'Camera', false);
+  const cameraBody = cameraSection.body;
+
+  helperText(cameraBody, 'Y/C toggle lock/free · MMB drag pan · wheel zoom · Space = slot 4');
+
+  const modeRow = document.createElement('div');
+  modeRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+  const modeButtons: Record<'LOCKED' | 'FREE', HTMLButtonElement> = {
+    LOCKED: document.createElement('button'),
+    FREE: document.createElement('button'),
+  };
+  modeButtons.LOCKED.textContent = 'LOCKED';
+  modeButtons.FREE.textContent = 'FREE';
+  const syncModeButtons = (): void => {
+    for (const mode of ['LOCKED', 'FREE'] as const) {
+      modeButtons[mode].style.cssText = buttonStyle(ctx.camera.mode === mode);
+    }
+  };
+  for (const mode of ['LOCKED', 'FREE'] as const) {
+    const btn = modeButtons[mode];
+    btn.onclick = () => {
+      ctx.camera.mode = mode;
+      syncModeButtons();
+    };
+    modeRow.appendChild(btn);
+  }
+  syncModeButtons();
+  cameraBody.appendChild(modeRow);
+
+  const zoomSlider = sliderRow(
+    cameraBody,
+    'Zoom Level',
+    0.4,
+    2.0,
+    0.05,
+    () => ctx.camera.targetZoom,
+    (v) => ctx.camera.setZoom(v),
+    'x',
+  );
+
+  const resetCameraBtn = document.createElement('button');
+  resetCameraBtn.textContent = 'Reset Camera (Center & 1.0x)';
+  resetCameraBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetCameraBtn.onclick = () => {
+    ctx.camera.mode = 'LOCKED';
+    ctx.camera.setZoom(1);
+    ctx.camera.snapTo(ctx.player.pos.x, ctx.player.pos.y);
+    syncModeButtons();
+    zoomSlider.refresh();
+  };
+  cameraBody.appendChild(resetCameraBtn);
+
+  // --- HIT IMPACT ---
+  const hitSection = collapsibleSection(parent, 'Hit Impact', false);
+  const hitBody = hitSection.body;
+  const hitCheckboxes: Partial<Record<keyof HitFeedbackConfig, HTMLInputElement>> = {};
+
+  const addHitToggle = (key: keyof HitFeedbackConfig, label: string): void => {
+    const row = document.createElement('label');
+    row.style.cssText =
+      `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = hitFeedbackConfig[key];
+    checkbox.onchange = () => {
+      hitFeedbackConfig[key] = checkbox.checked;
+      saveHitFeedbackConfig();
+    };
+    hitCheckboxes[key] = checkbox;
+    row.appendChild(checkbox);
+    row.appendChild(document.createTextNode(label));
+    hitBody.appendChild(row);
   };
 
-  const loseCtxBtn = document.createElement('button');
-  loseCtxBtn.textContent = 'Force GL Context Loss';
-  loseCtxBtn.style.cssText = buttonStyle(false);
-  loseCtxBtn.onclick = () => {
-    const glCtx = (window as unknown as { __lunaGlCtx?: { forceContextLoss: () => void } }).__lunaGlCtx;
-    glCtx?.forceContextLoss();
+  addHitToggle('targetFlash', 'Target White Flash');
+  addHitToggle('reticleMarkers', 'Crosshair Hit Flash');
+  addHitToggle('bodyDeform', 'Body Squash & Shudder');
+  addHitToggle('microHitstop', 'Micro-Hitstop Freeze');
+  addHitToggle('ghostInstabilityBar', 'Ghost Bar Chunking');
+  addHitToggle('directionalBlastRings', 'Directional Blast Rings');
+
+  const resetHitBtn = document.createElement('button');
+  resetHitBtn.textContent = 'Reset Hit Feedback (All On)';
+  resetHitBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetHitBtn.onclick = () => {
+    Object.assign(hitFeedbackConfig, DEFAULT_HIT_FEEDBACK_CONFIG);
+    saveHitFeedbackConfig();
+    for (const key of Object.keys(hitCheckboxes) as (keyof HitFeedbackConfig)[]) {
+      const box = hitCheckboxes[key];
+      if (box) box.checked = hitFeedbackConfig[key];
+    }
   };
+  hitBody.appendChild(resetHitBtn);
 
-  const canvas2dBtn = document.createElement('button');
-  canvas2dBtn.textContent = 'Canvas2D Fallback';
-  canvas2dBtn.style.cssText = buttonStyle(false);
-  canvas2dBtn.onclick = () => {
-    setForcedBackend('canvas2d');
-    location.reload();
+  // --- FLOATING COMBAT TEXT ---
+  const fctSection = collapsibleSection(parent, 'Floating Combat Text', false);
+  const fctBody = fctSection.body;
+  helperText(
+    fctBody,
+    'Low damage/heal ticks merge into larger numbers. Stand in lava to preview.',
+  );
+
+  const fctNumeric = (key: keyof FctClusterConfig) => ({
+    get: () => fctClusterConfig[key],
+    set: (v: number) => {
+      fctClusterConfig[key] = v;
+      saveFctClusterConfig();
+    },
+  });
+
+  const clusterWindow = fctNumeric('clusterWindowMs');
+  const clusterPerTick = fctNumeric('clusterPerTickMax');
+  const clusterFlush = fctNumeric('clusterInstantFlush');
+
+  const fctSliders = [
+    sliderRow(fctBody, 'Cluster Window', 100, 1000, 25, clusterWindow.get, clusterWindow.set, 'ms'),
+    sliderRow(fctBody, 'Per-Tick Max', 1, 20, 1, clusterPerTick.get, clusterPerTick.set),
+    sliderRow(fctBody, 'Instant Flush', 3, 50, 1, clusterFlush.get, clusterFlush.set),
+  ];
+
+  const resetFctBtn = document.createElement('button');
+  resetFctBtn.textContent = 'Reset FCT Clustering Defaults';
+  resetFctBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetFctBtn.onclick = () => {
+    Object.assign(fctClusterConfig, DEFAULT_FCT_CLUSTER_CONFIG);
+    saveFctClusterConfig();
+    for (const slider of fctSliders) slider.refresh();
   };
+  fctBody.appendChild(resetFctBtn);
 
-  devRow.appendChild(recordBaselineBtn);
-  devRow.appendChild(loseCtxBtn);
-  devRow.appendChild(canvas2dBtn);
-  perfSection.appendChild(devRow);
-
-  const highQualityBtn = document.createElement('button');
-  highQualityBtn.textContent = 'Reset Toggles (High)';
-  highQualityBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
-  highQualityBtn.onclick = () => {
-    const next: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
-    saveGraphicsSettings(next);
-    syncControls(next);
-  };
-  perfSection.appendChild(highQualityBtn);
-
-  const profileHelper = document.createElement('div');
-  profileHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:8px 0 4px;line-height:1.35;`;
-  profileHelper.textContent = 'Save a file on this machine, then load it on another computer.';
-  perfSection.appendChild(profileHelper);
+  // --- PROFILE ---
+  const profileSection = collapsibleSection(parent, 'Profile', false);
+  const profileBody = profileSection.body;
+  helperText(profileBody, 'Save a file on this machine, then load it on another computer.');
 
   const profileStatus = document.createElement('div');
   profileStatus.style.cssText = `display:none;font-size:${FONTS.size.sm};margin-top:6px;line-height:1.35;`;
@@ -351,204 +477,100 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
 
   profileRow.appendChild(exportProfileBtn);
   profileRow.appendChild(importProfileBtn);
-  perfSection.appendChild(profileRow);
-  perfSection.appendChild(importFileInput);
-  perfSection.appendChild(profileStatus);
+  profileBody.appendChild(profileRow);
+  profileBody.appendChild(importFileInput);
+  profileBody.appendChild(profileStatus);
 
-  parent.appendChild(perfSection);
-
-  // --- HIT IMPACT & SATISFACTION ---
-  const hitSection = document.createElement('div');
-  hitSection.style.cssText = sectionDivider();
-  hitSection.appendChild(sectionHeader('HIT IMPACT & SATISFACTION'));
-
-  const hitCheckboxes: Partial<Record<keyof HitFeedbackConfig, HTMLInputElement>> = {};
-
-  const addHitToggle = (key: keyof HitFeedbackConfig, label: string): void => {
-    const row = document.createElement('label');
-    row.style.cssText =
-      `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-bottom:8px;`;
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = hitFeedbackConfig[key];
-    checkbox.onchange = () => {
-      hitFeedbackConfig[key] = checkbox.checked;
-      saveHitFeedbackConfig();
-    };
-    hitCheckboxes[key] = checkbox;
-    row.appendChild(checkbox);
-    row.appendChild(document.createTextNode(label));
-    hitSection.appendChild(row);
-  };
-
-  addHitToggle('targetFlash', 'Target White Flash');
-  addHitToggle('reticleMarkers', 'Crosshair Hit Flash');
-  addHitToggle('bodyDeform', 'Body Squash & Shudder');
-  addHitToggle('microHitstop', 'Micro-Hitstop Freeze');
-  addHitToggle('ghostInstabilityBar', 'Ghost Bar Chunking');
-  addHitToggle('directionalBlastRings', 'Directional Blast Rings');
-
-  const resetHitBtn = document.createElement('button');
-  resetHitBtn.textContent = 'Reset Hit Feedback (All On)';
-  resetHitBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
-  resetHitBtn.onclick = () => {
-    Object.assign(hitFeedbackConfig, DEFAULT_HIT_FEEDBACK_CONFIG);
-    saveHitFeedbackConfig();
-    for (const key of Object.keys(hitCheckboxes) as (keyof HitFeedbackConfig)[]) {
-      const box = hitCheckboxes[key];
-      if (box) box.checked = hitFeedbackConfig[key];
-    }
-  };
-  hitSection.appendChild(resetHitBtn);
-
-  parent.appendChild(hitSection);
-
-  // --- FLOATING COMBAT TEXT ---
-  const fctSection = document.createElement('div');
-  fctSection.style.cssText = sectionDivider();
-  fctSection.appendChild(sectionHeader('FLOATING COMBAT TEXT'));
-
-  const fctHelper = document.createElement('div');
-  fctHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.35;`;
-  fctHelper.textContent =
-    'Low damage/heal ticks merge into larger numbers. Stand in lava to preview.';
-  fctSection.appendChild(fctHelper);
-
-  const fctNumeric = (key: keyof FctClusterConfig) => ({
-    get: () => fctClusterConfig[key],
-    set: (v: number) => {
-      fctClusterConfig[key] = v;
-      saveFctClusterConfig();
-    },
-  });
-
-  const clusterWindow = fctNumeric('clusterWindowMs');
-  const clusterPerTick = fctNumeric('clusterPerTickMax');
-  const clusterFlush = fctNumeric('clusterInstantFlush');
-
-  const fctSliders = [
-    sliderRow(fctSection, 'Cluster Window', 100, 1000, 25, clusterWindow.get, clusterWindow.set, 'ms'),
-    sliderRow(fctSection, 'Per-Tick Max', 1, 20, 1, clusterPerTick.get, clusterPerTick.set),
-    sliderRow(fctSection, 'Instant Flush', 3, 50, 1, clusterFlush.get, clusterFlush.set),
-  ];
-
-  const resetFctBtn = document.createElement('button');
-  resetFctBtn.textContent = 'Reset FCT Clustering Defaults';
-  resetFctBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
-  resetFctBtn.onclick = () => {
-    Object.assign(fctClusterConfig, DEFAULT_FCT_CLUSTER_CONFIG);
-    saveFctClusterConfig();
-    for (const slider of fctSliders) slider.refresh();
-  };
-  fctSection.appendChild(resetFctBtn);
-
-  parent.appendChild(fctSection);
-
-  // --- RETRO & CRT ENGINE ---
-  const retroSection = document.createElement('div');
-  retroSection.style.cssText = `${retroPanelStyle('cyan')}padding:12px;margin-bottom:16px;`;
-  retroSection.appendChild(sectionHeader('RETRO & CRT ENGINE'));
-
-  addToggle(retroSection, retroCheckboxes, 'crtEnabled', 'CRT Post-Processing');
-  addToggle(retroSection, retroCheckboxes, 'arcadeBezel', 'Arcade Bezel');
-
-  const iconStyleLabel = document.createElement('div');
-  iconStyleLabel.textContent = 'Icon Style';
-  iconStyleLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:8px 0 4px;`;
-  retroSection.appendChild(iconStyleLabel);
-
-  const iconStyleRow = document.createElement('div');
-  iconStyleRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
-
-  const iconStyleButtons: Record<IconRenderStyle, HTMLButtonElement> = {
-    SEMANTIC_GLYPH: document.createElement('button'),
-    SIMULATION_TRACE: document.createElement('button'),
-  };
-  iconStyleButtons.SEMANTIC_GLYPH.textContent = 'Semantic Glyph';
-  iconStyleButtons.SIMULATION_TRACE.textContent = 'Simulation Trace';
-
-  const syncIconStyleButtons = (): void => {
-    const active = getIconRenderStyle();
-    for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
-      iconStyleButtons[style].style.cssText = buttonStyle(active === style);
-    }
-  };
-
-  for (const style of ['SEMANTIC_GLYPH', 'SIMULATION_TRACE'] as IconRenderStyle[]) {
-    const btn = iconStyleButtons[style];
-    btn.onclick = () => {
-      setIconRenderStyle(style);
-      syncIconStyleButtons();
-    };
-    iconStyleRow.appendChild(btn);
-  }
-  syncIconStyleButtons();
-  retroSection.appendChild(iconStyleRow);
-
-  const crosshairOptions = CROSSHAIR_STYLE_IDS.map((id) => ({
-    value: id,
-    label: CROSSHAIR_PRESETS[id].label,
-  }));
-  const crosshairSelect = selectRow(
-    retroSection,
-    'Crosshair Style',
-    crosshairOptions,
-    () => getGraphicsSettings().crosshairStyle,
-    (id) => {
-      if (isCrosshairStyleId(id)) {
-        saveGraphicsSettings({ ...getGraphicsSettings(), crosshairStyle: id });
-        syncControls(getGraphicsSettings());
-      }
-    },
-  );
-
-  const presetOptions = STYLE_PRESET_IDS.map((id) => ({
-    value: id,
-    label: STYLE_PRESETS[id].label,
-  }));
-  const presetSelect = selectRow(
-    retroSection,
-    'Style Preset',
-    presetOptions,
-    () => getGraphicsSettings().activePreset,
-    (id) => {
-      if (isStylePresetId(id)) {
-        applyStylePreset(id);
-        syncControls(getGraphicsSettings());
-      }
-    },
-  );
-
-  const numeric = (key: keyof GraphicsSettings) => ({
-    get: () => getGraphicsSettings()[key] as number,
-    set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
-  });
-
-  const bloomSlider = numeric('bloomIntensity');
-  const thresholdSlider = numeric('bloomThreshold');
-  const brightnessSlider = numeric('crtBrightness');
-
-  const bloomSliders = [
-    sliderRow(retroSection, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
-    sliderRow(retroSection, 'Bloom Threshold', 0.2, 0.9, 0.05, thresholdSlider.get, thresholdSlider.set),
-    sliderRow(retroSection, 'CRT Brightness', 0.5, 2, 0.05, brightnessSlider.get, brightnessSlider.set),
-  ];
-
-  const postEffectsControls = buildPostEffectsSection(retroSection);
-
-  const resetPresetBtn = document.createElement('button');
-  resetPresetBtn.textContent = 'Reset Preset Defaults';
-  resetPresetBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
-  resetPresetBtn.onclick = () => {
-    resetStylePresetDefaults();
+  const resetAllBtn = document.createElement('button');
+  resetAllBtn.textContent = 'Reset All Graphics Defaults';
+  resetAllBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetAllBtn.onclick = () => {
+    resetAllGraphicsDefaults();
     syncControls(getGraphicsSettings());
+    refreshTierHelper();
+    refreshPerf();
   };
-  retroSection.appendChild(resetPresetBtn);
+  profileBody.appendChild(resetAllBtn);
 
-  parent.appendChild(retroSection);
+  // --- DIAGNOSTICS ---
+  const diagnosticsSection = collapsibleSection(parent, 'Diagnostics', false);
+  const diagnosticsBody = diagnosticsSection.body;
+
+  const perfBox = document.createElement('pre');
+  perfBox.style.cssText = `font-size:${FONTS.size.sm};line-height:1.35;background:${RETRO_COLORS.panelBgOpaque};padding:8px;border-radius:4px;margin-bottom:8px;white-space:pre-wrap;border:1px solid ${RETRO_COLORS.borderSubtle};`;
+  const refreshPerf = (): void => {
+    const caps = perfMonitor.getCapabilities();
+    perfBox.textContent = [
+      perfMonitor.formatOverlayText(),
+      '',
+      caps
+        ? `WebGL2: ${caps.webgl2Available ? 'yes' : 'no'}  DPR: ${caps.dpr}  maxTex: ${caps.maxTextureSize}`
+        : 'Capabilities not probed',
+      caps ? `GPU: ${caps.renderer}` : '',
+      `Tier: ${getEffectiveTier()}  (F3 toggles overlay)`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
+  refreshPerf();
+  setInterval(refreshPerf, 500);
+  diagnosticsBody.appendChild(perfBox);
+
+  const caps = perfMonitor.getCapabilities();
+  if (caps) {
+    const capLine = document.createElement('div');
+    capLine.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;`;
+    capLine.textContent = `Extensions: ${caps.extensions.length}`;
+    diagnosticsBody.appendChild(capLine);
+  }
+
+  const devRow = document.createElement('div');
+  devRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+
+  const recordBaselineBtn = document.createElement('button');
+  recordBaselineBtn.textContent = 'Record Baseline p95';
+  recordBaselineBtn.style.cssText = buttonStyle(false);
+  recordBaselineBtn.onclick = () => {
+    perfMonitor.baselineP95Ms = perfMonitor.getSnapshot().frameMsP95;
+    refreshPerf();
+  };
+
+  const loseCtxBtn = document.createElement('button');
+  loseCtxBtn.textContent = 'Force GL Context Loss';
+  loseCtxBtn.style.cssText = buttonStyle(false);
+  loseCtxBtn.onclick = () => {
+    const glCtx = (window as unknown as { __lunaGlCtx?: { forceContextLoss: () => void } }).__lunaGlCtx;
+    glCtx?.forceContextLoss();
+  };
+
+  const canvas2dBtn = document.createElement('button');
+  canvas2dBtn.textContent = 'Canvas2D Fallback';
+  canvas2dBtn.style.cssText = buttonStyle(false);
+  canvas2dBtn.onclick = () => {
+    setForcedBackend('canvas2d');
+    location.reload();
+  };
+
+  devRow.appendChild(recordBaselineBtn);
+  devRow.appendChild(loseCtxBtn);
+  devRow.appendChild(canvas2dBtn);
+  diagnosticsBody.appendChild(devRow);
+
+  setInterval(() => {
+    syncModeButtons();
+    zoomSlider.refresh();
+  }, 250);
+
+  const syncTierButtons = (): void => {
+    const storedTier = getGraphicsSettings().tier;
+    for (const tier of tiers) {
+      const btn = tierButtons[tier];
+      if (btn) btn.style.cssText = buttonStyle(storedTier === tier);
+    }
+  };
 
   const syncControls = (s: GraphicsSettings): void => {
-    for (const store of [perfCheckboxes, retroCheckboxes]) {
+    for (const store of [qualityCheckboxes, arenaCheckboxes, lookCheckboxes]) {
       for (const key of Object.keys(store) as (keyof GraphicsSettings)[]) {
         const box = store[key];
         if (box) box.checked = s[key] as boolean;
@@ -558,6 +580,8 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       const box = hitCheckboxes[key];
       if (box) box.checked = hitFeedbackConfig[key];
     }
+    syncTierButtons();
+    refreshTierHelper();
     presetSelect.refresh();
     crosshairSelect.refresh();
     for (const slider of bloomSliders) slider.refresh();
@@ -567,5 +591,6 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     postEffectsControls.sync();
   };
 
+  syncTierButtons();
   subscribeGraphicsSettings(() => syncControls(getGraphicsSettings()));
 }

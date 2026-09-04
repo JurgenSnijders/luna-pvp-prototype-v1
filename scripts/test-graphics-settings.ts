@@ -1,9 +1,12 @@
 import {
   DEFAULT_GRAPHICS_SETTINGS,
   STORAGE_KEY_GRAPHICS,
+  applyTierPreset,
   getGraphicsSettings,
+  getPostEffectUserEnabled,
   parseGraphicsSettings,
   saveGraphicsSettings,
+  setPostEffectEnabled,
 } from '../src/devtools/graphicsSettings';
 import {
   GRAPHICS_PROFILE_KIND,
@@ -178,13 +181,66 @@ function run(): void {
     failures.push('importGraphicsProfile: graphics settings not persisted to localStorage');
   }
 
+  resetGraphicsState();
+  applyTierPreset('LOW');
+  const low = getGraphicsSettings();
+  if (low.crtEnabled || low.bloomEnabled) {
+    failures.push('applyTierPreset(LOW): CRT and bloom should be disabled');
+  }
+  if (low.bloomIntensity !== 0) {
+    failures.push(`applyTierPreset(LOW): bloomIntensity should be 0, got ${low.bloomIntensity}`);
+  }
+  if (getPostEffectUserEnabled('SCANLINES') || getPostEffectUserEnabled('PHOSPHOR')) {
+    failures.push('applyTierPreset(LOW): quality post-effects should be disabled');
+  }
+
+  resetGraphicsState();
+  applyTierPreset('HIGH');
+  const high = getGraphicsSettings();
+  if (!high.crtEnabled || !high.bloomEnabled) {
+    failures.push('applyTierPreset(HIGH): CRT and bloom should be enabled');
+  }
+  if (high.bloomThreshold !== 0.6) {
+    failures.push(`applyTierPreset(HIGH): bloomThreshold should be 0.6, got ${high.bloomThreshold}`);
+  }
+  if (high.screenShakeIntensity !== 1) {
+    failures.push(`applyTierPreset(HIGH): screenShakeIntensity should be 1, got ${high.screenShakeIntensity}`);
+  }
+  if (
+    !getPostEffectUserEnabled('SCANLINES') ||
+    !getPostEffectUserEnabled('PHOSPHOR') ||
+    !getPostEffectUserEnabled('CURVATURE')
+  ) {
+    failures.push('applyTierPreset(HIGH): core CRT post-effects should be enabled');
+  }
+
+  applyTierPreset('MEDIUM');
+  if (getPostEffectUserEnabled('PHOSPHOR')) {
+    failures.push('applyTierPreset(MEDIUM after HIGH): PHOSPHOR should be disabled in storage');
+  }
+
+  resetGraphicsState();
+  applyTierPreset('HIGH');
+  setPostEffectEnabled('PIXELATE', true);
+  if (!getPostEffectUserEnabled('PIXELATE')) {
+    failures.push('setPostEffectEnabled(PIXELATE): expected enabled before tier switch');
+  }
+  applyTierPreset('ULTRA');
+  if (!getPostEffectUserEnabled('PIXELATE')) {
+    failures.push('applyTierPreset(ULTRA): PIXELATE should stay enabled when tier allows');
+  }
+  applyTierPreset('LOW');
+  if (getPostEffectUserEnabled('PIXELATE')) {
+    failures.push('applyTierPreset(LOW): PIXELATE should be disabled below min tier');
+  }
+
   if (failures.length > 0) {
     console.error('test:graphics-settings  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
     process.exit(1);
   }
 
-  console.log('test:graphics-settings  OK  12 graphics profile checks passed');
+  console.log('test:graphics-settings  OK  20 graphics profile checks passed');
 }
 
 run();

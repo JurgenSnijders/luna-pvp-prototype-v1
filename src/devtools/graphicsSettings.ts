@@ -650,10 +650,212 @@ export function subscribeGraphicsSettings(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+const USER_LOOK_EFFECTS: PostEffectId[] = ['PIXELATE', 'PALETTE', 'DITHER', 'LUT'];
+
+const ARCADE_STYLE_EFFECTS: PostEffectId[] = [
+  'HALATION',
+  'BEAM_BLUR',
+  'CONVERGENCE',
+  'GLASS_GLARE',
+];
+
+const TIER_QUALITY_EFFECTS: Record<Exclude<QualityTier, 'AUTO'>, PostEffectId[]> = {
+  LOW: [],
+  MEDIUM: ['SCANLINES', 'VIGNETTE', 'TINT', 'SHOCKWAVE', 'HIT_GLITCH'],
+  HIGH: [
+    'SCANLINES',
+    'VIGNETTE',
+    'TINT',
+    'SHOCKWAVE',
+    'HIT_GLITCH',
+    'PHOSPHOR',
+    'CURVATURE',
+    'RADIAL_BLUR',
+  ],
+  ULTRA: [
+    'SCANLINES',
+    'VIGNETTE',
+    'TINT',
+    'SHOCKWAVE',
+    'HIT_GLITCH',
+    'PHOSPHOR',
+    'CURVATURE',
+    'RADIAL_BLUR',
+    'PERSISTENCE',
+    'ANAMORPHIC',
+  ],
+};
+
+interface TierNumericPreset {
+  bloomIntensity: number;
+  bloomThreshold: number;
+  crtBrightness: number;
+  screenShakeIntensity: number;
+  bgParallaxVoid: number;
+  bgParallaxLava: number;
+  bgLavaScrollSpeed: number;
+}
+
+const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPreset> = {
+  LOW: {
+    bloomIntensity: 0,
+    bloomThreshold: 0.8,
+    crtBrightness: 1,
+    screenShakeIntensity: 0.4,
+    bgParallaxVoid: 0.08,
+    bgParallaxLava: 0.14,
+    bgLavaScrollSpeed: 0.1,
+  },
+  MEDIUM: {
+    bloomIntensity: 0.45,
+    bloomThreshold: 0.7,
+    crtBrightness: 1,
+    screenShakeIntensity: 0.75,
+    bgParallaxVoid: 0.12,
+    bgParallaxLava: 0.22,
+    bgLavaScrollSpeed: 0.14,
+  },
+  HIGH: {
+    bloomIntensity: DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
+    bloomThreshold: 0.6,
+    crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
+    screenShakeIntensity: 1,
+    bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
+    bgParallaxLava: DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
+    bgLavaScrollSpeed: DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
+  },
+  ULTRA: {
+    bloomIntensity: DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
+    bloomThreshold: 0.55,
+    crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
+    screenShakeIntensity: 1,
+    bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
+    bgParallaxLava: DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
+    bgLavaScrollSpeed: DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
+  },
+};
+
+function applyTierPostEffects(
+  tier: Exclude<QualityTier, 'AUTO'>,
+  current: Record<string, PostEffectState>,
+): Record<string, PostEffectState> {
+  const qualitySet = new Set(TIER_QUALITY_EFFECTS[tier]);
+  const postEffects: Record<string, PostEffectState> = { ...current };
+
+  for (const id of POST_EFFECT_IDS) {
+    const def = POST_EFFECTS[id];
+    const state = postEffects[id] ?? {
+      enabled: def.defaultEnabled,
+      params: {},
+    };
+
+    if (USER_LOOK_EFFECTS.includes(id)) {
+      postEffects[id] = {
+        ...state,
+        enabled: state.enabled && tierMeetsMinimum(tier, def.minTier),
+      };
+      continue;
+    }
+
+    if (ARCADE_STYLE_EFFECTS.includes(id)) {
+      continue;
+    }
+
+    postEffects[id] = {
+      ...state,
+      enabled: qualitySet.has(id),
+    };
+  }
+
+  return postEffects;
+}
+
+function mergeStyleArcadeExtras(
+  tier: Exclude<QualityTier, 'AUTO'>,
+  activePreset: StylePresetId,
+  postEffects: Record<string, PostEffectState>,
+): Record<string, PostEffectState> {
+  const crt = STYLE_PRESETS[activePreset].crt;
+  const next = { ...postEffects };
+
+  const arcadeEffects: {
+    id: (typeof ARCADE_STYLE_EFFECTS)[number];
+    paramKey: string;
+    value: number;
+  }[] = [
+    { id: 'HALATION', paramKey: 'intensity', value: crt.halation },
+    { id: 'BEAM_BLUR', paramKey: 'amount', value: crt.beamBlur },
+    { id: 'CONVERGENCE', paramKey: 'amount', value: crt.convergence },
+    { id: 'GLASS_GLARE', paramKey: 'intensity', value: crt.glassGlare },
+  ];
+
+  for (const { id: effectId, paramKey, value } of arcadeEffects) {
+    const def = POST_EFFECTS[effectId];
+    const state = next[effectId] ?? {
+      enabled: def.defaultEnabled,
+      params: {},
+    };
+    const canEnable = tierMeetsMinimum(tier, def.minTier) && value > 0;
+    next[effectId] = {
+      enabled: canEnable,
+      params: {
+        ...state.params,
+        [paramKey]:
+          canEnable
+            ? value
+            : state.params[paramKey] ??
+              def.params.find((p) => p.key === paramKey)?.defaultValue ??
+              0,
+      },
+    };
+  }
+
+  const phosphorState = next.PHOSPHOR ?? {
+    enabled: POST_EFFECTS.PHOSPHOR.defaultEnabled,
+    params: {},
+  };
+  next.PHOSPHOR = {
+    ...phosphorState,
+    params: { ...phosphorState.params, type: crt.maskType },
+  };
+
+  return next;
+}
+
+function getTierNumericValues(
+  tier: Exclude<QualityTier, 'AUTO'>,
+  activePreset: StylePresetId,
+): TierNumericPreset {
+  const base = TIER_NUMERIC_PRESETS[tier];
+  if (tier !== 'HIGH' && tier !== 'ULTRA') {
+    return base;
+  }
+
+  const presetCrt = STYLE_PRESETS[activePreset].crt;
+  if (tier === 'HIGH') {
+    return {
+      ...base,
+      bloomIntensity: presetCrt.bloomIntensity,
+      crtBrightness: presetCrt.crtBrightness,
+    };
+  }
+
+  return {
+    ...base,
+    bloomIntensity: Math.min(2, presetCrt.bloomIntensity * 1.1),
+    crtBrightness: presetCrt.crtBrightness,
+  };
+}
+
 export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSettings {
   const limits = TIER_LIMITS[tier];
+  const current = getGraphicsSettings();
+  const numeric = getTierNumericValues(tier, current.activePreset);
+  let postEffects = applyTierPostEffects(tier, current.postEffects);
+  postEffects = mergeStyleArcadeExtras(tier, current.activePreset, postEffects);
+
   const next: GraphicsSettings = {
-    ...getGraphicsSettings(),
+    ...current,
     tier,
     manualTierOverride: true,
     webglBackground: tier !== 'LOW',
@@ -663,7 +865,16 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     bloomEnabled: limits.bloomPasses > 0,
     refractionEnabled: limits.refraction,
     crtEnabled: tier !== 'LOW',
+    arcadeBezel: tier !== 'LOW',
+    ...numeric,
+    postEffects,
   };
+  saveGraphicsSettings(next);
+  return next;
+}
+
+export function resetAllGraphicsDefaults(): GraphicsSettings {
+  const next: GraphicsSettings = { ...DEFAULT_GRAPHICS_SETTINGS };
   saveGraphicsSettings(next);
   return next;
 }

@@ -24,6 +24,64 @@ export function sectionDivider(): string {
   return `margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid ${RETRO_COLORS.borderSubtle};`;
 }
 
+export interface CollapsibleSection {
+  body: HTMLElement;
+  setOpen: (open: boolean) => void;
+  refresh: () => void;
+}
+
+export function collapsibleSection(
+  parent: HTMLElement,
+  title: string,
+  startOpen: boolean,
+): CollapsibleSection {
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = sectionDivider();
+
+  let open = startOpen;
+
+  const headerBtn = document.createElement('button');
+  headerBtn.type = 'button';
+  headerBtn.style.cssText = `
+    display:flex;align-items:center;justify-content:space-between;width:100%;
+    padding:0;margin:0 0 8px;border:none;background:transparent;cursor:pointer;
+    font-weight:bold;font-size:${FONTS.size.md};font-family:${FONTS.mono};
+    color:${RETRO_COLORS.textPrimary};letter-spacing:0.04em;text-align:left;
+  `;
+
+  const titleEl = document.createElement('span');
+  titleEl.textContent = title;
+
+  const chevron = document.createElement('span');
+  chevron.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};`;
+
+  const body = document.createElement('div');
+  body.style.display = open ? 'block' : 'none';
+
+  const refresh = (): void => {
+    chevron.textContent = open ? '▼' : '▶';
+    body.style.display = open ? 'block' : 'none';
+  };
+
+  const setOpen = (next: boolean): void => {
+    open = next;
+    refresh();
+  };
+
+  headerBtn.onclick = () => {
+    setOpen(!open);
+  };
+
+  headerBtn.appendChild(titleEl);
+  headerBtn.appendChild(chevron);
+  wrapper.appendChild(headerBtn);
+  wrapper.appendChild(body);
+  parent.appendChild(wrapper);
+  refresh();
+
+  return { body, setOpen, refresh };
+}
+
 export function helperText(parent: HTMLElement, text: string): void {
   const el = document.createElement('div');
   el.textContent = text;
