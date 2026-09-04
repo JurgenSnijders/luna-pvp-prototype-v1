@@ -91,6 +91,11 @@ targetingMode: "DIRECTIONAL" (default for skillshots/beams/fans) | "GROUND_POINT
 maxTargetRange: number (100-1000, default 500 — maximum distance from caster to ground cursor anchor)
 trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, spawnAltitude?, fallSpeed?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction? }
   BALLISTIC_ARC: lobApex 20-300 (forward mortar lob from caster) | spawnAltitude 300-900 + fallSpeed 600-2500 (sky drop from above target; pair with targetingMode GROUND_POINT) | speed: 0 for plumb vertical sky drops, >0 for angled arcs | bounces: 0-5 ground bounces before expiry | bounceRestitution: 0.1-0.8 | clearanceHeight: 0-200 (fly over low obstacles) | detonateAtZ: 10-100 (airburst altitude) | gravityScale/groundFriction optional.
+CRITICAL TRAJECTORY RULES:
+- For ANY falling projectile, meteor, or sky drop: trajectory.type MUST be "BALLISTIC_ARC", NEVER "LINEAR".
+- Set speed: 0, spawnAltitude: 600-800, fallSpeed: 1400-1800 for vertical drops.
+- NEVER combine type "LINEAR" with spawnAltitude or fallSpeed.
+- Emitter field is "distribution" (FAN | RADIAL | RANDOM_CONE | PARALLEL) — NOT "pattern".
 visuals: { color: hex, size: 4-32, projectileStyle, trailType, impactVfx, vfx?: { glowIntensity?:0-2, trailDensity?:0-2, trailLengthMs?, impactScale?:0.5-2, secondaryColor?:hex, blendMode?:NORMAL|ADDITIVE, shakeIntensity?:0-2, distortion?:0-1 } }
 projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL|PLASMA_TENDRIL|VOID_RIFT|CRYSTAL_SHARD
 trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
@@ -187,6 +192,7 @@ Thrown Singularity: trajectory LINEAR + ON_EXPIRY -> SPAWN_FIELD { field: { fiel
 Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursionDepth:1, payload:{ ON_CAST SPAWN_PROJECTILE fan } }
 Cluster Mortar: trajectory BALLISTIC_ARC { speed:280-360, lobApex:120-200, maxRange:400-550 } + ON_AIR_APEX -> SPAWN_PROJECTILE fan of child bomblets (BALLISTIC_ARC with bounces:1-3, bounceRestitution, ON_BOUNCE optional SPAWN_FIELD)
 Meteor Strike (Sky Drop): targetingMode "GROUND_POINT" + trajectory BALLISTIC_ARC { speed:0, spawnAltitude:600-800, fallSpeed:1200-1800, bounces:0 } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE — player aims ground reticle at cursor; meteor plummets from sky onto target. NOT a forward skillshot.
+Meteor Shower (Multi-Drop): targetingMode "GROUND_POINT", maxTargetRange:600, ON_CAST -> SPAWN_PROJECTILE { emitter:{ count:3, distribution:"RADIAL" }, projectileTrajectory:{ type:"BALLISTIC_ARC", speed:0, spawnAltitude:700, fallSpeed:1600, bounces:0 }, triggers:[{ trigger:"ON_GROUND_SLAM", actions:[ SPAWN_FIELD RADIAL_IMPULSE, MUTATE_TERRAIN LAVA ] }] } — multiple meteors rain down scattered across the target circle. NEVER use type LINEAR with spawnAltitude.
 Meteor Slam (Self Dive): targetingMode "DIRECTIONAL" (NOT GROUND_POINT) + ON_CAST LAUNCH_VERTICAL { targetApex:150-250, target:"CASTER" } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE or APPLY_IMPULSE radial knockback — player leaps and slams where they land.
 Anti-Air Flak: trajectory BALLISTIC_ARC or LINEAR/HOMING_SLERP + ON_HIT conditions:[{ query:"ELEVATION", comparison:"GT", value:15-40 }] -> LAUNCH_VERTICAL { verticalImpulse:400-600 } + amplified APPLY_IMPULSE; branch with LTE for grounded targets
 Thermal Geyser / Jump Pad: targetingMode "GROUND_POINT" + ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60-100, strength:150-400, durationMs:4000-8000, verticalForce:2200-2800, zBase:0, zHeight:20-80 } } — launches combatants over hazard pools
@@ -220,6 +226,7 @@ SEMANTIC FIDELITY RULES (The compiled physics MUST match the concept description
 - LINGERING / FIRE: If description mentions lingering, sticky fire, or pools, you MUST spawn a persistent SPAWN_FIELD or MUTATE_TERRAIN.
 - FLAMETHROWER / STREAM: If description mentions flamethrower, stream, or continuous fire, you MUST use inputProfile: { mode: "CHANNELED", channelIntervalMs: 100 } and resourceCost: { type: "HEAT" }.
 - DEPLOY / TURRET / SENTRY / TRAP / MINE / PYLON / TOTEM: You MUST use SPAWN_ACTOR with actorArchetype (TURRET or DECOY) and a populated actor.triggers array. If the concept says deploy, place, or drop, you MUST omit the root trajectory. NEVER satisfy a deployable concept with a bare projectile. NEVER put spell archetype (FROST, VOID) in actorArchetype.
+- METEOR / SHOWER / SKY DROP: You MUST use targetingMode "GROUND_POINT", trajectory.type "BALLISTIC_ARC", speed 0, spawnAltitude 600-800, fallSpeed 1400-1800. Multi-drop barrages MUST use ON_CAST SPAWN_PROJECTILE with emitter count 3-5 and distribution RADIAL — NEVER type LINEAR with spawnAltitude.
 
 Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;
 

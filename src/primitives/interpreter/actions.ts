@@ -81,14 +81,30 @@ export function executeEmitter(
     const isGroundTargeted = ctx.ability?.targetingMode === 'GROUND_POINT';
     const anchor = resolveCastAnchor(ctx, world, ctx.origin);
     const basePos = isGroundTargeted ? anchor : ctx.origin;
-    const spawnPos = isGroundTargeted
-      ? basePos.add(fireDir.scale(i * 4))
-      : basePos.add(fireDir.scale(muzzleOffset));
+    const isSkyDrop = (trajectory.spawnAltitude ?? 0) > 0;
+    const useDiskScatter = isGroundTargeted && isSkyDrop && count > 1;
+
+    let spawnPos: Vector2D;
+    let aimAngle: number;
+    if (useDiskScatter) {
+      const scatterRadius = Math.min(120, (vfx.size ?? 14) * 4 + count * 15);
+      const angle = (i / count) * Math.PI * 2 + i * 1.618;
+      const dist = i === 0 ? 0 : scatterRadius * Math.sqrt((i + 0.5) / count);
+      const offset = new Vector2D(Math.cos(angle) * dist, Math.sin(angle) * dist);
+      spawnPos = basePos.add(offset);
+      aimAngle = 0;
+    } else {
+      spawnPos = isGroundTargeted
+        ? basePos.add(fireDir.scale(i * 4))
+        : basePos.add(fireDir.scale(muzzleOffset));
+      aimAngle = theta;
+    }
+
     const projectile = new Projectile(
       spawnPos,
       structuredClone(trajectory),
       ctx.caster.id,
-      theta,
+      aimAngle,
       triggerMap,
       ctx.depth + 1,
       vfx,

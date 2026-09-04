@@ -1,6 +1,10 @@
 import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { sanitizeAbilitySchema } from '../src/ai/budget/sanitize/ability';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
+import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { Player } from '../src/entities/Player';
+import { Vector2D } from '../src/math/Vector2D';
+import { Interpreter } from '../src/primitives/Interpreter';
 import type { SkillCategory } from '../src/types/cards';
 import type { AbilitySchema, ActionPayload, SpellArchetype, TriggerNode } from '../src/types/schema';
 import { normalizeAbilityPayload, validateAbilitySchema } from '../src/types/schema';
@@ -347,12 +351,155 @@ function runFlatSpawnFieldRepairTest(): boolean {
   return result.pass;
 }
 
+function findOnCastSpawnProjectile(
+  schema: AbilitySchema,
+): Extract<ActionPayload, { type: 'SPAWN_PROJECTILE' }> | null {
+  for (const node of schema.triggers) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions) {
+      if (action.type === 'SPAWN_PROJECTILE') return action;
+    }
+  }
+  return null;
+}
+
+function runMeteorShowerCoercionTest(): boolean {
+  const description = 'Meteor Shower Calls down a barrage of meteors that rain down across the target zone.';
+  const raw = {
+    id: 'meteor_shower_malformed',
+    name: 'Meteor Shower',
+    tagline: 'Sky barrage',
+    description: 'Calls down a meteor shower that rains down across the target zone.',
+    archetype: 'FIRE',
+    targetingMode: 'GROUND_POINT',
+    cooldownMs: 4500,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            emitter: { count: 3, spreadDeg: 45, pattern: 'FAN' },
+            projectileTrajectory: {
+              type: 'LINEAR',
+              speed: 150,
+              maxRange: 600,
+              spawnAltitude: 700,
+              fallSpeed: 1600,
+            },
+            triggers: [
+              {
+                trigger: 'ON_GROUND_SLAM',
+                actions: [
+                  {
+                    type: 'SPAWN_FIELD',
+                    field: {
+                      fieldType: 'RADIAL_IMPULSE',
+                      radius: 90,
+                      strength: 700,
+                      durationMs: 500,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    visuals: {
+      color: '#ff6622',
+      size: 14,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'EMBER_SPIRAL',
+      impactVfx: 'MINI_NUKE',
+    },
+  };
+
+  const repaired = repairAbilityPayload(normalizeAbilityPayload(raw));
+  const schema = sanitizeAbilitySchema(repaired, 'ULTIMATE', 0, description);
+
+  if (!validateAbilitySchema(schema)) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (validation)`);
+    return false;
+  }
+
+  const spawn = findOnCastSpawnProjectile(schema);
+  if (!spawn) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (missing ON_CAST SPAWN_PROJECTILE)`);
+    return false;
+  }
+
+  const traj = spawn.projectileTrajectory;
+  if (traj.type !== 'BALLISTIC_ARC') {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (type=${traj.type}, expected BALLISTIC_ARC)`);
+    return false;
+  }
+  if (traj.speed !== 0) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (speed=${traj.speed}, expected 0)`);
+    return false;
+  }
+  if (spawn.emitter?.distribution !== 'FAN') {
+    console.log(
+      `${RED}[FAIL]${RESET} Meteor Shower coercion (distribution=${spawn.emitter?.distribution}, expected FAN from pattern alias)`,
+    );
+    return false;
+  }
+  if (schema.targetingMode !== 'GROUND_POINT') {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (targetingMode)`);
+    return false;
+  }
+
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  const caster = new Player(new Vector2D(0, 0));
+  world.addPlayer(caster);
+  const interpreter = new Interpreter();
+  const aimPoint = new Vector2D(200, 0);
+  interpreter.executeAbility(
+    schema,
+    {
+      origin: caster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      aimPoint,
+      caster,
+      depth: 0,
+    },
+    world,
+  );
+
+  const live = world.projectiles.filter((p) => !p.isDead);
+  if (live.length !== 3) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (projectile count=${live.length}, expected 3)`);
+    return false;
+  }
+  if (!live.every((p) => p.z > 0)) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (projectiles not airborne)`);
+    return false;
+  }
+
+  const anchor = aimPoint;
+  const maxOffset = live.reduce((max, p) => Math.max(max, p.pos.dist(anchor)), 0);
+  if (maxOffset < 1) {
+    console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (no scatter around anchor)`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} Meteor Shower coercion`);
+  console.log(`  ${DIM}type=BALLISTIC_ARC speed=0 distribution=FAN projectiles=3 airborne scatter=${maxOffset.toFixed(0)}px${RESET}`);
+  return true;
+}
+
 function run(): void {
   console.log('test:fidelity');
   let passed = 0;
-  const totalTests = FIDELITY_SCENARIOS.length + 1;
+  const totalTests = FIDELITY_SCENARIOS.length + 2;
 
   if (runFlatSpawnFieldRepairTest()) {
+    passed++;
+  }
+
+  if (runMeteorShowerCoercionTest()) {
     passed++;
   }
 

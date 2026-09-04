@@ -462,12 +462,6 @@ function repairTrajectoryConfig(traj: unknown): unknown {
   }
   const t = { ...(traj as Record<string, unknown>) };
   stripNullFields(t);
-  if (typeof t.type === 'string') {
-    t.type = normalizeEnumToken(t.type, TRAJECTORY_ALIASES);
-  }
-  if (typeof t.type !== 'string' || !VALID_TRAJECTORY_TYPES.has(t.type)) {
-    t.type = 'LINEAR';
-  }
   coerceNumericFields(t, [
     'speed',
     'maxRange',
@@ -476,7 +470,32 @@ function repairTrajectoryConfig(traj: unknown): unknown {
     'orbitRadius',
     'orbitSpeed',
     'blinkDistance',
+    'spawnAltitude',
+    'fallSpeed',
+    'lobApex',
+    'bounces',
+    'bounceRestitution',
+    'gravityScale',
   ]);
+  const rawAltitude = ensureFiniteNumber(t.spawnAltitude, 0);
+  const rawFallSpeed = ensureFiniteNumber(t.fallSpeed, 0);
+  const rawLobApex = ensureFiniteNumber(t.lobApex, 0);
+  const isSkyDrop = rawAltitude > 0 || (rawFallSpeed > 0 && rawLobApex <= 0);
+  if (typeof t.type === 'string') {
+    t.type = normalizeEnumToken(t.type, TRAJECTORY_ALIASES);
+  }
+  if (isSkyDrop) {
+    t.type = 'BALLISTIC_ARC';
+    if (rawAltitude <= 0 && rawFallSpeed > 0) {
+      t.spawnAltitude = 600;
+    }
+    const rawSpeed = ensureFiniteNumber(t.speed, 0);
+    if (rawSpeed > 100) {
+      t.speed = 0;
+    }
+  } else if (typeof t.type !== 'string' || !VALID_TRAJECTORY_TYPES.has(t.type)) {
+    t.type = 'LINEAR';
+  }
   return t;
 }
 
@@ -551,6 +570,10 @@ function repairActionPayload(action: unknown): unknown {
     } else {
       const emitter = { ...(obj.emitter as Record<string, unknown>) };
       coerceNumericFields(emitter, ['count', 'spreadDeg', 'aimOffsetDeg', 'inheritVelocityRatio']);
+      if (typeof emitter.pattern === 'string' && typeof emitter.distribution !== 'string') {
+        emitter.distribution = emitter.pattern;
+        delete emitter.pattern;
+      }
       if (typeof emitter.distribution !== 'string') emitter.distribution = 'FAN';
       if (emitter.count === undefined) emitter.count = 1;
       if (emitter.spreadDeg === undefined) {

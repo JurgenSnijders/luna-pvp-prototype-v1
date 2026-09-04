@@ -4,16 +4,29 @@ import { clamp, ensureFiniteNumber, isObject } from '../helpers';
 
 export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   const obj = isObject(raw) ? raw : {};
-  const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'LINEAR';
-  const type = (TRAJECTORY_TYPES.has(typeRaw) ? typeRaw : 'LINEAR') as TrajectoryType;
+  const rawAltitude = clamp(ensureFiniteNumber(obj.spawnAltitude, 0), 0, 1200);
+  const rawFallSpeed = ensureFiniteNumber(obj.fallSpeed, 0);
+  const rawLobApex = ensureFiniteNumber(obj.lobApex, 0);
 
-  const spawnAltitude = clamp(ensureFiniteNumber(obj.spawnAltitude, 0), 0, 1200);
-  const isSkyDrop = spawnAltitude > 0;
+  // Sky drop: altitude or fall speed without a forward mortar lob
+  const isSkyDrop =
+    rawAltitude > 0 || (rawFallSpeed > 0 && rawLobApex <= 0);
+
+  const typeRaw = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'LINEAR';
+  let type = (TRAJECTORY_TYPES.has(typeRaw) ? typeRaw : 'LINEAR') as TrajectoryType;
+  if (isSkyDrop) {
+    type = 'BALLISTIC_ARC';
+  }
+
+  const spawnAltitude =
+    rawAltitude > 0 ? rawAltitude : isSkyDrop && rawFallSpeed > 0 ? 600 : rawAltitude;
   const minSpeed = isSkyDrop ? 0 : 150;
+  const rawSpeed = ensureFiniteNumber(obj.speed, isSkyDrop ? 0 : 400);
+  const speed = isSkyDrop && rawSpeed > 100 ? 0 : clamp(rawSpeed, minSpeed, 1600);
 
   const config: TrajectoryConfig = {
     type,
-    speed: clamp(ensureFiniteNumber(obj.speed, isSkyDrop ? 0 : 400), minSpeed, 1600),
+    speed,
     maxRange: clamp(ensureFiniteNumber(obj.maxRange, 500), 50, 1200),
   };
 

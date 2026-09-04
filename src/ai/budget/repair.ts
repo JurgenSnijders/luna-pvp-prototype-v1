@@ -6,6 +6,7 @@ import type {
   FieldType,
   SpellArchetype,
   SpawnActorAction,
+  TrajectoryConfig,
   TriggerNode,
 } from '../../types/schema';
 import { walkActionList, walkActions } from '../../types/schema';
@@ -24,6 +25,27 @@ const LINGERING_KEYWORDS =
 const ARC_KEYWORDS = /\b(arc|sweep|scatter|salvo|fan|spray|barrage|burst)\b/;
 const CHANNEL_KEYWORDS = /\b(flamethrower|continuous|channel|stream|beam)\b/;
 const HARPOON_KEYWORDS = /\b(pull|draw|harpoon|hook|reel)\b/;
+const METEOR_KEYWORDS =
+  /\b(meteor|sky drop|orbital strike|starfall|rain down|shower)\b/i;
+
+function isMeteorConcept(text: string): boolean {
+  return METEOR_KEYWORDS.test(text);
+}
+
+function coerceSkyDropTrajectory(traj: TrajectoryConfig): TrajectoryConfig {
+  const lobApex = traj.lobApex ?? 0;
+  if (lobApex > 0 && (traj.spawnAltitude ?? 0) <= 0) {
+    return traj;
+  }
+  return {
+    ...traj,
+    type: 'BALLISTIC_ARC',
+    spawnAltitude: Math.max(traj.spawnAltitude ?? 0, 600),
+    fallSpeed: Math.max(traj.fallSpeed ?? 0, 1400),
+    speed: 0,
+    bounces: traj.bounces ?? 0,
+  };
+}
 
 const DEFAULT_SINGLE_EMITTER: EmitterConfig = {
   count: 1,
@@ -313,6 +335,27 @@ function applyRuleF_Obstacle(schema: AbilitySchema, text: string): void {
   }
 
   delete schema.trajectory;
+}
+
+function applyRuleH_Meteor(schema: AbilitySchema, text: string): void {
+  if (!isMeteorConcept(text)) return;
+
+  schema.targetingMode = 'GROUND_POINT';
+
+  const onCastProjectile = findOnCastProjectile(schema);
+  if (onCastProjectile && (onCastProjectile.action.emitter?.count ?? 1) > 1) {
+    delete schema.trajectory;
+  }
+
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_PROJECTILE') {
+      v.action.projectileTrajectory = coerceSkyDropTrajectory(v.action.projectileTrajectory);
+    }
+  });
+
+  if (schema.trajectory) {
+    schema.trajectory = coerceSkyDropTrajectory(schema.trajectory);
+  }
 }
 
 function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
@@ -992,6 +1035,7 @@ export function repairAbilitySemantics(
     applyRuleB_LingeringHazard(cloned, text);
     applyRuleC_ArcSweep(cloned, text);
     applyRuleD_ChanneledStream(cloned, text);
+    applyRuleH_Meteor(cloned, text);
     ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);
   }
 
