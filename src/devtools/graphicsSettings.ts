@@ -563,63 +563,70 @@ function clampUnit(value: number): number {
   return clampRange(value, 0, 1);
 }
 
+export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_GRAPHICS_SETTINGS };
+  }
+  const parsed = raw as Partial<GraphicsSettings> & {
+    lavaHeatWaves?: boolean;
+    webglBackground?: boolean;
+    ambientEmbers?: boolean;
+    particleTrails?: boolean;
+  };
+  const webglBackground =
+    parsed.webglBackground ??
+    parsed.lavaHeatWaves ??
+    DEFAULT_GRAPHICS_SETTINGS.webglBackground;
+  return {
+    tier: parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier,
+    webglBackground,
+    floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
+    ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
+    particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
+    bloomEnabled: parsed.bloomEnabled ?? DEFAULT_GRAPHICS_SETTINGS.bloomEnabled,
+    refractionEnabled: parsed.refractionEnabled ?? DEFAULT_GRAPHICS_SETTINGS.refractionEnabled,
+    screenShakeIntensity:
+      parsed.screenShakeIntensity ?? DEFAULT_GRAPHICS_SETTINGS.screenShakeIntensity,
+    manualTierOverride:
+      parsed.manualTierOverride ?? DEFAULT_GRAPHICS_SETTINGS.manualTierOverride,
+    crtEnabled: parsed.crtEnabled ?? DEFAULT_GRAPHICS_SETTINGS.crtEnabled,
+    crtScanlineIntensity:
+      parsed.crtScanlineIntensity ?? DEFAULT_GRAPHICS_SETTINGS.crtScanlineIntensity,
+    crtCurvature: parsed.crtCurvature ?? DEFAULT_GRAPHICS_SETTINGS.crtCurvature,
+    crtVignette: parsed.crtVignette ?? DEFAULT_GRAPHICS_SETTINGS.crtVignette,
+    crtPhosphor: parsed.crtPhosphor ?? DEFAULT_GRAPHICS_SETTINGS.crtPhosphor,
+    crtBrightness: parsed.crtBrightness ?? DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
+    bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
+    bloomThreshold: parsed.bloomThreshold ?? DEFAULT_GRAPHICS_SETTINGS.bloomThreshold,
+    arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
+    bgParallaxVoid: clampUnit(
+      parsed.bgParallaxVoid ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
+    ),
+    bgParallaxLava: clampUnit(
+      parsed.bgParallaxLava ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
+    ),
+    bgLavaScrollSpeed: clampRange(
+      parsed.bgLavaScrollSpeed ?? DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
+      0,
+      1,
+    ),
+    activePreset:
+      parsed.activePreset && isStylePresetId(parsed.activePreset)
+        ? parsed.activePreset
+        : DEFAULT_GRAPHICS_SETTINGS.activePreset,
+    crosshairStyle:
+      parsed.crosshairStyle && isCrosshairStyleId(parsed.crosshairStyle)
+        ? parsed.crosshairStyle
+        : DEFAULT_GRAPHICS_SETTINGS.crosshairStyle,
+    postEffects: parsed.postEffects ?? DEFAULT_GRAPHICS_SETTINGS.postEffects,
+  };
+}
+
 function loadFromStorage(): GraphicsSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_GRAPHICS);
     if (!raw) return { ...DEFAULT_GRAPHICS_SETTINGS };
-    const parsed = JSON.parse(raw) as Partial<GraphicsSettings> & {
-      lavaHeatWaves?: boolean;
-      webglBackground?: boolean;
-      ambientEmbers?: boolean;
-      particleTrails?: boolean;
-    };
-    const webglBackground =
-      parsed.webglBackground ??
-      parsed.lavaHeatWaves ??
-      DEFAULT_GRAPHICS_SETTINGS.webglBackground;
-    return {
-      tier: parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier,
-      webglBackground,
-      floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
-      ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
-      particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
-      bloomEnabled: parsed.bloomEnabled ?? DEFAULT_GRAPHICS_SETTINGS.bloomEnabled,
-      refractionEnabled: parsed.refractionEnabled ?? DEFAULT_GRAPHICS_SETTINGS.refractionEnabled,
-      screenShakeIntensity:
-        parsed.screenShakeIntensity ?? DEFAULT_GRAPHICS_SETTINGS.screenShakeIntensity,
-      manualTierOverride:
-        parsed.manualTierOverride ?? DEFAULT_GRAPHICS_SETTINGS.manualTierOverride,
-      crtEnabled: parsed.crtEnabled ?? DEFAULT_GRAPHICS_SETTINGS.crtEnabled,
-      crtScanlineIntensity:
-        parsed.crtScanlineIntensity ?? DEFAULT_GRAPHICS_SETTINGS.crtScanlineIntensity,
-      crtCurvature: parsed.crtCurvature ?? DEFAULT_GRAPHICS_SETTINGS.crtCurvature,
-      crtVignette: parsed.crtVignette ?? DEFAULT_GRAPHICS_SETTINGS.crtVignette,
-      crtPhosphor: parsed.crtPhosphor ?? DEFAULT_GRAPHICS_SETTINGS.crtPhosphor,
-      crtBrightness: parsed.crtBrightness ?? DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
-      bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
-      bloomThreshold: parsed.bloomThreshold ?? DEFAULT_GRAPHICS_SETTINGS.bloomThreshold,
-      arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
-      bgParallaxVoid: clampUnit(
-        parsed.bgParallaxVoid ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
-      ),
-      bgParallaxLava: clampUnit(
-        parsed.bgParallaxLava ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
-      ),
-      bgLavaScrollSpeed: clampRange(
-        parsed.bgLavaScrollSpeed ?? DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
-        0,
-        1,
-      ),
-      activePreset:
-        parsed.activePreset && isStylePresetId(parsed.activePreset)
-          ? parsed.activePreset
-          : DEFAULT_GRAPHICS_SETTINGS.activePreset,
-      crosshairStyle:
-        parsed.crosshairStyle && isCrosshairStyleId(parsed.crosshairStyle)
-          ? parsed.crosshairStyle
-          : DEFAULT_GRAPHICS_SETTINGS.crosshairStyle,
-      postEffects: parsed.postEffects ?? DEFAULT_GRAPHICS_SETTINGS.postEffects,
-    };
+    return parseGraphicsSettings(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_GRAPHICS_SETTINGS };
   }

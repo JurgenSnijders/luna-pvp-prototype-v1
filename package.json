@@ -12,6 +12,7 @@
     "test:offline": "tsx scripts/test-offline.ts",
     "test:interpreter": "tsx scripts/test-interpreter.ts",
     "test:settings": "tsx scripts/test-settings.ts",
+    "test:graphics-settings": "tsx scripts/test-graphics-settings.ts",
     "test:render": "tsx scripts/test-render.ts",
     "test:gemini-sse": "tsx scripts/test-gemini-sse.ts",
     "test:partial-json": "tsx scripts/test-partial-json.ts",

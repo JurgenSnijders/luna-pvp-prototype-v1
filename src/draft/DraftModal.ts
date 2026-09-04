@@ -150,14 +150,6 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
 
 const FORGE_TIER_ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
 
-const SLOT_KEY_MAPPINGS: { slot: ActionSlotKey; keyNum: string }[] = [
-  { slot: 'LMB', keyNum: '1' },
-  { slot: 'RMB', keyNum: '2' },
-  { slot: 'Q', keyNum: '3' },
-  { slot: 'E', keyNum: '4' },
-  { slot: 'SPACE', keyNum: '5' },
-];
-
 export function normalizeForgeTierRarity(rarity: string): string {
   const upper = (rarity || 'COMMON').toUpperCase();
   if (upper === 'LEGENDARY') return 'CHAOTIC';
@@ -688,23 +680,6 @@ export class DraftModal {
       this.renderTacticalInspector();
     }
   };
-  private readonly onQuickEquipKeyDown = (e: KeyboardEvent): void => {
-    if (!this.open_) return;
-
-    const activeTag = document.activeElement?.tagName.toLowerCase();
-    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
-
-    const activeSpellId = this.hoveredSpellId ?? this.selectedSpellId;
-    if (!activeSpellId) return;
-
-    const targetMapping = SLOT_KEY_MAPPINGS.find((m) => m.keyNum === e.key);
-    if (!targetMapping) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    this.executeQuickEquip(targetMapping.slot, activeSpellId);
-  };
-
   constructor(private callbacks: DraftModalCallbacks) {
     injectStyles();
 
@@ -924,7 +899,6 @@ export class DraftModal {
     });
     this.callbacks.onOpenChange(true);
     ActionBarHUD.suppress();
-    window.addEventListener('keydown', this.onQuickEquipKeyDown);
     this.setActiveTab('VAULT');
     this.startPrefetch();
   }
@@ -936,7 +910,6 @@ export class DraftModal {
     this.clearSynthesisTimer();
     this.forgeVaultPickerActive = false;
     this.vaultSavedCardIndex = null;
-    window.removeEventListener('keydown', this.onQuickEquipKeyDown);
     this.open_ = false;
     this.overlay.style.opacity = '0';
     this.panel.style.transform = 'scale(0.97)';
@@ -967,7 +940,6 @@ export class DraftModal {
     });
     this.callbacks.onOpenChange(true);
     ActionBarHUD.suppress();
-    window.addEventListener('keydown', this.onQuickEquipKeyDown);
     this.setActiveTab('FORGE');
   }
 
@@ -1288,7 +1260,6 @@ export class DraftModal {
     const tier = rarity.toLowerCase();
     const telemetry = extractSpellTelemetry(spell);
     const profile = calculateCombatProfile(telemetry);
-    const loadout = SpellInventoryManager.getLoadout();
     const evolutionDiff = resolveSpellEvolutionDiff(spell);
 
     const panel = document.createElement('div');
@@ -1354,10 +1325,6 @@ export class DraftModal {
     header.appendChild(title);
     header.appendChild(tagsWrap);
 
-    const compareBanner = document.createElement('div');
-    compareBanner.className = 'inspector-compare-banner';
-    compareBanner.id = 'inspector-compare-banner';
-
     let mutationBanner: HTMLElement | null = null;
     if (evolutionDiff.length > 0) {
       mutationBanner = document.createElement('div');
@@ -1372,24 +1339,24 @@ export class DraftModal {
     telemetryGrid.className = 'inspector-telemetry-grid';
 
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec, 'cooldown'),
+      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
     );
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`, 'recoil'),
+      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
     );
 
     const repulseVal = document.createElement('span');
     repulseVal.className = 'telemetry-value val-repulse';
     repulseVal.textContent = `${telemetry.repulseForce} Force`;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal, 'repulse'),
+      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
     );
 
     const instabilityVal = document.createElement('span');
     instabilityVal.className = 'telemetry-value val-instability';
     instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal, 'instability'),
+      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
     );
 
     if (telemetry.directDamage > 0) {
@@ -1397,7 +1364,6 @@ export class DraftModal {
         this.buildInspectorTelemetryCell(
           'DIRECT DAMAGE',
           `${telemetry.directDamage} HP`,
-          'damage',
         ),
       );
     }
@@ -1406,7 +1372,7 @@ export class DraftModal {
     deliveryVal.className = 'telemetry-value val-delivery';
     deliveryVal.textContent = telemetry.deliveryText;
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, undefined, true),
+      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
     );
 
     const profileCard = this.buildImpactProfileCard(profile);
@@ -1433,82 +1399,14 @@ export class DraftModal {
     });
     actionsSection.appendChild(upgradeBtn);
 
-    const equipSection = document.createElement('div');
-    equipSection.className = 'inspector-equip-section';
-
-    const labelWrap = document.createElement('div');
-    labelWrap.className = 'inspector-equip-label-wrap';
-
-    const equipLabel = document.createElement('span');
-    equipLabel.className = 'inspector-equip-label';
-    equipLabel.textContent = 'EQUIP TO LOADOUT';
-
-    const equipHint = document.createElement('span');
-    equipHint.className = 'inspector-equip-hint';
-    equipHint.textContent = 'PRESS [1-5]';
-
-    labelWrap.appendChild(equipLabel);
-    labelWrap.appendChild(equipHint);
-
-    const equipButtons = document.createElement('div');
-    equipButtons.className = 'inspector-equip-buttons';
-
-    for (const mapping of SLOT_KEY_MAPPINGS) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'inspector-equip-btn';
-      btn.dataset.slot = mapping.slot;
-
-      const isEquipped = loadout[mapping.slot] === spell.id;
-      if (isEquipped) {
-        btn.classList.add('is-active-slot');
-      }
-
-      const keynum = document.createElement('span');
-      keynum.className = 'equip-btn-keynum';
-      keynum.textContent = `[${mapping.keyNum}]`;
-
-      const slotname = document.createElement('span');
-      slotname.className = 'equip-btn-slotname';
-      slotname.textContent = mapping.slot;
-
-      btn.appendChild(keynum);
-      btn.appendChild(slotname);
-
-      if (isEquipped) {
-        const check = document.createElement('span');
-        check.className = 'equip-btn-check';
-        check.textContent = '✓';
-        btn.appendChild(check);
-      }
-
-      btn.addEventListener('mouseenter', () => {
-        btn.classList.add('is-comparing');
-        this.showSlotComparison(mapping.slot, spell);
-      });
-      btn.addEventListener('mouseleave', () => {
-        btn.classList.remove('is-comparing');
-        this.clearSlotComparison();
-      });
-      btn.addEventListener('click', () => {
-        this.executeQuickEquip(mapping.slot, spell.id);
-      });
-      equipButtons.appendChild(btn);
-    }
-
-    equipSection.appendChild(labelWrap);
-    equipSection.appendChild(equipButtons);
-
     panel.appendChild(heroWrap);
     panel.appendChild(header);
-    panel.appendChild(compareBanner);
     if (mutationBanner) panel.appendChild(mutationBanner);
     panel.appendChild(telemetryGrid);
     panel.appendChild(profileCard);
     panel.appendChild(tagsRow);
     panel.appendChild(desc);
     panel.appendChild(actionsSection);
-    panel.appendChild(equipSection);
     this.inspectorPane.appendChild(panel);
   }
 
@@ -2329,7 +2227,6 @@ export class DraftModal {
   private buildInspectorTelemetryCell(
     label: string,
     valueContent: string | HTMLElement,
-    metricKey?: string,
     fullWidth = false,
   ): HTMLElement {
     const cellEl = document.createElement('div');
@@ -2350,126 +2247,7 @@ export class DraftModal {
       cellEl.appendChild(valueContent);
     }
 
-    if (metricKey) {
-      const delta = document.createElement('span');
-      delta.className = 'telemetry-delta';
-      delta.dataset.metric = metricKey;
-      cellEl.appendChild(delta);
-    }
-
     return cellEl;
-  }
-
-  private updateTelemetryDelta(metric: string, text: string, className: string): void {
-    const delta = this.inspectorPane.querySelector(
-      `.telemetry-delta[data-metric="${metric}"]`,
-    );
-    if (!delta) return;
-    delta.textContent = text;
-    delta.className = `telemetry-delta is-visible ${className}`;
-  }
-
-  private executeQuickEquip(slotKey: ActionSlotKey, spellId: string): void {
-    SpellInventoryManager.equipSpell(slotKey, spellId);
-    this.clearSlotComparison();
-    this.renderTacticalInspector();
-
-    const flashBtn = this.inspectorPane.querySelector(
-      `.inspector-equip-btn[data-slot="${slotKey}"]`,
-    ) as HTMLElement | null;
-    if (flashBtn) {
-      flashBtn.classList.add('equip-flash-animation');
-      window.setTimeout(() => flashBtn.classList.remove('equip-flash-animation'), 350);
-    }
-  }
-
-  private showSlotComparison(slotKey: ActionSlotKey, inspectedSpell: AbilitySchema): void {
-    const banner = this.inspectorPane.querySelector('#inspector-compare-banner');
-    if (!banner) return;
-
-    const loadout = SpellInventoryManager.getLoadout();
-    const equippedId = loadout[slotKey];
-    const equippedSpell = equippedId ? (SpellInventoryManager.getSpell(equippedId) ?? null) : null;
-
-    if (!equippedSpell) {
-      banner.textContent = `COMPARING VS [${slotKey}]: EMPTY SLOT (ALL NEW STATS)`;
-      banner.classList.add('is-visible');
-      for (const delta of this.inspectorPane.querySelectorAll('.telemetry-delta')) {
-        delta.textContent = '(NEW)';
-        delta.className = 'telemetry-delta is-visible delta-better';
-      }
-      return;
-    }
-
-    if (equippedSpell.id === inspectedSpell.id) {
-      this.clearSlotComparison();
-      banner.textContent = `ALREADY EQUIPPED IN [${slotKey}]`;
-      banner.classList.add('is-visible');
-      return;
-    }
-
-    const inspectedTel = extractSpellTelemetry(inspectedSpell);
-    const targetTel = extractSpellTelemetry(equippedSpell);
-
-    const diffMs = inspectedSpell.cooldownMs - equippedSpell.cooldownMs;
-    const cdFormatted = `${diffMs >= 0 ? '+' : ''}${(diffMs / 1000).toFixed(1)}s`;
-    this.updateTelemetryDelta(
-      'cooldown',
-      diffMs !== 0 ? `(${cdFormatted})` : '(±0)',
-      diffMs < 0 ? 'delta-better' : diffMs > 0 ? 'delta-worse' : 'delta-neutral',
-    );
-
-    const diffRecoil = (inspectedSpell.recoilKick ?? 0) - (equippedSpell.recoilKick ?? 0);
-    const recoilFormatted = `${diffRecoil >= 0 ? '+' : ''}${diffRecoil}`;
-    this.updateTelemetryDelta(
-      'recoil',
-      diffRecoil !== 0 ? `(${recoilFormatted})` : '(±0)',
-      diffRecoil < 0 ? 'delta-better' : diffRecoil > 0 ? 'delta-worse-recoil' : 'delta-neutral',
-    );
-
-    const diffRepulse = inspectedTel.repulseForce - targetTel.repulseForce;
-    const repulseFormatted = `${diffRepulse >= 0 ? '+' : ''}${diffRepulse}`;
-    this.updateTelemetryDelta(
-      'repulse',
-      diffRepulse !== 0 ? `(${repulseFormatted})` : '(±0)',
-      diffRepulse > 0 ? 'delta-better' : diffRepulse < 0 ? 'delta-worse' : 'delta-neutral',
-    );
-
-    const diffInstab = inspectedTel.instabilityYield - targetTel.instabilityYield;
-    const instabFormatted = `${diffInstab >= 0 ? '+' : ''}${diffInstab}%`;
-    this.updateTelemetryDelta(
-      'instability',
-      diffInstab !== 0 ? `(${instabFormatted})` : '(±0)',
-      diffInstab > 0 ? 'delta-better' : diffInstab < 0 ? 'delta-worse' : 'delta-neutral',
-    );
-
-    const damageDelta = this.inspectorPane.querySelector(
-      '.telemetry-delta[data-metric="damage"]',
-    );
-    if (damageDelta) {
-      const diffDmg = inspectedTel.directDamage - targetTel.directDamage;
-      const dmgFormatted = `${diffDmg >= 0 ? '+' : ''}${diffDmg} HP`;
-      this.updateTelemetryDelta(
-        'damage',
-        diffDmg !== 0 ? `(${dmgFormatted})` : '(±0)',
-        diffDmg > 0 ? 'delta-better' : diffDmg < 0 ? 'delta-worse' : 'delta-neutral',
-      );
-    }
-
-    banner.textContent = `COMPARING VS [${slotKey}] ${equippedSpell.name}`;
-    banner.classList.add('is-visible');
-  }
-
-  private clearSlotComparison(): void {
-    const banner = this.inspectorPane.querySelector('#inspector-compare-banner');
-    if (banner) {
-      banner.classList.remove('is-visible');
-      banner.textContent = '';
-    }
-    for (const delta of this.inspectorPane.querySelectorAll('.telemetry-delta')) {
-      delta.textContent = '';
-      delta.className = 'telemetry-delta';
-    }
   }
 
   private buildImpactProfileCard(profile: CombatImpactProfile): HTMLElement {

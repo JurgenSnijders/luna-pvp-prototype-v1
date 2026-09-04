@@ -10,6 +10,7 @@ import {
   type GraphicsSettings,
   type QualityTier,
 } from '../graphicsSettings';
+import { exportGraphicsProfile, importGraphicsProfile } from '../graphicsProfile';
 import { STYLE_PRESET_IDS, STYLE_PRESETS, isStylePresetId } from '../../render/presets/stylePresets';
 import { CROSSHAIR_PRESETS, CROSSHAIR_STYLE_IDS, isCrosshairStyleId } from '../../ui/crosshairPresets';
 import { perfMonitor } from '../PerfMonitor';
@@ -279,6 +280,81 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   };
   perfSection.appendChild(highQualityBtn);
 
+  const profileHelper = document.createElement('div');
+  profileHelper.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin:8px 0 4px;line-height:1.35;`;
+  profileHelper.textContent = 'Save a file on this machine, then load it on another computer.';
+  perfSection.appendChild(profileHelper);
+
+  const profileStatus = document.createElement('div');
+  profileStatus.style.cssText = `display:none;font-size:${FONTS.size.sm};margin-top:6px;line-height:1.35;`;
+
+  const showProfileStatus = (message: string, ok: boolean): void => {
+    profileStatus.textContent = message;
+    profileStatus.style.display = 'block';
+    profileStatus.style.color = ok ? RETRO_COLORS.neonCyan : '#ff6666';
+    window.setTimeout(() => {
+      profileStatus.style.display = 'none';
+    }, 4000);
+  };
+
+  const profileRow = document.createElement('div');
+  profileRow.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+
+  const exportProfileBtn = document.createElement('button');
+  exportProfileBtn.textContent = 'Export JSON';
+  exportProfileBtn.style.cssText = buttonStyle(false) + 'flex:1;';
+  exportProfileBtn.onclick = () => {
+    const profile = exportGraphicsProfile();
+    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'luna-graphics-profile.json';
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showProfileStatus('Graphics profile exported.', true);
+  };
+
+  const importFileInput = document.createElement('input');
+  importFileInput.type = 'file';
+  importFileInput.accept = 'application/json,.json';
+  importFileInput.style.display = 'none';
+
+  const importProfileBtn = document.createElement('button');
+  importProfileBtn.textContent = 'Import JSON';
+  importProfileBtn.style.cssText = buttonStyle(false) + 'flex:1;';
+  importProfileBtn.onclick = () => {
+    importFileInput.value = '';
+    importFileInput.click();
+  };
+
+  importFileInput.onchange = () => {
+    const file = importFileInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result ?? ''));
+        importGraphicsProfile(raw);
+        syncControls(getGraphicsSettings());
+        showProfileStatus('Graphics profile imported.', true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid graphics profile file.';
+        showProfileStatus(message, false);
+      }
+    };
+    reader.onerror = () => {
+      showProfileStatus('Could not read graphics profile file.', false);
+    };
+    reader.readAsText(file);
+  };
+
+  profileRow.appendChild(exportProfileBtn);
+  profileRow.appendChild(importProfileBtn);
+  perfSection.appendChild(profileRow);
+  perfSection.appendChild(importFileInput);
+  perfSection.appendChild(profileStatus);
+
   parent.appendChild(perfSection);
 
   // --- HIT IMPACT & SATISFACTION ---
@@ -478,10 +554,16 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
         if (box) box.checked = s[key] as boolean;
       }
     }
+    for (const key of Object.keys(hitCheckboxes) as (keyof HitFeedbackConfig)[]) {
+      const box = hitCheckboxes[key];
+      if (box) box.checked = hitFeedbackConfig[key];
+    }
     presetSelect.refresh();
     crosshairSelect.refresh();
     for (const slider of bloomSliders) slider.refresh();
     for (const slider of bgParallaxSliders) slider.refresh();
+    for (const slider of fctSliders) slider.refresh();
+    syncIconStyleButtons();
     postEffectsControls.sync();
   };
 
