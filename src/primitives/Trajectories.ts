@@ -1,10 +1,36 @@
 import { Vector2D } from '../math/Vector2D';
 import { isAlliedTo } from '../engine/allegiance';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { WORLD_GRAVITY } from '../engine/verticalConstants';
 import type { Projectile } from '../entities/Projectile';
+import type { TrajectoryConfig } from '../types/schema';
 
 const RETURN_CONTACT_RADIUS = 24;
 const BLINK_INTERVAL_MS = 150;
+
+export function initBallisticKinematics(
+  proj: Projectile,
+  trajectory: TrajectoryConfig,
+): void {
+  proj.gravityScale = trajectory.gravityScale ?? 1.0;
+  proj.groundRestitution = trajectory.bounceRestitution ?? 0.55;
+  proj.groundFriction = trajectory.groundFriction ?? 0.15;
+  proj.bouncesRemaining = trajectory.bounces ?? 0;
+  proj.bounceCount = 0;
+  proj.clearanceHeight = trajectory.clearanceHeight ?? 0;
+  proj.detonateAtZ = trajectory.detonateAtZ;
+
+  if (trajectory.spawnAltitude && trajectory.spawnAltitude > 0) {
+    proj.z = trajectory.spawnAltitude;
+    proj.prevZ = proj.z;
+    proj.vz = -(trajectory.fallSpeed ?? 900);
+  } else {
+    const apex = trajectory.lobApex ?? 80;
+    proj.vz = Math.sqrt(2 * WORLD_GRAVITY * proj.gravityScale * apex);
+  }
+
+  proj.isGrounded = false;
+}
 
 function rotateToward(current: Vector2D, target: Vector2D, maxRadians: number): Vector2D {
   const curMag = current.mag();

@@ -20,6 +20,7 @@ import type { TriggerContext } from '../../types/triggerContext';
 import { deltaVec, vecTelemetry } from '../../types/telemetry';
 import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { Interpreter } from './Interpreter';
+import { initBallisticKinematics } from '../Trajectories';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
 import { buildTriggerMap, safeNormalize, secondaryColor } from './helpers';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
@@ -101,16 +102,7 @@ export function executeEmitter(
     }
 
     if (trajectory.type === 'BALLISTIC_ARC') {
-      projectile.gravityScale = trajectory.gravityScale ?? 1.0;
-      projectile.groundRestitution = trajectory.bounceRestitution ?? 0.55;
-      projectile.groundFriction = trajectory.groundFriction ?? 0.15;
-      projectile.bouncesRemaining = trajectory.bounces ?? 0;
-      projectile.bounceCount = 0;
-      projectile.clearanceHeight = trajectory.clearanceHeight ?? 0;
-      projectile.detonateAtZ = trajectory.detonateAtZ;
-      const apex = trajectory.lobApex ?? 80;
-      projectile.vz = Math.sqrt(2 * WORLD_GRAVITY * projectile.gravityScale * apex);
-      projectile.isGrounded = false;
+      initBallisticKinematics(projectile, trajectory);
     }
 
     if (ctx.sourceEntity instanceof Projectile) {

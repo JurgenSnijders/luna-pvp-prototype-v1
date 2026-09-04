@@ -191,6 +191,8 @@ export interface TrajectoryConfig {
   groundFriction?: number;
   clearanceHeight?: number;
   detonateAtZ?: number;
+  spawnAltitude?: number;
+  fallSpeed?: number;
 }
 
 export interface FieldConfig {

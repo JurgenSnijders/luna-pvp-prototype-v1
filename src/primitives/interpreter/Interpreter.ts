@@ -14,6 +14,7 @@ import {
   updateTrajectories as updateTrajectoriesImpl,
   type LifecycleFx,
 } from './lifecycle';
+import { initBallisticKinematics } from '../Trajectories';
 import { dispatchTriggerNode } from './triggers';
 
 export class Interpreter {
@@ -106,6 +107,9 @@ export class Interpreter {
       );
       if (schema.trajectory.type === 'ORBIT_ANCHOR') {
         projectile.maxLifetimeMs = 3000;
+      }
+      if (schema.trajectory.type === 'BALLISTIC_ARC') {
+        initBallisticKinematics(projectile, schema.trajectory);
       }
       world.addProjectile(projectile);
     }
