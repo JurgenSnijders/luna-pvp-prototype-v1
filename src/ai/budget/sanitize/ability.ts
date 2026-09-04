@@ -1,6 +1,6 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { AbilitySchema, SpellArchetype, TriggerNode, ValidationIssue } from '../../../types/schema';
-import { SPELL_ARCHETYPE_SET, validateAbilitySchema } from '../../../types/schema';
+import type { AbilitySchema, SpellArchetype, TargetingMode, TriggerNode, ValidationIssue } from '../../../types/schema';
+import { SPELL_ARCHETYPE_SET, TARGETING_MODE_SET, validateAbilitySchema } from '../../../types/schema';
 import { repairAbilitySemantics } from '../repair';
 import { ensureFiniteNumber, isObject } from '../helpers';
 
@@ -79,6 +79,17 @@ export function sanitizeAbilitySchema(
 
   const cardDescription = clampFlavorString(obj.description);
   if (cardDescription) schema.description = cardDescription;
+
+  if (typeof obj.targetingMode === 'string') {
+    const modeRaw = obj.targetingMode.toUpperCase();
+    if (TARGETING_MODE_SET.has(modeRaw)) {
+      schema.targetingMode = modeRaw as TargetingMode;
+    }
+  }
+
+  if (obj.maxTargetRange !== undefined) {
+    schema.maxTargetRange = Math.max(100, Math.min(1200, ensureFiniteNumber(obj.maxTargetRange, 500)));
+  }
 
   promoteRootEmitter(schema, obj);
 

@@ -1,6 +1,31 @@
 import { Vector2D } from '../../math/Vector2D';
+import { clampToHex } from '../../math/HexMath';
+import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { ActionPayload, TriggerNode, VisualDescriptor } from '../../types/schema';
+import type { TriggerContext } from '../../types/triggerContext';
 import { FALLBACK_DIR } from './constants';
+
+export function resolveCastAnchor(
+  ctx: TriggerContext,
+  world: PhysicsWorld,
+  fallbackOrigin: Vector2D,
+): Vector2D {
+  if (ctx.ability?.targetingMode !== 'GROUND_POINT' || !ctx.aimPoint) {
+    return fallbackOrigin.clone();
+  }
+
+  const maxRange = ctx.ability.maxTargetRange ?? 500;
+  const casterPos = ctx.caster.pos;
+  const delta = ctx.aimPoint.sub(casterPos);
+  const dist = delta.mag();
+
+  const clampedTarget =
+    dist > maxRange
+      ? casterPos.add(delta.scale(maxRange / (dist || 1)))
+      : ctx.aimPoint.clone();
+
+  return clampToHex(clampedTarget, world.hexCenter, world.hexRadius);
+}
 
 export function getActionPriority(type: ActionPayload['type']): number {
   if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT' || type === 'APPLY_STASIS' || type === 'APPLY_STATUS') return 1;

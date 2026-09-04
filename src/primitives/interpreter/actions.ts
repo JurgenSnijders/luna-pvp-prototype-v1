@@ -22,7 +22,7 @@ import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { Interpreter } from './Interpreter';
 import { initBallisticKinematics } from '../Trajectories';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
-import { buildTriggerMap, safeNormalize, secondaryColor } from './helpers';
+import { buildTriggerMap, resolveCastAnchor, safeNormalize, secondaryColor } from './helpers';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
 
 function getArchetypeTuning(ctx: TriggerContext) {
@@ -78,7 +78,12 @@ export function executeEmitter(
     const fireDir = Vector2D.fromAngle(theta);
     const muzzle = ctx.sourceEntity ?? ctx.caster;
     const muzzleOffset = muzzle.radius + Math.max(4, vfx.size ?? 8);
-    const spawnPos = ctx.origin.add(fireDir.scale(muzzleOffset));
+    const isGroundTargeted = ctx.ability?.targetingMode === 'GROUND_POINT';
+    const anchor = resolveCastAnchor(ctx, world, ctx.origin);
+    const basePos = isGroundTargeted ? anchor : ctx.origin;
+    const spawnPos = isGroundTargeted
+      ? basePos.add(fireDir.scale(i * 4))
+      : basePos.add(fireDir.scale(muzzleOffset));
     const projectile = new Projectile(
       spawnPos,
       structuredClone(trajectory),
@@ -184,7 +189,9 @@ export function dispatchAction(
       }
 
       const offset = field.offset ? new Vector2D(field.offset.x, field.offset.y) : Vector2D.zero();
-      const spawnPos = parent ? parent.pos.add(offset) : ctx.origin.clone();
+      const spawnPos = parent
+        ? parent.pos.add(offset)
+        : resolveCastAnchor(ctx, world, ctx.origin);
       const archetype = ctx.ability?.archetype ?? 'KINETIC';
       const zone = new SpatialZone(spawnPos, field, ctx.caster.id, archetype);
       if (parent) {
@@ -350,7 +357,12 @@ export function dispatchAction(
     }
     case 'SPAWN_OBSTACLE': {
       const t = resolveActionTarget(action.target, ctx);
-      const pos = (t ?? ctx.caster).pos.clone();
+      let pos: Vector2D;
+      if (ctx.ability?.targetingMode === 'GROUND_POINT') {
+        pos = resolveCastAnchor(ctx, world, ctx.origin);
+      } else {
+        pos = (t ?? ctx.caster).pos.clone();
+      }
       const obstacleConfig = { ...action.obstacle };
       if (obstacleConfig.shape === 'BOX' && obstacleConfig.angle === undefined) {
         const aim = t ? t.pos.sub(ctx.caster.pos) : ctx.heading;
@@ -363,7 +375,12 @@ export function dispatchAction(
     }
     case 'MUTATE_TERRAIN': {
       const t = resolveActionTarget(action.target, ctx);
-      const pos = (t ?? ctx.caster).pos.clone();
+      let pos: Vector2D;
+      if (ctx.ability?.targetingMode === 'GROUND_POINT') {
+        pos = resolveCastAnchor(ctx, world, ctx.origin);
+      } else {
+        pos = (t ?? ctx.caster).pos.clone();
+      }
       world.addTerrainPatch(pos, action.mutation);
       break;
     }

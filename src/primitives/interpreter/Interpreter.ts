@@ -7,7 +7,7 @@ import type { AbilitySchema, VisualDescriptor } from '../../types/schema';
 import type { TriggerContext, ExecutionOverrides } from '../../types/triggerContext';
 import { vecTelemetry } from '../../types/telemetry';
 import { DEFAULT_VISUALS, MAX_DEPTH } from './constants';
-import { buildTriggerMap, safeNormalize } from './helpers';
+import { buildTriggerMap, resolveCastAnchor, safeNormalize } from './helpers';
 import {
   dispatchRecast as dispatchRecastImpl,
   processLifecycleEvents as processLifecycleEventsImpl,
@@ -87,9 +87,11 @@ export class Interpreter {
 
     if (schema.trajectory) {
       const spawnPos =
-        depth === 0
-          ? castCtx.caster.pos.add(heading.scale(castCtx.caster.radius + 12))
-          : castCtx.origin.clone();
+        schema.targetingMode === 'GROUND_POINT'
+          ? resolveCastAnchor(castCtx, world, castCtx.origin)
+          : depth === 0
+            ? castCtx.caster.pos.add(heading.scale(castCtx.caster.radius + 12))
+            : castCtx.origin.clone();
       const aimAngle = Math.atan2(heading.y, heading.x);
       const triggerMap = buildTriggerMap(
         schema.triggers.filter((t) => t.trigger !== 'ON_CAST'),

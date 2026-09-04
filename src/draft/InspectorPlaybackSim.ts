@@ -323,6 +323,7 @@ function runSandboxSimulation(spell: AbilitySchema): {
     {
       origin: caster.pos.clone(),
       heading,
+      aimPoint: targetPos.clone(),
       caster,
       depth: 0,
       ability: spell,

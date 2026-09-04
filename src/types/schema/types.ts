@@ -407,6 +407,8 @@ export interface TriggerNode {
   children?: TriggerNode[];
 }
 
+export type TargetingMode = 'DIRECTIONAL' | 'GROUND_POINT';
+
 export interface AbilitySchema {
   id: string;
   name: string;
@@ -421,6 +423,8 @@ export interface AbilitySchema {
   metadata?: Record<string, unknown>;
   inputProfile?: InputProfile;
   resourceCost?: ResourceCost;
+  targetingMode?: TargetingMode;
+  maxTargetRange?: number;
 }
 
 export interface CastChildPayloadAction {

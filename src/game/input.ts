@@ -26,6 +26,7 @@ export function executePlayerCast(
     {
       origin: caster.pos.clone(),
       heading,
+      aimPoint: caster.aimTarget.clone(),
       caster,
       depth: 0,
       chargeRatio: overrides.chargeRatio,

@@ -13,6 +13,7 @@ export interface ExecutionOverrides {
 export interface TriggerContext {
   origin: Vector2D;
   heading: Vector2D;
+  aimPoint?: Vector2D;
   normal?: Vector2D;
   caster: Entity;
   sourceEntity?: Entity;

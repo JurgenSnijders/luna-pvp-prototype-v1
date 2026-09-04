@@ -1,5 +1,5 @@
-import type { AbilitySchema, SpellArchetype, TriggerNode } from '../types';
-import { SPELL_ARCHETYPE_SET } from '../constants';
+import type { AbilitySchema, SpellArchetype, TargetingMode, TriggerNode } from '../types';
+import { SPELL_ARCHETYPE_SET, TARGETING_MODE_SET } from '../constants';
 import { validateInputProfile, validateResourceCost } from './condition';
 import {
   clamp,
@@ -96,6 +96,17 @@ export function validateAbilitySchema(
 
   const description = clampFlavorString(json.description);
   if (description) schema.description = description;
+
+  if (json.targetingMode !== undefined) {
+    const modeRaw = isString(json.targetingMode) ? json.targetingMode.toUpperCase() : '';
+    if (TARGETING_MODE_SET.has(modeRaw)) {
+      schema.targetingMode = modeRaw as TargetingMode;
+    }
+  }
+
+  if (json.maxTargetRange !== undefined && isNumber(json.maxTargetRange) && json.maxTargetRange > 0) {
+    schema.maxTargetRange = json.maxTargetRange;
+  }
 
   return schema;
 }
