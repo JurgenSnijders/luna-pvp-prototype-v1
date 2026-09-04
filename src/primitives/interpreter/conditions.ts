@@ -60,6 +60,13 @@ export function evaluateCondition(
       const surface = world.getSurfaceTypeAt(t.pos);
       return surface.toUpperCase() === String(cond.value).toUpperCase();
     }
+    case 'ELEVATION': {
+      return compareNumeric(
+        t.z,
+        cond.comparison ?? 'GT',
+        Number(cond.value),
+      );
+    }
   }
 }
 

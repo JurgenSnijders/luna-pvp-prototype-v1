@@ -73,6 +73,12 @@ export function validateConditionNode(value: unknown): ConditionNode | null {
       cond.value = value.value;
       return cond;
     }
+    case 'ELEVATION': {
+      if (!parseComparisonOperator(value.comparison) || !isNumber(value.value)) return null;
+      cond.comparison = parseComparisonOperator(value.comparison);
+      cond.value = value.value;
+      return cond;
+    }
     default:
       return null;
   }

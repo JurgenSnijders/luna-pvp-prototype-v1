@@ -87,6 +87,7 @@ export const CONDITION_QUERIES = new Set([
   'PROXIMITY_COUNT',
   'SURFACE_TYPE',
   'COMBO_STEP',
+  'ELEVATION',
 ]);
 export const INPUT_PROFILE_MODES = new Set([
   'INSTANT',

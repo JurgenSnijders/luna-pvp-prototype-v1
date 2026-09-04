@@ -73,6 +73,8 @@ export const ACTION_TYPES: ReadonlySet<string> = new Set([
   'SPAWN_ACTOR',
   'APPLY_STEALTH',
   'APPLY_STATUS',
+  'LAUNCH_VERTICAL',
+  'SET_GRAVITY_SCALE',
 ]);
 
 export const OBSTACLE_SHAPES: ReadonlySet<string> = new Set(['CIRCLE', 'BOX']);
@@ -87,6 +89,7 @@ export const CONDITION_QUERIES: ReadonlySet<string> = new Set([
   'PROXIMITY_COUNT',
   'SURFACE_TYPE',
   'COMBO_STEP',
+  'ELEVATION',
 ]);
 
 export const INPUT_PROFILE_MODES: ReadonlySet<string> = new Set([

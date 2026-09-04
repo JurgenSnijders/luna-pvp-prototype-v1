@@ -95,6 +95,13 @@ function scoreAction(action: ActionPayload, depth: number): number {
       }
       return score;
     }
+    case 'LAUNCH_VERTICAL': {
+      const apex = action.targetApex ?? 0;
+      const impulse = action.verticalImpulse ?? 0;
+      return Math.max(apex / 40, Math.abs(impulse) / 400) * 4;
+    }
+    case 'SET_GRAVITY_SCALE':
+      return action.scale * ((action.durationMs ?? 1000) / 1000) * 3;
   }
 }
 

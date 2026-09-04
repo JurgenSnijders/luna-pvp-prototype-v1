@@ -1,4 +1,5 @@
 import type { FieldConfig, SpellArchetype } from '../types/schema';
+import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { Vector2D } from '../math/Vector2D';
 import { Entity, generateEntityId } from './Entity';
 
@@ -10,6 +11,8 @@ export class SpatialZone extends Entity {
   parentRef: Entity | null;
   offset: Vector2D;
   detachOnParentDeath: boolean;
+  zBase = 0;
+  zHeight = HAZARD_CLEARANCE_Z;
 
   constructor(
     pos: Vector2D,

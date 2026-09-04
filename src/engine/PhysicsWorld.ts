@@ -17,7 +17,16 @@ import {
 } from '../types/debug';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
-import { MAX_ABS_VZ, WORLD_GRAVITY, Z_EPSILON } from './verticalConstants';
+import {
+  HAZARD_CLEARANCE_Z,
+  LIP_HEIGHT,
+  MAX_ABS_VZ,
+  MAX_GROUND_SUBSTEPS,
+  VZ_SETTLE,
+  WORLD_GRAVITY,
+  Z_EPSILON,
+} from './verticalConstants';
+import { bandsOverlap } from './elevation';
 
 const obstacleEntityScratch: Entity[] = [];
 
@@ -639,20 +648,49 @@ export class PhysicsWorld {
       }
 
       e.prevZ = e.z;
-      e.vz -= WORLD_GRAVITY * e.gravityScale * dt;
-      if (e.vz > MAX_ABS_VZ) e.vz = MAX_ABS_VZ;
-      else if (e.vz < -MAX_ABS_VZ) e.vz = -MAX_ABS_VZ;
+      let remainingDt = dt;
 
-      e.z += e.vz * dt;
+      for (let iter = 0; iter < MAX_GROUND_SUBSTEPS && remainingDt > 1e-6; iter++) {
+        const vzStart = e.vz;
+        const zStart = e.z;
 
-      if (e.z <= 0) {
+        e.vz -= WORLD_GRAVITY * e.gravityScale * remainingDt;
+        if (e.vz > MAX_ABS_VZ) e.vz = MAX_ABS_VZ;
+        else if (e.vz < -MAX_ABS_VZ) e.vz = -MAX_ABS_VZ;
+
+        const zEnd = zStart + e.vz * remainingDt;
+
+        if (zEnd > 0) {
+          e.z = zEnd;
+          break;
+        }
+
+        const span = zStart - zEnd;
+        const tHit = span > 1e-9 ? (zStart / span) * remainingDt : 0;
+        const vzImpact = vzStart - WORLD_GRAVITY * e.gravityScale * tHit;
+
         e.z = 0;
-        e.vz = 0;
-        e.gravityScale = 0;
-        e.isGrounded = true;
-      } else {
+        e.vz = -vzImpact * e.groundRestitution;
+
+        if (e.groundFriction > 0) {
+          e.vel.scaleMut(1 - e.groundFriction);
+        }
+
+        if (e.vz < VZ_SETTLE) {
+          e.vz = 0;
+          e.gravityScale = 0;
+          e.isGrounded = true;
+          break;
+        }
+
+        remainingDt -= tHit;
+      }
+
+      if (e.z > 0) {
         e.isGrounded = false;
         activeAirborne++;
+      } else {
+        e.isGrounded = true;
       }
     };
 
@@ -680,6 +718,12 @@ export class PhysicsWorld {
     const aStasis = a.stasisRemainingMs > 0;
     const bStasis = b.stasisRemainingMs > 0;
     if (aStasis && bStasis) return;
+    if (
+      this.verticalActive &&
+      !bandsOverlap(a.zBottom, a.zTop, b.zBottom, b.zTop)
+    ) {
+      return;
+    }
 
     const delta = b.pos.sub(a.pos);
     const dist = delta.mag();
@@ -781,6 +825,7 @@ export class PhysicsWorld {
 
   private clampEntityToHex(entity: Entity): void {
     if (entity.isIntangible()) return;
+    if (entity.z > LIP_HEIGHT) return;
     if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) return;
 
     const normal = getClosestEdgeNormal(entity.pos, this.hexCenter, this.hexRadius);
@@ -992,6 +1037,12 @@ export class PhysicsWorld {
     const override = this.getTerrainOverride(entity.pos);
 
     if (override === 'SAFE') {
+      entity.tags.delete('in_lava');
+      this.lavaDamageAccumulator.delete(entity.id);
+      return;
+    }
+
+    if (this.verticalActive && entity.z > HAZARD_CLEARANCE_Z) {
       entity.tags.delete('in_lava');
       this.lavaDamageAccumulator.delete(entity.id);
       return;

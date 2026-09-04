@@ -129,6 +129,15 @@ export function sanitizeConditionNode(raw: unknown): ConditionNode | null {
       if (!comparison || !Number.isFinite(value)) return null;
       return { query, comparison, value };
     }
+    case 'ELEVATION': {
+      const comparison = parseComparisonOperator(raw.comparison);
+      const value = ensureFiniteNumber(raw.value, NaN);
+      if (!comparison || !Number.isFinite(value)) return null;
+      const cond: ConditionNode = { query, comparison, value };
+      const target = parseActionTarget(raw.target);
+      if (target) cond.target = target;
+      return cond;
+    }
     default:
       return null;
   }

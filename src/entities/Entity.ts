@@ -44,6 +44,8 @@ export class Entity {
   groundFriction = 0.15;
   hitHeight = 0;
   isGrounded = true;
+  gravityScaleTimerMs = 0;
+  gravityScaleBase = 0;
   mass: number;
   radius: number;
   linearDrag: number;
@@ -399,6 +401,16 @@ export class Entity {
     this.forceAccumulatorScale = 1.0;
   }
 
+  resetVerticalKinematics(): void {
+    this.z = 0;
+    this.prevZ = 0;
+    this.vz = 0;
+    this.gravityScale = 0;
+    this.gravityScaleTimerMs = 0;
+    this.gravityScaleBase = 0;
+    this.isGrounded = true;
+  }
+
   isImmovable(): boolean {
     return false;
   }
@@ -416,6 +428,13 @@ export class Entity {
     }
     if (this.stealthRemainingMs > 0) {
       this.stealthRemainingMs = Math.max(0, this.stealthRemainingMs - dt * 1000);
+    }
+
+    if (this.gravityScaleTimerMs > 0) {
+      this.gravityScaleTimerMs = Math.max(0, this.gravityScaleTimerMs - dt * 1000);
+      if (this.gravityScaleTimerMs <= 0) {
+        this.gravityScale = this.isGrounded ? 0 : 1;
+      }
     }
 
     if (this.stasisRemainingMs > 0) {

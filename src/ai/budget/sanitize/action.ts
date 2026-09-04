@@ -1,6 +1,7 @@
 import type { SkillCategory } from '../../../types/cards';
 import type { ActionPayload, SpellArchetype, TriggerNode } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
+import { MAX_ABS_VZ } from '../../../engine/verticalConstants';
 import { FIELD_TYPES, MAX_DEPTH } from '../constants';
 import {
   clamp,
@@ -318,6 +319,41 @@ export function sanitizeAction(
       };
       if (raw.stacks !== undefined) {
         action.stacks = clamp(ensureFiniteNumber(raw.stacks, 1), 1, 10);
+      }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'LAUNCH_VERTICAL': {
+      const action: Extract<ActionPayload, { type: 'LAUNCH_VERTICAL' }> = {
+        type: 'LAUNCH_VERTICAL',
+      };
+      if (raw.verticalImpulse !== undefined) {
+        action.verticalImpulse = clamp(
+          ensureFiniteNumber(raw.verticalImpulse, 0),
+          -MAX_ABS_VZ,
+          MAX_ABS_VZ,
+        );
+      }
+      if (raw.targetApex !== undefined) {
+        action.targetApex = clamp(ensureFiniteNumber(raw.targetApex, 80), 0, 400);
+      }
+      if (action.verticalImpulse === undefined && action.targetApex === undefined) {
+        action.targetApex = 80;
+      }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SET_GRAVITY_SCALE': {
+      const action: Extract<ActionPayload, { type: 'SET_GRAVITY_SCALE' }> = {
+        type: 'SET_GRAVITY_SCALE',
+        scale: clamp(ensureFiniteNumber(raw.scale, 1), 0, 8),
+      };
+      if (raw.durationMs !== undefined) {
+        action.durationMs = clamp(ensureFiniteNumber(raw.durationMs, 2000), 0, 10000);
       }
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

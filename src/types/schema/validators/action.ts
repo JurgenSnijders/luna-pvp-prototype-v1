@@ -9,6 +9,8 @@ import type {
   ModifyStatAction,
   ReflectProjectilesAction,
   ReleaseStasisAction,
+  LaunchVerticalAction,
+  SetGravityScaleAction,
   SpawnConstraintAction,
   SpawnFieldAction,
   SpawnObstacleAction,
@@ -31,6 +33,7 @@ import {
   MAX_VALIDATION_DEPTH,
   parseActionTarget,
   parseImpulseDirectionMode,
+  clamp,
   type ValidationIssue,
   validationFail,
 } from './helpers';
@@ -304,6 +307,53 @@ export function validateActionPayload(
           return validationFail(issues, `${path}.stacks`, 'invalid stacks');
         }
         action.stacks = value.stacks;
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'LAUNCH_VERTICAL': {
+      const hasImpulse = value.verticalImpulse !== undefined;
+      const hasApex = value.targetApex !== undefined;
+      if (!hasImpulse && !hasApex) {
+        return validationFail(
+          issues,
+          path,
+          'LAUNCH_VERTICAL requires verticalImpulse or targetApex',
+        );
+      }
+      const action: LaunchVerticalAction = { type: 'LAUNCH_VERTICAL' };
+      if (hasImpulse) {
+        if (!isNumber(value.verticalImpulse)) {
+          return validationFail(issues, `${path}.verticalImpulse`, 'invalid verticalImpulse');
+        }
+        action.verticalImpulse = clamp(value.verticalImpulse, -4000, 4000);
+      }
+      if (hasApex) {
+        if (!isNumber(value.targetApex)) {
+          return validationFail(issues, `${path}.targetApex`, 'invalid targetApex');
+        }
+        action.targetApex = clamp(value.targetApex, 0, 400);
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'SET_GRAVITY_SCALE': {
+      if (!isNumber(value.scale)) {
+        return validationFail(issues, `${path}.scale`, 'invalid scale');
+      }
+      const action: SetGravityScaleAction = {
+        type: 'SET_GRAVITY_SCALE',
+        scale: clamp(value.scale, 0, 8),
+      };
+      if (value.durationMs !== undefined) {
+        if (!isNumber(value.durationMs)) {
+          return validationFail(issues, `${path}.durationMs`, 'invalid durationMs');
+        }
+        action.durationMs = clamp(value.durationMs, 0, 10000);
       }
       const target = parseActionTarget(value.target);
       if (target) action.target = target;

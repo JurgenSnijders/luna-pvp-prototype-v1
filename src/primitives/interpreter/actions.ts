@@ -1,6 +1,7 @@
 import { clampToHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import { MAX_ENTITIES, getInstabilityScale, type PhysicsWorld } from '../../engine/PhysicsWorld';
+import { MAX_ABS_VZ, WORLD_GRAVITY } from '../../engine/verticalConstants';
 import { Entity } from '../../entities/Entity';
 import { Obstacle } from '../../entities/Obstacle';
 import { Player } from '../../entities/Player';
@@ -368,6 +369,32 @@ export function dispatchAction(
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
       t.applyStatus(action.archetype, action.durationMs, action.stacks ?? 1, world);
+      break;
+    }
+    case 'LAUNCH_VERTICAL': {
+      const t = resolveActionTarget(action.target ?? 'CASTER', ctx);
+      if (!t) break;
+      let vz: number;
+      if (action.targetApex !== undefined) {
+        vz = Math.sqrt(2 * WORLD_GRAVITY * action.targetApex);
+      } else {
+        vz = action.verticalImpulse ?? 0;
+      }
+      vz = Math.max(-MAX_ABS_VZ, Math.min(MAX_ABS_VZ, vz));
+      t.vz = vz;
+      t.gravityScale = 1;
+      t.isGrounded = false;
+      break;
+    }
+    case 'SET_GRAVITY_SCALE': {
+      const t = resolveActionTarget(action.target ?? 'CASTER', ctx);
+      if (!t) break;
+      const scale = Math.max(0, Math.min(8, action.scale));
+      t.gravityScale = scale;
+      if (action.durationMs !== undefined && action.durationMs > 0) {
+        t.gravityScaleTimerMs = action.durationMs;
+        t.gravityScaleBase = scale;
+      }
       break;
     }
     case 'SPAWN_ACTOR': {

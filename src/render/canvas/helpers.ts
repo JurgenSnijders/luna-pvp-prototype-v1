@@ -4,3 +4,7 @@ import { Vector2D } from '../../math/Vector2D';
 export function lerpPos(entity: Entity, alpha: number): Vector2D {
   return entity.prevPos.lerp(entity.pos, alpha);
 }
+
+export function lerpZ(entity: Entity, alpha: number): number {
+  return entity.prevZ + (entity.z - entity.prevZ) * alpha;
+}

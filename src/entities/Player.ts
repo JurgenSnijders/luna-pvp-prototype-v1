@@ -742,6 +742,7 @@ export class Player extends Entity {
     this.resetStasis();
     this.resetMorphStealth();
     this.resetHitFeedback();
+    this.resetVerticalKinematics();
     for (let i = 0; i < SLOT_COUNT; i++) {
       this.initSlotResourceState(i);
     }
@@ -750,5 +751,6 @@ export class Player extends Entity {
   resetPosition(spawn: Vector2D): void {
     this.pos = spawn.clone();
     this.prevPos = spawn.clone();
+    this.resetVerticalKinematics();
   }
 }

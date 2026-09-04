@@ -1,12 +1,15 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
+import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getActiveColors } from '../../ui/tokens';
-import { lerpPos } from './helpers';
+import { lerpPos, lerpZ } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 import { drawStatusAuras } from './statusAuras';
+
+const combatantSortScratch: Entity[] = [];
 
 export function drawEntityContactShadow(
   ctx: CanvasRenderingContext2D,
@@ -61,20 +64,35 @@ export function drawCombatants(
   world: PhysicsWorld,
   alpha: number,
 ): void {
+  combatantSortScratch.length = 0;
+
   for (const player of world.players) {
-    if (player.isDead) continue;
-    const pos = lerpPos(player, alpha);
-    const colors = getActiveColors();
-    const isBot = player.tags.has('bot');
-    const baseColor = isBot ? colors.botOrange : colors.playerCyan;
-    const aimColor = isBot ? colors.botOrangeAim : colors.playerCyanAim;
-    drawCombatantBody(ctx, state, world, player, pos, baseColor, aimColor);
+    if (!player.isDead) combatantSortScratch.push(player);
+  }
+  for (const dummy of world.dummies) {
+    if (!dummy.isDead) combatantSortScratch.push(dummy);
   }
 
-  for (const dummy of world.dummies) {
-    if (dummy.isDead) continue;
-    const pos = lerpPos(dummy, alpha);
-    drawCombatantBody(ctx, state, world, dummy, pos, getActiveColors().botOrange);
+  for (let i = 1; i < combatantSortScratch.length; i++) {
+    const cur = combatantSortScratch[i];
+    const key = cur.pos.y + cur.z;
+    let j = i - 1;
+    while (j >= 0 && combatantSortScratch[j].pos.y + combatantSortScratch[j].z > key) {
+      combatantSortScratch[j + 1] = combatantSortScratch[j];
+      j--;
+    }
+    combatantSortScratch[j + 1] = cur;
+  }
+
+  const colors = getActiveColors();
+
+  for (const entity of combatantSortScratch) {
+    const pos = lerpPos(entity, alpha);
+    const isDummy = entity.tags.has('dummy');
+    const isBot = entity.tags.has('bot');
+    const baseColor = isDummy || isBot ? colors.botOrange : colors.playerCyan;
+    const aimColor = isDummy ? undefined : isBot ? colors.botOrangeAim : colors.playerCyanAim;
+    drawCombatantBody(ctx, state, world, entity, pos, alpha, baseColor, aimColor);
   }
 }
 
@@ -84,6 +102,7 @@ function drawCombatantBody(
   world: PhysicsWorld,
   entity: Entity,
   pos: Vector2D,
+  alpha: number,
   fillColor: string,
   aimColor?: string,
 ): void {
@@ -95,10 +114,15 @@ function drawCombatantBody(
 
   const nowMs = performance.now();
   const physicsPos = pos;
+  const currentZ = lerpZ(entity, alpha);
   const hasGravity = entity.activeStatuses.has('GRAVITY');
-  const gravityBob = hasGravity ? Math.sin(nowMs * 0.006) * 3 : 0;
-  const visualPos = physicsPos.add(new Vector2D(0, gravityBob));
-  const elevation = hasGravity ? Math.abs(gravityBob) / 3 : 0;
+  const gravityBob =
+    hasGravity && currentZ <= Z_EPSILON ? Math.sin(nowMs * 0.006) * 3 : 0;
+  const visualPos = new Vector2D(
+    physicsPos.x,
+    physicsPos.y - currentZ * Z_TO_SCREEN + gravityBob,
+  );
+  const elevation = Math.min(1, currentZ / 180);
 
   const radius = entity.effectiveRadius;
   const shadowAlpha = entity.isStealthed() ? ctx.globalAlpha * 0.35 : ctx.globalAlpha;

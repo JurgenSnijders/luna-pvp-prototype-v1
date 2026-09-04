@@ -1,5 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
+import { bandsOverlap } from '../engine/elevation';
+import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { isAlliedTo } from '../engine/allegiance';
 import { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
@@ -59,6 +61,12 @@ export function applyField(
   if (entity.tags.has('projectile') || entity.tags.has('zone')) return;
   if (!entity.tags.has('combatant')) return;
   if (isAlliedTo(zone.ownerId, entity)) return;
+
+  if (world.verticalActive) {
+    const zBase = zone.zBase;
+    const zHeight = zone.zHeight;
+    if (!bandsOverlap(entity.zBottom, entity.zTop, zBase, zBase + zHeight)) return;
+  }
 
   const dist = entity.pos.dist(zone.pos);
   if (dist > zone.config.radius + entity.radius) return;

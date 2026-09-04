@@ -375,6 +375,27 @@ const actionBranches = [
     },
     additionalProperties: false,
   },
+  {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['LAUNCH_VERTICAL'] },
+      verticalImpulse: { type: 'number' },
+      targetApex: { type: 'number' },
+      target: actionTarget,
+    },
+    additionalProperties: false,
+  },
+  {
+    type: 'object',
+    required: ['type', 'scale'],
+    properties: {
+      type: { type: 'string', enum: ['SET_GRAVITY_SCALE'] },
+      scale: { type: 'number' },
+      durationMs: { type: 'number' },
+      target: actionTarget,
+    },
+    additionalProperties: false,
+  },
 ];
 
 // Validate action type coverage at build time.

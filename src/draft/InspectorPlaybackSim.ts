@@ -1,4 +1,5 @@
 import { PhysicsWorld } from '../engine/PhysicsWorld';
+import { Z_TO_SCREEN } from '../engine/verticalConstants';
 import { Dummy } from '../entities/Dummy';
 import { Player } from '../entities/Player';
 import { Vector2D } from '../math/Vector2D';
@@ -13,6 +14,7 @@ import type { AbilitySchema, ProjectileStyle } from '../types/schema';
 export interface ProjectileFrameData {
   x: number;
   y: number;
+  z: number;
   radius: number;
   style: ProjectileStyle;
   color: string;
@@ -122,6 +124,7 @@ function snapshotFrame(
     projectiles.push({
       x: proj.pos.x,
       y: proj.pos.y,
+      z: proj.z,
       radius: proj.radius,
       style: proj.visuals?.projectileStyle ?? 'DISC',
       color: proj.visuals?.color ?? '#00e5ff',
@@ -235,6 +238,7 @@ function transformRecording(
 
   for (const frame of rawFrames) {
     for (const proj of frame.projectiles) {
+      inflate(proj.x, proj.y - proj.z * Z_TO_SCREEN, proj.radius);
       inflate(proj.x, proj.y, proj.radius);
     }
     for (const zone of frame.zones) {

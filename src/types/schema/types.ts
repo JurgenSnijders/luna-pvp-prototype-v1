@@ -74,7 +74,8 @@ export type ConditionQuery =
   | 'TAG_CHECK'
   | 'PROXIMITY_COUNT'
   | 'SURFACE_TYPE'
-  | 'COMBO_STEP';
+  | 'COMBO_STEP'
+  | 'ELEVATION';
 
 export type InputProfileMode =
   | 'INSTANT'
@@ -267,6 +268,20 @@ export interface ApplyStatusAction {
   target?: ActionTarget;
 }
 
+export interface LaunchVerticalAction {
+  type: 'LAUNCH_VERTICAL';
+  verticalImpulse?: number;
+  targetApex?: number;
+  target?: ActionTarget;
+}
+
+export interface SetGravityScaleAction {
+  type: 'SET_GRAVITY_SCALE';
+  scale: number;
+  durationMs?: number;
+  target?: ActionTarget;
+}
+
 export interface ReleaseStasisAction {
   type: 'RELEASE_STASIS';
   target?: ActionTarget;
@@ -415,4 +430,6 @@ export type ActionPayload =
   | MorphEntityAction
   | SpawnActorAction
   | ApplyStealthAction
-  | ApplyStatusAction;
+  | ApplyStatusAction
+  | LaunchVerticalAction
+  | SetGravityScaleAction;
