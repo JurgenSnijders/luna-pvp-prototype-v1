@@ -1,5 +1,6 @@
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import { AIR_DRAG, HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import type { MorphConfig, SpellArchetype, AbilitySchema } from '../types/schema';
 
@@ -59,6 +60,7 @@ export class Entity {
   tags: Set<string>;
   stasisRemainingMs: number;
   stashedMomentum: Vector2D;
+  stashedVz: number | null = null;
   forceAccumulatorScale: number;
   activeMorph: MorphConfig | null;
   morphRemainingMs: number;
@@ -68,7 +70,7 @@ export class Entity {
   moveSpeed: number;
   maxSpeed: number;
   friction: number;
-  chronoSnapshot?: { pos: Vector2D; vel: Vector2D };
+  chronoSnapshot?: { pos: Vector2D; vel: Vector2D; z: number; vz: number };
   arcaneBuffer?: Vector2D;
   voidDistanceAcc: number;
   natureAnchor?: Vector2D;
@@ -291,7 +293,12 @@ export class Entity {
 
   onStatusApplied(archetype: SpellArchetype, _world?: PhysicsWorld): void {
     if (archetype === 'CHRONO') {
-      this.chronoSnapshot = { pos: this.pos.clone(), vel: this.vel.clone() };
+      this.chronoSnapshot = {
+        pos: this.pos.clone(),
+        vel: this.vel.clone(),
+        z: this.z,
+        vz: this.vz,
+      };
     }
     if (archetype === 'NATURE') {
       this.natureAnchor = this.pos.clone();
@@ -302,6 +309,9 @@ export class Entity {
     if (archetype === 'CHRONO' && this.chronoSnapshot) {
       this.pos.copyFrom(this.chronoSnapshot.pos);
       this.vel.copyFrom(this.chronoSnapshot.vel);
+      this.z = this.chronoSnapshot.z;
+      this.vz = this.chronoSnapshot.vz;
+      this.isGrounded = this.z <= 0;
       this.chronoSnapshot = undefined;
     }
     if (archetype === 'ARCANE' && this.arcaneBuffer) {
@@ -388,15 +398,33 @@ export class Entity {
     return this.stasisRemainingMs > 0;
   }
 
+  enterStasisVertical(): void {
+    if (this.stasisRemainingMs > 0) return;
+    this.stashedVz = this.vz;
+    this.vz = 0;
+    this.gravityScaleBase = this.gravityScale;
+    this.gravityScale = 0;
+  }
+
   dischargeStasis(): void {
     if (this.stashedMomentum.magSq() > 0) {
       this.vel = this.stashedMomentum.clone();
     }
     this.stashedMomentum = Vector2D.zero();
+    if (this.stashedVz !== null) {
+      this.vz = this.stashedVz;
+      this.stashedVz = null;
+      this.gravityScale = this.gravityScaleBase;
+    }
     this.forceAccumulatorScale = 1.0;
   }
 
   resetStasis(): void {
+    if (this.stashedVz !== null) {
+      this.vz = this.stashedVz;
+      this.stashedVz = null;
+      this.gravityScale = this.gravityScaleBase;
+    }
     this.stasisRemainingMs = 0;
     this.stashedMomentum = Vector2D.zero();
     this.forceAccumulatorScale = 1.0;
@@ -442,6 +470,8 @@ export class Entity {
       this.stasisRemainingMs = Math.max(0, this.stasisRemainingMs - dt * 1000);
       this.vel.set(0, 0);
       this.accel.set(0, 0);
+      this.vz = 0;
+      this.gravityScale = 0;
       if (this.stasisRemainingMs <= 0) {
         this.dischargeStasis();
       }
@@ -469,7 +499,11 @@ export class Entity {
     this.prevZ = this.z;
     this.vel.addScaledMut(this.accel, dt);
     const preDragSpeed = this.vel.mag();
-    const dragCoeff = this.getEffectiveLinearDrag() + this.quadraticDrag * preDragSpeed;
+    const linearDrag =
+      world?.verticalActive && this.z > HAZARD_CLEARANCE_Z
+        ? AIR_DRAG
+        : this.getEffectiveLinearDrag();
+    const dragCoeff = linearDrag + this.quadraticDrag * preDragSpeed;
     if (dragCoeff > 0) {
       this.vel.scaleMut(Math.exp(-dragCoeff * dt));
     }

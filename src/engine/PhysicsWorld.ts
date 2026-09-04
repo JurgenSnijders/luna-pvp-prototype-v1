@@ -18,6 +18,7 @@ import {
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
 import {
+  AIR_DRAG,
   GROUND_SLAM_VZ,
   HAZARD_CLEARANCE_Z,
   LIP_HEIGHT,
@@ -755,6 +756,9 @@ export class PhysicsWorld {
       if (e.z > 0) {
         e.isGrounded = false;
         activeAirborne++;
+        if (!e.tags.has('projectile')) {
+          e.vel.scaleMut(1 - AIR_DRAG * dt);
+        }
       } else {
         e.isGrounded = true;
       }
@@ -1051,6 +1055,10 @@ export class PhysicsWorld {
         if (!penetration) continue;
 
         if (entity instanceof Projectile) {
+          if (entity.obstacleGraceFrames > 0) {
+            entity.obstacleGraceFrames--;
+            continue;
+          }
           const rawClearance = obstacle.config.clearanceHeight;
           const wallTop =
             rawClearance === undefined || rawClearance === 0

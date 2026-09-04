@@ -6,4 +6,5 @@ export const HAZARD_CLEARANCE_Z = 12; // px (vertical ceiling for ground hazard 
 export const LIP_HEIGHT = 14; // px (arena hex platform extrusion clearance)
 export const MAX_GROUND_SUBSTEPS = 4; // max ground bounce iterations per frame
 export const MAX_ABS_VZ = 4000; // px/s (anti-explosion safety clamp)
+export const AIR_DRAG = 0.02; // minimal horizontal drag while airborne
 export const Z_TO_SCREEN = 1.0; // screen pixel offset per world Z unit

@@ -5,6 +5,7 @@ import { HAZARD_CLEARANCE_Z, MAX_ABS_VZ } from '../engine/verticalConstants';
 import { isAlliedTo } from '../engine/allegiance';
 import { Entity } from '../entities/Entity';
 import type { SpatialZone } from '../entities/SpatialZone';
+import { Summon } from '../entities/Summon';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
 import { DEBUG_VECTOR_COLORS, makeDebugVector } from '../types/debug';
@@ -69,10 +70,12 @@ export function applyField(
   }
 
   if (zone.verticalForce !== 0) {
-    entity.vz += zone.verticalForce * dt;
-    entity.vz = Math.max(-MAX_ABS_VZ, Math.min(MAX_ABS_VZ, entity.vz));
-    entity.gravityScale = 1;
-    entity.isGrounded = false;
+    if (!(entity instanceof Summon && entity.isImmovable())) {
+      entity.vz += zone.verticalForce * dt;
+      entity.vz = Math.max(-MAX_ABS_VZ, Math.min(MAX_ABS_VZ, entity.vz));
+      entity.gravityScale = 1;
+      entity.isGrounded = false;
+    }
   }
 
   const dist = entity.pos.dist(zone.pos);
@@ -124,6 +127,12 @@ export function applyField(
       break;
     }
     case 'FRICTION_OVERRIDE':
+      if (
+        world.verticalActive &&
+        entity.z > HAZARD_CLEARANCE_Z
+      ) {
+        break;
+      }
       entity.linearDrag = zone.config.frictionValue ?? 0.02;
       break;
     case 'MASS_ATTRACTOR': {

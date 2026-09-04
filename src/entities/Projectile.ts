@@ -39,6 +39,8 @@ export class Projectile extends Entity {
   apexReached = false;
   detonateAtZ?: number;
 
+  obstacleGraceFrames = 0;
+
   constructor(
     pos: Vector2D,
     config: TrajectoryConfig,

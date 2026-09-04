@@ -113,6 +113,14 @@ export function executeEmitter(
       projectile.isGrounded = false;
     }
 
+    if (ctx.sourceEntity instanceof Projectile) {
+      projectile.z = ctx.sourceEntity.z;
+      projectile.prevZ = ctx.sourceEntity.z;
+      if (ctx.sourceEntity.z > 0) {
+        projectile.obstacleGraceFrames = 2;
+      }
+    }
+
     if (ctx.sourceEntity) projectile.registerHit(ctx.sourceEntity.id);
     world.addProjectile(projectile);
   }
@@ -309,6 +317,9 @@ export function dispatchAction(
     case 'APPLY_STASIS': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
+      if (t.stasisRemainingMs <= 0) {
+        t.enterStasisVertical();
+      }
       t.stasisRemainingMs = Math.max(t.stasisRemainingMs, action.durationMs);
       t.forceAccumulatorScale = action.forceAccumulatorScale ?? 1.0;
       t.vel = Vector2D.zero();
@@ -387,6 +398,7 @@ export function dispatchAction(
     case 'LAUNCH_VERTICAL': {
       const t = resolveActionTarget(action.target ?? 'CASTER', ctx);
       if (!t) break;
+      if (t instanceof Summon && t.isImmovable()) break;
       let vz: number;
       if (action.targetApex !== undefined) {
         vz = Math.sqrt(2 * WORLD_GRAVITY * action.targetApex);

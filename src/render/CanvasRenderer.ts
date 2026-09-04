@@ -11,6 +11,7 @@ import { drawLavaSeaFallback } from './canvas/background';
 import { decalManager } from './canvas/decals';
 
 import { drawDebugOverlay, type DebugOptions } from './canvas/debug';
+import { drawVerticalTelemetry } from './canvas/debugOverlay';
 
 import { drawCombatants, drawSummons } from './canvas/entities';
 
@@ -337,6 +338,8 @@ export class CanvasRenderer {
       drawDebugOverlay(ctx, world, alpha, debug, camera);
 
     }
+
+    drawVerticalTelemetry(ctx, world, alpha);
 
 
 

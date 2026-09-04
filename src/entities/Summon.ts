@@ -59,6 +59,12 @@ export class Summon extends Entity {
     this.abilityName = options.abilityName ?? '';
     this.facingAngle = 0;
     this.hitHeight = this.radius * 1.6;
+    if (config.anchored !== false) {
+      this.z = 0;
+      this.vz = 0;
+      this.gravityScale = 0;
+      this.isGrounded = true;
+    }
   }
 
   override isImmovable(): boolean {
@@ -78,6 +84,7 @@ export class Summon extends Entity {
     }
 
     if (this.getTriggers('ON_TICK').length > 0 || this.config.actorArchetype !== 'TURRET' || !world) {
+      this.pinAnchoredVertical();
       return;
     }
 
@@ -108,6 +115,15 @@ export class Summon extends Entity {
     projectile.registerHit(this.id);
     world.addProjectile(projectile);
     this.fireCooldownMs = TURRET_FIRE_INTERVAL_MS;
+    this.pinAnchoredVertical();
+  }
+
+  private pinAnchoredVertical(): void {
+    if (this.config.anchored === false) return;
+    this.z = 0;
+    this.vz = 0;
+    this.gravityScale = 0;
+    this.isGrounded = true;
   }
 
   findNearestEnemy(world: PhysicsWorld, maxRange?: number): Entity | null {

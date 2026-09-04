@@ -162,6 +162,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   addToggle(qualityBody, qualityCheckboxes, 'bloomEnabled', 'Bloom Post-Processing');
   addToggle(qualityBody, qualityCheckboxes, 'refractionEnabled', 'Refraction (ULTRA)');
   addToggle(qualityBody, qualityCheckboxes, 'particleTrails', 'Projectile Particle Trails');
+  addToggle(qualityBody, qualityCheckboxes, 'showVerticalVectors', 'Show Vertical Telemetry');
   addToggle(qualityBody, qualityCheckboxes, 'crtEnabled', 'CRT Post-Processing');
 
   // --- ARENA ---

@@ -36,6 +36,7 @@ export interface GraphicsSettings {
   floorSubGrid: boolean;
   ambientEmbers: boolean;
   particleTrails: boolean;
+  showVerticalVectors: boolean;
   bloomEnabled: boolean;
   refractionEnabled: boolean;
   screenShakeIntensity: number;
@@ -66,6 +67,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   floorSubGrid: true,
   ambientEmbers: true,
   particleTrails: true,
+  showVerticalVectors: false,
   bloomEnabled: true,
   refractionEnabled: false,
   screenShakeIntensity: 1,
@@ -658,6 +660,8 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
     ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
     particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
+    showVerticalVectors:
+      parsed.showVerticalVectors ?? DEFAULT_GRAPHICS_SETTINGS.showVerticalVectors,
     bloomEnabled: parsed.bloomEnabled ?? DEFAULT_GRAPHICS_SETTINGS.bloomEnabled,
     refractionEnabled: parsed.refractionEnabled ?? DEFAULT_GRAPHICS_SETTINGS.refractionEnabled,
     screenShakeIntensity:

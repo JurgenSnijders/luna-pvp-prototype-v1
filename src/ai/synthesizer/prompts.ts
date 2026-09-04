@@ -87,7 +87,8 @@ resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, recharg
   HEAT: cost per shot, rechargeRate/sec, lockoutDurationMs on overheat — set cooldownMs 0
   AMMO: cost per shot, maxCapacity magazine, lockoutDurationMs reload time
   HEALTH_PCT: cost is percent of max health
-trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance? }
+trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction? }
+  BALLISTIC_ARC: lobbed mortar arc with vertical physics. lobApex: 20-300 (peak height px). bounces: 0-5 ground bounces before expiry. bounceRestitution: 0.1-0.8. clearanceHeight: 0-200 (fly over low obstacles). detonateAtZ: 10-100 (airburst altitude). gravityScale/groundFriction optional.
 visuals: { color: hex, size: 4-32, projectileStyle, trailType, impactVfx, vfx?: { glowIntensity?:0-2, trailDensity?:0-2, trailLengthMs?, impactScale?:0.5-2, secondaryColor?:hex, blendMode?:NORMAL|ADDITIVE, shakeIntensity?:0-2, distortion?:0-1 } }
 projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL|PLASMA_TENDRIL|VOID_RIFT|CRYSTAL_SHARD
 trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
@@ -99,7 +100,10 @@ IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWA
 APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
 Always set target + directionMode on APPLY_IMPULSE. Put APPLY_IMPULSE on ON_HIT (needs a live TARGET) — do not copy the same impulse onto ON_EXPIRY.
 
-TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT (projectile-only — requires root trajectory or SPAWN_PROJECTILE)
+TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT | ON_BOUNCE | ON_AIR_APEX | ON_GROUND_SLAM (projectile-only vertical triggers require root trajectory or SPAWN_PROJECTILE)
+  ON_BOUNCE: fires when a BALLISTIC_ARC projectile bounces off the ground (bounceIndex available).
+  ON_AIR_APEX: fires once when a ballistic projectile reaches its peak altitude (ideal for cluster splits).
+  ON_GROUND_SLAM: fires when a combatant or projectile impacts the ground at high vertical speed (|vz| >= 300). Arm caster with ON_GROUND_SLAM triggers before LAUNCH_VERTICAL.
 TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, conditions?, actions[], ifFalseActions?, children? }
   triggerDistance: required on ON_DISTANCE_TRAVELED (distance in world units before firing)
   fireOnHitDeath: optional boolean on ON_EXPIRY. DEFAULT TRUE. When a projectile dies from an enemy hit, ON_HIT fires first, then ON_EXPIRY also fires unless fireOnHitDeath is false. This is projectile-death-from-hit, NOT "when the target dies".
@@ -115,13 +119,15 @@ CONDITIONS:
   PROXIMITY_COUNT { radius, comparison, value, target? } — nearby entity count
   COMBO_STEP { comparison, value } — zero-indexed press in a COMBO_CHAIN
   SURFACE_TYPE { value: LAVA|SAFE, target? } — terrain type under the target position
+  ELEVATION { comparison: LT|GT|EQ|LTE|GTE, value, target? } — target altitude z in world units (use GT for anti-air)
 SURFACE_TYPE queries terrain at a position; TAG_CHECK value:"in_lava" reads the entity tag set when standing in lava.
 
 ACTIONS (use relational vectors, not generic knockback):
 ADD_INSTABILITY { amount, target? } — bonus multiplier only; engine already derives vulnerability from archetype + impact
 APPLY_IMPULSE { baseForce, target?, directionMode? }
 SPAWN_FIELD: MUST nest configuration inside a "field" object — NEVER put fieldType/radius/strength/durationMs at the action root, and NEVER use "falloff" (engine computes distance falloff automatically):
-  { "type": "SPAWN_FIELD", "field": { "fieldType": "MASS_ATTRACTOR"|"RADIAL_IMPULSE"|"VORTEX_TANGENT"|"FRICTION_OVERRIDE", "radius": number, "strength": number, "durationMs": number, "attachToSource"?: boolean, "frictionValue"?: number } }
+  { "type": "SPAWN_FIELD", "field": { "fieldType": "MASS_ATTRACTOR"|"RADIAL_IMPULSE"|"VORTEX_TANGENT"|"FRICTION_OVERRIDE", "radius": number, "strength": number, "durationMs": number, "attachToSource"?: boolean, "frictionValue"?: number, "zBase"?: number, "zHeight"?: number, "verticalForce"?: number } }
+  zBase/zHeight: vertical band for 3D spatial fields (default ground band). verticalForce: ±500 to ±3000 px/s² — positive launches upward (jump pads, thermal updrafts), negative crushes downward.
   Continuous pull/vortex (MASS_ATTRACTOR, VORTEX_TANGENT): strength MUST be 3500–6000 to overcome entity friction. RADIAL_IMPULSE bursts may use lower strength (e.g. 500–800).
 SPAWN_PROJECTILE { projectileTrajectory, emitter?: { count: 1-12, spreadDeg, distribution: FAN|RADIAL|RANDOM_CONE|PARALLEL }, triggers? }
 SPAWN_CONSTRAINT { constraint: { type: SPRING_TETHER|DISTANCE_ROD|SURFACE_PIN, stiffness?, restLength?, durationMs }, source?, target? }
@@ -136,6 +142,8 @@ MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
 SPAWN_ACTOR { actor: { actorArchetype: TURRET|DECOY, health, durationMs, anchored?, radius?, mass?, targetingRange?, triggers[], visuals? }, target? }
 APPLY_STEALTH { durationMs, revealOnCast?, target? }
+LAUNCH_VERTICAL { verticalImpulse?, targetApex?, target? } — launch target upward. verticalImpulse: direct vz (px/s). targetApex: peak height (engine computes impulse). Does not affect anchored turrets.
+SET_GRAVITY_SCALE { scale: 0-8, durationMs?, target? } — override gravity multiplier; durationMs restores default when expired.
 
 SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE/SPAWN_ACTOR). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
 
@@ -175,6 +183,10 @@ Harpoon/Pull: ON_HIT -> APPLY_IMPULSE { baseForce:600, target:"TARGET", directio
 Vortex/Black Hole: ON_TICK -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:90, durationMs:3000 } }
 Thrown Singularity: trajectory LINEAR + ON_EXPIRY -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:false, strength:5000, radius:180, durationMs:4000 } } — do NOT also put this field on ON_HIT
 Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursionDepth:1, payload:{ ON_CAST SPAWN_PROJECTILE fan } }
+Cluster Mortar: trajectory BALLISTIC_ARC { lobApex:120-200 } + ON_AIR_APEX or ON_EXPIRY -> SPAWN_PROJECTILE/CAST_CHILD_PAYLOAD spawning bouncing child bomblets (BALLISTIC_ARC with bounces:1-3)
+Meteor Slam: ON_CAST LAUNCH_VERTICAL { targetApex:150-250, target:"CASTER" } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE or APPLY_IMPULSE radial knockback + crater visuals
+Anti-Air Flak: trajectory LINEAR/HOMING_SLERP + ON_HIT conditions:[{ query:"ELEVATION", comparison:"GT", value:40 }] -> amplified APPLY_IMPULSE { baseForce:900-1400 }
+Thermal Geyser: ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60, strength:400, durationMs:200, verticalForce:2200, zBase:0, zHeight:80 } } — launches combatants over hazard pools
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
