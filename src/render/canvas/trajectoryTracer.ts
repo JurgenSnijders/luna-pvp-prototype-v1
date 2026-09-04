@@ -69,6 +69,19 @@ export function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig 
   return undefined;
 }
 
+const GROUND_IMPACT_TRIGGERS = new Set(['ON_GROUND_SLAM', 'ON_EXPIRY', 'ON_HIT']);
+
+export function collectGroundImpactFieldRadii(ability: AbilitySchema): number[] {
+  const radii: number[] = [];
+  walkTriggers(ability.triggers ?? [], (node, action) => {
+    if (!GROUND_IMPACT_TRIGGERS.has(node.trigger)) return;
+    if (action.type === 'SPAWN_FIELD' && action.field?.radius) {
+      radii.push(action.field.radius);
+    }
+  });
+  return radii;
+}
+
 function findOnCastProjectileConfig(ability: AbilitySchema): LiveCastConfig | null {
   for (const triggerNode of ability.triggers ?? []) {
     if (triggerNode.trigger !== 'ON_CAST') continue;
@@ -361,6 +374,8 @@ export function resolveLiveAimingPaths(
   aimAngle: number,
   muzzleOffset = 0,
 ): PredictivePath[] {
+  if (ability.targetingMode === 'GROUND_POINT') return [];
+
   const config = resolveLiveCastConfig(ability);
   if (!config) return [];
 

@@ -10,6 +10,7 @@ import {
   classifyAimingMode,
   resolveAbilityAimParams,
   resolveTrajectoryVisualMode,
+  syncAimFromCursorState,
   type AimingMode,
   type AimingState,
 } from '../render/canvas/AimingIndicator';
@@ -234,20 +235,8 @@ export class Player extends Entity {
     const state = this.activeAimingState;
     if (!state) return;
 
-    const ox = this.pos.x;
-    const oy = this.pos.y;
-    const dx = state.cursor.x - ox;
-    const dy = state.cursor.y - oy;
-    const dist = Math.hypot(dx, dy);
-    const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
-    const clampedDist =
-      state.mode === 'directional' ? Math.min(dist, state.range) : dist;
-    const targetX = ox + Math.cos(angle) * clampedDist;
-    const targetY = oy + Math.sin(angle) * clampedDist;
-
-    state.angle = angle;
-    state.target = { x: targetX, y: targetY };
-    this.aimTarget = new Vector2D(targetX, targetY);
+    syncAimFromCursorState(state, { x: this.pos.x, y: this.pos.y });
+    this.aimTarget = new Vector2D(state.target.x, state.target.y);
   }
 
   startAiming(slotIndex: number): boolean {

@@ -1,6 +1,7 @@
 import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
 import {
+  collectGroundImpactFieldRadii,
   resolveLiveAimingPaths,
   resolveRootTrajectory,
   type PredictivePath,
@@ -24,6 +25,50 @@ export interface AimingState {
   playerRadius: number;
 }
 
+function clampGroundPointTarget(
+  state: AimingState,
+  origin: { x: number; y: number },
+): { angle: number; clampedDist: number } {
+  const maxRange = state.ability.maxTargetRange ?? 500;
+  const dx = state.cursor.x - origin.x;
+  const dy = state.cursor.y - origin.y;
+  const dist = Math.hypot(dx, dy);
+  const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+  const clampedDist = Math.min(dist, maxRange);
+  return { angle, clampedDist };
+}
+
+export function syncAimFromCursorState(
+  state: AimingState,
+  casterPos: { x: number; y: number },
+): void {
+  const ox = casterPos.x;
+  const oy = casterPos.y;
+  const dx = state.cursor.x - ox;
+  const dy = state.cursor.y - oy;
+  const dist = Math.hypot(dx, dy);
+  const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+
+  if (state.ability.targetingMode === 'GROUND_POINT') {
+    const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, casterPos);
+    state.angle = groundAngle;
+    state.target = {
+      x: ox + Math.cos(groundAngle) * clampedDist,
+      y: oy + Math.sin(groundAngle) * clampedDist,
+    };
+    state.range = clampedDist;
+    return;
+  }
+
+  const clampedDist =
+    state.mode === 'directional' ? Math.min(dist, state.range) : dist;
+  state.angle = angle;
+  state.target = {
+    x: ox + Math.cos(angle) * clampedDist,
+    y: oy + Math.sin(angle) * clampedDist,
+  };
+}
+
 export function layoutAimingVisual(
   state: AimingState,
   origin: { x: number; y: number },
@@ -32,6 +77,21 @@ export function layoutAimingVisual(
   const dy = state.cursor.y - origin.y;
   const dist = Math.hypot(dx, dy);
   const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
+
+  if (state.ability.targetingMode === 'GROUND_POINT') {
+    const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, origin);
+    return {
+      ...state,
+      origin: { x: origin.x, y: origin.y },
+      angle: groundAngle,
+      range: clampedDist,
+      target: {
+        x: origin.x + Math.cos(groundAngle) * clampedDist,
+        y: origin.y + Math.sin(groundAngle) * clampedDist,
+      },
+    };
+  }
+
   const clampedDist =
     state.mode === 'directional' ? Math.min(dist, state.range) : dist;
   return {
@@ -70,6 +130,10 @@ function hasOnCastTeleport(ability: AbilitySchema): boolean {
 
 /** Trajectory/field visual mode from schema alone (ignores input profile). */
 export function resolveTrajectoryVisualMode(ability: AbilitySchema): AimingMode | null {
+  if (ability.targetingMode === 'GROUND_POINT') {
+    return 'radial';
+  }
+
   const trajectory = resolveRootTrajectory(ability);
   if (trajectory) {
     return 'directional';
@@ -97,8 +161,27 @@ export function resolveAbilityAimParams(ability: AbilitySchema): {
 } {
   const trajectory = resolveRootTrajectory(ability);
   const fieldRadii = collectOnCastFieldRadii(ability);
-  const range = trajectory?.maxRange ?? trajectory?.orbitRadius ?? 350;
   const width = Math.max(28, (ability.visuals?.size ?? 14) * 2);
+
+  if (ability.targetingMode === 'GROUND_POINT') {
+    const impactRadii = collectGroundImpactFieldRadii(ability);
+    let radialRadius = 60;
+    if (fieldRadii.length > 0) {
+      radialRadius = Math.max(...fieldRadii);
+    } else if (impactRadii.length > 0) {
+      radialRadius = Math.max(...impactRadii);
+    } else {
+      radialRadius = (ability.visuals?.size ?? 14) * 3.5;
+    }
+    return {
+      trajectory,
+      range: ability.maxTargetRange ?? 500,
+      width,
+      radialRadius,
+    };
+  }
+
+  const range = trajectory?.maxRange ?? trajectory?.orbitRadius ?? 350;
   let radialRadius = 0;
   if (trajectory?.type === 'ORBIT_ANCHOR') {
     radialRadius = trajectory.orbitRadius ?? 100;
@@ -301,9 +384,25 @@ export function drawAoERadial(
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
   const radius = state.radialRadius > 0 ? state.radialRadius : state.range;
   const center =
-    state.mode === 'radial' && state.radialRadius > 0 && !state.ability.trajectory
-      ? state.origin
-      : state.target;
+    state.ability.targetingMode === 'GROUND_POINT'
+      ? state.target
+      : state.mode === 'radial' && state.radialRadius > 0 && !state.ability.trajectory
+        ? state.origin
+        : state.target;
+
+  const spawnAltitude = state.ability.trajectory?.spawnAltitude ?? 0;
+  if (spawnAltitude > 0) {
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(color, 0.25);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y - 120);
+    ctx.lineTo(center.x, center.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
 
   ctx.save();
   ctx.strokeStyle = hexToRgba(color, 0.35);
