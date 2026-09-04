@@ -17,6 +17,7 @@ import {
   TRAIL_TYPES,
   TRAJECTORY_TYPES,
   TRIGGER_TYPES,
+  TARGETING_MODES,
   VFX_BLEND_MODES,
 } from '../../types/schema/constants';
 
@@ -46,6 +47,8 @@ const trajectoryConfig = {
     groundFriction: { type: 'number' },
     clearanceHeight: { type: 'number' },
     detonateAtZ: { type: 'number' },
+    spawnAltitude: { type: 'number' },
+    fallSpeed: { type: 'number' },
   },
   additionalProperties: false,
 };
@@ -456,6 +459,8 @@ const abilitySchemaBody = {
     cooldownMs: { type: 'number' },
     recoilKick: { type: 'number' },
     trajectory: trajectoryConfig,
+    targetingMode: stringEnum(TARGETING_MODES),
+    maxTargetRange: { type: 'number' },
     triggers: { type: 'array', items: { $ref: '#/$defs/TriggerNode' } },
     visuals: visualDescriptor,
     inputProfile: {

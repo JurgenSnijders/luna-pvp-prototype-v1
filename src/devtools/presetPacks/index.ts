@@ -11,6 +11,7 @@ import { ADVANCED_PRESETS } from './advanced';
 import { CONDITIONAL_PRESETS } from './conditional';
 import { DIAGNOSTIC_PRESETS } from './diagnostics';
 import { VFX_SHOWCASE_PRESETS } from './vfxShowcase';
+import { VERTICAL_RECIPE_PRESETS } from './verticalRecipes';
 
 export interface PresetGroup {
   id: string;
@@ -139,6 +140,12 @@ export const PRESET_GROUPS: PresetGroup[] = [
     presetNames: ['Prism Lance', 'Void Rift Bomb', 'Rune Nova', 'Plasma Fork'],
   },
   {
+    id: 'vertical-recipes',
+    label: 'Vertical Recipes',
+    description: 'Sky drops, mortar clusters, jump pads, and anti-air flak',
+    presetNames: ['Meteor Strike', 'Cluster Mortar', 'Thermal Geyser', 'Flak Cannon'],
+  },
+  {
     id: 'tier-f',
     label: 'Tier F — Diagnostics',
     description: 'Stress tests and grammar edge-case probes',
@@ -176,6 +183,7 @@ export const PRESETS: Record<string, AbilitySchema> = mergePresets(
   CONDITIONAL_PRESETS,
   DIAGNOSTIC_PRESETS,
   VFX_SHOWCASE_PRESETS,
+  VERTICAL_RECIPE_PRESETS,
 );
 
 bakeHitExpiryOverlap(PRESETS);
@@ -184,3 +192,4 @@ bakeHitExpiryOverlap(KINETIC_RECIPES);
 export const PRESET_NAMES = Object.keys(PRESETS);
 
 export { KINETIC_RECIPES };
+export { VERTICAL_RECIPE_PRESETS, VERTICAL_RECIPES } from './verticalRecipes';

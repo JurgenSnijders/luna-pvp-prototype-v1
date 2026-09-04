@@ -66,7 +66,7 @@ const CATEGORY_DESIGN_FLAVOR = `Category design flavor:
 
 export const ABILITY_SCHEMA_GRAMMAR = `CORE WIN CONDITION: The primary goal of the game is knocking enemies into the lava. Unless a spell is strictly a defensive utility, it MUST include a physical displacement action (APPLY_IMPULSE or RADIAL_IMPULSE/MASS_ATTRACTOR) to push or pull the target.
 
-AbilitySchema: { id, name, tagline, description, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost? }
+AbilitySchema: { id, name, tagline, description, archetype, cooldownMs, recoilKick, trajectory?, triggers[], visuals, inputProfile?, resourceCost?, targetingMode?, maxTargetRange? }
 tagline: string (REQUIRED, 2-4 words); description: string (REQUIRED, 1 sentence, under 80 characters)
 archetype: REQUIRED — assign one of KINETIC, FIRE, FROST, LIGHTNING, VOID, HOLY, TOXIC, ARCANE, MAGNETIC, SONIC, AERO, GRAVITY, EARTH, CHRONO, PLASMA, NATURE, BLOOD, PHASE, CHAOS.
 The engine scales implicit vulnerability and field physics from archetype — do NOT spam ADD_INSTABILITY; rely on archetype + kinetic impact math instead.
@@ -87,8 +87,10 @@ resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, recharg
   HEAT: cost per shot, rechargeRate/sec, lockoutDurationMs on overheat — set cooldownMs 0
   AMMO: cost per shot, maxCapacity magazine, lockoutDurationMs reload time
   HEALTH_PCT: cost is percent of max health
-trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction? }
-  BALLISTIC_ARC: lobbed mortar arc with vertical physics. lobApex: 20-300 (peak height px). bounces: 0-5 ground bounces before expiry. bounceRestitution: 0.1-0.8. clearanceHeight: 0-200 (fly over low obstacles). detonateAtZ: 10-100 (airburst altitude). gravityScale/groundFriction optional.
+targetingMode: "DIRECTIONAL" (default for skillshots/beams/fans) | "GROUND_POINT" (cursor-targeted sky drops, fields, mortars, traps)
+maxTargetRange: number (100-1000, default 500 — maximum distance from caster to ground cursor anchor)
+trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, spawnAltitude?, fallSpeed?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction? }
+  BALLISTIC_ARC: lobApex 20-300 (forward mortar lob from caster) | spawnAltitude 300-900 + fallSpeed 600-2500 (sky drop from above target; pair with targetingMode GROUND_POINT) | speed: 0 for plumb vertical sky drops, >0 for angled arcs | bounces: 0-5 ground bounces before expiry | bounceRestitution: 0.1-0.8 | clearanceHeight: 0-200 (fly over low obstacles) | detonateAtZ: 10-100 (airburst altitude) | gravityScale/groundFriction optional.
 visuals: { color: hex, size: 4-32, projectileStyle, trailType, impactVfx, vfx?: { glowIntensity?:0-2, trailDensity?:0-2, trailLengthMs?, impactScale?:0.5-2, secondaryColor?:hex, blendMode?:NORMAL|ADDITIVE, shakeIntensity?:0-2, distortion?:0-1 } }
 projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL|PLASMA_TENDRIL|VOID_RIFT|CRYSTAL_SHARD
 trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
@@ -183,10 +185,11 @@ Harpoon/Pull: ON_HIT -> APPLY_IMPULSE { baseForce:600, target:"TARGET", directio
 Vortex/Black Hole: ON_TICK -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:90, durationMs:3000 } }
 Thrown Singularity: trajectory LINEAR + ON_EXPIRY -> SPAWN_FIELD { field: { fieldType:"MASS_ATTRACTOR", attachToSource:false, strength:5000, radius:180, durationMs:4000 } } — do NOT also put this field on ON_HIT
 Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD { inheritVelocity:true, maxRecursionDepth:1, payload:{ ON_CAST SPAWN_PROJECTILE fan } }
-Cluster Mortar: trajectory BALLISTIC_ARC { lobApex:120-200 } + ON_AIR_APEX or ON_EXPIRY -> SPAWN_PROJECTILE/CAST_CHILD_PAYLOAD spawning bouncing child bomblets (BALLISTIC_ARC with bounces:1-3)
-Meteor Slam: ON_CAST LAUNCH_VERTICAL { targetApex:150-250, target:"CASTER" } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE or APPLY_IMPULSE radial knockback + crater visuals
-Anti-Air Flak: trajectory LINEAR/HOMING_SLERP + ON_HIT conditions:[{ query:"ELEVATION", comparison:"GT", value:40 }] -> amplified APPLY_IMPULSE { baseForce:900-1400 }
-Thermal Geyser: ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60, strength:400, durationMs:200, verticalForce:2200, zBase:0, zHeight:80 } } — launches combatants over hazard pools
+Cluster Mortar: trajectory BALLISTIC_ARC { speed:280-360, lobApex:120-200, maxRange:400-550 } + ON_AIR_APEX -> SPAWN_PROJECTILE fan of child bomblets (BALLISTIC_ARC with bounces:1-3, bounceRestitution, ON_BOUNCE optional SPAWN_FIELD)
+Meteor Strike (Sky Drop): targetingMode "GROUND_POINT" + trajectory BALLISTIC_ARC { speed:0, spawnAltitude:600-800, fallSpeed:1200-1800, bounces:0 } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE — player aims ground reticle at cursor; meteor plummets from sky onto target. NOT a forward skillshot.
+Meteor Slam (Self Dive): targetingMode "DIRECTIONAL" (NOT GROUND_POINT) + ON_CAST LAUNCH_VERTICAL { targetApex:150-250, target:"CASTER" } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE or APPLY_IMPULSE radial knockback — player leaps and slams where they land.
+Anti-Air Flak: trajectory BALLISTIC_ARC or LINEAR/HOMING_SLERP + ON_HIT conditions:[{ query:"ELEVATION", comparison:"GT", value:15-40 }] -> LAUNCH_VERTICAL { verticalImpulse:400-600 } + amplified APPLY_IMPULSE; branch with LTE for grounded targets
+Thermal Geyser / Jump Pad: targetingMode "GROUND_POINT" + ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60-100, strength:150-400, durationMs:4000-8000, verticalForce:2200-2800, zBase:0, zHeight:20-80 } } — launches combatants over hazard pools
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
