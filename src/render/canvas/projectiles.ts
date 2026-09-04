@@ -1,8 +1,9 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Projectile } from '../../entities/Projectile';
+import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
 import type { ProjectileStyle } from '../../types/schema';
-import { lerpPos } from './helpers';
+import { lerpPos, lerpZ } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
 import { SpriteCache } from './SpriteCache';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
@@ -19,6 +20,27 @@ export function drawProjectiles(
   for (const proj of world.projectiles) {
     if (proj.isDead) continue;
     const pos = lerpPos(proj, alpha);
+    const zNow = lerpZ(proj, alpha);
+    if (zNow > Z_EPSILON) {
+      const maxShadowZ = 180;
+      const t = Math.min(1, zNow / maxShadowZ);
+      ctx.save();
+      ctx.globalAlpha = 0.35 * (1 - t * 0.7);
+      ctx.beginPath();
+      ctx.ellipse(
+        pos.x,
+        pos.y,
+        Math.max(2, proj.radius * (1 - t * 0.4)),
+        Math.max(1, proj.radius * 0.5 * (1 - t * 0.4)),
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      ctx.restore();
+      pos.y -= zNow * Z_TO_SCREEN;
+    }
     const color = proj.visuals?.color ?? '#00e5ff';
     const style: ProjectileStyle = proj.visuals?.projectileStyle ?? 'DISC';
     const radius = Math.max(4, Math.min(32, proj.radius));
@@ -275,7 +297,30 @@ export function drawScopeProjectile(
   style: ProjectileStyle,
   color: string,
   timeMs: number,
+  z = 0,
 ): void {
+  const groundY = y;
+  if (z > Z_EPSILON) {
+    const maxShadowZ = 180;
+    const t = Math.min(1, z / maxShadowZ);
+    ctx.save();
+    ctx.globalAlpha = 0.35 * (1 - t * 0.7);
+    ctx.beginPath();
+    ctx.ellipse(
+      x,
+      groundY,
+      Math.max(2, radius * (1 - t * 0.4)),
+      Math.max(1, radius * 0.5 * (1 - t * 0.4)),
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.restore();
+    y -= z * Z_TO_SCREEN;
+  }
+
   const r = Math.max(3, Math.min(12, radius));
 
   switch (style) {

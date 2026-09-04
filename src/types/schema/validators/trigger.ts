@@ -52,6 +52,20 @@ export function validateTriggerNode(
     node.fireOnHitDeath = value.fireOnHitDeath;
   }
 
+  if (value.minBounceSpeed !== undefined) {
+    if (!isNumber(value.minBounceSpeed) || value.minBounceSpeed < 0) {
+      return validationFail(issues, `${path}.minBounceSpeed`, 'invalid minBounceSpeed');
+    }
+    node.minBounceSpeed = value.minBounceSpeed;
+  }
+
+  if (value.bounceIndex !== undefined) {
+    if (!isNumber(value.bounceIndex) || value.bounceIndex < 1 || !Number.isInteger(value.bounceIndex)) {
+      return validationFail(issues, `${path}.bounceIndex`, 'invalid bounceIndex');
+    }
+    node.bounceIndex = value.bounceIndex;
+  }
+
   if (value.conditions !== undefined) {
     if (!Array.isArray(value.conditions)) {
       return validationFail(issues, `${path}.conditions`, 'conditions must be an array');

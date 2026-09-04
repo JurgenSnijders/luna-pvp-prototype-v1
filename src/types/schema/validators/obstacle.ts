@@ -47,6 +47,12 @@ export function validateObstacleConfig(value: unknown): ObstacleConfig | null {
     if (!isNumber(value.maxHealth) || value.maxHealth <= 0) return null;
     config.maxHealth = value.maxHealth;
   }
+  if (value.clearanceHeight !== undefined) {
+    if (!isNumber(value.clearanceHeight) || value.clearanceHeight < 0 || value.clearanceHeight > 250) {
+      return null;
+    }
+    config.clearanceHeight = value.clearanceHeight;
+  }
 
   return config;
 }

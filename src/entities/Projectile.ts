@@ -2,7 +2,7 @@ import { Vector2D } from '../math/Vector2D';
 import type { TrajectoryConfig, TriggerNode, VisualDescriptor, SpellArchetype } from '../types/schema';
 import { Entity, generateEntityId } from './Entity';
 
-export type ExpiryReason = 'range' | 'lifetime' | 'return' | 'hit' | 'wall' | null;
+export type ExpiryReason = 'range' | 'lifetime' | 'return' | 'hit' | 'wall' | 'ground' | null;
 
 export class Projectile extends Entity {
   config: TrajectoryConfig;
@@ -32,6 +32,12 @@ export class Projectile extends Entity {
   blinkTimerMs: number;
   expiryReason: ExpiryReason;
   lastTrailPos: Vector2D;
+
+  bouncesRemaining = 0;
+  bounceCount = 0;
+  clearanceHeight = 0;
+  apexReached = false;
+  detonateAtZ?: number;
 
   constructor(
     pos: Vector2D,

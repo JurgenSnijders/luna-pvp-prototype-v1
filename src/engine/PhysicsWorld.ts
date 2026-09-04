@@ -114,6 +114,12 @@ export class PhysicsWorld {
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
   pendingWallImpacts: Vector2D[] = [];
+  pendingBounceEvents: Array<{
+    proj: Projectile;
+    impactSpeed: number;
+    bounceIndex: number;
+  }> = [];
+  pendingApexEvents: Projectile[] = [];
   pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
@@ -511,6 +517,8 @@ export class PhysicsWorld {
     this.pendingHits = [];
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
+    this.pendingBounceEvents = [];
+    this.pendingApexEvents = [];
     this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
@@ -573,6 +581,8 @@ export class PhysicsWorld {
     this.pendingHits = [];
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
+    this.pendingBounceEvents = [];
+    this.pendingApexEvents = [];
     this.pendingObstacleDestructions = [];
 
     this.updateObstaclesAndPatches(dt);
@@ -670,6 +680,34 @@ export class PhysicsWorld {
         const vzImpact = vzStart - WORLD_GRAVITY * e.gravityScale * tHit;
 
         e.z = 0;
+
+        if (e instanceof Projectile) {
+          if (e.bouncesRemaining > 0) {
+            e.bouncesRemaining--;
+            e.bounceCount++;
+            this.pendingBounceEvents.push({
+              proj: e,
+              impactSpeed: Math.abs(vzImpact),
+              bounceIndex: e.bounceCount,
+            });
+            e.vz = -vzImpact * e.groundRestitution;
+            if (e.groundFriction > 0) {
+              e.vel.scaleMut(1 - e.groundFriction);
+            }
+            if (Math.abs(e.vz) < VZ_SETTLE) {
+              e.vz = 0;
+            }
+            remainingDt -= tHit;
+            continue;
+          }
+          e.isDead = true;
+          e.expiryReason = 'ground';
+          e.vz = 0;
+          e.gravityScale = 0;
+          e.isGrounded = true;
+          break;
+        }
+
         e.vz = -vzImpact * e.groundRestitution;
 
         if (e.groundFriction > 0) {
@@ -985,6 +1023,14 @@ export class PhysicsWorld {
         if (!penetration) continue;
 
         if (entity instanceof Projectile) {
+          const rawClearance = obstacle.config.clearanceHeight;
+          const wallTop =
+            rawClearance === undefined || rawClearance === 0
+              ? Number.POSITIVE_INFINITY
+              : rawClearance;
+          if (entity.z - entity.radius > wallTop) {
+            continue;
+          }
           entity.isDead = true;
           entity.expiryReason = 'wall';
           this.pendingWallImpacts.push(entity.pos.clone());
@@ -1082,6 +1128,19 @@ export class PhysicsWorld {
         const minDist = projectile.radius + target.effectiveRadius;
         const minDistSq = minDist * minDist;
         if (projectile.pos.distSq(target.pos) > minDistSq) continue;
+
+        if (this.verticalActive) {
+          let sweptLo: number;
+          let sweptHi: number;
+          if (Math.abs(projectile.vz) > 600) {
+            sweptLo = Math.min(projectile.prevZ, projectile.z) - projectile.radius;
+            sweptHi = Math.max(projectile.prevZ, projectile.z) + projectile.radius;
+          } else {
+            sweptLo = projectile.z - projectile.radius;
+            sweptHi = projectile.z + projectile.radius;
+          }
+          if (!bandsOverlap(sweptLo, sweptHi, target.z, target.zTop)) continue;
+        }
 
         if (!projectile.registerHit(target.id)) continue;
 

@@ -1,6 +1,15 @@
 import { TRAJECTORY_TYPES } from '../constants';
 import type { TrajectoryConfig, TrajectoryType } from '../types';
-import { isNumber, isObject, isString } from './helpers';
+import { clamp, isNumber, isObject, isString } from './helpers';
+
+function clampOptional(
+  value: unknown,
+  min: number,
+  max: number,
+): number | null {
+  if (!isNumber(value)) return null;
+  return clamp(value, min, max);
+}
 
 export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | null {
   if (!isObject(value) || !isString(value.type)) return null;
@@ -34,6 +43,41 @@ export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | nul
   if (value.blinkDistance !== undefined) {
     if (!isNumber(value.blinkDistance)) return null;
     config.blinkDistance = value.blinkDistance;
+  }
+  if (value.gravityScale !== undefined) {
+    const v = clampOptional(value.gravityScale, 0, 8);
+    if (v === null) return null;
+    config.gravityScale = v;
+  }
+  if (value.lobApex !== undefined) {
+    const v = clampOptional(value.lobApex, 20, 350);
+    if (v === null) return null;
+    config.lobApex = v;
+  }
+  if (value.bounces !== undefined) {
+    const v = clampOptional(value.bounces, 0, 6);
+    if (v === null) return null;
+    config.bounces = v;
+  }
+  if (value.bounceRestitution !== undefined) {
+    const v = clampOptional(value.bounceRestitution, 0.1, 0.85);
+    if (v === null) return null;
+    config.bounceRestitution = v;
+  }
+  if (value.groundFriction !== undefined) {
+    const v = clampOptional(value.groundFriction, 0, 0.5);
+    if (v === null) return null;
+    config.groundFriction = v;
+  }
+  if (value.clearanceHeight !== undefined) {
+    const v = clampOptional(value.clearanceHeight, 0, 250);
+    if (v === null) return null;
+    config.clearanceHeight = v;
+  }
+  if (value.detonateAtZ !== undefined) {
+    const v = clampOptional(value.detonateAtZ, 0, 400);
+    if (v === null) return null;
+    config.detonateAtZ = v;
   }
 
   return config;

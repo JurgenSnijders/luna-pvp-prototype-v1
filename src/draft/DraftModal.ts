@@ -2066,6 +2066,7 @@ export class DraftModal {
           proj.style,
           proj.color,
           timestamp,
+          proj.z,
         );
       }
 

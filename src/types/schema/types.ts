@@ -24,7 +24,8 @@ export type TrajectoryType =
   | 'RETURN_TO_SOURCE'
   | 'ORBIT_ANCHOR'
   | 'HOMING_SLERP'
-  | 'DISCONTINUOUS_BLINK';
+  | 'DISCONTINUOUS_BLINK'
+  | 'BALLISTIC_ARC';
 
 export type FieldType =
   | 'RADIAL_IMPULSE'
@@ -41,7 +42,9 @@ export type TriggerType =
   | 'ON_HAZARD_CONTACT'
   | 'ON_RECAST'
   | 'ON_HIT_WALL'
-  | 'ON_DISTANCE_TRAVELED';
+  | 'ON_DISTANCE_TRAVELED'
+  | 'ON_BOUNCE'
+  | 'ON_AIR_APEX';
 
 export type ConstraintType = 'SPRING_TETHER' | 'DISTANCE_ROD' | 'SURFACE_PIN';
 
@@ -180,6 +183,13 @@ export interface TrajectoryConfig {
   orbitRadius?: number;
   orbitSpeed?: number;
   blinkDistance?: number;
+  gravityScale?: number;
+  lobApex?: number;
+  bounces?: number;
+  bounceRestitution?: number;
+  groundFriction?: number;
+  clearanceHeight?: number;
+  detonateAtZ?: number;
 }
 
 export interface FieldConfig {
@@ -301,6 +311,7 @@ export interface ObstacleConfig {
   isDestructible?: boolean;
   maxHealth?: number;
   durationMs: number;
+  clearanceHeight?: number;
 }
 
 export interface TerrainMutationConfig {
@@ -382,6 +393,8 @@ export interface TriggerNode {
   triggerDistance?: number;
   /** On ON_EXPIRY: if false, skip this node when the projectile dies from an enemy hit. Default true (expiry also runs on hit). */
   fireOnHitDeath?: boolean;
+  minBounceSpeed?: number;
+  bounceIndex?: number;
   conditions?: ConditionNode[];
   actions: ActionPayload[];
   ifFalseActions?: ActionPayload[];

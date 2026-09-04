@@ -122,6 +122,11 @@ function scoreTriggerNode(node: TriggerNode, depth: number): number {
       total += scoreTriggerNode(child, depth);
     }
   }
+  if (node.trigger === 'ON_BOUNCE') {
+    total *= 1.15;
+  } else if (node.trigger === 'ON_AIR_APEX') {
+    total *= 1.1;
+  }
   return total;
 }
 

@@ -181,7 +181,11 @@ function seedImpactsFromEvents(
   }
 
   for (const projectile of world.pendingExpirations) {
-    if (projectile.expiryReason !== 'range' && projectile.expiryReason !== 'lifetime') {
+    if (
+      projectile.expiryReason !== 'range' &&
+      projectile.expiryReason !== 'lifetime' &&
+      projectile.expiryReason !== 'ground'
+    ) {
       continue;
     }
     activeImpacts.push({

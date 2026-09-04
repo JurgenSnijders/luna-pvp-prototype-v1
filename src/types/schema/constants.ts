@@ -28,6 +28,7 @@ export const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'ORBIT_ANCHOR',
   'HOMING_SLERP',
   'DISCONTINUOUS_BLINK',
+  'BALLISTIC_ARC',
 ]);
 
 export const FIELD_TYPES: ReadonlySet<string> = new Set([
@@ -47,6 +48,8 @@ export const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_RECAST',
   'ON_HIT_WALL',
   'ON_DISTANCE_TRAVELED',
+  'ON_BOUNCE',
+  'ON_AIR_APEX',
 ]);
 
 export const CONSTRAINT_TYPES: ReadonlySet<string> = new Set([

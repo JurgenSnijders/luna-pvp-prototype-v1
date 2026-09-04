@@ -100,6 +100,19 @@ export function executeEmitter(
       projectile.orbitAngle = theta;
     }
 
+    if (trajectory.type === 'BALLISTIC_ARC') {
+      projectile.gravityScale = trajectory.gravityScale ?? 1.0;
+      projectile.groundRestitution = trajectory.bounceRestitution ?? 0.55;
+      projectile.groundFriction = trajectory.groundFriction ?? 0.15;
+      projectile.bouncesRemaining = trajectory.bounces ?? 0;
+      projectile.bounceCount = 0;
+      projectile.clearanceHeight = trajectory.clearanceHeight ?? 0;
+      projectile.detonateAtZ = trajectory.detonateAtZ;
+      const apex = trajectory.lobApex ?? 80;
+      projectile.vz = Math.sqrt(2 * WORLD_GRAVITY * projectile.gravityScale * apex);
+      projectile.isGrounded = false;
+    }
+
     if (ctx.sourceEntity) projectile.registerHit(ctx.sourceEntity.id);
     world.addProjectile(projectile);
   }

@@ -31,6 +31,9 @@ export function sanitizeObstacleConfig(raw: unknown): ObstacleConfig {
     config.isDestructible = true;
     config.maxHealth = clamp(ensureFiniteNumber(obj.maxHealth, 100), 1, 1000);
   }
+  if (obj.clearanceHeight !== undefined) {
+    config.clearanceHeight = clamp(ensureFiniteNumber(obj.clearanceHeight, 0), 0, 250);
+  }
   return config;
 }
 

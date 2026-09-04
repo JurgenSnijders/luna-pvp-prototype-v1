@@ -485,12 +485,49 @@ export function processLifecycleEvents(
   }
   interp.returnTriggeredProjectiles = [];
 
+  for (const projectile of world.pendingApexEvents) {
+    if (projectile.isDead) continue;
+    dispatchProjectileTriggers(
+      interp,
+      projectile,
+      'ON_AIR_APEX',
+      null,
+      world,
+      projectile.pos,
+      projectile.depth + 1,
+    );
+  }
+  world.pendingApexEvents = [];
+
+  for (const event of world.pendingBounceEvents) {
+    if (event.proj.isDead) continue;
+    dispatchProjectileTriggers(
+      interp,
+      event.proj,
+      'ON_BOUNCE',
+      null,
+      world,
+      event.proj.pos,
+      event.proj.depth + 1,
+      (node) => {
+        if (node.minBounceSpeed !== undefined && event.impactSpeed < node.minBounceSpeed) {
+          return false;
+        }
+        if (node.bounceIndex !== undefined && node.bounceIndex !== event.bounceIndex) {
+          return false;
+        }
+        return true;
+      },
+    );
+  }
+  world.pendingBounceEvents = [];
+
   for (const projectile of world.pendingExpirations) {
     const reason = projectile.expiryReason;
     // 'return' is exclusively handled by the ON_RETURN block above.
     if (reason === 'return') continue;
 
-    if (reason === 'range' || reason === 'lifetime') {
+    if (reason === 'range' || reason === 'lifetime' || reason === 'ground') {
       const visuals = projectile.visuals;
       const color = visuals?.color ?? '#ff4488';
       const sec = secondaryColor(visuals, '#ffffff');

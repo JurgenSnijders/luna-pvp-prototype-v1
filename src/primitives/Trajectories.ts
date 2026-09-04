@@ -49,6 +49,9 @@ export function updateTrajectory(
     case 'DISCONTINUOUS_BLINK':
       updateDiscontinuousBlink(proj, dt, speed, config.blinkDistance ?? 60);
       break;
+    case 'BALLISTIC_ARC':
+      updateBallisticArc(proj, dt, world, speed, maxRange);
+      break;
   }
 }
 
@@ -198,6 +201,37 @@ function updateDiscontinuousBlink(
   }
 
   const maxRange = proj.config.maxRange ?? 600;
+  if (proj.distanceTraveled >= maxRange) {
+    proj.isDead = true;
+    proj.expiryReason = 'range';
+  }
+}
+
+function updateBallisticArc(
+  proj: Projectile,
+  dt: number,
+  world: PhysicsWorld,
+  speed: number,
+  maxRange: number,
+): void {
+  proj.vel = Vector2D.fromAngle(proj.aimAngle, speed);
+  proj.pos = proj.pos.add(proj.vel.scale(dt));
+  proj.distanceTraveled += speed * dt;
+
+  if (!proj.apexReached && proj.vz <= 0) {
+    proj.apexReached = true;
+    world.pendingApexEvents.push(proj);
+  }
+
+  if (
+    proj.apexReached &&
+    proj.detonateAtZ !== undefined &&
+    proj.z <= proj.detonateAtZ
+  ) {
+    proj.isDead = true;
+    proj.expiryReason = 'lifetime';
+  }
+
   if (proj.distanceTraveled >= maxRange) {
     proj.isDead = true;
     proj.expiryReason = 'range';

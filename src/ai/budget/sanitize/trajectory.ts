@@ -29,5 +29,27 @@ export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
     config.blinkDistance = ensureFiniteNumber(obj.blinkDistance, 60);
   }
 
+  if (type === 'BALLISTIC_ARC' || obj.gravityScale !== undefined) {
+    config.gravityScale = clamp(ensureFiniteNumber(obj.gravityScale, 1.0), 0, 8);
+  }
+  if (type === 'BALLISTIC_ARC' || obj.lobApex !== undefined) {
+    config.lobApex = clamp(ensureFiniteNumber(obj.lobApex, 80), 20, 350);
+  }
+  if (type === 'BALLISTIC_ARC' || obj.bounces !== undefined) {
+    config.bounces = clamp(ensureFiniteNumber(obj.bounces, 0), 0, 6);
+  }
+  if (type === 'BALLISTIC_ARC' || obj.bounceRestitution !== undefined) {
+    config.bounceRestitution = clamp(ensureFiniteNumber(obj.bounceRestitution, 0.55), 0.1, 0.85);
+  }
+  if (type === 'BALLISTIC_ARC' || obj.groundFriction !== undefined) {
+    config.groundFriction = clamp(ensureFiniteNumber(obj.groundFriction, 0.15), 0, 0.5);
+  }
+  if (obj.clearanceHeight !== undefined) {
+    config.clearanceHeight = clamp(ensureFiniteNumber(obj.clearanceHeight, 0), 0, 250);
+  }
+  if (obj.detonateAtZ !== undefined) {
+    config.detonateAtZ = clamp(ensureFiniteNumber(obj.detonateAtZ, 0), 0, 400);
+  }
+
   return config;
 }
