@@ -33,6 +33,8 @@ export type FieldType =
   | 'FRICTION_OVERRIDE'
   | 'MASS_ATTRACTOR';
 
+export type FieldAffectsFilter = 'ENEMIES' | 'ALLIES' | 'CASTER_ONLY' | 'ALL';
+
 export type TriggerType =
   | 'ON_CAST'
   | 'ON_TICK'
@@ -207,6 +209,7 @@ export interface FieldConfig {
   zBase?: number;
   zHeight?: number;
   verticalForce?: number;
+  affects?: FieldAffectsFilter;
 }
 
 export interface EmitterConfig {
@@ -244,6 +247,7 @@ export interface SpawnFieldAction {
   type: 'SPAWN_FIELD';
   field: FieldConfig;
   target?: ActionTarget;
+  affects?: FieldAffectsFilter;
 }
 
 export interface SpawnProjectileAction {

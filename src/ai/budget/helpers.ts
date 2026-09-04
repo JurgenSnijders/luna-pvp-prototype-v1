@@ -1,4 +1,5 @@
-import type { ActionTarget, ImpulseDirectionMode } from '../../types/schema';
+import type { ActionTarget, FieldAffectsFilter, ImpulseDirectionMode } from '../../types/schema';
+import { FIELD_AFFECTS_FILTER_SET } from '../../types/schema/constants';
 import { ACTION_TARGETS, IMPULSE_DIRECTION_MODES } from './constants';
 
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -21,6 +22,11 @@ export function parseActionTarget(value: unknown): ActionTarget | undefined {
 export function parseImpulseDirectionMode(value: unknown): ImpulseDirectionMode | undefined {
   const upper = typeof value === 'string' ? value.toUpperCase() : '';
   return IMPULSE_DIRECTION_MODES.has(upper) ? (upper as ImpulseDirectionMode) : undefined;
+}
+
+export function parseFieldAffectsFilter(value: unknown): FieldAffectsFilter | undefined {
+  const upper = typeof value === 'string' ? value.toUpperCase() : '';
+  return FIELD_AFFECTS_FILTER_SET.has(upper) ? (upper as FieldAffectsFilter) : undefined;
 }
 
 export function clamp(n: number, min: number, max: number): number {

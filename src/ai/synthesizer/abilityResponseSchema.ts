@@ -6,6 +6,7 @@ import {
   CONSTRAINT_TYPES,
   EMITTER_DISTRIBUTIONS,
   FIELD_TYPES,
+  FIELD_AFFECTS_FILTERS,
   IMPACT_VFX_TYPES,
   IMPULSE_DIRECTION_MODES,
   INPUT_PROFILE_MODES,
@@ -72,6 +73,7 @@ const fieldConfig = {
     zBase: { type: 'number' },
     zHeight: { type: 'number' },
     verticalForce: { type: 'number' },
+    affects: stringEnum(FIELD_AFFECTS_FILTERS),
   },
   additionalProperties: false,
 };

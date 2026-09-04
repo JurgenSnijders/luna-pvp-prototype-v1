@@ -8,6 +8,7 @@ import {
   ensureFiniteNumber,
   isObject,
   parseActionTarget,
+  parseFieldAffectsFilter,
   parseImpulseDirectionMode,
 } from '../helpers';
 import { sanitizeAbilitySchema } from './ability';
@@ -122,6 +123,9 @@ export function sanitizeAction(
       const fieldType = FIELD_TYPES.has(fieldTypeRaw)
         ? fieldTypeRaw
         : 'RADIAL_IMPULSE';
+      const actionAffects = parseFieldAffectsFilter(raw.affects);
+      const fieldAffects =
+        parseFieldAffectsFilter(fieldObj.affects) ?? actionAffects;
       const action: Extract<ActionPayload, { type: 'SPAWN_FIELD' }> = {
         type: 'SPAWN_FIELD' as const,
         field: {
@@ -175,6 +179,7 @@ export function sanitizeAction(
                 ),
               }
             : {}),
+          ...(fieldAffects ? { affects: fieldAffects } : {}),
         },
       };
       const target = parseActionTarget(raw.target);

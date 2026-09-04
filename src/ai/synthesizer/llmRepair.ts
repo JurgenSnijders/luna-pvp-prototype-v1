@@ -515,6 +515,14 @@ function repairFieldConfig(field: unknown): unknown {
     f.strength = ensureFiniteNumber(f.strength, 500);
     f.durationMs = ensureFiniteNumber(f.durationMs, 2000);
   }
+  if (typeof f.affects === 'string') {
+    const upper = f.affects.toUpperCase();
+    if (['ENEMIES', 'ALLIES', 'CASTER_ONLY', 'ALL'].includes(upper)) {
+      f.affects = upper;
+    } else {
+      delete f.affects;
+    }
+  }
   return f;
 }
 

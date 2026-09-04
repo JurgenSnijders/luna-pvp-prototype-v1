@@ -1,4 +1,4 @@
-import { sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
+import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { Dummy } from '../src/entities/Dummy';
@@ -507,6 +507,109 @@ function assertOwnerFieldImmunity(): { pass: boolean; reason: string } {
   };
 }
 
+const JUMP_PAD_CONFIG = {
+  fieldType: 'RADIAL_IMPULSE' as const,
+  radius: 80,
+  strength: 300,
+  durationMs: 5000,
+  verticalForce: 2500,
+  zBase: 0,
+  zHeight: 80,
+};
+
+function assertFieldAffectsFilters(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+
+  const personalWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  personalWorld.setViewportBounds(2000, 2000);
+  const caster = new Player(new Vector2D(0, 0));
+  const enemy = new Dummy(new Vector2D(0, 0));
+  personalWorld.addPlayer(caster);
+  personalWorld.addDummy(enemy);
+  personalWorld.addZone(
+    new SpatialZone(
+      Vector2D.zero(),
+      { ...JUMP_PAD_CONFIG, affects: 'CASTER_ONLY' },
+      caster.id,
+      'KINETIC',
+    ),
+  );
+
+  caster.vz = 0;
+  caster.isGrounded = true;
+  enemy.vz = 0;
+  enemy.isGrounded = true;
+  applyField(personalWorld.zones[0], caster, dt, personalWorld);
+  applyField(personalWorld.zones[0], enemy, dt, personalWorld);
+
+  if (caster.vz <= 0) {
+    return { pass: false, reason: `CASTER_ONLY: expected caster vz>0, got ${caster.vz.toFixed(2)}` };
+  }
+  if (caster.isGrounded) {
+    return { pass: false, reason: 'CASTER_ONLY: expected caster airborne (isGrounded=false)' };
+  }
+  if (enemy.vz > 0.01) {
+    return {
+      pass: false,
+      reason: `CASTER_ONLY: enemy should be unaffected, vz=${enemy.vz.toFixed(2)}`,
+    };
+  }
+
+  const defaultWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  defaultWorld.setViewportBounds(2000, 2000);
+  const owner = new Player(new Vector2D(50, 0));
+  const foe = new Dummy(new Vector2D(120, 0));
+  defaultWorld.addPlayer(owner);
+  defaultWorld.addDummy(foe);
+  defaultWorld.addZone(new SpatialZone(Vector2D.zero(), GRAVITY_WELL_CONFIG, owner.id, 'GRAVITY'));
+
+  owner.accel = Vector2D.zero();
+  foe.accel = Vector2D.zero();
+  applyField(defaultWorld.zones[0], owner, dt, defaultWorld);
+  applyField(defaultWorld.zones[0], foe, dt, defaultWorld);
+
+  if (owner.accel.mag() > 0.01) {
+    return {
+      pass: false,
+      reason: `ENEMIES default: caster should be immune (accel=${owner.accel.mag().toFixed(2)})`,
+    };
+  }
+  if (foe.accel.mag() < 1) {
+    return { pass: false, reason: 'ENEMIES default: expected enemy field acceleration' };
+  }
+
+  return {
+    pass: true,
+    reason: `CASTER_ONLY casterVz=${caster.vz.toFixed(1)} enemyVz=${enemy.vz.toFixed(2)} | ENEMIES default foeAccel=${foe.accel.mag().toFixed(0)}`,
+  };
+}
+
+function assertSkyDropBalancePreservesZeroSpeed(): { pass: boolean; reason: string } {
+  const schema = balanceAbilitySchema({
+    id: 'sky_drop_test',
+    name: 'Sky Drop Test',
+    cooldownMs: 800,
+    trajectory: {
+      type: 'BALLISTIC_ARC',
+      speed: 0,
+      spawnAltitude: 600,
+      fallSpeed: 1400,
+      maxRange: 500,
+    },
+    triggers: [],
+    visuals: DEFAULT_VISUALS,
+  });
+
+  if (schema.trajectory?.speed !== 0) {
+    return {
+      pass: false,
+      reason: `expected speed 0 after balance, got ${schema.trajectory?.speed}`,
+    };
+  }
+
+  return { pass: true, reason: `sky-drop speed preserved at ${schema.trajectory?.speed}` };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -543,7 +646,20 @@ function run(): void {
   console.log(`${ownerTag} Owner field immunity`);
   console.log(`  ${DIM}${ownerImmunity.reason}${RESET}`);
   if (ownerImmunity.pass) passed++;
-  const totalCases = suite.length + 1;
+
+  const affectsFilters = assertFieldAffectsFilters();
+  const affectsTag = affectsFilters.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${affectsTag} Field affects filters`);
+  console.log(`  ${DIM}${affectsFilters.reason}${RESET}`);
+  if (affectsFilters.pass) passed++;
+
+  const skyDropBalance = assertSkyDropBalancePreservesZeroSpeed();
+  const skyDropTag = skyDropBalance.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${skyDropTag} Sky-drop balance preserves zero speed`);
+  console.log(`  ${DIM}${skyDropBalance.reason}${RESET}`);
+  if (skyDropBalance.pass) passed++;
+
+  const totalCases = suite.length + 3;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

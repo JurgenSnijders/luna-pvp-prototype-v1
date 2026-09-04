@@ -1,8 +1,9 @@
 import {
   ACTION_TARGETS,
+  FIELD_AFFECTS_FILTER_SET,
   IMPULSE_DIRECTION_MODES,
 } from '../constants';
-import type { ActionTarget, ImpulseDirectionMode } from '../types';
+import type { ActionTarget, FieldAffectsFilter, ImpulseDirectionMode } from '../types';
 
 export const MAX_VALIDATION_DEPTH = 3;
 
@@ -48,6 +49,11 @@ export function parseImpulseDirectionMode(value: unknown): ImpulseDirectionMode 
   return isString(value) && IMPULSE_DIRECTION_MODES.has(value)
     ? (value as ImpulseDirectionMode)
     : undefined;
+}
+
+export function parseFieldAffectsFilter(value: unknown): FieldAffectsFilter | undefined {
+  const upper = isString(value) ? value.toUpperCase() : '';
+  return FIELD_AFFECTS_FILTER_SET.has(upper) ? (upper as FieldAffectsFilter) : undefined;
 }
 
 export function clamp(value: number, min: number, max: number): number {

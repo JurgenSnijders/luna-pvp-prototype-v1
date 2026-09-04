@@ -61,7 +61,25 @@ export function applyField(
 ): void {
   if (entity.tags.has('projectile') || entity.tags.has('zone')) return;
   if (!entity.tags.has('combatant')) return;
-  if (isAlliedTo(zone.ownerId, entity)) return;
+
+  const isCaster = entity.id === zone.ownerId;
+  const isAllied = isAlliedTo(zone.ownerId, entity);
+  const affects = zone.affects ?? zone.config.affects ?? 'ENEMIES';
+
+  switch (affects) {
+    case 'CASTER_ONLY':
+      if (!isCaster) return;
+      break;
+    case 'ALLIES':
+      if (!isAllied || isCaster) return;
+      break;
+    case 'ALL':
+      break;
+    case 'ENEMIES':
+    default:
+      if (isAllied) return;
+      break;
+  }
 
   if (world.verticalActive) {
     const zBase = zone.zBase;

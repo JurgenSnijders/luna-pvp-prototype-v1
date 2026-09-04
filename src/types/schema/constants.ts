@@ -41,6 +41,9 @@ export const FIELD_TYPES: ReadonlySet<string> = new Set([
   'MASS_ATTRACTOR',
 ]);
 
+export const FIELD_AFFECTS_FILTERS = ['ENEMIES', 'ALLIES', 'CASTER_ONLY', 'ALL'] as const;
+export const FIELD_AFFECTS_FILTER_SET: ReadonlySet<string> = new Set(FIELD_AFFECTS_FILTERS);
+
 export const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_CAST',
   'ON_TICK',

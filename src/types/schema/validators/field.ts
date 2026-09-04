@@ -1,6 +1,6 @@
 import { FIELD_TYPES } from '../constants';
 import type { FieldConfig, FieldType } from '../types';
-import { clamp, isNumber, isObject, isString } from './helpers';
+import { clamp, isNumber, isObject, isString, parseFieldAffectsFilter } from './helpers';
 
 export function validateFieldConfig(value: unknown): FieldConfig | null {
   if (!isObject(value)) return null;
@@ -50,6 +50,10 @@ export function validateFieldConfig(value: unknown): FieldConfig | null {
     if (!isNumber(value.verticalForce)) return null;
     config.verticalForce = clamp(value.verticalForce, -4000, 4000);
   }
+
+  const affects = parseFieldAffectsFilter(value.affects);
+  if (value.affects !== undefined && !affects) return null;
+  if (affects) config.affects = affects;
 
   return config;
 }

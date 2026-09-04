@@ -1,4 +1,4 @@
-import type { FieldConfig, SpellArchetype } from '../types/schema';
+import type { FieldConfig, FieldAffectsFilter, SpellArchetype } from '../types/schema';
 import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { Vector2D } from '../math/Vector2D';
 import { Entity, generateEntityId } from './Entity';
@@ -14,6 +14,7 @@ export class SpatialZone extends Entity {
   zBase: number;
   zHeight: number;
   verticalForce: number;
+  affects: FieldAffectsFilter;
 
   constructor(
     pos: Vector2D,
@@ -37,6 +38,7 @@ export class SpatialZone extends Entity {
     this.zBase = config.zBase ?? 0;
     this.zHeight = config.zHeight ?? HAZARD_CLEARANCE_Z;
     this.verticalForce = config.verticalForce ?? 0;
+    this.affects = config.affects ?? 'ENEMIES';
   }
 
   override update(dt: number): void {

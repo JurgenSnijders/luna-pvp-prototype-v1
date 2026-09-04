@@ -27,6 +27,11 @@ const CHANNEL_KEYWORDS = /\b(flamethrower|continuous|channel|stream|beam)\b/;
 const HARPOON_KEYWORDS = /\b(pull|draw|harpoon|hook|reel)\b/;
 const METEOR_KEYWORDS =
   /\b(meteor|sky drop|orbital strike|starfall|rain down|shower)\b/i;
+const PERSONAL_UTILITY_KEYWORDS =
+  /\b(jump pad|launch pad|personal|for me|only me|my own|escape pad|leap pad)\b/i;
+const PERSONAL_FIELD_KEYWORDS =
+  /\b(only for me|personal|self|caster only|for me|my own)\b/i;
+const LAUNCH_PAD_KEYWORDS = /\b(jump pad|launch pad|launching pad|leap pad|escape pad)\b/i;
 
 function isMeteorConcept(text: string): boolean {
   return METEOR_KEYWORDS.test(text);
@@ -90,6 +95,31 @@ function isArcConcept(text: string): boolean {
 
 function isChannelConcept(text: string): boolean {
   return CHANNEL_KEYWORDS.test(text);
+}
+
+function isPersonalUtilityConcept(text: string): boolean {
+  return PERSONAL_UTILITY_KEYWORDS.test(text);
+}
+
+function isPersonalFieldConcept(text: string): boolean {
+  return PERSONAL_FIELD_KEYWORDS.test(text);
+}
+
+function actionProvidesVerticalDisplacement(action: ActionPayload): boolean {
+  if (action.type === 'LAUNCH_VERTICAL') return true;
+  if (action.type === 'SPAWN_FIELD' && Math.abs(action.field.verticalForce ?? 0) > 0) {
+    return true;
+  }
+  return false;
+}
+
+function schemaHasVerticalDisplacement(schema: AbilitySchema): boolean {
+  let found = false;
+  walkActions(schema, (v) => {
+    if (found) return;
+    if (actionProvidesVerticalDisplacement(v.action)) found = true;
+  });
+  return found;
 }
 
 function isDeployableConcept(text: string, schema?: AbilitySchema): boolean {
@@ -269,6 +299,16 @@ function hasSpawnFieldOrTerrain(schema: AbilitySchema): boolean {
   return found;
 }
 
+function hasSpawnFieldWithVerticalForce(schema: AbilitySchema): boolean {
+  let found = false;
+  walkActions(schema, (v) => {
+    if (v.action.type === 'SPAWN_FIELD' && Math.abs(v.action.field.verticalForce ?? 0) > 0) {
+      found = true;
+    }
+  });
+  return found;
+}
+
 function hasSpawnObstacle(schema: AbilitySchema): boolean {
   let found = false;
   walkActions(schema, (v) => {
@@ -356,6 +396,21 @@ function applyRuleH_Meteor(schema: AbilitySchema, text: string): void {
   if (schema.trajectory) {
     schema.trajectory = coerceSkyDropTrajectory(schema.trajectory);
   }
+}
+
+function applyRuleI_PersonalField(schema: AbilitySchema, text: string): void {
+  if (!isPersonalFieldConcept(text)) return;
+
+  walkActions(schema, (v) => {
+    if (v.action.type !== 'SPAWN_FIELD') return;
+    v.action.field.affects = 'CASTER_ONLY';
+    if (
+      LAUNCH_PAD_KEYWORDS.test(text) &&
+      (v.action.field.verticalForce === undefined || v.action.field.verticalForce === 0)
+    ) {
+      v.action.field.verticalForce = 2500;
+    }
+  });
 }
 
 function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
@@ -667,6 +722,10 @@ function actionsProvideDisplacement(actions: ActionPayload[]): boolean {
   let found = false;
   walkActionList(actions, (v) => {
     if (found) return;
+    if (actionProvidesVerticalDisplacement(v.action)) {
+      found = true;
+      return;
+    }
     if (v.action.type === 'APPLY_IMPULSE') {
       found = true;
       return;
@@ -687,6 +746,10 @@ function actionsProvideLifecycleDisplacement(actions: ActionPayload[]): boolean 
   let found = false;
   walkActionList(actions, (v) => {
     if (found) return;
+    if (actionProvidesVerticalDisplacement(v.action)) {
+      found = true;
+      return;
+    }
     if (v.action.type === 'SPAWN_FIELD') {
       const ft = v.action.field.fieldType;
       if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR' || ft === 'VORTEX_TANGENT') {
@@ -714,6 +777,10 @@ function hasLifecycleFieldDisplacement(schema: AbilitySchema): boolean {
   walkActions(schema, (v) => {
     if (found) return;
     if (!v.node || !LIFECYCLE_DISPLACEMENT_TRIGGERS.has(v.node.trigger)) return;
+    if (actionProvidesVerticalDisplacement(v.action)) {
+      found = true;
+      return;
+    }
     if (v.action.type === 'SPAWN_FIELD') {
       const ft = v.action.field.fieldType;
       if (ft === 'RADIAL_IMPULSE' || ft === 'MASS_ATTRACTOR' || ft === 'VORTEX_TANGENT') {
@@ -740,6 +807,10 @@ function abilityProvidesDisplacement(schema: AbilitySchema): boolean {
   let found = false;
   walkActions(schema, (v) => {
     if (found) return;
+    if (actionProvidesVerticalDisplacement(v.action)) {
+      found = true;
+      return;
+    }
     if (v.action.type === 'APPLY_IMPULSE') {
       found = true;
       return;
@@ -842,6 +913,13 @@ function ensureDisplacementSemantics(
     isStasisOnlyOnHit(schema) ||
     hasLifecycleFieldDisplacement(schema) ||
     isObstacleConcept(text)
+  ) {
+    return schema;
+  }
+
+  if (
+    isPersonalUtilityConcept(text) &&
+    (schemaHasVerticalDisplacement(schema) || hasSpawnFieldWithVerticalForce(schema))
   ) {
     return schema;
   }
@@ -1036,6 +1114,7 @@ export function repairAbilitySemantics(
     applyRuleC_ArcSweep(cloned, text);
     applyRuleD_ChanneledStream(cloned, text);
     applyRuleH_Meteor(cloned, text);
+    applyRuleI_PersonalField(cloned, text);
     ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);
   }
 

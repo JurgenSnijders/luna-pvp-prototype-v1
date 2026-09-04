@@ -5,14 +5,24 @@ import { CATEGORY_BUDGETS } from './constants';
 import { clamp } from './helpers';
 import { scoreAbilitySchema } from './score';
 import { sanitizeAbilitySchema } from './sanitize/ability';
+import type { TrajectoryConfig } from '../../types/schema';
+
+function isSkyDropTrajectory(traj: TrajectoryConfig): boolean {
+  return (traj.spawnAltitude ?? 0) > 0 || (traj.fallSpeed ?? 0) > 0;
+}
+
+function clampTrajectorySpeed(traj: TrajectoryConfig): void {
+  if (traj.speed === undefined) return;
+  const isSkyDrop = isSkyDropTrajectory(traj);
+  const minSpeed = isSkyDrop ? 0 : 150;
+  traj.speed = clamp(traj.speed, minSpeed, 1600);
+}
 
 function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
   const s = structuredClone(schema);
 
   if (s.trajectory) {
-    if (s.trajectory.speed !== undefined) {
-      s.trajectory.speed = clamp(s.trajectory.speed, 150, 1600);
-    }
+    clampTrajectorySpeed(s.trajectory);
     if (s.trajectory.maxRange !== undefined) {
       s.trajectory.maxRange = Math.min(1200, s.trajectory.maxRange);
     }
@@ -34,11 +44,7 @@ function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
             action.emitter.spreadDeg = clamp(action.emitter.spreadDeg, 0, 360);
           }
           if (action.projectileTrajectory.speed !== undefined) {
-            action.projectileTrajectory.speed = clamp(
-              action.projectileTrajectory.speed,
-              150,
-              1600,
-            );
+            clampTrajectorySpeed(action.projectileTrajectory);
           }
           if (action.triggers) {
             clampTriggers(action.triggers);
