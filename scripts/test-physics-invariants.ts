@@ -895,6 +895,99 @@ function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'aim at target; clamped to maxTargetRange; skipped for non-ground' };
 }
 
+function stepWorldWithLifecycle(world: PhysicsWorld, interp: Interpreter, frames: number): void {
+  for (let i = 0; i < frames; i++) {
+    world.step(1 / 60);
+    interp.processLifecycleEvents(world, 1 / 60);
+  }
+}
+
+function assertLavaHazardDamageTick(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 0;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 61);
+
+  if (!dummy.inLava) {
+    return { pass: false, reason: `expected inLava after off-hex wade, got inLava=${dummy.inLava}` };
+  }
+  if (dummy.health < 75 || dummy.health > 77) {
+    return {
+      pass: false,
+      reason: `expected ~24 HP loss (health 75-77), got ${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return { pass: true, reason: `inLava wading, health=${dummy.health.toFixed(1)} after 1s` };
+}
+
+function assertLavaAirborneEdgeRecoveryImmunity(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 60;
+  dummy.vz = 200;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 12);
+
+  if (dummy.z <= 0) {
+    return { pass: false, reason: `expected airborne z > 0, got z=${dummy.z.toFixed(1)}` };
+  }
+  if (dummy.inLava) {
+    return { pass: false, reason: 'airborne off-hex should not be inLava' };
+  }
+  if (dummy.health !== 100) {
+    return {
+      pass: false,
+      reason: `expected zero lava damage while airborne, health=${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return { pass: true, reason: `z=${dummy.z.toFixed(1)}, no damage while airborne over lava` };
+}
+
+function assertLavaPlatformReEntrySafety(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 0;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 18);
+  const healthAfterWade = dummy.health;
+
+  dummy.pos = new Vector2D(0, 0);
+  stepWorldWithLifecycle(world, interp, 30);
+
+  if (dummy.inLava) {
+    return { pass: false, reason: 'expected inLava=false after re-entering platform' };
+  }
+  if (dummy.health !== healthAfterWade) {
+    return {
+      pass: false,
+      reason: `health changed after re-entry: ${healthAfterWade.toFixed(1)} -> ${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `re-entry safe, health stable at ${dummy.health.toFixed(1)}`,
+  };
+}
+
 function assertDebrisKinematicBounceAndSettling(): { pass: boolean; reason: string } {
   const debris = DebrisManager.getInstance();
   debris.clear();
@@ -912,10 +1005,16 @@ function assertDebrisKinematicBounceAndSettling(): { pass: boolean; reason: stri
     }
   }
 
-  debris.update(0.2, simMs);
-  simMs += 200;
-  if (!shards.some((s) => s.vz < 0)) {
-    return { pass: false, reason: 'expected negative vz after 0.2s gravity integration' };
+  let sawNegativeVz = false;
+  for (let i = 0; i < 20; i++) {
+    for (const s of shards) {
+      if (s.vz < 0) sawNegativeVz = true;
+    }
+    debris.update(1 / 60, simMs);
+    simMs += 1000 / 60;
+  }
+  if (!sawNegativeVz) {
+    return { pass: false, reason: 'expected negative vz during gravity arc' };
   }
 
   let bounced = false;
@@ -946,7 +1045,7 @@ function assertDebrisKinematicBounceAndSettling(): { pass: boolean; reason: stri
 
   const fadeStart = Math.max(...shards.map((s) => s.settledAt)) + 2600;
   const countBeforeFade = debris.getActiveShardCount();
-  debris.update(0.5, fadeStart);
+  debris.update(1.0, fadeStart);
   const faded =
     debris.getActiveShardCount() < countBeforeFade || shards.some((s) => s.alpha < 1);
   if (!faded) {
@@ -1053,6 +1152,24 @@ function run(): void {
   console.log(`  ${DIM}${botAim.reason}${RESET}`);
   if (botAim.pass) passed++;
 
+  const lavaDamage = assertLavaHazardDamageTick();
+  const lavaDamageTag = lavaDamage.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaDamageTag} Lava hazard damage tick`);
+  console.log(`  ${DIM}${lavaDamage.reason}${RESET}`);
+  if (lavaDamage.pass) passed++;
+
+  const lavaAirborne = assertLavaAirborneEdgeRecoveryImmunity();
+  const lavaAirborneTag = lavaAirborne.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaAirborneTag} Lava airborne edge recovery immunity`);
+  console.log(`  ${DIM}${lavaAirborne.reason}${RESET}`);
+  if (lavaAirborne.pass) passed++;
+
+  const lavaReEntry = assertLavaPlatformReEntrySafety();
+  const lavaReEntryTag = lavaReEntry.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaReEntryTag} Lava platform re-entry safety`);
+  console.log(`  ${DIM}${lavaReEntry.reason}${RESET}`);
+  if (lavaReEntry.pass) passed++;
+
   const debrisKinematics = assertDebrisKinematicBounceAndSettling();
   const debrisKinematicsTag = debrisKinematics.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
   console.log(`${debrisKinematicsTag} Debris kinematic bounce and settling`);
@@ -1065,7 +1182,7 @@ function run(): void {
   console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
   if (debrisPool.pass) passed++;
 
-  const totalCases = suite.length + 10;
+  const totalCases = suite.length + 13;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

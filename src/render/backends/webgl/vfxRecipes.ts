@@ -453,3 +453,56 @@ export function statusKineticSlipstream(
   const slipVel = back.scale(velocity.mag() * 0.15);
   spawnStreak(ctx, slipPos, slipVel, 12, '#e0f8ff', 0.7, 0.2, 'SECONDARY');
 }
+
+export function lavaSizzleParticle(ctx: WebGLSpawnCtx, pos: Vector2D): void {
+  const wispCount = 2 + Math.floor(Math.random() * 2);
+  const wispColor = '#ffccaa';
+  const [wr, wg, wb] = parseColor(wispColor);
+
+  for (let i = 0; i < wispCount; i++) {
+    ctx.spawnParticle(
+      makeParticle({
+        posX: pos.x + (Math.random() - 0.5) * 8,
+        posY: pos.y + (Math.random() - 0.5) * 6,
+        velX: (Math.random() - 0.5) * 20,
+        velY: -80 - Math.random() * 60,
+        life: 0.25,
+        size: 2 + Math.random() * 2,
+        rot: 0,
+        angVel: 0,
+        drag: 0.94,
+        gravity: -20,
+        shapeId: ShapeId.GLOW,
+        r: wr,
+        g: wg,
+        b: wb,
+        peakAlpha: 0.85,
+        additive: true,
+      }),
+      'SECONDARY',
+    );
+  }
+
+  const [or, og, ob] = parseColor('#ff6600');
+  ctx.spawnParticle(
+    makeParticle({
+      posX: pos.x + (Math.random() - 0.5) * 10,
+      posY: pos.y,
+      velX: (Math.random() - 0.5) * 25,
+      velY: -15 - Math.random() * 20,
+      life: 0.2,
+      size: 2 + Math.random() * 2,
+      rot: 0,
+      angVel: 0,
+      drag: 0.92,
+      gravity: 0,
+      shapeId: ShapeId.GLOW,
+      r: or,
+      g: og,
+      b: ob,
+      peakAlpha: 0.75,
+      additive: true,
+    }),
+    'AMBIENT',
+  );
+}

@@ -127,4 +127,8 @@ export class ParticleSystem {
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {
     this.director.statusKinetic(pos, velocity);
   }
+
+  emitLavaSizzle(pos: Vector2D): void {
+    this.director.emitLavaSizzle(pos);
+  }
 }

@@ -1,8 +1,9 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
-import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
+import { LAVA_AIRBORNE_IMMUNITY_Z, Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
+import type { ParticleSystem } from '../ParticleSystem';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getActiveColors } from '../../ui/tokens';
 import { lerpPos, lerpZ } from './helpers';
@@ -10,6 +11,7 @@ import type { CanvasRenderCtx } from './renderCtx';
 import { drawStatusAuras } from './statusAuras';
 
 const combatantSortScratch: Entity[] = [];
+let lavaSizzleFrame = 0;
 
 export function drawEntityContactShadow(
   ctx: CanvasRenderingContext2D,
@@ -67,7 +69,9 @@ export function drawCombatants(
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
+  particles?: ParticleSystem,
 ): void {
+  lavaSizzleFrame++;
   combatantSortScratch.length = 0;
 
   for (const player of world.players) {
@@ -96,7 +100,7 @@ export function drawCombatants(
     const isBot = entity.tags.has('bot');
     const baseColor = isDummy || isBot ? colors.botOrange : colors.playerCyan;
     const aimColor = isDummy ? undefined : isBot ? colors.botOrangeAim : colors.playerCyanAim;
-    drawCombatantBody(ctx, state, world, entity, pos, alpha, baseColor, aimColor);
+    drawCombatantBody(ctx, state, world, entity, pos, alpha, baseColor, aimColor, particles);
   }
 }
 
@@ -109,6 +113,7 @@ function drawCombatantBody(
   alpha: number,
   fillColor: string,
   aimColor?: string,
+  particles?: ParticleSystem,
 ): void {
   const prevAlpha = ctx.globalAlpha;
   if (entity.isStealthed()) {
@@ -134,6 +139,32 @@ function drawCombatantBody(
   ctx.globalAlpha = shadowAlpha;
   drawEntityContactShadow(ctx, physicsPos.x, physicsPos.y, radius, elevation);
   ctx.restore();
+
+  if (entity.inLava && currentZ <= LAVA_AIRBORNE_IMMUNITY_Z) {
+    ctx.save();
+    if (!useCheapCanvasEffects()) {
+      ctx.shadowColor = '#ff6600';
+      ctx.shadowBlur = 10;
+    }
+    ctx.strokeStyle = 'rgba(255, 68, 0, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(
+      physicsPos.x,
+      physicsPos.y,
+      radius * 1.25,
+      radius * 0.65,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+    ctx.restore();
+
+    if (lavaSizzleFrame % 4 === 0) {
+      particles?.emitLavaSizzle(physicsPos);
+    }
+  }
 
   drawStatusAuras(ctx, entity, visualPos, nowMs, physicsPos, world);
 

@@ -206,7 +206,7 @@ export class CanvasRenderer {
 
     world: PhysicsWorld,
 
-    _particles: ParticleSystem,
+    particles: ParticleSystem,
 
     alpha: number,
 
@@ -303,7 +303,7 @@ export class CanvasRenderer {
 
     drawObstacles(ctx, state, world);
 
-    drawCombatants(ctx, state, world, alpha);
+    drawCombatants(ctx, state, world, alpha, particles);
 
     drawSummons(ctx, world, alpha);
 

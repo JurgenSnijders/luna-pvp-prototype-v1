@@ -1,5 +1,11 @@
 import { Vector2D } from '../../math/Vector2D';
-import { GROUND_SLAM_VZ } from '../../engine/verticalConstants';
+import {
+  LAVA_AIRBORNE_IMMUNITY_Z,
+  LAVA_HAZARD_HP_PER_SEC,
+  LAVA_HAZARD_INSTABILITY_PER_SEC,
+  LAVA_HAZARD_TICK_S,
+  GROUND_SLAM_VZ,
+} from '../../engine/verticalConstants';
 import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
 import type { PhysicsWorld, PendingObstacleDestruction } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
@@ -251,6 +257,41 @@ function processLavaBoundaryRipples(world: PhysicsWorld, fx: LifecycleFx): void 
   for (const id of wasOnPlatform.keys()) {
     if (!liveIds.has(id)) {
       wasOnPlatform.delete(id);
+    }
+  }
+}
+
+function processLavaHazardTicks(world: PhysicsWorld, dt: number): void {
+  const tickDamage = LAVA_HAZARD_HP_PER_SEC * LAVA_HAZARD_TICK_S;
+  const tickInstability = LAVA_HAZARD_INSTABILITY_PER_SEC * LAVA_HAZARD_TICK_S;
+
+  for (const combatant of world.getCombatants()) {
+    if (combatant.isDead) continue;
+
+    const submerged =
+      combatant.inLava &&
+      combatant.z <= LAVA_AIRBORNE_IMMUNITY_Z &&
+      combatant.stasisRemainingMs <= 0;
+
+    if (!submerged) {
+      combatant.lavaImmersionTimer = 0;
+      continue;
+    }
+
+    combatant.lavaImmersionTimer += dt;
+    while (combatant.lavaImmersionTimer >= LAVA_HAZARD_TICK_S) {
+      combatant.lavaImmersionTimer -= LAVA_HAZARD_TICK_S;
+      combatant.health = Math.max(0, combatant.health - tickDamage);
+      combatant.addInstability(tickInstability, world);
+      world.emitCombatVisualEvent({
+        type: 'DAMAGE',
+        pos: { x: combatant.pos.x, y: combatant.pos.y },
+        value: Math.round(tickDamage),
+        targetId: combatant.id,
+      });
+      if (combatant.tags.has('dummy') && combatant.health <= 0) {
+        combatant.isDead = true;
+      }
     }
   }
 }
@@ -836,6 +877,7 @@ export function processLifecycleEvents(
     processObstacleDestructions(interp, world, fx);
     processLavaBoundaryRipples(world, fx);
   }
+  processLavaHazardTicks(world, dt);
   processZoneParticleTicks(interp, world);
   processStatusParticleTicks(interp, world);
 }
