@@ -19,6 +19,16 @@ Category design flavor:
 - MOBILITY: displacement, teleports, dashes, stealth, escapes — prioritize movement over damage
 
 Use kinetic concepts: impulses, vortices, friction patches, homing arcs, boomerangs, teleports, morphs, stealth, turrets/decoys, terrain mutation, obstacles, stasis, charged/channel/combo casting, heat/ammo/health-cost economies.
+
+Vertical & ballistic delivery (concept seeds only — describe in name/tagline/description, never emit schema):
+- Mortar / Artillery: high-arcing lob trajectories (BALLISTIC_ARC) that clear low walls, cluster splits at apex (ON_AIR_APEX), or bouncing bomblets with ground restitution.
+- Sky Drop / Orbital Strike: ground-targeted plumb falls (targetingMode GROUND_POINT, spawnAltitude > 0, speed 0) triggering massive ground slams (ON_GROUND_SLAM).
+- Kinetic Geyser / Launch Pad: deployed zones with upward verticalForce that fling combatants high, granting brief elevation over ground hazards.
+- Airburst Flak: directional lobs tuned to detonate mid-flight or at target elevation, cascading secondary shrapnel downward.
+
+Few-shot inspiration:
+- Prompt: "heavy siege mortar that clears walls" → name: "Siege Howitzer", tagline: "Arcing barrage", description: "Lobs an explosive shell over obstacles that detonates in a wide kinetic blast on impact."
+
 Return exactly 3 distinct ability concepts tuned for the requested category.`;
 
 export const EVOLUTION_SYSTEM_PROMPT = `You are a concept ideation engine evolving an existing ability for a 2D physics kinetic arena game.

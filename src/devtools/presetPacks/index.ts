@@ -29,7 +29,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       'Kinetic Railgun',
       'Graviton Boomerang',
       'Cryo Ice Trail',
-      'Singularity Scatter',
+      'Cluster Mortar',
       'Phase Nova',
     ],
   },

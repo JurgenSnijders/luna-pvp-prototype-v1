@@ -1,6 +1,9 @@
 import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { sanitizeAbilitySchema } from '../src/ai/budget/sanitize/ability';
+import { FORGE_SYSTEM_PROMPT } from '../src/ai/synthesizer/prompts';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
+import { DEFAULT_STARTER_PRESET_NAMES } from '../src/devtools/presetPacks/core';
+import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { Player } from '../src/entities/Player';
 import { Vector2D } from '../src/math/Vector2D';
@@ -490,16 +493,68 @@ function runMeteorShowerCoercionTest(): boolean {
   return true;
 }
 
+function assertStarterLoadoutHasVerticalSpell(): boolean {
+  if (!DEFAULT_STARTER_PRESET_NAMES.includes('Cluster Mortar')) {
+    console.log(`${RED}[FAIL]${RESET} Starter loadout vertical spell`);
+    console.log(`  ${DIM}Cluster Mortar missing from DEFAULT_STARTER_PRESET_NAMES${RESET}`);
+    return false;
+  }
+
+  const schemas = DEFAULT_STARTER_PRESET_NAMES.map((name) => PRESETS[name]);
+  const hasVertical = schemas.some((schema) => {
+    const isVerticalDelivery =
+      schema.trajectory?.type === 'BALLISTIC_ARC' ||
+      schema.targetingMode === 'GROUND_POINT';
+    const hasVerticalParam =
+      (schema.trajectory?.lobApex ?? 0) > 0 ||
+      (schema.trajectory?.spawnAltitude ?? 0) > 0;
+    return isVerticalDelivery && hasVerticalParam;
+  });
+
+  if (!hasVertical) {
+    console.log(`${RED}[FAIL]${RESET} Starter loadout vertical spell`);
+    console.log(`  ${DIM}no starter preset with BALLISTIC_ARC/GROUND_POINT and lobApex/spawnAltitude${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} Starter loadout vertical spell`);
+  console.log(`  ${DIM}Cluster Mortar on E with BALLISTIC_ARC lobApex=${PRESETS['Cluster Mortar'].trajectory?.lobApex}${RESET}`);
+  return true;
+}
+
+function assertForgePromptContainsVerticalGrammar(): boolean {
+  const required = ['BALLISTIC_ARC', 'GROUND_POINT', 'verticalForce'] as const;
+  const missing = required.filter((token) => !FORGE_SYSTEM_PROMPT.includes(token));
+
+  if (missing.length > 0) {
+    console.log(`${RED}[FAIL]${RESET} Forge prompt vertical grammar`);
+    console.log(`  ${DIM}missing tokens: ${missing.join(', ')}${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} Forge prompt vertical grammar`);
+  console.log(`  ${DIM}contains BALLISTIC_ARC, GROUND_POINT, verticalForce${RESET}`);
+  return true;
+}
+
 function run(): void {
   console.log('test:fidelity');
   let passed = 0;
-  const totalTests = FIDELITY_SCENARIOS.length + 2;
+  const totalTests = FIDELITY_SCENARIOS.length + 4;
 
   if (runFlatSpawnFieldRepairTest()) {
     passed++;
   }
 
   if (runMeteorShowerCoercionTest()) {
+    passed++;
+  }
+
+  if (assertStarterLoadoutHasVerticalSpell()) {
+    passed++;
+  }
+
+  if (assertForgePromptContainsVerticalGrammar()) {
     passed++;
   }
 
