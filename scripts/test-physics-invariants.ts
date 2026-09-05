@@ -13,6 +13,13 @@ import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
+import {
+  debrisClinkGain,
+  debrisClinkPlaybackRate,
+  fmBellNotes,
+  GROUND_SLAM_SUB_FLOOR_HZ,
+  groundSlamSubStartHz,
+} from '../src/audio/recipes';
 import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -1074,6 +1081,47 @@ function assertDebrisPoolCap(): { pass: boolean; reason: string } {
   return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
 }
 
+function assertAudioRecipeCalculations(): { pass: boolean; reason: string } {
+  const rate4 = debrisClinkPlaybackRate(4);
+  if (Math.abs(rate4 - 1.0) > 0.01) {
+    return { pass: false, reason: `debrisClinkPlaybackRate(4) expected ~1.0, got ${rate4}` };
+  }
+
+  const rate8 = debrisClinkPlaybackRate(8);
+  if (Math.abs(rate8 - 0.55) > 0.01) {
+    return { pass: false, reason: `debrisClinkPlaybackRate(8) expected ~0.55, got ${rate8}` };
+  }
+
+  const gain0 = debrisClinkGain(500, 0);
+  const gain2 = debrisClinkGain(500, 2);
+  if (gain0 <= gain2) {
+    return {
+      pass: false,
+      reason: `bounce attenuation failed: gain(0)=${gain0} should exceed gain(2)=${gain2}`,
+    };
+  }
+
+  const subStart = groundSlamSubStartHz(100);
+  if (subStart < 90) {
+    return { pass: false, reason: `groundSlamSubStartHz(100) expected >= 90, got ${subStart}` };
+  }
+  if (GROUND_SLAM_SUB_FLOOR_HZ < 42) {
+    return { pass: false, reason: `sub floor target ${GROUND_SLAM_SUB_FLOOR_HZ} below 42 Hz` };
+  }
+
+  const epicNotes = fmBellNotes('EPIC');
+  if (epicNotes.length !== 3 || epicNotes.some((n) => n.freq <= 0)) {
+    return { pass: false, reason: 'fmBellNotes(EPIC) should return 3 positive frequencies' };
+  }
+
+  const chaoticNotes = fmBellNotes('CHAOTIC');
+  if (chaoticNotes.length !== 3 || chaoticNotes.some((n) => n.freq <= 0)) {
+    return { pass: false, reason: 'fmBellNotes(CHAOTIC) should return 3 positive frequencies' };
+  }
+
+  return { pass: true, reason: 'audio recipe math verified' };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -1183,7 +1231,13 @@ function run(): void {
   console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
   if (debrisPool.pass) passed++;
 
-  const totalCases = suite.length + 13;
+  const audioRecipes = assertAudioRecipeCalculations();
+  const audioRecipesTag = audioRecipes.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${audioRecipesTag} Audio recipe calculations`);
+  console.log(`  ${DIM}${audioRecipes.reason}${RESET}`);
+  if (audioRecipes.pass) passed++;
+
+  const totalCases = suite.length + 14;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
