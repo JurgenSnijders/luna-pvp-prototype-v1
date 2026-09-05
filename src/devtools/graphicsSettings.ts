@@ -35,6 +35,7 @@ export interface GraphicsSettings {
   webglBackground: boolean;
   floorSubGrid: boolean;
   ambientEmbers: boolean;
+  dynamicDebris: boolean;
   particleTrails: boolean;
   showVerticalVectors: boolean;
   bloomEnabled: boolean;
@@ -66,6 +67,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   webglBackground: true,
   floorSubGrid: true,
   ambientEmbers: true,
+  dynamicDebris: true,
   particleTrails: true,
   showVerticalVectors: false,
   bloomEnabled: true,
@@ -659,6 +661,7 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     webglBackground,
     floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
     ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
+    dynamicDebris: parsed.dynamicDebris ?? DEFAULT_GRAPHICS_SETTINGS.dynamicDebris,
     particleTrails: parsed.particleTrails ?? DEFAULT_GRAPHICS_SETTINGS.particleTrails,
     showVerticalVectors:
       parsed.showVerticalVectors ?? DEFAULT_GRAPHICS_SETTINGS.showVerticalVectors,
@@ -950,6 +953,7 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     webglBackground: tier !== 'LOW',
     floorSubGrid: tier !== 'LOW',
     ambientEmbers: tier !== 'LOW',
+    dynamicDebris: tier !== 'LOW',
     particleTrails: true,
     bloomEnabled: limits.bloomPasses > 0,
     refractionEnabled: limits.refraction,

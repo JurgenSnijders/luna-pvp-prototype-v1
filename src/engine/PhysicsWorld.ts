@@ -10,6 +10,7 @@ import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
 import { isAlliedTo, isOwnerSummonPair } from './allegiance';
 import type { SpellArchetype, TerrainMutationConfig, TerrainType } from '../types/schema';
+import type { ObstacleShape } from '../types/schema';
 import {
   DEBUG_VECTOR_COLORS,
   makeDebugVector,
@@ -96,6 +97,8 @@ export interface PendingObstacleDestruction {
   pos: Vector2D;
   radius: number;
   isDestructible: boolean;
+  shape: ObstacleShape;
+  spawnArchetype?: SpellArchetype;
 }
 
 export interface GroundImpactEvent {
@@ -1114,6 +1117,8 @@ export class PhysicsWorld {
         pos: obstacle.pos.clone(),
         radius: obstacle.getCollisionRadius(),
         isDestructible: obstacle.config.isDestructible ?? false,
+        shape: obstacle.config.shape,
+        spawnArchetype: obstacle.spawnArchetype,
       });
     }
   }

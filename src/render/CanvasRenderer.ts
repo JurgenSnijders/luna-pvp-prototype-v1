@@ -4,7 +4,7 @@ import type { Camera2D, StreakBody } from '../camera/Camera2D';
 
 import type { ParticleSystem } from './ParticleSystem';
 
-import { drawHexPlatform } from './canvas/arena';
+import { drawHexPlatform, updateAndDrawDebris } from './canvas/arena';
 
 import { drawLavaSeaFallback } from './canvas/background';
 
@@ -294,6 +294,8 @@ export class CanvasRenderer {
     drawHexPlatform(ctx, state, world, shrinkProgress, isShrinking);
 
     decalManager.render(ctx, performance.now());
+
+    updateAndDrawDebris(ctx);
 
     drawTerrainPatches(ctx, world);
 

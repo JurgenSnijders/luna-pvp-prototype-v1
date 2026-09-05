@@ -211,6 +211,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
 
   addToggle(arenaBody, arenaCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
   addToggle(arenaBody, arenaCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
+  addToggle(arenaBody, arenaCheckboxes, 'dynamicDebris', 'Dynamic Shatter Debris');
 
   // --- LOOK ---
   const lookSection = collapsibleSection(parent, 'Look', true);

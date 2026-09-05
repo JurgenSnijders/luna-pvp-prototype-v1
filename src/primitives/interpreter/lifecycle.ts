@@ -1,7 +1,7 @@
 import { Vector2D } from '../../math/Vector2D';
 import { GROUND_SLAM_VZ } from '../../engine/verticalConstants';
 import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
-import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { PhysicsWorld, PendingObstacleDestruction } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
 import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
@@ -10,6 +10,7 @@ import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
 import { decalManager, mapArchetypeToDecal, type DecalType } from '../../render/canvas/decals';
 import { floorGridManager } from '../../render/canvas/floorGrid';
+import { DebrisManager } from '../../render/canvas/debris';
 import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
@@ -172,6 +173,17 @@ function stampZoneExpirationDecals(world: PhysicsWorld, fx: LifecycleFx): void {
   }
 }
 
+function resolveDebrisColor(death: PendingObstacleDestruction): string {
+  const arch = death.spawnArchetype;
+  if (arch === 'FIRE' || arch === 'PLASMA') return '#ff6622';
+  if (arch === 'EARTH') return '#aa8855';
+  if (arch === 'VOID') return '#8844cc';
+  if (arch === 'FROST') return '#44ddff';
+  if (death.shape === 'CIRCLE') return '#ff6622';
+  if (death.shape === 'BOX') return '#aa8855';
+  return '#8899aa';
+}
+
 function processObstacleDestructions(
   interp: Interpreter,
   world: PhysicsWorld,
@@ -190,6 +202,15 @@ function processObstacleDestructions(
     );
     fx.ripple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
     interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
+
+    if (getGraphicsSettings().dynamicDebris) {
+      DebrisManager.getInstance().spawnShatterCluster(
+        death.pos,
+        6 + Math.floor(Math.random() * 5),
+        resolveDebrisColor(death),
+        Math.min(420, 200 + death.radius * 4),
+      );
+    }
   }
 }
 

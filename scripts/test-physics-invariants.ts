@@ -11,6 +11,7 @@ import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
+import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
 import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -894,6 +895,85 @@ function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'aim at target; clamped to maxTargetRange; skipped for non-ground' };
 }
 
+function assertDebrisKinematicBounceAndSettling(): { pass: boolean; reason: string } {
+  const debris = DebrisManager.getInstance();
+  debris.clear();
+
+  let simMs = 0;
+  debris.spawnShatterCluster(Vector2D.zero(), 6);
+  const shards = debris.getShardsReadonly();
+
+  if (shards.length !== 6) {
+    return { pass: false, reason: `expected 6 shards, got ${shards.length}` };
+  }
+  for (const s of shards) {
+    if (s.z <= 0 || s.vz <= 0) {
+      return { pass: false, reason: `spawn shard ${s.id} not launched upward (z=${s.z}, vz=${s.vz})` };
+    }
+  }
+
+  debris.update(0.2, simMs);
+  simMs += 200;
+  if (!shards.some((s) => s.vz < 0)) {
+    return { pass: false, reason: 'expected negative vz after 0.2s gravity integration' };
+  }
+
+  let bounced = false;
+  for (let step = 0; step < 120; step++) {
+    for (const s of shards) {
+      if (s.bouncesRemaining < s.initialBounces) bounced = true;
+    }
+    debris.update(1 / 60, simMs);
+    simMs += 1000 / 60;
+    if (shards.every((s) => s.z <= 0)) break;
+  }
+
+  if (!shards.every((s) => s.z <= 0)) {
+    return { pass: false, reason: 'shards did not reach floor within 120 steps' };
+  }
+  if (!bounced) {
+    return { pass: false, reason: 'no shard recorded a floor bounce' };
+  }
+
+  debris.update(4.0, simMs);
+  simMs += 4000;
+  if (!shards.every((s) => s.settled)) {
+    return {
+      pass: false,
+      reason: `expected all settled after 4s, settled=${shards.filter((s) => s.settled).length}/${shards.length}`,
+    };
+  }
+
+  const fadeStart = Math.max(...shards.map((s) => s.settledAt)) + 2600;
+  const countBeforeFade = debris.getActiveShardCount();
+  debris.update(0.5, fadeStart);
+  const faded =
+    debris.getActiveShardCount() < countBeforeFade || shards.some((s) => s.alpha < 1);
+  if (!faded) {
+    return { pass: false, reason: 'expected alpha fade after settle hold + 2.6s' };
+  }
+
+  debris.clear();
+  return { pass: true, reason: 'launch, gravity, bounce, settle, and fade verified' };
+}
+
+function assertDebrisPoolCap(): { pass: boolean; reason: string } {
+  const debris = DebrisManager.getInstance();
+  debris.clear();
+
+  for (let i = 0; i < 10; i++) {
+    debris.spawnShatterCluster(Vector2D.zero(), 10);
+  }
+
+  const count = debris.getActiveShardCount();
+  if (count > DEBRIS_MAX_SHARDS) {
+    return { pass: false, reason: `pool exceeded cap: ${count} > ${DEBRIS_MAX_SHARDS}` };
+  }
+
+  debris.clear();
+  return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -973,7 +1053,19 @@ function run(): void {
   console.log(`  ${DIM}${botAim.reason}${RESET}`);
   if (botAim.pass) passed++;
 
-  const totalCases = suite.length + 8;
+  const debrisKinematics = assertDebrisKinematicBounceAndSettling();
+  const debrisKinematicsTag = debrisKinematics.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${debrisKinematicsTag} Debris kinematic bounce and settling`);
+  console.log(`  ${DIM}${debrisKinematics.reason}${RESET}`);
+  if (debrisKinematics.pass) passed++;
+
+  const debrisPool = assertDebrisPoolCap();
+  const debrisPoolTag = debrisPool.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${debrisPoolTag} Debris pool cap`);
+  console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
+  if (debrisPool.pass) passed++;
+
+  const totalCases = suite.length + 10;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
