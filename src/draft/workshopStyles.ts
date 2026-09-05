@@ -1,8 +1,37 @@
 import type { SpellRole } from '../game/spellRoles';
 import type { ActionSlotKey, CardRarity } from '../types/cards';
+import type { AbilitySchema } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 
 export type BadgeKind = 'trajectory' | 'field' | 'trigger' | 'cast';
+
+export function normalizeForgeTierRarity(rarity: string): string {
+  const upper = (rarity || 'COMMON').toUpperCase();
+  if (upper === 'LEGENDARY') return 'CHAOTIC';
+  if (upper === 'COMMON' || upper === 'RARE' || upper === 'EPIC' || upper === 'CHAOTIC') return upper;
+  return 'COMMON';
+}
+
+export function resolveSpellRarity(spell: AbilitySchema): CardRarity {
+  const meta = spell.metadata?.rarity;
+  if (typeof meta === 'string') return normalizeForgeTierRarity(meta) as CardRarity;
+  return 'COMMON';
+}
+
+export function getTierCrest(rarity: string): string {
+  switch (normalizeForgeTierRarity(rarity)) {
+    case 'COMMON':
+      return '◈ COMMON';
+    case 'RARE':
+      return '◈◈ RARE';
+    case 'EPIC':
+      return '✦✦ EPIC ✦✦';
+    case 'CHAOTIC':
+      return '★ CHAOTIC ★';
+    default:
+      return rarity.toUpperCase();
+  }
+}
 
 export const RARITY_COLORS: Record<CardRarity, string> = {
   COMMON: '#888888',
@@ -1344,6 +1373,52 @@ export function injectStyles(): void {
 
     html[data-cheap-ui='1'] .workshop-overlay {
       backdrop-filter: none !important;
+    }
+
+    #action-bar-hud .action-slot[data-rarity='common'] {
+      --rarity-color: #5a6e8c;
+      --rarity-glow: transparent;
+    }
+
+    #action-bar-hud .action-slot[data-rarity='rare'] {
+      --rarity-color: #00e5ff;
+      --rarity-glow: rgba(0, 229, 255, 0.30);
+    }
+
+    #action-bar-hud .action-slot[data-rarity='epic'] {
+      --rarity-color: #bf00ff;
+      --rarity-glow: rgba(191, 0, 255, 0.45);
+    }
+
+    #action-bar-hud .action-slot[data-rarity='chaotic'] {
+      --rarity-color: #ffd700;
+      --rarity-glow: rgba(255, 215, 0, 0.50);
+    }
+
+    .action-slot-rarity-frame {
+      position: absolute;
+      inset: 2px;
+      z-index: 2;
+      pointer-events: none;
+      display: none;
+      border: 1px solid var(--rarity-color, transparent);
+      border-radius: 3px;
+      box-shadow: inset 0 0 10px var(--rarity-glow, transparent);
+    }
+
+    .action-slot[data-rarity] .action-slot-rarity-frame {
+      display: block;
+    }
+
+    .action-slot-rarity-glyph {
+      font-size: 10px;
+      line-height: 1;
+      color: var(--rarity-color, #5a6e8c);
+      text-shadow: 0 0 4px var(--rarity-glow, transparent);
+    }
+
+    html[data-cheap-ui='1'] .action-slot-rarity-frame {
+      box-shadow: none;
     }
   `;
   document.head.appendChild(style);

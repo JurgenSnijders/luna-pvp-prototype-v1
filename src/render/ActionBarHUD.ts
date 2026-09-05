@@ -1,12 +1,12 @@
 import type { Player } from '../entities/Player';
-import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
+import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey, type CardRarity } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
-import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
+import { getTierCrest, injectStyles, resolveSpellRarity, showQuickEquipMenu } from '../draft/workshopStyles';
 import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
 import { SpellInventoryManager } from '../game/SpellInventory';
-import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
+import { generateSpellIcon } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
 export interface ActionBarHUDCallbacks {
@@ -18,6 +18,8 @@ interface SlotElements {
   root: HTMLElement;
   iconContainer: HTMLElement;
   badge: HTMLElement;
+  rarityGlyph: HTMLElement;
+  rarityFrame: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
   chargeOverlay: HTMLElement;
@@ -28,7 +30,6 @@ interface SlotElements {
   lockoutOverlay: HTMLElement;
   countdown: HTMLElement;
   accent: string;
-  archetypeColor: string;
   lastAbilityId: string | null;
   lastIconStyle: IconRenderStyle | null;
 }
@@ -39,6 +40,23 @@ const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
   Q: { color: '#ffd700', bg: 'rgba(255, 215, 0, 0.12)' },
   E: { color: '#aa44ff', bg: 'rgba(170, 68, 255, 0.12)' },
   SPACE: { color: '#44ff88', bg: 'rgba(68, 255, 136, 0.12)' },
+};
+
+const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
+const SLOT_BORDER = `${RETRO_COLORS.borderNeon}40`;
+
+const RARITY_WASH: Record<CardRarity, string> = {
+  COMMON: 'rgba(90, 110, 140, 0.10)',
+  RARE: 'rgba(0, 229, 255, 0.12)',
+  EPIC: 'rgba(191, 0, 255, 0.16)',
+  CHAOTIC: 'rgba(255, 215, 0, 0.18)',
+};
+
+const RARITY_GLYPHS: Record<CardRarity, string> = {
+  COMMON: '◇',
+  RARE: '◈',
+  EPIC: '✦',
+  CHAOTIC: '★',
 };
 
 function escapeHtml(text: string): string {
@@ -177,12 +195,17 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
         }</div>
       </div>`
     : '';
+  const rarity = resolveSpellRarity(ability);
+  const tierCrest = escapeHtml(getTierCrest(rarity));
 
   return `
     <div style="font-family:${FONTS.mono};">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
       <span style="font-weight:700; font-size:${FONTS.size.md}; color:${accentColor};">${escapeHtml(ability.name)}</span>
-      <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
+      <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+        <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
+        <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:rgba(255,255,255,0.08); color:#cbd5e1;">${tierCrest}</span>
+      </span>
     </div>
     ${flavorBlock}
     <div style="font-size:${FONTS.size.badge}; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
@@ -239,13 +262,6 @@ export class ActionBarHUD {
       const slotEl = this.createSlot(i, key);
       this.slots.push(slotEl);
       this.root.appendChild(slotEl.root);
-
-      // Visual gap between weapons (E) and mobility (SPACE)
-      if (i === 3) {
-        const spacer = document.createElement('div');
-        spacer.style.cssText = 'width: 16px; flex-shrink: 0;';
-        this.root.appendChild(spacer);
-      }
     }
 
     this.tooltipEl = document.createElement('div');
@@ -314,14 +330,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 35%, transparent),
-            0 0 8px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 45%, transparent);
-          border-color: color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 75%, transparent);
+          box-shadow: inset 0 0 12px color-mix(in srgb, var(--rarity-color, #00e5ff) 35%, transparent),
+            0 0 8px color-mix(in srgb, var(--rarity-color, #00e5ff) 45%, transparent);
+          border-color: color-mix(in srgb, var(--rarity-color, #00e5ff) 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 55%, transparent),
-            0 0 18px color-mix(in srgb, var(--slot-archetype-color, #00e5ff) 85%, transparent);
-          border-color: var(--slot-archetype-color, #00e5ff);
+          box-shadow: inset 0 0 20px color-mix(in srgb, var(--rarity-color, #00e5ff) 55%, transparent),
+            0 0 18px color-mix(in srgb, var(--rarity-color, #00e5ff) 85%, transparent);
+          border-color: var(--rarity-color, #00e5ff);
         }
       }
       .slot-aiming {
@@ -354,10 +370,10 @@ export class ActionBarHUD {
       width: var(--action-bar-slot-size, 80px); height: var(--action-bar-slot-size, 80px);
       position: relative; overflow: hidden;
       backdrop-filter: var(--panel-backdrop-filter, blur(8px));
-      background: rgba(18, 18, 30, 0.85);
-      border: 1px solid ${RETRO_COLORS.borderNeon}40; border-radius: 4px;
+      background: ${SLOT_BASE_BG};
+      border: 1px solid ${SLOT_BORDER}; border-radius: 4px;
       box-shadow: ${RETRO_GLOW.boxCyan};
-      cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer; transition: border-style 0.15s ease, box-shadow 0.15s ease;
     `;
 
     const iconContainer = document.createElement('div');
@@ -366,13 +382,24 @@ export class ActionBarHUD {
       z-index: 1; pointer-events: none;
     `;
 
+    const headerRow = document.createElement('div');
+    headerRow.style.cssText = `
+      position: absolute; top: 4px; left: 4px; z-index: 3;
+      display: flex; align-items: center; gap: 3px; pointer-events: none;
+    `;
+
     const badge = document.createElement('div');
     badge.textContent = key;
     badge.style.cssText = `
-      position: absolute; top: 4px; left: 4px; z-index: 3;
       font-size: 12px; font-weight: 700; color: ${accent.color};
       background: ${accent.bg}; padding: 1px 3px; border-radius: 4px;
     `;
+
+    const rarityGlyph = document.createElement('div');
+    rarityGlyph.className = 'action-slot-rarity-glyph';
+
+    const rarityFrame = document.createElement('div');
+    rarityFrame.className = 'action-slot-rarity-frame';
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
@@ -445,7 +472,10 @@ export class ActionBarHUD {
     `;
 
     root.appendChild(iconContainer);
-    root.appendChild(badge);
+    root.appendChild(rarityFrame);
+    headerRow.appendChild(badge);
+    headerRow.appendChild(rarityGlyph);
+    root.appendChild(headerRow);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
@@ -498,12 +528,12 @@ export class ActionBarHUD {
       ]);
     });
 
-    root.style.setProperty('--slot-archetype-color', accent.color);
-
     return {
       root,
       iconContainer,
       badge,
+      rarityGlyph,
+      rarityFrame,
       label,
       cooldownOverlay,
       chargeOverlay,
@@ -514,15 +544,9 @@ export class ActionBarHUD {
       lockoutOverlay,
       countdown,
       accent: accent.color,
-      archetypeColor: accent.color,
       lastAbilityId: null,
       lastIconStyle: null,
     };
-  }
-
-  private applySlotBorderColor(slot: SlotElements, color: string, alphaHex: string): void {
-    slot.root.style.borderColor = `${color}${alphaHex}`;
-    slot.root.style.setProperty('--slot-archetype-color', color);
   }
 
   private updateSlotIcon(slotIndex: number, ability: AbilitySchema | null): void {
@@ -536,23 +560,32 @@ export class ActionBarHUD {
     slot.lastIconStyle = nextStyle;
 
     if (ability) {
+      const rarity = resolveSpellRarity(ability);
       slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
       slot.label.textContent = ability.name;
       slot.label.style.color = '#ccc';
-      slot.archetypeColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
-      this.applySlotBorderColor(slot, slot.archetypeColor, '4d');
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
+      slot.root.dataset.rarity = rarity.toLowerCase();
+      slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
+      slot.root.style.background =
+        `radial-gradient(circle at 50% 15%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
+      slot.root.style.borderColor = SLOT_BORDER;
       slot.root.draggable = true;
       slot.root.style.borderStyle = 'solid';
+      slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
     } else {
       slot.label.textContent = '+ Assign';
       slot.label.style.color = '#666';
-      slot.archetypeColor = slot.accent;
       slot.root.dataset.hasAbility = 'false';
       delete slot.root.dataset.equippedSpellId;
+      delete slot.root.dataset.rarity;
+      slot.rarityGlyph.textContent = '';
+      slot.root.style.background = SLOT_BASE_BG;
+      slot.root.style.borderColor = SLOT_BORDER;
       slot.root.draggable = false;
       slot.root.style.borderStyle = 'dashed';
+      slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
     }
   }
 
@@ -609,9 +642,7 @@ export class ActionBarHUD {
       const ability = player.getAbility(i);
       const ratio = player.getSlotCooldownRatio(i);
       const remaining = player.getSlotCooldownRemainingMs(i);
-      const ready = player.isSlotReady(i);
       const compiling = player.isSlotCompiling(i);
-      const accent = slot.accent;
 
       this.updateSlotIcon(i, ability);
 
@@ -722,16 +753,10 @@ export class ActionBarHUD {
         slot.countdown.style.display = 'none';
       }
 
-      if (ready && ability && this.aimingSlotIndex !== i) {
-        slot.root.style.borderColor = slot.archetypeColor;
-        slot.root.style.boxShadow = `0 0 10px ${slot.archetypeColor}59`;
-      } else if (!slot.root.matches(':hover') && this.aimingSlotIndex !== i) {
-        if (ability) {
-          this.applySlotBorderColor(slot, slot.archetypeColor, '4d');
-        } else {
-          this.applySlotBorderColor(slot, accent, '40');
-        }
-        slot.root.style.boxShadow = '';
+      if (!compiling) {
+        slot.root.style.borderColor = SLOT_BORDER;
+        slot.root.style.borderStyle = ability ? 'solid' : 'dashed';
+        slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
       }
     }
   }
