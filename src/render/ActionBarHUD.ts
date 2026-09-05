@@ -43,7 +43,9 @@ const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
 };
 
 const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
-const SLOT_BORDER = `${RETRO_COLORS.borderNeon}40`;
+// Border width stays at 1px so drag-over, aiming and compiling states can tint the slot
+// edge without shifting layout; the resting color is transparent.
+const SLOT_BORDER_IDLE = 'transparent';
 
 const RARITY_WASH: Record<CardRarity, string> = {
   COMMON: 'rgba(90, 110, 140, 0.10)',
@@ -371,9 +373,9 @@ export class ActionBarHUD {
       position: relative; overflow: hidden;
       backdrop-filter: var(--panel-backdrop-filter, blur(8px));
       background: ${SLOT_BASE_BG};
-      border: 1px solid ${SLOT_BORDER}; border-radius: 4px;
-      box-shadow: ${RETRO_GLOW.boxCyan};
-      cursor: pointer; transition: border-style 0.15s ease, box-shadow 0.15s ease;
+      border: 1px solid ${SLOT_BORDER_IDLE}; border-radius: 4px;
+      box-shadow: none;
+      cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
     `;
 
     const iconContainer = document.createElement('div');
@@ -570,10 +572,9 @@ export class ActionBarHUD {
       slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
       slot.root.style.background =
         `radial-gradient(circle at 50% 15%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
-      slot.root.style.borderColor = SLOT_BORDER;
+      slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = true;
-      slot.root.style.borderStyle = 'solid';
-      slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
+      slot.root.style.boxShadow = 'none';
     } else {
       slot.label.textContent = '+ Assign';
       slot.label.style.color = '#666';
@@ -582,10 +583,9 @@ export class ActionBarHUD {
       delete slot.root.dataset.rarity;
       slot.rarityGlyph.textContent = '';
       slot.root.style.background = SLOT_BASE_BG;
-      slot.root.style.borderColor = SLOT_BORDER;
+      slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = false;
-      slot.root.style.borderStyle = 'dashed';
-      slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
+      slot.root.style.boxShadow = 'none';
     }
   }
 
@@ -753,10 +753,9 @@ export class ActionBarHUD {
         slot.countdown.style.display = 'none';
       }
 
-      if (!compiling) {
-        slot.root.style.borderColor = SLOT_BORDER;
-        slot.root.style.borderStyle = ability ? 'solid' : 'dashed';
-        slot.root.style.boxShadow = RETRO_GLOW.boxCyan;
+      if (this.aimingSlotIndex !== i) {
+        slot.root.style.borderColor = SLOT_BORDER_IDLE;
+        slot.root.style.boxShadow = 'none';
       }
     }
   }
