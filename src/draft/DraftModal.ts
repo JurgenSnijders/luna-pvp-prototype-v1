@@ -6,6 +6,7 @@ import {
   getLastSynthesisMeta,
   synthesizeAbility,
 } from '../ai/Synthesizer';
+import { AudioEngine } from '../audio/AudioEngine';
 import type {
   ActionSlotKey,
   CardRarity,
@@ -861,6 +862,7 @@ export class DraftModal {
   }
 
   open(): void {
+    AudioEngine.getInstance().unlockFromUserGesture();
     this.intermissionMode = false;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;
@@ -904,6 +906,7 @@ export class DraftModal {
   }
 
   openIntermission(cards: DraftCard[]): void {
+    AudioEngine.getInstance().unlockFromUserGesture();
     this.intermissionMode = true;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;

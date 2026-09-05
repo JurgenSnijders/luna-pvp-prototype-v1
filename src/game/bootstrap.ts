@@ -1,3 +1,5 @@
+import { AudioEngine } from '../audio/AudioEngine';
+import { loadAudioSettings } from '../audio/audioSettings';
 import { Camera2D } from '../camera/Camera2D';
 import { InspectorUI } from '../devtools/InspectorUI';
 import { SpellLibrary } from '../devtools/SpellLibrary';
@@ -68,6 +70,8 @@ function syncWebGLBackground(app: GameApp): void {
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
+  loadAudioSettings();
+  AudioEngine.getInstance().applySettings(loadAudioSettings());
   loadFctClusterConfig();
   app.camera = new Camera2D();
   app.camera.setViewport(window.innerWidth, window.innerHeight);
@@ -253,7 +257,14 @@ function init(app: GameApp): void {
     app.camera.pointerOverGame = !isCameraInputBlocked(e.target);
   };
 
+  document.addEventListener('visibilitychange', () => {
+    const settings = loadAudioSettings();
+    if (!settings.muteOnBlur) return;
+    AudioEngine.getInstance().setBlurMuted(document.hidden);
+  });
+
   window.addEventListener('keydown', (e) => {
+    AudioEngine.getInstance().unlockFromUserGesture();
     if (e.code === 'F8' || (e.code === 'F2' && e.shiftKey)) {
       e.preventDefault();
       app.toggleTelemetryInspector();
@@ -375,6 +386,7 @@ function init(app: GameApp): void {
   }, { passive: false });
 
   app.canvas.addEventListener('mousedown', (e) => {
+    AudioEngine.getInstance().unlockFromUserGesture();
     if (e.button === 1) {
       e.preventDefault();
       middleMouseDown = true;

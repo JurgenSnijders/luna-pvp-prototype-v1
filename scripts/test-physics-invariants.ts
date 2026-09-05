@@ -10,6 +10,7 @@ import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
+import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
 import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
@@ -130,7 +131,7 @@ export function runHeadlessSimulation(
     world.updateSpatialZones(dt);
     applySpatialFields(world, dt);
     world.step(dt);
-    interpreter.processLifecycleEvents(world, dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
 
     const dist = caster.pos.dist(target.pos);
     minDistance = Math.min(minDistance, dist);
@@ -766,7 +767,7 @@ function assertGroundSlamAreaTargeting(): { pass: boolean; reason: string } {
   });
 
   const interpreter = new Interpreter();
-  interpreter.processLifecycleEvents(world, 1 / 60);
+  interpreter.processLifecycleEvents(world, 1 / 60, HEADLESS_LIFECYCLE_FX);
 
   if (!dummy.activeStatuses.has('FIRE')) {
     return { pass: false, reason: 'dummy did not receive FIRE status from slam radius' };
@@ -898,7 +899,7 @@ function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
 function stepWorldWithLifecycle(world: PhysicsWorld, interp: Interpreter, frames: number): void {
   for (let i = 0; i < frames; i++) {
     world.step(1 / 60);
-    interp.processLifecycleEvents(world, 1 / 60);
+    interp.processLifecycleEvents(world, 1 / 60, HEADLESS_LIFECYCLE_FX);
   }
 }
 

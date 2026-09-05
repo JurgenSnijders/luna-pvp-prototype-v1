@@ -1,3 +1,5 @@
+import { LIVE_SFX } from '../../audio/AudioEngine';
+import { NULL_SFX, type SfxSink } from '../../audio/types';
 import { Vector2D } from '../../math/Vector2D';
 import {
   LAVA_AIRBORNE_IMMUNITY_Z,
@@ -97,6 +99,7 @@ let statusVfxFrame = 0;
 export interface LifecycleFx {
   /** False for sandbox runs: also skips the modules that memoize entity ids. */
   readonly persistsWorldFx: boolean;
+  readonly sfx: SfxSink;
   decal(x: number, y: number, radius: number, type: DecalType, color: string): void;
   ripple(x: number, y: number, radius: number, intensity: number, color: string): void;
   shake(intensity: number, durationSec: number): void;
@@ -106,6 +109,7 @@ export interface LifecycleFx {
 
 export const LIVE_LIFECYCLE_FX: LifecycleFx = {
   persistsWorldFx: true,
+  sfx: LIVE_SFX,
   decal(x, y, radius, type, color) {
     decalManager.addDecal(x, y, radius, type, color);
   },
@@ -126,6 +130,7 @@ export const LIVE_LIFECYCLE_FX: LifecycleFx = {
 
 export const HEADLESS_LIFECYCLE_FX: LifecycleFx = {
   persistsWorldFx: false,
+  sfx: NULL_SFX,
   decal() {},
   ripple() {},
   shake() {},
