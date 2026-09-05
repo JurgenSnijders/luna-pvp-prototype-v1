@@ -12,8 +12,8 @@ import {
   playFmRarityBell,
   playGroundSlam,
   playLaserRailgun,
-  scheduleLookahead,
 } from './recipes';
+import { SfxCoalescer, type CoalescedSfxDispatch } from './SfxCoalescer';
 import { NULL_SFX, type SfxEvent, type SfxSink } from './types';
 import { VoicePool } from './VoicePool';
 
@@ -54,6 +54,7 @@ export class AudioEngine {
   private combatPool: VoicePool | null = null;
   private lavaLoop: LavaSizzleLoop | null = null;
   private debrisBusBaseGain = 1;
+  private coalescer = new SfxCoalescer();
 
   private unsubscribeSettings: (() => void) | null = null;
 
@@ -87,94 +88,36 @@ export class AudioEngine {
   emit(event: SfxEvent): void {
     const settings = loadAudioSettings();
     if (!settings.audioEnabled) return;
-    if (!this.ctx || this.ctx.state !== 'running' || !this.graphReady || !this.banksReady) return;
+    if (!this.ctx || !this.graphReady || !this.banksReady) return;
+
+    if (this.ctx.state !== 'running') {
+      this.coalescer.clear();
+      return;
+    }
 
     if (event.kind === 'DEBRIS_CLINK' && !settings.debrisSfxEnabled) return;
 
-    const when = scheduleLookahead(this.ctx);
-    const banks = this.banks!;
-
-    switch (event.kind) {
-      case 'DEBRIS_CLINK': {
-        const playbackRate =
-          debrisClinkPlaybackRate(event.radius) * (0.97 + Math.random() * 0.06);
-        const gain = debrisClinkGain(event.vz, event.bounceIndex);
-        playBufferOneShot(
-          this.ctx,
-          banks.debrisClinks.pick(),
-          this.debrisBus!,
-          when,
-          playbackRate,
-          gain,
-        );
-        break;
-      }
-      case 'GROUND_SLAM': {
-        this.duckDebrisBus(when);
-        playGroundSlam(this.ctx, this.combatPool!, when, event.vz, event.archetype);
-        break;
-      }
-      case 'CAST': {
-        playLaserRailgun(
-          this.ctx,
-          this.combatPool!,
-          when,
-          event.speed,
-          event.size,
-          event.archetype,
-        );
-        break;
-      }
-      case 'IMPACT':
-      case 'BOUNCE': {
-        const playbackRate = clamp(event.speed / 400, 0.7, 2.0);
-        const gain = event.kind === 'IMPACT' && event.heavy ? 0.55 : 0.35;
-        playBufferOneShot(
-          this.ctx,
-          banks.sparks.pick(),
-          this.combatBus!,
-          when,
-          playbackRate,
-          gain,
-        );
-        break;
-      }
-      case 'LAUNCH_VERTICAL': {
-        const playbackRate = clamp(event.vz / 300, 1.2, 2.5);
-        playBufferOneShot(
-          this.ctx,
-          banks.sparks.pick(),
-          this.combatBus!,
-          when,
-          playbackRate,
-          0.4,
-        );
-        break;
-      }
-      case 'UI': {
-        if (event.action === 'TAB' || event.action === 'SYNTH_DONE') {
-          playBufferOneShot(
-            this.ctx,
-            banks.uiBlips.pick(),
-            this.uiBus!,
-            when,
-            1,
-            0.45,
-          );
-        } else {
-          playFmRarityBell(this.ctx, this.uiBus!, when, event.rarity ?? 'COMMON');
-        }
-        break;
-      }
-      case 'LAVA_SURFACE': {
-        this.lavaLoop?.setImmersion(event.immersion, when);
-        break;
-      }
+    if (event.kind === 'LAVA_SURFACE') {
+      this.lavaLoop?.setImmersion(event.immersion, this.ctx.currentTime);
+      return;
     }
+
+    this.coalescer.enqueue(event);
   }
 
-  update(nowSec: number): void {
-    this.combatPool?.sweep(nowSec);
+  update(nowMs: number = performance.now()): void {
+    if (!this.ctx || this.ctx.state !== 'running' || this.blurMuted) {
+      this.coalescer.clear();
+      return;
+    }
+    if (!this.banksReady) return;
+
+    const dispatches = this.coalescer.flush(nowMs, this.ctx.currentTime);
+    for (const item of dispatches) {
+      this.dispatchCoalesced(item);
+    }
+
+    this.combatPool?.sweep(this.ctx.currentTime);
   }
 
   setBlurMuted(muted: boolean): void {
@@ -207,6 +150,7 @@ export class AudioEngine {
     this.unsubscribeSettings?.();
     this.unsubscribeSettings = null;
 
+    this.coalescer.clear();
     this.lavaLoop?.dispose();
     this.lavaLoop = null;
     this.combatPool = null;
@@ -230,6 +174,87 @@ export class AudioEngine {
     this.uiDelay = null;
     this.uiDelayFeedback = null;
     AudioEngine.instance = null;
+  }
+
+  private dispatchCoalesced(item: CoalescedSfxDispatch): void {
+    if (!this.ctx || !this.banks) return;
+
+    const { event, gain, when } = item;
+    const banks = this.banks;
+
+    switch (event.kind) {
+      case 'DEBRIS_CLINK': {
+        const playbackRate =
+          debrisClinkPlaybackRate(event.radius) * (0.97 + Math.random() * 0.06);
+        const finalGain = debrisClinkGain(event.vz, event.bounceIndex) * gain;
+        playBufferOneShot(
+          this.ctx,
+          banks.debrisClinks.pick(),
+          this.debrisBus!,
+          when,
+          playbackRate,
+          finalGain,
+        );
+        break;
+      }
+      case 'GROUND_SLAM': {
+        this.duckDebrisBus(when);
+        playGroundSlam(this.ctx, this.combatPool!, when, event.vz, event.archetype);
+        break;
+      }
+      case 'CAST': {
+        playLaserRailgun(
+          this.ctx,
+          this.combatPool!,
+          when,
+          event.speed,
+          event.size,
+          event.archetype,
+        );
+        break;
+      }
+      case 'IMPACT':
+      case 'BOUNCE': {
+        const playbackRate = clamp(event.speed / 400, 0.7, 2.0);
+        const baseGain = event.kind === 'IMPACT' && event.heavy ? 0.55 : 0.35;
+        playBufferOneShot(
+          this.ctx,
+          banks.sparks.pick(),
+          this.combatBus!,
+          when,
+          playbackRate,
+          baseGain * gain,
+        );
+        break;
+      }
+      case 'LAUNCH_VERTICAL': {
+        const playbackRate = clamp(event.vz / 300, 1.2, 2.5);
+        playBufferOneShot(
+          this.ctx,
+          banks.sparks.pick(),
+          this.combatBus!,
+          when,
+          playbackRate,
+          0.4 * gain,
+        );
+        break;
+      }
+      case 'UI': {
+        if (event.action === 'TAB' || event.action === 'SYNTH_DONE') {
+          playBufferOneShot(
+            this.ctx,
+            banks.uiBlips.pick(),
+            this.uiBus!,
+            when,
+            1,
+            0.45 * gain,
+          );
+        } else {
+          playFmRarityBell(this.ctx, this.uiBus!, when, event.rarity ?? 'COMMON');
+        }
+        break;
+      }
+    }
   }
 
   private async bootstrapAudioAssets(): Promise<void> {

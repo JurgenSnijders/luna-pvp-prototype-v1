@@ -14,6 +14,10 @@ import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
 import {
+  coalescerSubLinearGain,
+  SfxCoalescer,
+} from '../src/audio/SfxCoalescer';
+import {
   debrisClinkGain,
   debrisClinkPlaybackRate,
   fmBellNotes,
@@ -1122,6 +1126,89 @@ function assertAudioRecipeCalculations(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'audio recipe math verified' };
 }
 
+function assertSfxCoalescerSpatialDeduplication(): { pass: boolean; reason: string } {
+  const coalescer = new SfxCoalescer();
+  for (let i = 0; i < 16; i++) {
+    coalescer.enqueue({ kind: 'IMPACT', x: 100, y: 100, speed: 400, heavy: false });
+  }
+
+  const dispatches = coalescer.flush(1000, 10.0);
+  if (dispatches.length !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 dispatch for 16 merged impacts, got ${dispatches.length}`,
+    };
+  }
+
+  const expectedGain = coalescerSubLinearGain(16, 1.0);
+  if (Math.abs(dispatches[0].gain - expectedGain) > 0.001) {
+    return {
+      pass: false,
+      reason: `expected gain ~${expectedGain}, got ${dispatches[0].gain}`,
+    };
+  }
+
+  return { pass: true, reason: '16 coincident impacts merged with sub-linear gain' };
+}
+
+function assertSfxCoalescerRefractorySuppression(): { pass: boolean; reason: string } {
+  const coalescer = new SfxCoalescer();
+  const clink = {
+    kind: 'DEBRIS_CLINK' as const,
+    x: 0,
+    y: 0,
+    vz: 300,
+    radius: 4,
+    bounceIndex: 0,
+  };
+
+  coalescer.enqueue(clink);
+  const first = coalescer.flush(1000, 10.0);
+  if (first.length !== 1) {
+    return { pass: false, reason: `first flush expected 1 dispatch, got ${first.length}` };
+  }
+
+  coalescer.enqueue(clink);
+  const second = coalescer.flush(1015, 10.1);
+  if (second.length !== 0) {
+    return { pass: false, reason: `refractory flush expected 0 dispatches, got ${second.length}` };
+  }
+
+  coalescer.enqueue(clink);
+  const third = coalescer.flush(1050, 10.2);
+  if (third.length !== 1) {
+    return { pass: false, reason: `post-refractory flush expected 1 dispatch, got ${third.length}` };
+  }
+
+  return { pass: true, reason: 'refractory suppression blocks events within 35ms window' };
+}
+
+function assertSfxCoalescerPlayerCastExemption(): { pass: boolean; reason: string } {
+  const coalescer = new SfxCoalescer();
+  const cast = {
+    kind: 'CAST' as const,
+    x: 0,
+    y: 0,
+    speed: 400,
+    size: 10,
+    count: 1,
+    archetype: 'PLASMA' as const,
+  };
+
+  coalescer.enqueue(cast);
+  coalescer.enqueue(cast);
+  const dispatches = coalescer.flush(1000, 10.0);
+
+  if (dispatches.length !== 2) {
+    return {
+      pass: false,
+      reason: `expected 2 CAST dispatches without suppression, got ${dispatches.length}`,
+    };
+  }
+
+  return { pass: true, reason: 'CAST events bypass refractory and spatial merge' };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -1237,7 +1324,25 @@ function run(): void {
   console.log(`  ${DIM}${audioRecipes.reason}${RESET}`);
   if (audioRecipes.pass) passed++;
 
-  const totalCases = suite.length + 14;
+  const coalescerSpatial = assertSfxCoalescerSpatialDeduplication();
+  const coalescerSpatialTag = coalescerSpatial.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${coalescerSpatialTag} Sfx coalescer spatial deduplication`);
+  console.log(`  ${DIM}${coalescerSpatial.reason}${RESET}`);
+  if (coalescerSpatial.pass) passed++;
+
+  const coalescerRefractory = assertSfxCoalescerRefractorySuppression();
+  const coalescerRefractoryTag = coalescerRefractory.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${coalescerRefractoryTag} Sfx coalescer refractory suppression`);
+  console.log(`  ${DIM}${coalescerRefractory.reason}${RESET}`);
+  if (coalescerRefractory.pass) passed++;
+
+  const coalescerCast = assertSfxCoalescerPlayerCastExemption();
+  const coalescerCastTag = coalescerCast.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${coalescerCastTag} Sfx coalescer player cast exemption`);
+  console.log(`  ${DIM}${coalescerCast.reason}${RESET}`);
+  if (coalescerCast.pass) passed++;
+
+  const totalCases = suite.length + 17;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

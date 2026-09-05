@@ -516,7 +516,7 @@ function init(app: GameApp): void {
 
       app.physicsDebugLayer.render(app.world, app.camera, alpha, shake.x, shake.y);
 
-      AudioEngine.getInstance().update(performance.now() / 1000);
+      AudioEngine.getInstance().update(performance.now());
 
       app.inspector.updateTelemetry();
       app.actionBarHUD.update(app.player);
