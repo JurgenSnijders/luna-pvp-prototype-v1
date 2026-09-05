@@ -16,10 +16,13 @@ export function drawEntityContactShadow(
   x: number,
   y: number,
   radius: number,
-  elevation = 0,
+  elevationPx = 0,
 ): void {
-  const shadowRadius = radius * 1.25 * (1 - elevation * 0.2);
-  const shadowY = y + radius * 0.25 + elevation * 4;
+  const z = Math.max(0, elevationPx);
+  const shadowScale = Math.max(0.25, 1 - z / 350);
+  const shadowAlpha = Math.max(0.08, 0.55 * (1 - z / 450));
+  const shadowRadius = radius * 1.25 * shadowScale;
+  const shadowY = y + radius * 0.25;
   const grad = ctx.createRadialGradient(
     x,
     shadowY,
@@ -28,11 +31,12 @@ export function drawEntityContactShadow(
     shadowY,
     shadowRadius,
   );
-  grad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
-  grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.25)');
+  grad.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`);
+  grad.addColorStop(0.6, `rgba(0, 0, 0, ${shadowAlpha * 0.45})`);
   grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
   ctx.save();
+  ctx.globalAlpha *= shadowAlpha;
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.ellipse(x, shadowY, shadowRadius, shadowRadius * 0.55, 0, 0, Math.PI * 2);
@@ -122,7 +126,7 @@ function drawCombatantBody(
     physicsPos.x,
     physicsPos.y - currentZ * Z_TO_SCREEN + gravityBob,
   );
-  const elevation = Math.min(1, currentZ / 180);
+  const elevation = currentZ;
 
   const radius = entity.effectiveRadius;
   const shadowAlpha = entity.isStealthed() ? ctx.globalAlpha * 0.35 : ctx.globalAlpha;

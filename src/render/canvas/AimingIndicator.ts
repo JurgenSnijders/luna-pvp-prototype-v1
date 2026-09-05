@@ -305,6 +305,52 @@ function drawEndpointDiamond(
   ctx.restore();
 }
 
+function drawBallisticArcMarkers(
+  ctx: CanvasRenderingContext2D,
+  path: PredictivePath,
+  color: string,
+): void {
+  if (path.groundPoints && path.groundPoints.length >= 2) {
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(color, 0.25);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(path.groundPoints[0].x, path.groundPoints[0].y);
+    for (let i = 1; i < path.groundPoints.length; i++) {
+      ctx.lineTo(path.groundPoints[i].x, path.groundPoints[i].y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  if (path.apexIndex !== undefined && path.points[path.apexIndex]) {
+    const apex = path.points[path.apexIndex];
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(color, 0.9);
+    ctx.fillStyle = hexToRgba(color, 0.35);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(apex.x, apex.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (path.impactIndex !== undefined && path.points[path.impactIndex]) {
+    const impact = path.points[path.impactIndex];
+    const ground =
+      path.groundPoints?.[path.groundPoints.length - 1] ?? impact;
+    const prev =
+      path.groundPoints && path.groundPoints.length >= 2
+        ? path.groundPoints[path.groundPoints.length - 2]
+        : path.points[Math.max(0, path.impactIndex - 1)];
+    const tipAngle = Math.atan2(ground.y - prev.y, ground.x - prev.x);
+    drawEndpointDiamond(ctx, ground, tipAngle, color, 1);
+  }
+}
+
 function drawPredictivePath(
   ctx: CanvasRenderingContext2D,
   path: PredictivePath,
@@ -342,7 +388,11 @@ function drawPredictivePath(
     drawLinearChevrons(ctx, path, color);
   }
 
-  if (!path.isClosed) {
+  if (path.trajectoryType === 'BALLISTIC_ARC') {
+    drawBallisticArcMarkers(ctx, path, color);
+  }
+
+  if (!path.isClosed && path.trajectoryType !== 'BALLISTIC_ARC') {
     const last = path.points[path.points.length - 1];
     const prev = path.points[path.points.length - 2];
     const tipAngle = Math.atan2(last.y - prev.y, last.x - prev.x);

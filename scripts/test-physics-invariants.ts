@@ -1,6 +1,7 @@
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
 import { Obstacle } from '../src/entities/Obstacle';
 import { Player } from '../src/entities/Player';
@@ -9,6 +10,7 @@ import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
+import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -775,6 +777,123 @@ function assertGroundSlamAreaTargeting(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'FIRE applied to dummy only within slam radius' };
 }
 
+function assertBallisticArcTrajectorySampling(): { pass: boolean; reason: string } {
+  const path = buildBallisticArcPath(
+    {
+      type: 'BALLISTIC_ARC',
+      speed: 320,
+      maxRange: 480,
+      lobApex: 150,
+    },
+    { x: 0, y: 0 },
+    0,
+    0,
+  );
+
+  if (path.points.length < 3) {
+    return { pass: false, reason: 'expected at least 3 arc samples' };
+  }
+
+  const hasAirborne = path.points.some((p) => (p.z ?? 0) > 0);
+  if (!hasAirborne) {
+    return { pass: false, reason: 'expected airborne z>0 samples along arc' };
+  }
+
+  if (path.apexIndex === undefined) {
+    return { pass: false, reason: 'missing apex index' };
+  }
+
+  let maxZ = -1;
+  let maxZIndex = 0;
+  for (let i = 0; i < path.points.length; i++) {
+    const z = path.points[i].z ?? 0;
+    if (z > maxZ) {
+      maxZ = z;
+      maxZIndex = i;
+    }
+  }
+  if (maxZIndex !== path.apexIndex) {
+    return {
+      pass: false,
+      reason: `apex index ${path.apexIndex} != max-z index ${maxZIndex}`,
+    };
+  }
+
+  const impact = path.points[path.impactIndex ?? path.points.length - 1];
+  if ((impact.z ?? 0) > 0.01) {
+    return { pass: false, reason: `terminal impact z=${impact.z?.toFixed(1)} expected ~0` };
+  }
+
+  if (!path.groundPoints || path.groundPoints.length !== path.points.length) {
+    return {
+      pass: false,
+      reason: `groundPoints length ${path.groundPoints?.length ?? 0} != points ${path.points.length}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `samples=${path.points.length} maxZ=${maxZ.toFixed(0)} apex@${path.apexIndex}`,
+  };
+}
+
+function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
+  const groundAbility: AbilitySchema = {
+    id: 'bot_ground_test',
+    name: 'Bot Ground Test',
+    targetingMode: 'GROUND_POINT',
+    maxTargetRange: 550,
+    cooldownMs: 1000,
+    triggers: [],
+    visuals: DEFAULT_VISUALS,
+  };
+
+  const botPos = Vector2D.zero();
+  const heading = new Vector2D(1, 0);
+
+  const near = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(200, 0),
+    groundAbility,
+  );
+  if (!near || near.dist(botPos) < 1 || Math.abs(near.x - 200) > 0.01) {
+    return {
+      pass: false,
+      reason: `expected aim at (200,0), got (${near?.x.toFixed(1)}, ${near?.y.toFixed(1)})`,
+    };
+  }
+
+  const clampedAbility: AbilitySchema = {
+    ...groundAbility,
+    maxTargetRange: 400,
+  };
+  const far = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(800, 0),
+    clampedAbility,
+  );
+  if (!far || Math.abs(far.dist(botPos) - 400) > 0.01) {
+    return {
+      pass: false,
+      reason: `expected clamped distance 400, got ${far?.dist(botPos).toFixed(1)}`,
+    };
+  }
+
+  const directional = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(100, 0),
+    { ...groundAbility, targetingMode: undefined },
+  );
+  if (directional !== undefined) {
+    return { pass: false, reason: 'non-GROUND_POINT ability should not produce aimPoint' };
+  }
+
+  return { pass: true, reason: 'aim at target; clamped to maxTargetRange; skipped for non-ground' };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -842,7 +961,19 @@ function run(): void {
   console.log(`  ${DIM}${slamTargeting.reason}${RESET}`);
   if (slamTargeting.pass) passed++;
 
-  const totalCases = suite.length + 6;
+  const ballisticArc = assertBallisticArcTrajectorySampling();
+  const ballisticTag = ballisticArc.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${ballisticTag} Ballistic arc trajectory sampling`);
+  console.log(`  ${DIM}${ballisticArc.reason}${RESET}`);
+  if (ballisticArc.pass) passed++;
+
+  const botAim = assertBotGroundAimPoint();
+  const botAimTag = botAim.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${botAimTag} Bot ground aim point`);
+  console.log(`  ${DIM}${botAim.reason}${RESET}`);
+  if (botAim.pass) passed++;
+
+  const totalCases = suite.length + 8;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
