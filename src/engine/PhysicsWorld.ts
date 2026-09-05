@@ -219,6 +219,11 @@ export class PhysicsWorld {
     return entity && !entity.isDead ? entity : null;
   }
 
+  /** Resolves entities even when marked dead (e.g. ground-expired projectiles awaiting slam dispatch). */
+  getEntityByIdIncludingDead(id: string): Entity | null {
+    return this.entityRegistry.get(id) ?? null;
+  }
+
   addPlayer(player: Player): void {
     if (!this.canAddEntity()) return;
     player.radius = this.combatantRadius;
@@ -693,7 +698,8 @@ export class PhysicsWorld {
         const vzImpact = vzStart - WORLD_GRAVITY * e.gravityScale * tHit;
 
         const impactSpeed = Math.abs(vzImpact);
-        if (impactSpeed >= GROUND_SLAM_VZ) {
+        const willBounce = e instanceof Projectile && e.bouncesRemaining > 0;
+        if (impactSpeed >= GROUND_SLAM_VZ && !willBounce) {
           this.pendingGroundImpacts.push({
             entityId: e.id,
             pos: e.pos.clone(),
@@ -1059,12 +1065,9 @@ export class PhysicsWorld {
             entity.obstacleGraceFrames--;
             continue;
           }
-          const rawClearance = obstacle.config.clearanceHeight;
-          const wallTop =
-            rawClearance === undefined || rawClearance === 0
-              ? Number.POSITIVE_INFINITY
-              : rawClearance;
-          if (entity.z - entity.radius > wallTop) {
+          const projElev = Math.max(entity.z, entity.clearanceHeight ?? 0);
+          const wallHeight = obstacle.config.clearanceHeight ?? 40;
+          if (projElev - entity.radius > wallHeight) {
             continue;
           }
           entity.isDead = true;

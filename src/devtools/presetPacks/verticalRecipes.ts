@@ -145,6 +145,7 @@ export const VERTICAL_RECIPES: Record<string, AbilitySchema> = {
               zBase: 0,
               zHeight: 24,
               durationMs: 6000,
+              affects: 'ALL',
             },
           },
         ],

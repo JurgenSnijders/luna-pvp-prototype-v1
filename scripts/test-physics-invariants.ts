@@ -2,12 +2,14 @@ import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEng
 import { PRESETS } from '../src/devtools/Presets';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { Dummy } from '../src/entities/Dummy';
+import { Obstacle } from '../src/entities/Obstacle';
 import { Player } from '../src/entities/Player';
+import { Projectile } from '../src/entities/Projectile';
 import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
-import type { AbilitySchema, VisualDescriptor } from '../src/types/schema';
+import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -610,6 +612,169 @@ function assertSkyDropBalancePreservesZeroSpeed(): { pass: boolean; reason: stri
   return { pass: true, reason: `sky-drop speed preserved at ${schema.trajectory?.speed}` };
 }
 
+function assertObstacleVerticalClearance(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  world.addObstacle(
+    new Obstacle(new Vector2D(50, 0), {
+      shape: 'CIRCLE',
+      width: 40,
+      height: 40,
+      durationMs: 5000,
+      clearanceHeight: 40,
+    }),
+  );
+
+  const triggerMap = new Map<string, TriggerNode[]>();
+  const projectile = new Projectile(
+    new Vector2D(25, 0),
+    { type: 'LINEAR', speed: 800 },
+    'caster_stub',
+    0,
+    triggerMap,
+  );
+  projectile.z = 60;
+  projectile.clearanceHeight = 0;
+  projectile.gravityScale = 0;
+  projectile.vel = new Vector2D(800, 0);
+  world.addProjectile(projectile);
+
+  world.step(1 / 60);
+
+  if (projectile.isDead && projectile.expiryReason === 'wall') {
+    return { pass: false, reason: 'projectile died on low wall despite flying above clearance' };
+  }
+
+  return {
+    pass: true,
+    reason: `z=${projectile.z.toFixed(0)} cleared wall (expiry=${projectile.expiryReason ?? 'none'})`,
+  };
+}
+
+function assertGroundBounceDamping(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  const triggerMap = new Map<string, TriggerNode[]>();
+  const projectile = new Projectile(
+    Vector2D.zero(),
+    { type: 'LINEAR', speed: 0 },
+    'caster_stub',
+    0,
+    triggerMap,
+  );
+  projectile.z = 100;
+  projectile.vz = 0;
+  projectile.gravityScale = 1;
+  projectile.bouncesRemaining = 2;
+  projectile.groundRestitution = 0.6;
+  projectile.groundFriction = 0.25;
+  projectile.vel = Vector2D.zero();
+  world.addProjectile(projectile);
+
+  let impactSpeed = 0;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (projectile.bounceCount === 1) {
+      impactSpeed = Math.sqrt(2 * 1400 * 100);
+      break;
+    }
+  }
+
+  if (projectile.bounceCount !== 1) {
+    return { pass: false, reason: 'projectile never bounced' };
+  }
+  if (projectile.bouncesRemaining !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 bounce remaining, got ${projectile.bouncesRemaining}`,
+    };
+  }
+  if (projectile.vz <= 0) {
+    return { pass: false, reason: `expected reflected vz>0, got ${projectile.vz.toFixed(1)}` };
+  }
+  if (projectile.vz >= impactSpeed) {
+    return {
+      pass: false,
+      reason: `expected damped bounce (${projectile.vz.toFixed(0)} < ${impactSpeed.toFixed(0)})`,
+    };
+  }
+  if (world.pendingGroundImpacts.length > 0) {
+    return { pass: false, reason: 'mid-bounce impact queued ground slam' };
+  }
+
+  return {
+    pass: true,
+    reason: `bounce vz=${projectile.vz.toFixed(0)} < impact≈${impactSpeed.toFixed(0)}, remaining=${projectile.bouncesRemaining}`,
+  };
+}
+
+function assertGroundSlamAreaTargeting(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  const caster = new Player(new Vector2D(0, 0));
+  const dummy = new Dummy(new Vector2D(30, 0));
+  world.addPlayer(caster);
+  world.addDummy(dummy);
+
+  const triggerMap = new Map<string, TriggerNode[]>([
+    [
+      'ON_GROUND_SLAM',
+      [
+        {
+          trigger: 'ON_GROUND_SLAM',
+          actions: [
+            {
+              type: 'APPLY_STATUS',
+              archetype: 'FIRE',
+              durationMs: 3000,
+              target: 'TARGET',
+            },
+          ],
+        },
+      ],
+    ],
+  ]);
+
+  const projectile = new Projectile(
+    Vector2D.zero(),
+    { type: 'LINEAR', speed: 0 },
+    caster.id,
+    0,
+    triggerMap,
+    1,
+    null,
+    'slam_test',
+    'FIRE',
+  );
+  projectile.isDead = true;
+  projectile.expiryReason = 'ground';
+  world.addProjectile(projectile);
+
+  world.pendingGroundImpacts.push({
+    entityId: projectile.id,
+    pos: Vector2D.zero(),
+    vz: 500,
+    isProjectile: true,
+    archetype: 'FIRE',
+  });
+
+  const interpreter = new Interpreter();
+  interpreter.processLifecycleEvents(world, 1 / 60);
+
+  if (!dummy.activeStatuses.has('FIRE')) {
+    return { pass: false, reason: 'dummy did not receive FIRE status from slam radius' };
+  }
+  if (caster.activeStatuses.has('FIRE')) {
+    return { pass: false, reason: 'caster incorrectly received FIRE status from slam' };
+  }
+
+  return { pass: true, reason: 'FIRE applied to dummy only within slam radius' };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -659,7 +824,25 @@ function run(): void {
   console.log(`  ${DIM}${skyDropBalance.reason}${RESET}`);
   if (skyDropBalance.pass) passed++;
 
-  const totalCases = suite.length + 3;
+  const obstacleClearance = assertObstacleVerticalClearance();
+  const obstacleTag = obstacleClearance.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${obstacleTag} Obstacle vertical clearance`);
+  console.log(`  ${DIM}${obstacleClearance.reason}${RESET}`);
+  if (obstacleClearance.pass) passed++;
+
+  const bounceDamping = assertGroundBounceDamping();
+  const bounceTag = bounceDamping.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${bounceTag} Ground bounce damping`);
+  console.log(`  ${DIM}${bounceDamping.reason}${RESET}`);
+  if (bounceDamping.pass) passed++;
+
+  const slamTargeting = assertGroundSlamAreaTargeting();
+  const slamTag = slamTargeting.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${slamTag} Ground slam area targeting`);
+  console.log(`  ${DIM}${slamTargeting.reason}${RESET}`);
+  if (slamTargeting.pass) passed++;
+
+  const totalCases = suite.length + 6;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

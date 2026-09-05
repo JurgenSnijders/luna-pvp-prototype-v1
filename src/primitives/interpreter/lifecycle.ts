@@ -19,9 +19,15 @@ import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
 import { MAX_DEPTH } from './constants';
-import { safeNormalize, secondaryColor, trailColor } from './helpers';
+import { safeNormalize, secondaryColor, trailColor, getActionPriority } from './helpers';
 import type { TriggerHost } from './TriggerHost';
-import { dispatchTriggerNode } from './triggers';
+import { evaluateConditions } from './conditions';
+import { dispatchActions, dispatchTriggerNode } from './triggers';
+import {
+  actionRequiresTarget,
+  queryCombatantsInRadius,
+  resolveSlamBlastRadius,
+} from './targeting';
 
 function resolveImpactColor(archetype?: SpellArchetype): string {
   return getArchetypeColor(archetype, '#00e5ff');
@@ -358,10 +364,82 @@ function dispatchProjectileTriggers(
 
 function nodeRequiresTarget(node: TriggerNode): boolean {
   const check = (actions: ActionPayload[]): boolean =>
-    actions.some((a) => 'target' in a && a.target === 'TARGET');
+    actions.some((a) => actionRequiresTarget(a));
   if (check(node.actions)) return true;
   if (node.ifFalseActions && check(node.ifFalseActions)) return true;
   return false;
+}
+
+function dispatchSlamTriggerNode(
+  interp: Interpreter,
+  node: TriggerNode,
+  baseCtx: TriggerContext,
+  world: PhysicsWorld,
+  targets: Entity[],
+): void {
+  let passed = true;
+  if (node.conditions && node.conditions.length > 0) {
+    passed = evaluateConditions(node.conditions, baseCtx, world);
+  }
+
+  const actionsToRun = passed ? node.actions : (node.ifFalseActions ?? []);
+  const envActions = actionsToRun.filter((a) => !actionRequiresTarget(a));
+  const targetActions = actionsToRun.filter((a) => actionRequiresTarget(a));
+
+  const sortByPriority = (actions: ActionPayload[]) =>
+    [...actions].sort((a, b) => getActionPriority(a.type) - getActionPriority(b.type));
+
+  if (envActions.length > 0) {
+    dispatchActions(interp, sortByPriority(envActions), baseCtx, world);
+  }
+
+  if (targetActions.length > 0) {
+    for (const target of targets) {
+      dispatchActions(
+        interp,
+        sortByPriority(targetActions),
+        { ...baseCtx, targetEntity: target },
+        world,
+      );
+    }
+  }
+
+  if (node.children) {
+    for (const child of node.children) {
+      dispatchSlamTriggerNode(interp, child, baseCtx, world, targets);
+    }
+  }
+}
+
+function dispatchProjectileGroundSlam(
+  interp: Interpreter,
+  projectile: Projectile,
+  impactPos: Vector2D,
+  world: PhysicsWorld,
+): void {
+  const nodes = projectile.getTriggers('ON_GROUND_SLAM');
+  if (nodes.length === 0) return;
+
+  const ctx = buildLifecycleContext(
+    projectile,
+    null,
+    impactPos,
+    projectile.depth + 1,
+    world,
+  );
+  if (!ctx) return;
+
+  const blastRadius = resolveSlamBlastRadius(projectile);
+  const targets = queryCombatantsInRadius(
+    world,
+    impactPos,
+    blastRadius,
+    ctx.caster.id,
+  );
+
+  for (const node of nodes) {
+    dispatchSlamTriggerNode(interp, node, ctx, world, targets);
+  }
 }
 
 function dispatchHostTicks(
@@ -574,19 +652,14 @@ export function processLifecycleEvents(
       }
     }
 
-    const entity = world.getEntityById(impact.entityId);
-    if (!entity || entity.isDead) continue;
+    const entity = world.getEntityByIdIncludingDead(impact.entityId);
+    if (!entity) continue;
+    const isGroundSlamProjectile =
+      entity instanceof Projectile && entity.expiryReason === 'ground';
+    if (entity.isDead && !isGroundSlamProjectile) continue;
 
     if (entity instanceof Projectile) {
-      dispatchProjectileTriggers(
-        interp,
-        entity,
-        'ON_GROUND_SLAM',
-        null,
-        world,
-        impact.pos,
-        entity.depth + 1,
-      );
+      dispatchProjectileGroundSlam(interp, entity, impact.pos, world);
     } else if (entity instanceof Summon) {
       const nodes = entity.getTriggers('ON_GROUND_SLAM');
       if (nodes.length > 0) {

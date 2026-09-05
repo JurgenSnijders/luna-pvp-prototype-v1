@@ -1,9 +1,56 @@
+import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { Vector2D } from '../../math/Vector2D';
 import type { Entity } from '../../entities/Entity';
-import type { ActionTarget, ImpulseDirectionMode } from '../../types/schema';
+import { Projectile } from '../../entities/Projectile';
+import type { ActionPayload, ActionTarget, ImpulseDirectionMode } from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { FALLBACK_DIR } from './constants';
 import { safeNormalize } from './helpers';
+
+/** True when an action resolves against a struck combatant rather than the environment. */
+export function actionRequiresTarget(action: ActionPayload): boolean {
+  return 'target' in action && action.target === 'TARGET';
+}
+
+/** Returns living combatants within radius of center, excluding projectiles/zones and an optional id. */
+export function queryCombatantsInRadius(
+  world: PhysicsWorld,
+  center: Vector2D,
+  radius: number,
+  excludeId?: string,
+): Entity[] {
+  const radiusSq = radius * radius;
+  const results: Entity[] = [];
+  for (const entity of world.getCombatants()) {
+    if (entity.isDead) continue;
+    if (excludeId && entity.id === excludeId) continue;
+    if (entity.tags.has('projectile') || entity.tags.has('zone')) continue;
+    if (entity.pos.distSq(center) <= radiusSq) {
+      results.push(entity);
+    }
+  }
+  return results;
+}
+
+/** Max SPAWN_FIELD radius on ON_GROUND_SLAM nodes; defaults to 48 when none authored. */
+export function resolveSlamBlastRadius(projectile: Projectile): number {
+  let maxRadius = 48;
+  for (const node of projectile.getTriggers('ON_GROUND_SLAM')) {
+    for (const action of node.actions) {
+      if (action.type === 'SPAWN_FIELD' && action.field.radius) {
+        maxRadius = Math.max(maxRadius, action.field.radius);
+      }
+    }
+    if (node.ifFalseActions) {
+      for (const action of node.ifFalseActions) {
+        if (action.type === 'SPAWN_FIELD' && action.field.radius) {
+          maxRadius = Math.max(maxRadius, action.field.radius);
+        }
+      }
+    }
+  }
+  return maxRadius;
+}
 
 /** Resolves which entity an action should act on: the struck target, the caster, or the acting projectile itself. */
 export function resolveActionTarget(
