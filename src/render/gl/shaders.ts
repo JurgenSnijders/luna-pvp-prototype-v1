@@ -164,7 +164,7 @@ void main() {
 `;
 
 export const BACKGROUND_FRAGMENT_SHADER = `#version 300 es
-precision mediump float;
+precision highp float;
 
 in vec2 v_uv;
 
@@ -173,6 +173,7 @@ uniform vec2 u_cameraPos;
 uniform float u_cameraZoom;
 uniform float u_time;
 uniform float u_hexRadius;
+uniform float u_initialRadius;
 uniform vec2 u_hexCenter;
 uniform int u_tier;
 uniform float u_parallaxVoid;
@@ -180,13 +181,10 @@ uniform float u_lavaScroll;
 
 out vec4 fragColor;
 
-const vec3 LAVA_CORE = vec3(1.0, 0.2667, 0.0);
-const vec3 LAVA_MID = vec3(0.6, 0.0941, 0.0);
-const vec3 LAVA_DEEP = vec3(0.0941, 0.0157, 0.0078);
 const vec3 VOID_COLOR = vec3(0.02, 0.01, 0.03);
 
 vec2 worldPos(vec2 uv) {
-  vec2 screen = uv * u_resolution;
+  vec2 screen = vec2(uv.x, 1.0 - uv.y) * u_resolution;
   return u_cameraPos + (screen - u_resolution * 0.5) / u_cameraZoom;
 }
 
@@ -210,17 +208,35 @@ float noise2(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-float fbm(vec2 p, int octaves) {
+float fbm(vec2 p, int maxOctaves) {
   float v = 0.0;
   float a = 0.5;
+  float totalA = 0.0;
   mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
-  for (int i = 0; i < 2; i++) {
-    if (i >= octaves) break;
+  for (int i = 0; i < 4; i++) {
+    if (i >= maxOctaves) break;
     v += a * noise2(p);
+    totalA += a;
     p = rot * p * 2.02 + vec2(1.7, 9.2);
     a *= 0.5;
   }
-  return v;
+  return v / max(totalA, 0.001);
+}
+
+float hexSdf(vec2 p, float r) {
+  const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+  p = abs(p);
+  p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+  p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+  return length(p) * sign(p.y);
+}
+
+float bayer4(ivec2 p) {
+  int m = (p.x & 3) * 4 + (p.y & 3);
+  float[16] t = float[16](
+    0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,
+    3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (t[m] + 0.5) / 16.0;
 }
 
 vec3 deepLayer(vec2 world) {
@@ -233,15 +249,45 @@ vec3 deepLayer(vec2 world) {
 }
 
 vec3 lavaLayer(vec2 world) {
-  vec2 p = (world - u_hexCenter) * 0.0024;
+  vec2 p = (world - u_hexCenter) * 0.0028;
   float t = u_time * u_lavaScroll;
-  int octaves = u_tier >= 2 ? 2 : 1;
-  float n = fbm(p + vec2(t * 0.4, t * 0.25), octaves);
-  float veins = 1.0 - abs(fbm(p * 1.8 - vec2(t * 0.15, t * 0.35), octaves) * 2.0 - 1.0);
-  veins = pow(veins, 2.5) * 0.65;
-  float heat = n * 0.75 + veins;
-  vec3 col = mix(LAVA_DEEP, LAVA_MID, smoothstep(0.15, 0.45, heat));
-  col = mix(col, LAVA_CORE, smoothstep(0.55, 0.85, heat + veins * 0.3));
+
+  int octaves = (u_tier >= 2) ? 3 : ((u_tier == 1) ? 2 : 1);
+
+  vec2 warp = vec2(
+    noise2(p * 0.85 + vec2(cos(t * 0.7) * 0.4, sin(t * 0.5) * 0.4)),
+    noise2(p * 0.85 + vec2(sin(t * 0.6) * 0.4, cos(t * 0.8) * 0.4) + vec2(3.1, 7.4))
+  );
+  vec2 q = p + (warp - 0.5) * 1.6;
+
+  float ridge = 1.0 - abs(fbm(q * 2.2, octaves) * 2.0 - 1.0);
+  float crackMask = pow(clamp(ridge, 0.0, 1.0), 5.5);
+
+  float plateShape = smoothstep(0.35, 0.70, fbm(p * 0.45, 2));
+  float plateCrust = mix(1.0, 0.18, plateShape);
+
+  float microCrack = pow(clamp(1.0 - abs(noise2(q * 6.5) * 2.0 - 1.0), 0.0, 1.0), 4.0) * 0.35;
+
+  const vec3 cObsidian = vec3(0.04, 0.015, 0.02);
+  const vec3 cBasalt   = vec3(0.18, 0.04, 0.01);
+  const vec3 cMagma    = vec3(0.85, 0.18, 0.01);
+  const vec3 cOrange   = vec3(1.00, 0.45, 0.04);
+  const vec3 cWhiteHot = vec3(1.40, 1.25, 0.75);
+
+  float baseHeat = fbm(q * 0.8, 2) * plateCrust;
+  vec3 col = mix(cObsidian, cBasalt, smoothstep(0.1, 0.4, baseHeat));
+  col = mix(col, cMagma, smoothstep(0.45, 0.75, baseHeat));
+
+  float totalCrack = clamp(crackMask + microCrack * (1.0 - plateShape), 0.0, 1.0);
+  col = mix(col, cOrange, smoothstep(0.15, 0.65, totalCrack));
+  col = mix(col, cWhiteHot, smoothstep(0.70, 0.98, totalCrack));
+
+  float apothem = u_hexRadius * 0.8660254;
+  float rimDist = hexSdf(world - u_hexCenter, apothem);
+  float rimWidth = u_hexRadius * 0.09;
+  float rimGlow = 1.0 - smoothstep(0.0, rimWidth, max(rimDist, 0.0));
+  col += cOrange * rimGlow * 0.55;
+
   return col;
 }
 
@@ -249,9 +295,12 @@ void main() {
   vec2 world = worldPos(v_uv);
   vec3 deep = deepLayer(world);
   vec3 lava = lavaLayer(world);
-  float dist = length(world - vec2(0.0));
-  float arenaFade = smoothstep(u_hexRadius * 1.35, u_hexRadius * 2.8, dist);
-  vec3 rgb = mix(deep, lava, 0.55 + arenaFade * 0.45);
+  float initApothem = u_initialRadius * 0.8660254;
+  float distFromInitial = hexSdf(world - u_hexCenter, initApothem);
+  float arenaFade = smoothstep(u_initialRadius * 0.6, u_initialRadius * 2.8, distFromInitial);
+  vec3 rgb = mix(lava, deep, arenaFade);
+  ivec2 px = ivec2(floor(v_uv * u_resolution));
+  rgb += (bayer4(px) - 0.5) / 255.0;
   fragColor = vec4(rgb, 1.0);
 }
 `;

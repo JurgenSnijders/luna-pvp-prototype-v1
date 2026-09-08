@@ -2,6 +2,7 @@ import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEng
 import { PRESETS } from '../src/devtools/Presets';
 import {
   getEffectiveFeatureFlags,
+  getGraphicsSettings,
   getTierLimits,
   seedEffectiveTierForTests,
 } from '../src/devtools/graphicsSettings';
@@ -1152,21 +1153,34 @@ function assertDebrisPoolCap(): { pass: boolean; reason: string } {
   return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
 }
 
-function assertLavaWorldLocking(): { pass: boolean; reason: string } {
-  const match = BACKGROUND_FRAGMENT_SHADER.match(/vec3 lavaLayer\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+function assertLavaShaderTectonicPrototype(): { pass: boolean; reason: string } {
+  const src = BACKGROUND_FRAGMENT_SHADER;
+  const match = src.match(/vec3 lavaLayer\([^)]*\)\s*\{([\s\S]*?)\n\}/);
   if (!match) {
     return { pass: false, reason: 'lavaLayer function not found in BACKGROUND_FRAGMENT_SHADER' };
   }
 
   const body = match[1];
+  if (!src.includes('cObsidian') || !src.includes('cBasalt') || !src.includes('cWhiteHot')) {
+    return { pass: false, reason: 'missing Prototype 1 palette constants (cObsidian, cBasalt, cWhiteHot)' };
+  }
+  if (!src.includes('hexSdf')) {
+    return { pass: false, reason: 'missing hexSdf helper for rim glow and arena fade' };
+  }
+  if (!src.includes('u_initialRadius')) {
+    return { pass: false, reason: 'missing u_initialRadius uniform for shrink-stable fade' };
+  }
   if (body.includes('u_parallaxLava') || body.includes('parallaxPos')) {
     return { pass: false, reason: 'lavaLayer still references parallax uniforms or parallaxPos' };
   }
   if (!body.includes('world - u_hexCenter')) {
     return { pass: false, reason: 'lavaLayer must derive base coords from (world - u_hexCenter)' };
   }
+  if ('bgParallaxLava' in getGraphicsSettings()) {
+    return { pass: false, reason: 'bgParallaxLava should be removed from GraphicsSettings' };
+  }
 
-  return { pass: true, reason: 'lavaLayer world-locked via (world - u_hexCenter)' };
+  return { pass: true, reason: 'Prototype 1 tectonic lava shader with world lock and no bgParallaxLava' };
 }
 
 function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
@@ -1327,9 +1341,9 @@ function run(): void {
   console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
   if (debrisPool.pass) passed++;
 
-  const lavaWorldLock = assertLavaWorldLocking();
+  const lavaWorldLock = assertLavaShaderTectonicPrototype();
   const lavaWorldLockTag = lavaWorldLock.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
-  console.log(`${lavaWorldLockTag} Lava world locking`);
+  console.log(`${lavaWorldLockTag} Lava tectonic prototype shader`);
   console.log(`  ${DIM}${lavaWorldLock.reason}${RESET}`);
   if (lavaWorldLock.pass) passed++;
 
