@@ -249,44 +249,50 @@ vec3 deepLayer(vec2 world) {
 }
 
 vec3 lavaLayer(vec2 world) {
-  vec2 p = (world - u_hexCenter) * 0.0028;
+  vec2 p = (world - u_hexCenter) * 0.0019;
   float t = u_time * u_lavaScroll;
 
   int octaves = (u_tier >= 2) ? 3 : ((u_tier == 1) ? 2 : 1);
 
+  // Damped convection warp: large displacement shears coords into laminar ribbons.
   vec2 warp = vec2(
-    noise2(p * 0.85 + vec2(cos(t * 0.7) * 0.4, sin(t * 0.5) * 0.4)),
-    noise2(p * 0.85 + vec2(sin(t * 0.6) * 0.4, cos(t * 0.8) * 0.4) + vec2(3.1, 7.4))
+    noise2(p * 2.2 + vec2(cos(t * 0.6) * 0.35, sin(t * 0.45) * 0.35)),
+    noise2(p * 2.2 + vec2(sin(t * 0.5) * 0.35, cos(t * 0.7) * 0.35) + vec2(4.1, 2.7))
   );
-  vec2 q = p + (warp - 0.5) * 1.6;
+  vec2 q = p + (warp - 0.5) * 0.38;
 
-  float ridge = 1.0 - abs(fbm(q * 2.2, octaves) * 2.0 - 1.0);
-  float crackMask = pow(clamp(ridge, 0.0, 1.0), 5.5);
+  // Plates sample unwarped p so solid rock stays geometrically static.
+  float plateMacro = fbm(p * 3.0, 2);
+  float plateMask = smoothstep(0.38, 0.62, plateMacro);
 
-  float plateShape = smoothstep(0.35, 0.70, fbm(p * 0.45, 2));
-  float plateCrust = mix(1.0, 0.18, plateShape);
+  // Steep exponent confines glow to narrow ridge valleys.
+  float ridge = 1.0 - abs(fbm(q * 2.8, octaves) * 2.0 - 1.0);
+  float fissures = pow(clamp(ridge, 0.0, 1.0), 12.0);
 
-  float microCrack = pow(clamp(1.0 - abs(noise2(q * 6.5) * 2.0 - 1.0), 0.0, 1.0), 4.0) * 0.35;
+  float microRidge = 1.0 - abs(noise2(q * 18.0) * 2.0 - 1.0);
+  float microFissures = pow(clamp(microRidge, 0.0, 1.0), 6.0) * (1.0 - plateMask) * 0.35;
+  float activeCracks = clamp(fissures + microFissures, 0.0, 1.0);
 
-  const vec3 cObsidian = vec3(0.04, 0.015, 0.02);
-  const vec3 cBasalt   = vec3(0.18, 0.04, 0.01);
-  const vec3 cMagma    = vec3(0.85, 0.18, 0.01);
-  const vec3 cOrange   = vec3(1.00, 0.45, 0.04);
-  const vec3 cWhiteHot = vec3(1.40, 1.25, 0.75);
+  float rockGrain = (noise2(p * 70.0) - 0.5) * 0.06;
 
-  float baseHeat = fbm(q * 0.8, 2) * plateCrust;
-  vec3 col = mix(cObsidian, cBasalt, smoothstep(0.1, 0.4, baseHeat));
-  col = mix(col, cMagma, smoothstep(0.45, 0.75, baseHeat));
+  const vec3 cBasaltCharcoal = vec3(0.065, 0.055, 0.065);
+  const vec3 cBasaltWarm     = vec3(0.16, 0.09, 0.07);
+  const vec3 cMagmaDull      = vec3(0.48, 0.08, 0.015);
+  const vec3 cMagmaHot       = vec3(0.88, 0.26, 0.02);
+  const vec3 cFissureCore    = vec3(1.10, 0.68, 0.12);
 
-  float totalCrack = clamp(crackMask + microCrack * (1.0 - plateShape), 0.0, 1.0);
-  col = mix(col, cOrange, smoothstep(0.15, 0.65, totalCrack));
-  col = mix(col, cWhiteHot, smoothstep(0.70, 0.98, totalCrack));
+  vec3 crustColor = mix(cBasaltCharcoal, cBasaltWarm, plateMask) + vec3(rockGrain);
+
+  vec3 col = crustColor;
+  col = mix(col, cMagmaDull, smoothstep(0.08, 0.35, activeCracks));
+  col = mix(col, cMagmaHot, smoothstep(0.35, 0.75, activeCracks));
+  col = mix(col, cFissureCore, smoothstep(0.75, 0.98, activeCracks));
 
   float apothem = u_hexRadius * 0.8660254;
   float rimDist = hexSdf(world - u_hexCenter, apothem);
-  float rimWidth = u_hexRadius * 0.09;
+  float rimWidth = u_hexRadius * 0.06;
   float rimGlow = 1.0 - smoothstep(0.0, rimWidth, max(rimDist, 0.0));
-  col += cOrange * rimGlow * 0.55;
+  col += cMagmaHot * rimGlow * 0.35;
 
   return col;
 }
@@ -297,7 +303,7 @@ void main() {
   vec3 lava = lavaLayer(world);
   float initApothem = u_initialRadius * 0.8660254;
   float distFromInitial = hexSdf(world - u_hexCenter, initApothem);
-  float arenaFade = smoothstep(u_initialRadius * 0.6, u_initialRadius * 2.8, distFromInitial);
+  float arenaFade = smoothstep(u_initialRadius * 0.7, u_initialRadius * 2.6, distFromInitial);
   vec3 rgb = mix(lava, deep, arenaFade);
   ivec2 px = ivec2(floor(v_uv * u_resolution));
   rgb += (bayer4(px) - 0.5) / 255.0;

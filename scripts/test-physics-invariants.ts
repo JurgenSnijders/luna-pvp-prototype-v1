@@ -1161,8 +1161,37 @@ function assertLavaShaderTectonicPrototype(): { pass: boolean; reason: string } 
   }
 
   const body = match[1];
-  if (!src.includes('cObsidian') || !src.includes('cBasalt') || !src.includes('cWhiteHot')) {
-    return { pass: false, reason: 'missing Prototype 1 palette constants (cObsidian, cBasalt, cWhiteHot)' };
+  const paletteTokens = [
+    'cBasaltCharcoal',
+    'cBasaltWarm',
+    'cMagmaDull',
+    'cMagmaHot',
+    'cFissureCore',
+    'rockGrain',
+  ] as const;
+  for (const token of paletteTokens) {
+    if (!src.includes(token)) {
+      return { pass: false, reason: `missing basalt palette token: ${token}` };
+    }
+  }
+  if (src.includes('cWhiteHot')) {
+    return { pass: false, reason: 'cWhiteHot should be removed (overdriven bloom highlight)' };
+  }
+  const warpMatch = body.match(/\(warp - 0\.5\) \* ([\d.]+)/);
+  if (!warpMatch) {
+    return { pass: false, reason: 'missing damped warp multiplier in lavaLayer' };
+  }
+  const warpFactor = parseFloat(warpMatch[1]);
+  if (!Number.isFinite(warpFactor) || warpFactor > 0.5) {
+    return { pass: false, reason: `warp factor too large: ${warpMatch[1]} (max 0.5)` };
+  }
+  const fissureMatch = body.match(/pow\(clamp\(ridge, 0\.0, 1\.0\), ([\d.]+)\)/);
+  if (!fissureMatch) {
+    return { pass: false, reason: 'missing fissure ridge exponent in lavaLayer' };
+  }
+  const fissureExponent = parseFloat(fissureMatch[1]);
+  if (!Number.isFinite(fissureExponent) || fissureExponent < 10.0) {
+    return { pass: false, reason: `fissure exponent too soft: ${fissureMatch[1]} (min 10.0)` };
   }
   if (!src.includes('hexSdf')) {
     return { pass: false, reason: 'missing hexSdf helper for rim glow and arena fade' };
@@ -1180,7 +1209,7 @@ function assertLavaShaderTectonicPrototype(): { pass: boolean; reason: string } 
     return { pass: false, reason: 'bgParallaxLava should be removed from GraphicsSettings' };
   }
 
-  return { pass: true, reason: 'Prototype 1 tectonic lava shader with world lock and no bgParallaxLava' };
+  return { pass: true, reason: 'Basalt tectonic lava shader with damped warp, narrow fissures, and no bgParallaxLava' };
 }
 
 function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
