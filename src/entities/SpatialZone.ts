@@ -15,6 +15,8 @@ export class SpatialZone extends Entity {
   zHeight: number;
   verticalForce: number;
   affects: FieldAffectsFilter;
+  /** Per-occupant elapsed-ms accumulators for throttled status reapplication. */
+  statusAccumulatorsMs = new Map<string, number>();
 
   constructor(
     pos: Vector2D,

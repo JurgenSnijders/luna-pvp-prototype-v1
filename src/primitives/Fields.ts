@@ -9,7 +9,13 @@ import { Summon } from '../entities/Summon';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import { vecTelemetry } from '../types/telemetry';
 import { DEBUG_VECTOR_COLORS, makeDebugVector } from '../types/debug';
-import { ARCHETYPE_TUNING } from './interpreter/constants';
+import {
+  ARCHETYPE_TUNING,
+  FIELD_STATUS_ARCHETYPES,
+  FIELD_STATUS_DURATION_MS,
+  FIELD_STATUS_INTERVAL_MS,
+  FIELD_STATUS_MIN_FALLOFF,
+} from './interpreter/constants';
 
 function recordFieldForce(
   world: PhysicsWorld,
@@ -103,6 +109,23 @@ export function applyField(
   const radial = entity.pos.sub(zone.pos);
   const radialDir = radial.magSq() > 0 ? radial.normalize() : null;
   const tuning = ARCHETYPE_TUNING[zone.spellArchetype ?? 'KINETIC'];
+
+  const archetype = zone.spellArchetype;
+  const airborneOverZone = world.verticalActive && entity.z > HAZARD_CLEARANCE_Z;
+  if (
+    archetype &&
+    FIELD_STATUS_ARCHETYPES.has(archetype) &&
+    falloff >= FIELD_STATUS_MIN_FALLOFF &&
+    !airborneOverZone
+  ) {
+    const elapsed = (zone.statusAccumulatorsMs.get(entity.id) ?? 0) + dt * 1000;
+    if (elapsed >= FIELD_STATUS_INTERVAL_MS) {
+      zone.statusAccumulatorsMs.set(entity.id, elapsed % FIELD_STATUS_INTERVAL_MS);
+      entity.applyStatus(archetype, FIELD_STATUS_DURATION_MS, 1, world, zone.ownerId);
+    } else {
+      zone.statusAccumulatorsMs.set(entity.id, elapsed);
+    }
+  }
 
   switch (zone.config.fieldType) {
     case 'RADIAL_IMPULSE': {

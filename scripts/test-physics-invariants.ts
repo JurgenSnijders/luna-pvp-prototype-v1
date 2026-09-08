@@ -6,6 +6,7 @@ import {
   seedEffectiveTierForTests,
 } from '../src/devtools/graphicsSettings';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { HAZARD_CLEARANCE_Z } from '../src/engine/verticalConstants';
 import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
 import { Obstacle } from '../src/entities/Obstacle';
@@ -784,6 +785,77 @@ function assertGroundSlamAreaTargeting(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'FIRE applied to dummy only within slam radius' };
 }
 
+const FROST_FIELD_CONFIG = {
+  fieldType: 'FRICTION_OVERRIDE' as const,
+  radius: 60,
+  strength: 0,
+  durationMs: 5000,
+  frictionValue: 0.02,
+  zBase: 0,
+  zHeight: 80,
+};
+
+function assertFieldStatusApplicationAndAirborneClearance(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const stepMs = 400;
+
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  world.airborneCount = 1;
+
+  const caster = new Player(new Vector2D(0, 0));
+  const dummy = new Dummy(new Vector2D(0, 0));
+  world.addPlayer(caster);
+  world.addDummy(dummy);
+
+  const zone = new SpatialZone(Vector2D.zero(), FROST_FIELD_CONFIG, caster.id, 'FROST');
+  zone.affects = 'ENEMIES';
+  world.addZone(zone);
+
+  const stepField = (entity: typeof dummy, ms: number): void => {
+    const n = Math.ceil(ms / (dt * 1000));
+    for (let i = 0; i < n; i++) {
+      applyField(zone, entity, dt, world);
+    }
+  };
+
+  stepField(dummy, stepMs);
+  if (!dummy.activeStatuses.has('FROST')) {
+    return { pass: false, reason: 'grounded enemy at center did not receive FROST status' };
+  }
+  if (caster.activeStatuses.has('FROST')) {
+    return { pass: false, reason: 'caster incorrectly received FROST from ENEMIES zone' };
+  }
+
+  dummy.activeStatuses.clear();
+  dummy.z = HAZARD_CLEARANCE_Z + 48;
+  dummy.isGrounded = false;
+  stepField(dummy, stepMs);
+  if (dummy.activeStatuses.has('FROST')) {
+    return {
+      pass: false,
+      reason: `airborne dummy at z=${dummy.z} should not receive FROST (clearance=${HAZARD_CLEARANCE_Z})`,
+    };
+  }
+
+  dummy.activeStatuses.clear();
+  dummy.pos = new Vector2D(55, 0);
+  dummy.z = 0;
+  dummy.isGrounded = true;
+  stepField(dummy, stepMs);
+  if (dummy.activeStatuses.has('FROST')) {
+    return {
+      pass: false,
+      reason: 'dummy in outer rim deadband (falloff < 0.15) should not receive FROST',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: 'FROST applied to grounded center enemy; owner, airborne, and rim cases blocked',
+  };
+}
+
 function assertBallisticArcTrajectorySampling(): { pass: boolean; reason: string } {
   const path = buildBallisticArcPath(
     {
@@ -1189,6 +1261,12 @@ function run(): void {
   console.log(`  ${DIM}${slamTargeting.reason}${RESET}`);
   if (slamTargeting.pass) passed++;
 
+  const fieldStatus = assertFieldStatusApplicationAndAirborneClearance();
+  const fieldStatusTag = fieldStatus.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${fieldStatusTag} Field status application and airborne clearance`);
+  console.log(`  ${DIM}${fieldStatus.reason}${RESET}`);
+  if (fieldStatus.pass) passed++;
+
   const ballisticArc = assertBallisticArcTrajectorySampling();
   const ballisticTag = ballisticArc.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
   console.log(`${ballisticTag} Ballistic arc trajectory sampling`);
@@ -1237,7 +1315,7 @@ function run(): void {
   console.log(`  ${DIM}${graphicsTiers.reason}${RESET}`);
   if (graphicsTiers.pass) passed++;
 
-  const totalCases = suite.length + 14;
+  const totalCases = suite.length + 15;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
