@@ -173,9 +173,9 @@ uniform vec2 u_cameraPos;
 uniform float u_cameraZoom;
 uniform float u_time;
 uniform float u_hexRadius;
+uniform vec2 u_hexCenter;
 uniform int u_tier;
 uniform float u_parallaxVoid;
-uniform float u_parallaxLava;
 uniform float u_lavaScroll;
 
 out vec4 fragColor;
@@ -233,7 +233,7 @@ vec3 deepLayer(vec2 world) {
 }
 
 vec3 lavaLayer(vec2 world) {
-  vec2 p = parallaxPos(world, u_parallaxLava) * 0.0022;
+  vec2 p = (world - u_hexCenter) * 0.0024;
   float t = u_time * u_lavaScroll;
   int octaves = u_tier >= 2 ? 2 : 1;
   float n = fbm(p + vec2(t * 0.4, t * 0.25), octaves);

@@ -18,6 +18,7 @@ import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
+import { BACKGROUND_FRAGMENT_SHADER } from '../src/render/gl/shaders';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
 import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
@@ -1151,6 +1152,23 @@ function assertDebrisPoolCap(): { pass: boolean; reason: string } {
   return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
 }
 
+function assertLavaWorldLocking(): { pass: boolean; reason: string } {
+  const match = BACKGROUND_FRAGMENT_SHADER.match(/vec3 lavaLayer\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+  if (!match) {
+    return { pass: false, reason: 'lavaLayer function not found in BACKGROUND_FRAGMENT_SHADER' };
+  }
+
+  const body = match[1];
+  if (body.includes('u_parallaxLava') || body.includes('parallaxPos')) {
+    return { pass: false, reason: 'lavaLayer still references parallax uniforms or parallaxPos' };
+  }
+  if (!body.includes('world - u_hexCenter')) {
+    return { pass: false, reason: 'lavaLayer must derive base coords from (world - u_hexCenter)' };
+  }
+
+  return { pass: true, reason: 'lavaLayer world-locked via (world - u_hexCenter)' };
+}
+
 function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
   const tiers = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'] as const;
   for (const tier of tiers) {
@@ -1309,13 +1327,19 @@ function run(): void {
   console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
   if (debrisPool.pass) passed++;
 
+  const lavaWorldLock = assertLavaWorldLocking();
+  const lavaWorldLockTag = lavaWorldLock.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaWorldLockTag} Lava world locking`);
+  console.log(`  ${DIM}${lavaWorldLock.reason}${RESET}`);
+  if (lavaWorldLock.pass) passed++;
+
   const graphicsTiers = assertGraphicsTierMonotonicLimits();
   const graphicsTiersTag = graphicsTiers.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
   console.log(`${graphicsTiersTag} Graphics tier monotonic limits`);
   console.log(`  ${DIM}${graphicsTiers.reason}${RESET}`);
   if (graphicsTiers.pass) passed++;
 
-  const totalCases = suite.length + 15;
+  const totalCases = suite.length + 16;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

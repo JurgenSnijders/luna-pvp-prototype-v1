@@ -53,8 +53,6 @@ export interface GraphicsSettings {
   arcadeBezel: boolean;
   /** 0 = screen-locked, 1 = world-locked camera follow for the void/star layer. */
   bgParallaxVoid: number;
-  /** 0 = screen-locked, 1 = world-locked camera follow for the lava sea. */
-  bgParallaxLava: number;
   /** Time multiplier for lava vein drift. */
   bgLavaScrollSpeed: number;
   activePreset: StylePresetId;
@@ -84,7 +82,6 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   bloomThreshold: 0.6,
   arcadeBezel: true,
   bgParallaxVoid: 0.18,
-  bgParallaxLava: 0.32,
   bgLavaScrollSpeed: 0.18,
   activePreset: 'CYBER_NEON',
   crosshairStyle: 'TACTICAL',
@@ -684,9 +681,6 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     bgParallaxVoid: clampUnit(
       parsed.bgParallaxVoid ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
     ),
-    bgParallaxLava: clampUnit(
-      parsed.bgParallaxLava ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
-    ),
     bgLavaScrollSpeed: clampRange(
       parsed.bgLavaScrollSpeed ?? DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
       0,
@@ -784,7 +778,6 @@ interface TierNumericPreset {
   crtBrightness: number;
   screenShakeIntensity: number;
   bgParallaxVoid: number;
-  bgParallaxLava: number;
   bgLavaScrollSpeed: number;
 }
 
@@ -795,7 +788,6 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
     crtBrightness: 1,
     screenShakeIntensity: 0.4,
     bgParallaxVoid: 0.08,
-    bgParallaxLava: 0.14,
     bgLavaScrollSpeed: 0.1,
   },
   MEDIUM: {
@@ -804,7 +796,6 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
     crtBrightness: 1,
     screenShakeIntensity: 0.75,
     bgParallaxVoid: 0.12,
-    bgParallaxLava: 0.22,
     bgLavaScrollSpeed: 0.14,
   },
   HIGH: {
@@ -813,7 +804,6 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
     crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
     screenShakeIntensity: 1,
     bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
-    bgParallaxLava: DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
     bgLavaScrollSpeed: DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
   },
   ULTRA: {
@@ -822,7 +812,6 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
     crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
     screenShakeIntensity: 1,
     bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
-    bgParallaxLava: DEFAULT_GRAPHICS_SETTINGS.bgParallaxLava,
     bgLavaScrollSpeed: DEFAULT_GRAPHICS_SETTINGS.bgLavaScrollSpeed,
   },
 };

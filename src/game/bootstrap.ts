@@ -457,7 +457,7 @@ function init(app: GameApp): void {
       const bg = app.backgroundRenderer;
       const webglBg = flags.webglBackground && bg !== null && bg.isAvailable();
       if (webglBg) {
-        bg.render(app.camera, app.world.hexRadius, performance.now());
+        bg.render(app.camera, app.world.hexCenter, app.world.hexRadius, performance.now());
       }
 
       app.ctx.save();

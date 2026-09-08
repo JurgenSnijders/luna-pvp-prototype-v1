@@ -175,7 +175,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     'Parallax: 0 = locked to screen, 1 = locked to world. Lower = slower camera drift.',
   );
 
-  const bgNumeric = (key: 'bgParallaxVoid' | 'bgParallaxLava' | 'bgLavaScrollSpeed') => ({
+  const bgNumeric = (key: 'bgParallaxVoid' | 'bgLavaScrollSpeed') => ({
     get: () => getGraphicsSettings()[key],
     set: (v: number) => saveGraphicsSettings({ ...getGraphicsSettings(), [key]: v }),
   });
@@ -188,15 +188,6 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       0.01,
       bgNumeric('bgParallaxVoid').get,
       bgNumeric('bgParallaxVoid').set,
-    ),
-    sliderRow(
-      arenaBody,
-      'Lava Parallax',
-      0,
-      1,
-      0.01,
-      bgNumeric('bgParallaxLava').get,
-      bgNumeric('bgParallaxLava').set,
     ),
     sliderRow(
       arenaBody,

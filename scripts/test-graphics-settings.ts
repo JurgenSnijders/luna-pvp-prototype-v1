@@ -109,16 +109,12 @@ function run(): void {
 
   const clamped = parseGraphicsSettings({
     bgParallaxVoid: 2,
-    bgParallaxLava: -1,
     bgLavaScrollSpeed: 5,
     activePreset: 'NOT_A_PRESET',
     crosshairStyle: 'NOT_A_CROSSHAIR',
   });
   if (clamped.bgParallaxVoid !== 1) {
     failures.push(`bgParallaxVoid clamp: expected 1, got ${clamped.bgParallaxVoid}`);
-  }
-  if (clamped.bgParallaxLava !== 0) {
-    failures.push(`bgParallaxLava clamp: expected 0, got ${clamped.bgParallaxLava}`);
   }
   if (clamped.bgLavaScrollSpeed !== 1) {
     failures.push(`bgLavaScrollSpeed clamp: expected 1, got ${clamped.bgLavaScrollSpeed}`);
