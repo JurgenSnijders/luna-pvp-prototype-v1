@@ -25,21 +25,25 @@ export function drawEntityContactShadow(
   const shadowAlpha = Math.max(0.08, 0.55 * (1 - z / 450));
   const shadowRadius = radius * 1.25 * shadowScale;
   const shadowY = y + radius * 0.25;
-  const grad = ctx.createRadialGradient(
-    x,
-    shadowY,
-    shadowRadius * 0.2,
-    x,
-    shadowY,
-    shadowRadius,
-  );
-  grad.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`);
-  grad.addColorStop(0.6, `rgba(0, 0, 0, ${shadowAlpha * 0.45})`);
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
   ctx.save();
   ctx.globalAlpha *= shadowAlpha;
-  ctx.fillStyle = grad;
+  if (useCheapCanvasEffects()) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha * 0.85})`;
+  } else {
+    const grad = ctx.createRadialGradient(
+      x,
+      shadowY,
+      shadowRadius * 0.2,
+      x,
+      shadowY,
+      shadowRadius,
+    );
+    grad.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`);
+    grad.addColorStop(0.6, `rgba(0, 0, 0, ${shadowAlpha * 0.45})`);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+  }
   ctx.beginPath();
   ctx.ellipse(x, shadowY, shadowRadius, shadowRadius * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();

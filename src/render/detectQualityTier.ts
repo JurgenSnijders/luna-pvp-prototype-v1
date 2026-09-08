@@ -23,13 +23,10 @@ export function detectSeedTier(caps: GpuCapabilities | null): Exclude<QualityTie
 
   const nav = typeof navigator !== 'undefined' ? navigator : null;
   const deviceMemory = (nav as Navigator & { deviceMemory?: number })?.deviceMemory;
-  if (deviceMemory !== undefined && deviceMemory <= 4) {
-    return 'LOW';
-  }
+  const cores = nav?.hardwareConcurrency ?? 0;
 
-  const cores = nav?.hardwareConcurrency;
-  if (cores !== undefined && cores <= 4) {
-    return 'LOW';
+  if (cores >= 8 && deviceMemory !== undefined && deviceMemory >= 8) {
+    return 'HIGH';
   }
 
   return 'MEDIUM';

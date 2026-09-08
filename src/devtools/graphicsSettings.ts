@@ -181,7 +181,7 @@ const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
     groundDecals: false,
     renderScale: 0.75,
     maxBackingEdge: 1280,
-    presentIntervalMs: 33,
+    presentIntervalMs: 0,
   },
   MEDIUM: {
     particleBudget: 4096,
@@ -242,7 +242,7 @@ export function getEffectiveFeatureFlags(): EffectiveFeatureFlags {
   const tier = getEffectiveTier();
   if (tier === 'LOW') {
     return {
-      webglBackground: false,
+      webglBackground: s.webglBackground,
       floorSubGrid: false,
       ambientEmbers: false,
       particleTrails: s.particleTrails,
@@ -950,7 +950,7 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     ...current,
     tier,
     manualTierOverride: true,
-    webglBackground: tier !== 'LOW',
+    webglBackground: true,
     floorSubGrid: tier !== 'LOW',
     ambientEmbers: tier !== 'LOW',
     dynamicDebris: tier !== 'LOW',

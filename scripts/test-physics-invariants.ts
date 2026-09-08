@@ -1,5 +1,10 @@
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
+import {
+  getEffectiveFeatureFlags,
+  getTierLimits,
+  seedEffectiveTierForTests,
+} from '../src/devtools/graphicsSettings';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
@@ -1074,6 +1079,49 @@ function assertDebrisPoolCap(): { pass: boolean; reason: string } {
   return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
 }
 
+function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
+  const tiers = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'] as const;
+  for (const tier of tiers) {
+    seedEffectiveTierForTests(tier);
+    const limits = getTierLimits();
+    if (limits.presentIntervalMs !== 0) {
+      return {
+        pass: false,
+        reason: `${tier} presentIntervalMs should be 0, got ${limits.presentIntervalMs}`,
+      };
+    }
+  }
+
+  seedEffectiveTierForTests('LOW');
+  const low = getTierLimits();
+  seedEffectiveTierForTests('MEDIUM');
+  const medium = getTierLimits();
+  seedEffectiveTierForTests('HIGH');
+  const high = getTierLimits();
+
+  if (low.particleBudget >= medium.particleBudget || medium.particleBudget >= high.particleBudget) {
+    return {
+      pass: false,
+      reason:
+        `particle budgets not monotonic: LOW=${low.particleBudget} MEDIUM=${medium.particleBudget} HIGH=${high.particleBudget}`,
+    };
+  }
+
+  seedEffectiveTierForTests('LOW');
+  const flags = getEffectiveFeatureFlags();
+  if (!flags.webglBackground) {
+    return {
+      pass: false,
+      reason: 'LOW should inherit webglBackground when enabled in settings',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: 'present uncapped, budgets monotonic, LOW keeps GPU background',
+  };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -1183,7 +1231,13 @@ function run(): void {
   console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
   if (debrisPool.pass) passed++;
 
-  const totalCases = suite.length + 13;
+  const graphicsTiers = assertGraphicsTierMonotonicLimits();
+  const graphicsTiersTag = graphicsTiers.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${graphicsTiersTag} Graphics tier monotonic limits`);
+  console.log(`  ${DIM}${graphicsTiers.reason}${RESET}`);
+  if (graphicsTiers.pass) passed++;
+
+  const totalCases = suite.length + 14;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
