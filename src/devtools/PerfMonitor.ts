@@ -1,3 +1,5 @@
+import { isLegacyIntegratedGpu } from '../render/detectQualityTier';
+
 const HISTORY_SIZE = 120;
 
 export interface GpuCapabilities {
@@ -7,6 +9,29 @@ export interface GpuCapabilities {
   dpr: number;
   renderer: string;
   vendor: string;
+  /** Bits of mantissa from gl.getShaderPrecisionFormat(FRAGMENT_SHADER, HIGH_FLOAT). */
+  fragmentHighpPrecision: number;
+  /** Unmasked renderer string from WEBGL_debug_renderer_info, or empty. */
+  unmaskedRenderer: string;
+  /** True when fragment highp is unreliable or a legacy iGPU is detected. */
+  isLegacyGpu: boolean;
+}
+
+function probeGpuTraits(gl: WebGL2RenderingContext): {
+  fragmentHighpPrecision: number;
+  unmaskedRenderer: string;
+  isLegacyGpu: boolean;
+} {
+  const fmt = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
+  const fragmentHighpPrecision = fmt?.precision ?? 0;
+  let unmaskedRenderer = '';
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  if (dbg) {
+    unmaskedRenderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) ?? '');
+  }
+  const isLegacyGpu =
+    fragmentHighpPrecision < 23 || isLegacyIntegratedGpu(unmaskedRenderer);
+  return { fragmentHighpPrecision, unmaskedRenderer, isLegacyGpu };
 }
 
 export interface PerfSnapshot {
@@ -31,6 +56,8 @@ function percentile(sorted: number[], p: number): number {
 
 export class PerfMonitor {
   private frameHistory: number[] = [];
+  private presentHistory: number[] = [];
+  private lastPresentTime = 0;
   private simMs = 0;
   private renderMs = 0;
   private gpuMs = 0;
@@ -57,6 +84,10 @@ export class PerfMonitor {
       const probe = document.createElement('canvas');
       gl = probe.getContext('webgl2');
     }
+    const traits = gl
+      ? probeGpuTraits(gl)
+      : { fragmentHighpPrecision: 0, unmaskedRenderer: '', isLegacyGpu: true };
+    const prev = this.capabilities;
     const caps: GpuCapabilities = {
       webgl2Available: !!gl,
       maxTextureSize: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
@@ -68,6 +99,9 @@ export class PerfMonitor {
       vendor: gl
         ? String(gl.getParameter(gl.VENDOR))
         : 'N/A',
+      fragmentHighpPrecision: traits.fragmentHighpPrecision,
+      unmaskedRenderer: traits.unmaskedRenderer || prev?.unmaskedRenderer || '',
+      isLegacyGpu: traits.isLegacyGpu || prev?.isLegacyGpu === true,
     };
     this.capabilities = caps;
     return caps;
@@ -89,13 +123,22 @@ export class PerfMonitor {
     this.renderStart = performance.now();
   }
 
-  endRender(): void {
+  endRender(rafNow: number): void {
     this.renderMs = performance.now() - this.renderStart;
     const frameMs = Math.max(0, performance.now() - this.frameStart);
     this.frameHistory.push(frameMs);
     if (this.frameHistory.length > HISTORY_SIZE) {
       this.frameHistory.shift();
     }
+
+    if (this.lastPresentTime > 0) {
+      const presentMs = Math.max(0, rafNow - this.lastPresentTime);
+      this.presentHistory.push(presentMs);
+      if (this.presentHistory.length > HISTORY_SIZE) {
+        this.presentHistory.shift();
+      }
+    }
+    this.lastPresentTime = rafNow;
   }
 
   setGpuMs(ms: number): void {
@@ -117,13 +160,15 @@ export class PerfMonitor {
   }
 
   getSnapshot(): PerfSnapshot {
-    const sorted = [...this.frameHistory].sort((a, b) => a - b);
-    const p50 = percentile(sorted, 0.5);
-    const p95 = percentile(sorted, 0.95);
+    const workSorted = [...this.frameHistory].sort((a, b) => a - b);
+    const workP50 = percentile(workSorted, 0.5);
+    const workP95 = percentile(workSorted, 0.95);
+    const presentSorted = [...this.presentHistory].sort((a, b) => a - b);
+    const presentP50 = percentile(presentSorted, 0.5);
     return {
-      fps: p50 > 0 ? 1000 / p50 : 0,
-      frameMsP50: p50,
-      frameMsP95: p95,
+      fps: presentP50 > 0 ? 1000 / presentP50 : 0,
+      frameMsP50: workP50,
+      frameMsP95: workP95,
       simMs: this.simMs,
       renderMs: this.renderMs,
       gpuMs: this.gpuMs,
@@ -150,7 +195,7 @@ export class PerfMonitor {
   formatOverlayText(): string {
     const s = this.getSnapshot();
     const lines = [
-      `FPS ~${s.fps.toFixed(0)}  p50 ${s.frameMsP50.toFixed(1)}ms  p95 ${s.frameMsP95.toFixed(1)}ms`,
+      `FPS ~${s.fps.toFixed(0)}`,
       `sim ${s.simMs.toFixed(2)}ms  render ${s.renderMs.toFixed(2)}ms  gpu ${s.gpuMs.toFixed(2)}ms`,
       `particles ${s.liveParticles}  primitives ${s.livePrimitives}`,
       `draws ${s.drawCalls}  instances ${s.instanceCount}  upload ${(s.uploadBytes / 1024).toFixed(1)}KB`,

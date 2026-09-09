@@ -178,6 +178,7 @@ uniform vec2 u_hexCenter;
 uniform int u_tier;
 uniform float u_parallaxVoid;
 uniform float u_lavaScroll;
+uniform float u_warpStrength;
 
 out vec4 fragColor;
 
@@ -194,7 +195,9 @@ vec2 parallaxPos(vec2 world, float follow) {
 }
 
 float hash21(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 float noise2(vec2 p) {
@@ -254,12 +257,14 @@ vec3 lavaLayer(vec2 world) {
 
   int octaves = (u_tier >= 2) ? 3 : ((u_tier == 1) ? 2 : 1);
 
-  // Damped convection warp: large displacement shears coords into laminar ribbons.
-  vec2 warp = vec2(
-    noise2(p * 2.2 + vec2(cos(t * 0.6) * 0.35, sin(t * 0.45) * 0.35)),
-    noise2(p * 2.2 + vec2(sin(t * 0.5) * 0.35, cos(t * 0.7) * 0.35) + vec2(4.1, 2.7))
-  );
-  vec2 q = p + (warp - 0.5) * 0.38;
+  vec2 q = p;
+  if (u_warpStrength > 0.001) {
+    vec2 warp = vec2(
+      noise2(p * 2.2 + vec2(cos(t * 0.6) * 0.35, sin(t * 0.45) * 0.35)),
+      noise2(p * 2.2 + vec2(sin(t * 0.5) * 0.35, cos(t * 0.7) * 0.35) + vec2(4.1, 2.7))
+    );
+    q += (warp - 0.5) * 0.38 * u_warpStrength;
+  }
 
   // Plates sample unwarped p so solid rock stays geometrically static.
   float plateMacro = fbm(p * 3.0, 2);
@@ -273,7 +278,10 @@ vec3 lavaLayer(vec2 world) {
   float microFissures = pow(clamp(microRidge, 0.0, 1.0), 6.0) * (1.0 - plateMask) * 0.35;
   float activeCracks = clamp(fissures + microFissures, 0.0, 1.0);
 
-  float rockGrain = (noise2(p * 70.0) - 0.5) * 0.06;
+  float rockGrain = 0.0;
+  if (u_tier >= 2) {
+    rockGrain = (noise2(p * 70.0) - 0.5) * 0.06;
+  }
 
   const vec3 cBasaltCharcoal = vec3(0.065, 0.055, 0.065);
   const vec3 cBasaltWarm     = vec3(0.16, 0.09, 0.07);
@@ -305,7 +313,7 @@ void main() {
   float distFromInitial = hexSdf(world - u_hexCenter, initApothem);
   float arenaFade = smoothstep(u_initialRadius * 0.7, u_initialRadius * 2.6, distFromInitial);
   vec3 rgb = mix(lava, deep, arenaFade);
-  ivec2 px = ivec2(floor(v_uv * u_resolution));
+  ivec2 px = ivec2(gl_FragCoord.xy);
   rgb += (bayer4(px) - 0.5) / 255.0;
   fragColor = vec4(rgb, 1.0);
 }

@@ -1,3 +1,7 @@
+import {
+  getEffectiveDprCap,
+  getEffectiveTier,
+} from '../../devtools/graphicsSettings';
 import type {
   AbilitySchema,
   ActionPayload,
@@ -10,6 +14,36 @@ import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
 import { resolveIconTrajectoryPaths } from './trajectoryTracer';
 
 const LOGICAL_SIZE = 48;
+
+interface IconRasterContext {
+  dpr: number;
+  cheapGlow: boolean;
+  maxGlowBlur: number;
+  snapPx: (val: number) => number;
+  snapStroke: (val: number, lineWidth: number) => number;
+}
+
+interface IconNetworkDrawResult {
+  drew: boolean;
+  drewLinearChevrons: boolean;
+}
+
+function createIconRasterContext(): IconRasterContext {
+  const dpr = Math.max(1, Math.round(getEffectiveDprCap()));
+  const cheapGlow = getEffectiveTier() === 'LOW' || dpr <= 1;
+  return {
+    dpr,
+    cheapGlow,
+    maxGlowBlur: cheapGlow ? 0 : 8,
+    snapPx: (val) => Math.round(val * dpr) / dpr,
+    snapStroke: (val, lineWidth) =>
+      lineWidth % 2 !== 0
+        ? Math.floor(val * dpr) / dpr + 0.5 / dpr
+        : Math.round(val * dpr) / dpr,
+  };
+}
+
+let activeRaster: IconRasterContext = createIconRasterContext();
 
 const ARCHETYPE_COLORS: Record<SpellArchetype, string> = {
   KINETIC: '#e0f8ff',
@@ -161,10 +195,11 @@ function strokeWithGlow(
   ctx: CanvasRenderingContext2D,
   color: string,
   draw: () => void,
+  maxBlur = activeRaster.maxGlowBlur,
 ): void {
   ctx.strokeStyle = color;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = maxBlur;
   draw();
   ctx.shadowBlur = 0;
 }
@@ -327,6 +362,8 @@ function drawPayloadGlyph(
   color: string,
   markerSize: number,
 ): void {
+  const gx = activeRaster.snapPx(x);
+  const gy = activeRaster.snapPx(y);
   const r = markerSize * 0.5;
   const s = markerSize * 0.8;
 
@@ -337,8 +374,8 @@ function drawPayloadGlyph(
         ctx.beginPath();
         for (let i = 0; i < 4; i++) {
           const angle = (Math.PI / 2) * i + Math.PI / 4;
-          const px = x + Math.cos(angle) * r;
-          const py = y + Math.sin(angle) * r;
+          const px = gx + Math.cos(angle) * r;
+          const py = gy + Math.sin(angle) * r;
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
@@ -350,13 +387,13 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(x - s * 0.5, y + s * 0.5);
-        ctx.lineTo(x + s * 0.5, y - s * 0.5);
+        ctx.moveTo(gx - s * 0.5, gy + s * 0.5);
+        ctx.lineTo(gx + s * 0.5, gy - s * 0.5);
         ctx.stroke();
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x - s * 0.25, y + s * 0.75);
-        ctx.lineTo(x + s * 0.75, y - s * 0.25);
+        ctx.moveTo(gx - s * 0.25, gy + s * 0.75);
+        ctx.lineTo(gx + s * 0.75, gy - s * 0.25);
         ctx.stroke();
       });
       break;
@@ -364,10 +401,10 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.arc(gx, gy, r, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(x, y, r * 0.5, 0, Math.PI * 2);
+        ctx.arc(gx, gy, r * 0.5, 0, Math.PI * 2);
         ctx.stroke();
       });
       break;
@@ -375,12 +412,12 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x - s * 0.5, y + s * 0.75);
-        ctx.lineTo(x - s * 0.125, y + s * 0.125);
-        ctx.lineTo(x - s * 0.375, y - s * 0.125);
-        ctx.lineTo(x + s * 0.125, y - s * 0.75);
-        ctx.lineTo(x + s * 0.375, y - s * 0.25);
-        ctx.lineTo(x + s * 0.625, y - s * 0.625);
+        ctx.moveTo(gx - s * 0.5, gy + s * 0.75);
+        ctx.lineTo(gx - s * 0.125, gy + s * 0.125);
+        ctx.lineTo(gx - s * 0.375, gy - s * 0.125);
+        ctx.lineTo(gx + s * 0.125, gy - s * 0.75);
+        ctx.lineTo(gx + s * 0.375, gy - s * 0.25);
+        ctx.lineTo(gx + s * 0.625, gy - s * 0.625);
         ctx.stroke();
       });
       break;
@@ -388,16 +425,16 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x, y - r);
-        ctx.lineTo(x + r * 0.85, y);
-        ctx.lineTo(x, y + r);
-        ctx.lineTo(x - r * 0.85, y);
+        ctx.moveTo(gx, gy - r);
+        ctx.lineTo(gx + r * 0.85, gy);
+        ctx.lineTo(gx, gy + r);
+        ctx.lineTo(gx - r * 0.85, gy);
         ctx.closePath();
         ctx.stroke();
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x - r * 0.5, y - r * 0.5);
-        ctx.lineTo(x + r * 0.5, y + r * 0.5);
+        ctx.moveTo(gx - r * 0.5, gy - r * 0.5);
+        ctx.lineTo(gx + r * 0.5, gy + r * 0.5);
         ctx.stroke();
       });
       break;
@@ -405,14 +442,14 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.arc(gx, gy, r, 0, Math.PI * 2);
         ctx.stroke();
         const sq = r * 0.55;
         ctx.beginPath();
-        ctx.rect(x - sq, y - sq, sq * 2, sq * 2);
+        ctx.rect(gx - sq, gy - sq, sq * 2, sq * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(x, y, r * 0.15, 0, Math.PI * 2);
+        ctx.arc(gx, gy, r * 0.15, 0, Math.PI * 2);
         ctx.stroke();
       });
       break;
@@ -420,12 +457,12 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(x, y - r * 1.1);
-        ctx.lineTo(x, y + r * 1.1);
+        ctx.moveTo(gx, gy - r * 1.1);
+        ctx.lineTo(gx, gy + r * 1.1);
         ctx.stroke();
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.ellipse(x, y, r * 0.35, r * 0.9, 0, 0, Math.PI * 2);
+        ctx.ellipse(gx, gy, r * 0.35, r * 0.9, 0, 0, Math.PI * 2);
         ctx.stroke();
       });
       break;
@@ -433,9 +470,9 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x + r * 0.9, y - r * 0.9);
-        ctx.lineTo(x - r * 0.4, y + r * 0.3);
-        ctx.lineTo(x - r * 0.2, y - r * 0.5);
+        ctx.moveTo(gx + r * 0.9, gy - r * 0.9);
+        ctx.lineTo(gx - r * 0.4, gy + r * 0.3);
+        ctx.lineTo(gx - r * 0.2, gy - r * 0.5);
         ctx.closePath();
         ctx.stroke();
       });
@@ -444,14 +481,14 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x - s * 0.6, y + s * 0.2);
+        ctx.moveTo(gx - s * 0.6, gy + s * 0.2);
         ctx.bezierCurveTo(
-          x - s * 0.1,
-          y - s * 0.5,
-          x + s * 0.1,
-          y + s * 0.5,
-          x + s * 0.6,
-          y - s * 0.2,
+          gx - s * 0.1,
+          gy - s * 0.5,
+          gx + s * 0.1,
+          gy + s * 0.5,
+          gx + s * 0.6,
+          gy - s * 0.2,
         );
         ctx.stroke();
       });
@@ -460,10 +497,10 @@ function drawPayloadGlyph(
       strokeWithGlow(ctx, color, () => {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x, y - r);
-        ctx.lineTo(x + r, y);
-        ctx.lineTo(x, y + r);
-        ctx.lineTo(x - r, y);
+        ctx.moveTo(gx, gy - r);
+        ctx.lineTo(gx + r, gy);
+        ctx.lineTo(gx, gy + r);
+        ctx.lineTo(gx - r, gy);
         ctx.closePath();
         ctx.stroke();
       });
@@ -501,8 +538,8 @@ function drawPathChevrons(
   for (let dist = startDist; dist < length - endMargin; dist += chevronSpacing) {
     const t = (dist - startDist) / Math.max(1, length - startDist - endMargin);
     const alpha = 0.3 + t * 0.55;
-    const cx = start.x + ux * dist;
-    const cy = start.y + uy * dist;
+    const cx = activeRaster.snapPx(start.x + ux * dist);
+    const cy = activeRaster.snapPx(start.y + uy * dist);
     ctx.strokeStyle = hexToRgba(color, alpha);
     ctx.beginPath();
     ctx.moveTo(
@@ -525,17 +562,25 @@ function drawIconTrajectoryNetwork(
   ability: AbilitySchema,
   archetypeColor: string,
   payloadStyle: ProjectileStyle,
-): boolean {
+): IconNetworkDrawResult {
+  const empty: IconNetworkDrawResult = { drew: false, drewLinearChevrons: false };
   const result = resolveIconTrajectoryPaths(ability, LOGICAL_SIZE, 8);
-  if (result.paths.length === 0) return false;
+  if (result.paths.length === 0) return empty;
 
   const markerSize = LOGICAL_SIZE * 0.1;
   const originRadius = Math.max(2, LOGICAL_SIZE * 0.04);
   const lineWidth = Math.max(1.5, LOGICAL_SIZE * 0.035);
+  const pathGlowBlur = activeRaster.cheapGlow ? 0 : 4;
 
   ctx.fillStyle = hexToRgba(archetypeColor, 0.6);
   ctx.beginPath();
-  ctx.arc(result.origin.x, result.origin.y, originRadius, 0, Math.PI * 2);
+  ctx.arc(
+    activeRaster.snapPx(result.origin.x),
+    activeRaster.snapPx(result.origin.y),
+    originRadius,
+    0,
+    Math.PI * 2,
+  );
   ctx.fill();
 
   for (const path of result.paths) {
@@ -553,7 +598,7 @@ function drawIconTrajectoryNetwork(
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.shadowColor = archetypeColor;
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur = pathGlowBlur;
 
     ctx.beginPath();
     ctx.moveTo(path.points[0].x, path.points[0].y);
@@ -575,7 +620,11 @@ function drawIconTrajectoryNetwork(
     drawPayloadGlyph(ctx, endpoint.x, endpoint.y, payloadStyle, archetypeColor, markerSize);
   }
 
-  return true;
+  const drewLinearChevrons =
+    result.trajectoryType === 'LINEAR' &&
+    result.paths.some((path) => path.points.length >= 2);
+
+  return { drew: true, drewLinearChevrons };
 }
 
 function drawPayloadLayer(ctx: CanvasRenderingContext2D, icon: IconContext): void {
@@ -666,11 +715,15 @@ function drawCornerBrackets(ctx: CanvasRenderingContext2D, color: string): void 
   });
 }
 
-function drawArchetypeAccents(ctx: CanvasRenderingContext2D, icon: IconContext): void {
+function drawArchetypeAccents(
+  ctx: CanvasRenderingContext2D,
+  icon: IconContext,
+  skipDiagonalTicks = false,
+): void {
   const { archetype, archetypeColor } = icon;
   switch (archetype) {
     case 'FROST':
-      drawFrostAccents(ctx, archetypeColor);
+      if (!skipDiagonalTicks) drawFrostAccents(ctx, archetypeColor);
       break;
     case 'FIRE':
       drawFireAccents(ctx, archetypeColor);
@@ -679,7 +732,7 @@ function drawArchetypeAccents(ctx: CanvasRenderingContext2D, icon: IconContext):
       drawVoidAccents(ctx, archetypeColor);
       break;
     case 'KINETIC':
-      drawKineticAccents(ctx, archetypeColor);
+      if (!skipDiagonalTicks) drawKineticAccents(ctx, archetypeColor);
       break;
     default:
       drawCornerBrackets(ctx, archetypeColor);
@@ -690,17 +743,17 @@ function drawArchetypeAccents(ctx: CanvasRenderingContext2D, icon: IconContext):
 function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const icon = buildIconContext(ability);
   drawBackground(ctx);
-  const drewNetwork = drawIconTrajectoryNetwork(
+  const network = drawIconTrajectoryNetwork(
     ctx,
     ability,
     icon.archetypeColor,
     icon.projectileStyle,
   );
-  if (!drewNetwork) {
+  if (!network.drew) {
     drawDeliveryLayer(ctx, icon);
     drawPayloadLayer(ctx, icon);
   }
-  drawArchetypeAccents(ctx, icon);
+  drawArchetypeAccents(ctx, icon, network.drewLinearChevrons);
 }
 
 function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
@@ -719,8 +772,8 @@ function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySche
   ctx.lineTo(LOGICAL_SIZE / 2, LOGICAL_SIZE / 2 + 4);
   ctx.stroke();
 
-  const drewNetwork = drawIconTrajectoryNetwork(ctx, ability, color, payloadStyle);
-  if (!drewNetwork) {
+  const network = drawIconTrajectoryNetwork(ctx, ability, color, payloadStyle);
+  if (!network.drew) {
     drawDeliveryLayer(ctx, buildIconContext(ability));
   }
 }
@@ -730,8 +783,10 @@ export function generateSpellIcon(
   sizePx = 48,
   forcedStyle?: IconRenderStyle,
 ): HTMLCanvasElement {
+  activeRaster = createIconRasterContext();
+  const dpr = activeRaster.dpr;
+
   const canvas = document.createElement('canvas');
-  const dpr = 2;
   canvas.width = sizePx * dpr;
   canvas.height = sizePx * dpr;
   canvas.style.width = `${sizePx}px`;
@@ -740,7 +795,7 @@ export function generateSpellIcon(
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
 
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = false;
   const scale = sizePx / LOGICAL_SIZE;
   ctx.scale(dpr * scale, dpr * scale);
 

@@ -84,7 +84,7 @@ export class Loop {
       const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
       perfMonitor.beginRender();
       this.callbacks.onRender(alpha, frameDt);
-      perfMonitor.endRender();
+      perfMonitor.endRender(now);
     }
 
     this.rafId = requestAnimationFrame(this.frame);

@@ -507,7 +507,10 @@ function mapIconPoint(
   offsetX: number,
   offsetY: number,
 ): Point {
-  return { x: p.x * scale + offsetX, y: p.y * scale + offsetY };
+  return {
+    x: Math.round((p.x * scale + offsetX) * 100) / 100,
+    y: Math.round((p.y * scale + offsetY) * 100) / 100,
+  };
 }
 
 export function resolveIconTrajectoryPaths(
