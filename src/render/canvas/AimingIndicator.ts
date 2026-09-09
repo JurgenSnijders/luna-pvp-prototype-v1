@@ -1,3 +1,4 @@
+import { Z_TO_SCREEN } from '../../engine/verticalConstants';
 import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
 import {
@@ -9,6 +10,13 @@ import {
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 export type AimingMode = 'directional' | 'radial';
+
+export function resolveAimIndicatorOrigin(
+  pos: { x: number; y: number },
+  z = 0,
+): { x: number; y: number } {
+  return { x: pos.x, y: pos.y - z * Z_TO_SCREEN };
+}
 
 export interface AimingState {
   slotIndex: number;
@@ -406,16 +414,20 @@ function drawPredictivePath(
 export function drawPredictivePaths(
   ctx: CanvasRenderingContext2D,
   state: AimingState,
+  startZ = 0,
+  planarOrigin?: { x: number; y: number },
 ): void {
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
   const muzzleOffset =
     state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
+  const origin = planarOrigin ?? state.origin;
   const paths = resolveLiveAimingPaths(
     state.ability,
-    state.origin,
+    origin,
     state.angle,
     muzzleOffset,
+    startZ,
   );
 
   if (paths.length === 0) return;
@@ -496,13 +508,18 @@ export class AimingIndicatorRenderer {
   render(
     ctx: CanvasRenderingContext2D,
     state: AimingState,
-    origin?: { x: number; y: number },
+    planarOrigin?: { x: number; y: number },
+    casterZ = 0,
   ): void {
-    const visual = origin ? layoutAimingVisual(state, origin) : state;
     const now = performance.now();
-    if (visual.mode === 'directional') {
-      drawPredictivePaths(ctx, visual);
+    if (state.mode === 'directional') {
+      const layoutOrigin = planarOrigin
+        ? resolveAimIndicatorOrigin(planarOrigin, casterZ)
+        : state.origin;
+      const visual = planarOrigin ? layoutAimingVisual(state, layoutOrigin) : state;
+      drawPredictivePaths(ctx, visual, casterZ, planarOrigin);
     } else {
+      const visual = planarOrigin ? layoutAimingVisual(state, planarOrigin) : state;
       drawAoERadial(ctx, visual, now);
     }
   }

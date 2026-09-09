@@ -40,6 +40,12 @@ import {
   type HitFeedbackConfig,
 } from '../../render/hitFeedbackConfig';
 import {
+  DEFAULT_ENTITY_SHADOW_CONFIG,
+  entityShadowConfig,
+  saveEntityShadowConfig,
+  type EntityShadowConfig,
+} from '../../render/entityShadowConfig';
+import {
   DEFAULT_FCT_CLUSTER_CONFIG,
   fctClusterConfig,
   saveFctClusterConfig,
@@ -199,6 +205,56 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       bgNumeric('bgLavaScrollSpeed').set,
     ),
   ];
+
+  helperText(
+    arenaBody,
+    'Tune the ground shadow under lifted players and debris.',
+  );
+
+  const shadowNumeric = (key: keyof EntityShadowConfig) => ({
+    get: () => entityShadowConfig[key],
+    set: (v: number) => {
+      entityShadowConfig[key] = v;
+      saveEntityShadowConfig();
+    },
+  });
+
+  const shadowMaxAlpha = shadowNumeric('maxAlpha');
+  const shadowMinAlpha = shadowNumeric('minAlpha');
+  const shadowFadeDistance = shadowNumeric('fadeDistance');
+
+  const entityShadowSliders = [
+    sliderRow(arenaBody, 'Ground Opacity', 0, 1, 0.01, shadowMaxAlpha.get, shadowMaxAlpha.set),
+    sliderRow(
+      arenaBody,
+      'Airborne Min Opacity',
+      0,
+      0.5,
+      0.01,
+      shadowMinAlpha.get,
+      shadowMinAlpha.set,
+    ),
+    sliderRow(
+      arenaBody,
+      'Height Fade',
+      100,
+      900,
+      10,
+      shadowFadeDistance.get,
+      shadowFadeDistance.set,
+      'px',
+    ),
+  ];
+
+  const resetEntityShadowBtn = document.createElement('button');
+  resetEntityShadowBtn.textContent = 'Reset Entity Shadow Defaults';
+  resetEntityShadowBtn.style.cssText = buttonStyle(false) + 'margin-top:6px;width:100%;';
+  resetEntityShadowBtn.onclick = () => {
+    Object.assign(entityShadowConfig, DEFAULT_ENTITY_SHADOW_CONFIG);
+    saveEntityShadowConfig();
+    for (const slider of entityShadowSliders) slider.refresh();
+  };
+  arenaBody.appendChild(resetEntityShadowBtn);
 
   addToggle(arenaBody, arenaCheckboxes, 'floorSubGrid', 'Floor Phosphor Grid');
   addToggle(arenaBody, arenaCheckboxes, 'ambientEmbers', 'Ambient Lava Embers');
@@ -621,6 +677,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     for (const slider of bloomSliders) slider.refresh();
     for (const slider of bgParallaxSliders) slider.refresh();
     for (const slider of fctSliders) slider.refresh();
+    for (const slider of entityShadowSliders) slider.refresh();
     syncIconStyleButtons();
     postEffectsControls.sync();
   };

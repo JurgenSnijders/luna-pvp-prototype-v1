@@ -14,13 +14,17 @@ Each section uses the same shape: **Problem → Options → Recommendation → R
 
 ## The unifying observation
 
-Three of the four capabilities we want already have a composable substrate sitting underneath
-a non-composable enum:
+Nearly every capability we want already has a composable substrate sitting underneath a
+non-composable enum or a missing parameter:
 
-| Want | Substrate that already composes | Enum blocking it |
+| Want | Substrate that already composes | What blocks it |
 |---|---|---|
 | Combined motion (homing + bouncing) | `PhysicsWorld.integrateProjectile` handles z/bounce for *any* projectile | `trajectory.type` is exclusive |
 | Novel visual effects | `spawnRing` / `spawnFlash` / `spawnStreak` / `burstSparks` | `impactVfx` is one of ten |
+| Directional melee hit regions | `applyField` distance falloff + parent-following `SpatialZone` | Radial-only test; world-space offsets |
+| Scriptable close combat | `applyRammingImpulse` computes rammer, target, closing speed, knock direction | No trigger queue — telemetry only |
+| Per-moment visual identity | Particle primitives + `LifecycleFx` seam | One `impactVfx` per projectile; VFX unreachable from the trigger tree |
+| Impact that scales with power | `scoreAbilitySchema` already quantifies spell power | `reactiveFx.pulse` takes a boolean |
 | If/then spell logic | `TriggerNode` tree with conditions, children, nesting | *(none — already composable)* |
 
 So the recurring move is: **keep the enum as a named preset, add an optional parametric layer
@@ -409,18 +413,249 @@ twice yields identical points.
 
 ---
 
+## §8 — Melee and close combat
+
+### Problem
+
+The arena favours ranged play, but the design premise is freedom: a player should be able to
+build a piston, a sword, or bare hands and have it work. Today they cannot describe one, and
+the pieces that exist are unreachable from the schema
+([`01-engine-capabilities.md`](01-engine-capabilities.md) §"Close combat"):
+
+- Hit regions are circles only — no directional arc.
+- `attachToSource` offsets are world-space, so a hitbox cannot track a turning player.
+- Ram and slam collisions are computed and logged but dispatch no trigger, so no spell can
+  react to body contact.
+- The casting model has no commitment — no windup, no active window, no recovery — and
+  commitment is precisely what makes melee interesting rather than "a gun with 50 range".
+
+### Options
+
+1. **A melee subsystem** — weapon entities, reach stats, attack-state machine. Rejected: it
+   carves melee out as a category the LLM must be taught separately, and nothing else in the
+   game can borrow from it.
+2. **Reuse `CHARGE_AND_RELEASE` for windup.** Insufficient — it is a magnitude scaler with no
+   active window and no post-cast state ([`01`](01-engine-capabilities.md) §"Casting model").
+   Melee built on it is a short-range charged shot, which players can already approximate.
+3. **Three orthogonal additions** that any spell can use.
+
+### Recommendation — Option 3, in three parts
+
+**Part A — a contact trigger. Do this first; it is nearly free.**
+
+Add `ON_RAM` (entity contact) and optionally `ON_SLAM` (wall/obstacle contact), queued the same
+way bounces already are. The dispatch site at
+[`PhysicsWorld.ts`](../../src/engine/PhysicsWorld.ts) L929 already computes rammer, target,
+closing speed, and knock direction, and already writes a telemetry record — it needs a
+`pendingRamEvents` queue alongside `pendingBounceEvents`, plus a dispatch block in
+[`lifecycle.ts`](../../src/primitives/interpreter/lifecycle.ts) mirroring the `ON_BOUNCE` one
+(which already supports node-level filtering via `minBounceSpeed`; `minRamSpeed` is the direct
+analogue).
+
+This alone makes bare-hands builds *composable*: charge into someone and trigger a field, a
+stasis, a vertical launch. No schema surgery beyond one trigger enum value and its whitelist
+entries.
+
+**Part B — angular hit regions.**
+
+Add an optional arc constraint to `FieldConfig`:
+
+```ts
+arcDeg?: number;        // 0–360; omitted or 360 = current radial behaviour
+arcFacing?: 'CASTER_FACING' | 'CAST_HEADING' | 'FIXED';
+arcOffsetDeg?: number;
+```
+
+Implementation is one dot-product test in `applyField` alongside the existing distance check,
+plus rotating `offset` by the parent's `facingAngle` in `SpatialZone.update` when
+`arcFacing === 'CASTER_FACING'`. Gate the rotation behind the new field so existing world-space
+offsets keep working.
+
+Together with Part A this is the whole unlock for swords and pistons: a swing is a
+short-duration, caster-attached, arc-constrained `RADIAL_IMPULSE`.
+
+**Part C — timing phases as a fourth composable axis.**
+
+Not a new `InputProfile` mode. Optional properties that compose with *every* existing mode:
+
+```ts
+windupMs?: number;      // delay before ON_CAST dispatches; telegraph
+activeMs?: number;      // how long the hit region stays live
+recoveryMs?: number;    // committed vulnerability window after
+moveScale?: { windup?: number; active?: number; recovery?: number };
+cancelable?: boolean;   // may recovery be interrupted
+```
+
+| Composition | Result |
+|---|---|
+| `INSTANT` + windup/active/recovery | Sword swing |
+| `CHARGE_AND_RELEASE` + long recovery | Heavy slam with real whiff punishment |
+| `COMBO_CHAIN` + short recovery | Three-hit combo string |
+| `CHANNELED` + windup | Spin-to-win that spools up |
+| `INSTANT` + windup only | Telegraphed *ranged* shot — no melee involved |
+
+The last row is the argument for this shape over a melee mode: phases are useful to spells that
+have nothing to do with close combat, and melee stops being a category the engine must know
+about. Melee becomes region shape + timing + contact trigger, all of which the Evolution Tree
+already knows how to mutate.
+
+### Risk
+
+Part C is the expensive one. It needs a per-caster action state machine (today the only
+"cannot act" states are slot cooldown, resource lockout, and stasis) and a delayed `ON_CAST`
+dispatch, which `Interpreter.executeAbility` currently performs synchronously. `moveScale` needs
+to write `Player.moveSpeed` — `applyModifyStat` already does exactly that, so there is
+precedent for the write path but not for reverting it on phase exit.
+
+Secondary: melee shortens engagement range, which interacts with arena shrink and lava
+positioning in ways that only playtesting will surface.
+
+### Verification
+
+Phase durations are a pure feel question, so prototype before hardening. A projectile parented
+to the caster is already a timer carrier with `ON_TICK`/`ON_EXPIRY`, so windup → active →
+recovery can be faked entirely in schema and playtested before any engine work
+([`01`](01-engine-capabilities.md) §"Casting model").
+
+For Part A, the headless harness can assert it directly: drive a caster into a dummy above
+`RAMMING_SPEED_THRESHOLD`, assert an `ON_RAM` node dispatches exactly once and its actions
+resolve against the rammed target.
+
+---
+
+## §9 — VFX addressability and impact scaling
+
+### Problem
+
+Two separate complaints, one root cause.
+
+**Spells cannot have their own look per moment.** `VisualDescriptor` carries a single
+`impactVfx`, so one projectile uses the same effect for hit, expiry, bounce, and apex. Worse,
+the three newest projectile events — apex, bounce, ram — have **no visual binding at all**
+([`01-engine-capabilities.md`](01-engine-capabilities.md) §"Reactive feedback and event
+bindings"). A cluster mortar's defining moments are currently silent on screen.
+
+**Impact does not scale with power.** Intensity is decided three different ways depending on the
+channel: ripple radius is derived and continuous, shake and burst scale are *authored* (the LLM
+guesses absolute values with no sense of relative power), and reactive blur/glitch/shock are
+**binary** — `reactiveFx.pulse` takes an `isHeavy` boolean quantized at a hardcoded instability
+threshold of 25. So a tier-6 evolved ultimate lands with exactly the same screen response as a
+basic secondary that happened to cross the same threshold.
+
+### Options
+
+1. **Hardcode a particle call at each new event site.** Cheap per event, but every future
+   mechanic (`ON_RAM`, melee phases, motion modifiers) needs another one, and spells can never
+   author their own look.
+2. **Widen the `impactVfx` enum and add more authored `vfx` params.** Keeps calibration in the
+   LLM's hands, which is where it currently fails.
+3. **Make VFX schema-addressable and derive intensity from power.**
+
+### Recommendation — Option 3, in three parts
+
+**Part A — bind the unbound events. Do this first regardless of the rest.**
+
+Add particle calls for apex, bounce, and (once §8 Part A exists) ram, in the same place the
+existing hit and slam bindings live. Two call sites, immediate improvement to every ballistic
+spell in the game. This is a bug fix, not architecture.
+
+**Part B — a `PLAY_VFX` action.**
+
+Make visuals reachable from the trigger tree the same way physics is:
+
+```ts
+{ type: 'PLAY_VFX', vfx?: ImpactVfx, layers?: VfxLayer[], scale?: number, target?: ActionTarget }
+```
+
+Any trigger can then carry its own visual — a soft puff on `ON_AIR_APEX`, a dust scuff on
+`ON_BOUNCE`, a hard detonation on `ON_HIT`, a telegraph during a melee windup. New triggers
+inherit visuals for free with no renderer change, and the LLM authors visuals *per moment*
+rather than picking one impact for the whole spell. Composes directly with the layer stack from
+§3: `vfx` selects a preset, `layers` overrides it.
+
+The `LifecycleFx` interface ([`lifecycle.ts`](../../src/primitives/interpreter/lifecycle.ts)
+L99) is the natural seam — it already abstracts decals, ripples, shake, and hitstop behind live
+and headless implementations.
+
+**Part C — one derived intensity signal, with the schema as a multiplier.**
+
+Compute a normalized `impactIntensity` from two inputs and feed every channel from it:
+
+- **Static scope**, known at cast time. `scoreAbilitySchema`
+  ([`score.ts`](../../src/ai/budget/score.ts)) already quantifies spell power — it recurses
+  through nested spawns, multiplies by emitter count, and weighs field radius × duration.
+  Normalizing against `CATEGORY_BUDGETS[category].targetPower` yields "how big is this spell for
+  its slot". It is currently used only for cooldown and recoil.
+- **Runtime impact**, per event. Already measured: instability delta, projectile speed, target
+  effective mass, plasma detonation, vertical impact speed, ram closing speed.
+
+Scope sets a floor, impact sets the punch — a big spell always reads big, and a solid connection
+reads better than a graze. Then widen `reactiveFx.pulse` to accept a number and lerp between the
+existing `Light`/`Heavy` tuning values instead of selecting one; the tuning struct is already the
+right shape.
+
+**Invert the authored parameters.** `vfx.shakeIntensity` and `vfx.impactScale` should become
+multipliers on the derived baseline, not absolute values. `shakeIntensity: 1.4` means "40%
+punchier than a spell this size normally is." Generated spells then get correct weight
+automatically, and authored values become stylistic flavour — which is what the LLM is good at.
+
+Because the Evolution Tree raises the power score as it grows, evolved spells scale their screen
+presence for free.
+
+### Risk
+
+**Saturation.** Power score grows fast with nesting, so a linear mapping produces permanent
+full-screen glitch and an unreadable game at high tiers. Needs an asymptotic or log curve — the
+same headroom problem as the budget ceilings in §4. See
+[`05-open-questions.md`](05-open-questions.md) Q12.
+
+**Performance.** Derived intensity must multiply *into* `getTierLimits().particleBudget`, never
+bypass it, or evolved spells will tank LOW-tier machines.
+
+**Shake fatigue.** Shake scaling with power becomes nauseating faster than blur or particle
+count. Note a user preference already exists and is honoured —
+`screenShake.trigger` multiplies by `getGraphicsSettings().screenShakeIntensity` and
+early-returns at zero — so the gate is present; it may want a lower internal cap than the other
+channels.
+
+**User toggles stay authoritative.** `hitFeedbackConfig` is a set of booleans. Scaling decides
+how much, never whether.
+
+### Verification
+
+Assert monotonicity rather than absolute values, since the mapping is a tuning question: score a
+basic `PRIMARY` preset and a nested `ULTIMATE` preset, and assert derived intensity is strictly
+greater for the ultimate while both remain within the tier particle budget on LOW. For Part A,
+assert `clusterMortar` produces at least one particle spawn at apex and one per bounce in a
+headless run with a recording backend (§7).
+
+### Note on identity versus weight
+
+These are orthogonal axes and both are needed. **Identity** — a unique look — comes from §3
+layers plus Part B addressability. **Weight** — feeling as strong as it is — comes from Part C.
+A distinctive spell with wrong weight feels floaty; a correctly weighted spell drawn from ten
+presets feels generic. They compose: a unique layer stack whose every layer scales with
+intensity.
+
+---
+
 ## Suggested sequencing
 
 | Phase | Work | Why here |
 |---|---|---|
 | 1 | RC-1 one-line fix + round-trip invariant test | Smallest change, biggest unlock, creates the regression net |
-| 2 | §1 semantic repair modes + the two mode-independent bugs | Prerequisite for the tree; nothing above it is safe without it |
-| 3 | §2 composable motion (Part A, then Part B) | Large expressive gain, contained change |
-| 4 | §7 preview fidelity | Makes phases 3 and 5 visible and therefore verifiable |
-| 5 | §3 layered VFX | Same architectural pattern as §2; cheaper once §2 is done |
-| 6 | §4 evolution tree (stat nodes first, then generative) | Depends on 1–5 |
-| 7 | §5 read-only node graph | Useful from phase 1 onward; slot in whenever convenient |
-| 8 | §5 drawn trajectories | Genuinely optional |
+| 2 | §9 Part A — bind apex/bounce visuals | Pure bug fix, independent of everything, immediately improves every ballistic spell |
+| 3 | §1 semantic repair modes + the two mode-independent bugs | Prerequisite for the tree; nothing after it is safe without it |
+| 4 | §2 composable motion (Part A, then Part B) | Large expressive gain, contained change |
+| 5 | §8 Part A — contact trigger | Cheapest new capability in this document; unlocks a whole build archetype |
+| 6 | §7 preview fidelity | Makes later phases visible and therefore verifiable |
+| 7 | §3 layered VFX **+** §9 Part B — `PLAY_VFX` | These compose; layers give the vocabulary, `PLAY_VFX` gives the addressing |
+| 8 | §9 Part C — derived impact intensity | Needs the layer stack to scale; wants §4's tier decision settled |
+| 9 | §8 Part B — angular hit regions | The unlock for weapon-shaped melee |
+| 10 | §4 evolution tree (stat nodes first, then generative) | Depends on 1–9 |
+| 11 | §8 Part C — timing phases | Largest engine change in the melee set; prototype in schema first |
+| 12 | §5 read-only node graph | Useful from phase 1 onward; slot in whenever convenient |
+| 13 | §5 drawn trajectories | Genuinely optional |
 
 §6's build-time guards are independent and can land at any point; earlier is better, since
 each subsequent phase adds vocabulary.

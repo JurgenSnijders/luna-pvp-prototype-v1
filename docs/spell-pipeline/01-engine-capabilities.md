@@ -215,6 +215,136 @@ export interface EmitterConfig {
 
 ---
 
+## Casting model
+
+Four `InputProfile` modes, handled in
+[`Player.ts`](../../src/entities/Player.ts) → `handleSlotInput` (L~380) and
+`updateSlotInputs` (L455). `[Verified]`
+
+| Mode | Behaviour |
+|---|---|
+| `INSTANT` | Fires once on press |
+| `CHARGE_AND_RELEASE` | Press starts a timer, hold accumulates, release fires once |
+| `CHANNELED` | Re-fires `ON_CAST` every `channelIntervalMs` while held |
+| `COMBO_CHAIN` | Increments `comboStep`, resets after `comboWindowMs` idle |
+
+**`CHARGE_AND_RELEASE` scales magnitudes and nothing else.** On release
+([`Player.ts`](../../src/entities/Player.ts) L424) it computes
+`ratio = min(1, chargeMs / maxChargeMs)` and passes it as `chargeRatio`. The only downstream
+consumer is a single multiplier ([`actions.ts`](../../src/primitives/interpreter/actions.ts) L150):
+
+```ts
+const scale = 1.0 + (ctx.chargeRatio ?? 0);
+```
+
+which multiplies impulse `baseForce`, `ADD_INSTABILITY` amount, `SPAWN_FIELD` strength, and
+`MODIFY_STAT` value. It cannot change radius, duration, emitter count, or any other shape
+parameter.
+
+**What the casting model does not have.** `[Verified]`
+
+- **No windup.** `Interpreter.executeAbility` dispatches `ON_CAST` synchronously; there is no
+  mechanism to delay a cast.
+- **No active window.** A cast is a single instantaneous dispatch. Nothing expresses "this hit
+  region is live from t=120ms to t=280ms".
+- **No recovery or commitment.** Nothing restricts the caster after firing. Holding a charge is
+  free — movement is unaffected, holding is unbounded, and releasing below `minChargeMs`
+  silently cancels with no cost.
+- **No caster action state.** The only "cannot act" states are per-slot cooldown, `resourceCost`
+  lockout (HEAT overheat / AMMO reload, `lockoutTimerMs`), and `APPLY_STASIS`.
+
+There is one scheduling primitive available indirectly: a projectile is a timer carrier with
+`ON_TICK` / `ON_EXPIRY`, so delayed effects can be faked in schema by parenting a short-lived
+projectile to the caster. `[Inferred]`
+
+---
+
+## Close combat
+
+**There is no melee concept in the codebase.** `[Verified]` A search across `src/` for
+`melee|swing|slash|punch|cleave|blade|sword|fist|piston|bash|smash` returns no gameplay
+mechanic — only a `BLADE → SHURIKEN` visual alias in
+[`llmRepair.ts`](../../src/ai/synthesizer/llmRepair.ts) L336 and unrelated UI naming. No melee
+action, trigger, hit-region shape, weapon, or reach concept exists in the schema, and the
+prompt grammar contains no melee recipe.
+
+### What does exist
+
+**A complete body-collision combat system**, implemented but not addressable from a spell.
+[`PhysicsWorld.ts`](../../src/engine/PhysicsWorld.ts) → `applyRammingImpulse` (L417), called
+from combatant collision resolution (L929) when approach speed exceeds threshold:
+
+```ts
+const J = closingSpeed * RAMMING_IMPULSE_FACTOR * reducedMass;
+...
+const rammingInstability = Math.min(
+  RAMMING_INSTABILITY_CAP,
+  (closingSpeed - RAMMING_SPEED_THRESHOLD) * RAMMING_INSTABILITY_SCALE,
+);
+```
+
+| Constant | Value | Location |
+|---|---|---|
+| `RAMMING_SPEED_THRESHOLD` | 350 | `PhysicsWorld.ts` L49 |
+| `RAMMING_IMPULSE_FACTOR` | 0.6 | L50 |
+| `RAMMING_RECOIL_FACTOR` | 0.35 | L51 |
+| `RAMMING_INSTABILITY_CAP` | 45 | L53 |
+| `SLAM_SPEED_THRESHOLD` | 400 | L54 |
+| `SLAM_INSTABILITY_CAP` | 50 | L56 |
+| `DEFAULT_COLLISION_RESTITUTION` | 0.3 | L47 |
+
+Knockback scales with reduced mass, the rammer takes 35% recoil, and wall/obstacle slams add
+up to 50 instability. This is functioning bare-hands melee. It is covered by an existing
+regression case (`BODY_RAM_COLLISION` in
+[`test-physics-invariants.ts`](../../scripts/test-physics-invariants.ts)).
+
+**Melee-adjacent primitives that compose today:** `[Inferred]`
+
+| Pattern | Built from |
+|---|---|
+| Shoulder charge | `APPLY_IMPULSE` on `CASTER` → ram system does the rest |
+| Heavy body slam | `MORPH_ENTITY` raising `mass`/`radius` feeds the reduced-mass term |
+| Gap-closer + shockwave | `TELEPORT` + `attachToSource` `RADIAL_IMPULSE` (the `Dash Ram` benchmark) |
+| Parry | `REFLECT_PROJECTILES` |
+| Spinning blades | `ORBIT_ANCHOR` trajectory |
+| Grapple | `SPAWN_CONSTRAINT` `SPRING_TETHER` |
+| Sword slash approximation | `LINEAR` projectile at `maxRange: 50` (the sanitizer floor), speed ≥150 → ~0.3s life |
+
+### What blocks real melee
+
+**Hit regions are circles only.** [`Fields.ts`](../../src/primitives/Fields.ts) → `applyField`
+(L105) tests distance and computes a radial falloff; there is no angular constraint anywhere in
+the field system. A directional swing arc is inexpressible. `[Verified]`
+
+**Attached fields do not rotate with the caster.**
+[`SpatialZone.ts`](../../src/entities/SpatialZone.ts) → `update` (L46) follows the parent's
+position but applies `offset` in world space:
+
+```ts
+this.pos.copyFrom(this.parentRef.pos).addMut(this.offset);
+```
+
+`facingAngle` exists on both `Player` (L101) and `Summon` (L30) but the field system never
+reads it, so a hitbox cannot be placed "in front of" a turning player. `[Verified]`
+
+**There is no contact trigger.** Ram and slam collisions apply their effects and write a
+`RAM_COLLISION` / `SLAM_COLLISION` telemetry record, but never dispatch a `TriggerNode`. Note
+the contrast with vertical impacts, which *do* queue (`pendingGroundImpacts` → `ON_GROUND_SLAM`)
+and with bounces (`pendingBounceEvents` → `ON_BOUNCE`). Entity-vs-entity and entity-vs-wall
+contact have no equivalent queue, so no spell can react to them. `[Verified]`
+
+**Fields ignore projectiles.** `applyField` returns early for anything not tagged `combatant`
+(L68–69), so a swing cannot deflect incoming shots; `REFLECT_PROJECTILES` is the only
+deflection path. `[Verified]`
+
+**No melee visual vocabulary.** All ten `ProjectileStyle` values are ranged-flavored
+(`DISC`, `BEAM`, `PULSING_ORB`, `SHURIKEN`, `VOID_RIFT`, …) and no `ImpactVfx` reads as a
+weapon arc. `[Verified]`
+
+Design proposal: [`04-upgrade-design.md`](04-upgrade-design.md) §8.
+
+---
+
 ## Composition limits
 
 | Limit | Value | Location | Failure mode |
@@ -271,6 +401,86 @@ So the underlying particle system can express far more than ten impacts; the sch
 has no way to address it. `[Verified]` Design implication in
 [`04-upgrade-design.md`](04-upgrade-design.md) §3.
 
+`VisualDescriptor` carries exactly **one** `impactVfx`. A projectile therefore uses the same
+effect for its hit, its expiry, its bounce, and its apex. Children spawned via
+`SPAWN_PROJECTILE.visuals` can differ from their parent, so effects vary *per projectile* but
+never *per event within one projectile's life*. `[Verified]`
+
+---
+
+## Reactive feedback and event bindings
+
+### Which gameplay events produce a visual
+
+`[Verified]` Bindings live in
+[`lifecycle.ts`](../../src/primitives/interpreter/lifecycle.ts) → `processLifecycleEvents`
+(L582) except where noted.
+
+| Event | Visual response |
+|---|---|
+| Projectile hit | Impact burst, decal, ripple, shake, reactive pulse, hitstop (L588–635) |
+| Ground slam (vertical) | Ripple, shake, decal (L694) |
+| Expiry — range/lifetime/ground | `triggerImpactBurst` (L762) |
+| Return to source | `expandingRing` (L644) |
+| Wall impact | 6 sparks, in [`simulation.ts`](../../src/game/simulation.ts) L74–76 |
+| Obstacle destruction | Decal, ripple, burst, debris shatter |
+| Zone tick / status tick | Throttled particle ticks |
+| **`ON_AIR_APEX`** | **None** — L657 dispatches triggers only |
+| **`ON_BOUNCE`** | **None** — L671 dispatches triggers only |
+| **Ram collision** | **None** — telemetry record only |
+
+The pattern: apex and bounce are the most recently added projectile events and their VFX
+bindings were never completed. A cluster mortar splitting at apex and bomblets bouncing
+therefore produce no visual feedback at the two moments that define the spell. `[Inferred]`
+
+### Intensity is decided inconsistently per channel
+
+`reactiveFx.pulse` takes a **boolean**, not a magnitude
+([`reactiveFx.ts`](../../src/render/gl/reactiveFx.ts) L71):
+
+```ts
+  pulse(worldX: number, worldY: number, isHeavy: boolean): void {
+    const t = this.tuning;
+    this.blurEnvelope = Math.max(this.blurEnvelope, envelope(isHeavy ? t.blurHeavy : t.blurLight));
+```
+
+`ReactiveFxTuning` supplies paired `Light`/`Heavy` values for blur, glitch, and shock — two
+discrete levels with no interpolation. `isHeavy` itself *is* derived at runtime, quantized at a
+hardcoded threshold ([`lifecycle.ts`](../../src/primitives/interpreter/lifecycle.ts) L603):
+
+```ts
+    const instabDelta = hit.target.instabilityPct - instabBefore;
+    const isHeavy = instabDelta >= 25 || detonated;
+```
+
+Across channels there are three different philosophies: `[Verified]`
+
+| Channel | Continuous? | Driven by |
+|---|---|---|
+| Ripple radius | Yes | Derived — `min(320, 160 + projectileSpeed * 0.2)` (L615) |
+| Screen shake | Yes | **Authored** — `vfx.shakeIntensity ?? 0.4`, ×4 (L598) |
+| Impact burst scale | Yes | **Authored** — `vfx.impactScale ?? 1` (L593) |
+| Decal radius | Yes | Semi-derived — `12 + scale * 8` |
+| Reactive blur / glitch / shock | **No — binary** | Derived (`isHeavy`) |
+| Hitstop | **No — fixed 2 frames** | Derived (`isHeavy`), gated on `hitFeedbackConfig.microHitstop` |
+
+The authored channels require the LLM to calibrate absolute values with no sense of a spell's
+relative power, which it does unreliably.
+
+### Existing user and performance gates
+
+Automatic intensity scaling must respect three pre-existing gates: `[Verified]`
+
+- `screenShake.trigger` already multiplies by `getGraphicsSettings().screenShakeIntensity` and
+  early-returns at zero ([`ScreenShake.ts`](../../src/render/ScreenShake.ts) L9–12), so a user
+  shake preference exists and is honoured.
+- `getTierLimits().particleBudget` caps particle spawns per graphics tier.
+- `hitFeedbackConfig` ([`hitFeedbackConfig.ts`](../../src/render/hitFeedbackConfig.ts)) is a set
+  of **booleans** — `targetFlash`, `microHitstop`, `bodyDeform`, `directionalBlastRings`, and
+  others. These are feature flags, not intensities: scaling decides *how much*, never *whether*.
+
+Design proposal: [`04-upgrade-design.md`](04-upgrade-design.md) §9.
+
 ---
 
 ## Preview and aiming
@@ -291,7 +501,7 @@ actual VFX. It is a schematic, not a visual preview.
 
 **Live aiming indicator** —
 [`trajectoryTracer.ts`](../../src/render/canvas/trajectoryTracer.ts) → `resolveLiveAimingPaths`
-(L471). Builds paths from closed-form formulas, one per trajectory type
+(L477). Builds paths from closed-form formulas, one per trajectory type
 (`buildLinearPath`, `buildBallisticArcPath`, `buildHomingSlerpPath`, …). It traces the **root
 cast only** — never child projectiles from `ON_AIR_APEX`/`ON_EXPIRY`, and
 `buildBallisticArcPath` (L335) draws a single parabola with no bounce hops.

@@ -34,7 +34,7 @@ import {
 
 import { AimingIndicatorRenderer } from './canvas/AimingIndicator';
 
-import { lerpPos } from './canvas/helpers';
+import { lerpPos, lerpZ } from './canvas/helpers';
 
 import type { CanvasRenderCtx } from './canvas/renderCtx';
 
@@ -65,8 +65,6 @@ import { flashArenaCrosshair } from '../ui/palette';
 
 
 export type { DebugOptions } from './canvas/debug';
-
-
 
 export class CanvasRenderer {
 
@@ -314,11 +312,9 @@ export class CanvasRenderer {
     const aimingState = aimingPlayer?.activeAimingState ?? null;
 
     if (aimingState && aimingPlayer) {
-
-      const origin = lerpPos(aimingPlayer, alpha);
-
-      this.aimingRenderer.render(ctx, aimingState, origin);
-
+      const planarOrigin = lerpPos(aimingPlayer, alpha);
+      const casterZ = lerpZ(aimingPlayer, alpha);
+      this.aimingRenderer.render(ctx, aimingState, planarOrigin, casterZ);
     }
 
     drawOverheadHUD(ctx, world, alpha);

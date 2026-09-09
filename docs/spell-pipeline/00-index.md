@@ -3,8 +3,11 @@
 > Reference set for the spell generation, repair, execution, and visualization pipeline.
 > Written for humans **and** for pasting into LLM design conversations.
 >
-> **Source anchor:** commit `53e3893` (2026-09-08). All line numbers are as of this commit.
-> **Scope:** prompt → LLM → repair → sanitize → balance → interpreter → physics → render.
+> **Source anchor:** commit `53e3893` (2026-09-08). All line numbers are as of this commit,
+> except `trajectoryTracer.ts` anchors, re-derived 2026-09-09 against uncommitted work that
+> added a `startZ` parameter for elevated casting. That change did not affect any finding.
+> **Scope:** prompt → LLM → repair → sanitize → balance → interpreter → physics → render,
+> plus the capability gaps blocking the planned Evolution Tree and melee combat.
 > See also [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the wider system.
 
 ---
@@ -83,6 +86,15 @@ rg -n "pendingApexEvents.push" src/
 
 # The preview sandbox never attaches a particle system
 rg -n "setParticleSystem" src/draft/InspectorPlaybackSim.ts
+
+# No melee concept exists anywhere in the codebase
+rg -ni "melee|swing|slash|cleave|piston" src/
+
+# ...yet a full body-collision combat system does, reachable only by physics
+rg -n "applyRammingImpulse|RAMMING_" src/engine/PhysicsWorld.ts
+
+# Hit regions are radial only — no angular test in the field system
+rg -n "falloff|arcDeg" src/primitives/Fields.ts
 ```
 
 The decisive **behavioural** check, requiring no code reading: load the `Cluster Mortar`
@@ -116,3 +128,13 @@ overwrite authored values rather than filling gaps. The second problem is mild f
 generation and severe for the planned Evolution Tree, because those rules re-run on every
 pass with the current flavor text and therefore compound. Fixing preservation before
 building the tree is the load-bearing sequencing decision.
+
+The same pattern recurs everywhere we looked. Vertical physics, particle effects, and body
+collision are all implemented as general systems sitting under an exclusive enum or an absent
+parameter — combined motion, novel VFX, and melee are each blocked by a small missing
+addressing mechanism rather than by missing capability. A full body-collision combat system
+with knockback, recoil, and instability already runs in `PhysicsWorld`; no spell can reach it
+because contact dispatches no trigger. Screen-impact intensity is already derived from real
+runtime force, but `reactiveFx.pulse` quantizes it to a boolean, so a tier-6 ultimate lands
+like a basic secondary. The recommended move throughout is to keep each enum as a named preset
+and add an optional parametric layer beside it — engine derives, schema modulates.

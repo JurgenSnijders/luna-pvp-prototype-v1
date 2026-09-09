@@ -183,7 +183,7 @@ warning. For complex generated spells this is the highest-variance failure in th
 ## RC-4 — Aiming preview traces the root cast only
 
 [`trajectoryTracer.ts`](../../src/render/canvas/trajectoryTracer.ts) → `resolveLiveAimingPaths`
-(L471) resolves a single `LiveCastConfig` (root `trajectory`, or the first `ON_CAST`
+(L477) resolves a single `LiveCastConfig` (root `trajectory`, or the first `ON_CAST`
 `SPAWN_PROJECTILE`) and builds one closed-form path per emitter angle. `[Verified]`
 
 - `walkTriggers` (L28) does recurse into `SPAWN_PROJECTILE.triggers`, but only to collect
@@ -257,6 +257,6 @@ Tree rather than a correctness bug. See [`04-upgrade-design.md`](04-upgrade-desi
 | D-8 | `repair.ts` | `collapseHitExpiryDuplicates` (L1045) | Distinct `SPAWN_PROJECTILE` on `ON_HIT` when `ON_EXPIRY` also spawns |
 | D-9 | `repair.ts` | `repairImpulseSemantics` (L199) | Authored `directionMode` |
 | D-10 | `prompts.ts` | recipe book (L203–204) | Cluster intent ambiguity |
-| D-11 | `trajectoryTracer.ts` | `resolveLiveAimingPaths` (L471), `buildBallisticArcPath` (L335) | Child paths, bounce hops (visual only) |
+| D-11 | `trajectoryTracer.ts` | `resolveLiveAimingPaths` (L477), `buildBallisticArcPath` (L335) | Child paths, bounce hops (visual only) |
 
 D-4 through D-9 are detailed in [`03-repair-rules-matrix.md`](03-repair-rules-matrix.md).

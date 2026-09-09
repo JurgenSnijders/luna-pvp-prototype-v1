@@ -338,6 +338,7 @@ export function buildBallisticArcPath(
   theta: number,
   muzzleOffset: number,
   steps = 24,
+  startZ = 0,
 ): PredictivePath {
   const g = WORLD_GRAVITY * (trajectory.gravityScale ?? 1);
   const lobApex = trajectory.lobApex ?? 80;
@@ -360,14 +361,14 @@ export function buildBallisticArcPath(
     const planarDist = speed * t;
     const x = muzzle.x + d.x * planarDist;
     const y = muzzle.y + d.y * planarDist;
-    let z = vz0 * t - 0.5 * g * t * t;
+    let z = startZ + vz0 * t - 0.5 * g * t * t;
 
     if (planarDist >= maxRange) {
       const clampedDist = maxRange;
       const clampedX = muzzle.x + d.x * clampedDist;
       const clampedY = muzzle.y + d.y * clampedDist;
       const clampedT = clampedDist / speed;
-      const clampedZ = Math.max(0, vz0 * clampedT - 0.5 * g * clampedT * clampedT);
+      const clampedZ = Math.max(0, startZ + vz0 * clampedT - 0.5 * g * clampedT * clampedT);
       groundPoints.push({ x: clampedX, y: clampedY });
       points.push({
         x: clampedX,
@@ -423,45 +424,50 @@ function buildPredictivePath(
   origin: Point,
   theta: number,
   muzzleOffset: number,
+  startZ = 0,
 ): PredictivePath {
   const maxRange = trajectory.maxRange ?? 500;
+  const visualOrigin: Point =
+    startZ > 0
+      ? { x: origin.x, y: origin.y - startZ * Z_TO_SCREEN }
+      : origin;
 
   switch (trajectory.type) {
     case 'LINEAR':
       return {
-        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        points: buildLinearPath(visualOrigin, theta, muzzleOffset, maxRange),
         isClosed: false,
         trajectoryType: 'LINEAR',
       };
     case 'DISCONTINUOUS_BLINK':
       return {
-        points: buildDiscontinuousBlinkPath(origin, theta, muzzleOffset, trajectory),
+        points: buildDiscontinuousBlinkPath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'DISCONTINUOUS_BLINK',
       };
     case 'RETURN_TO_SOURCE':
       return {
-        points: buildReturnToSourcePath(origin, theta, muzzleOffset, trajectory),
+        points: buildReturnToSourcePath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'RETURN_TO_SOURCE',
       };
     case 'HOMING_SLERP':
       return {
-        points: buildHomingSlerpPath(origin, theta, muzzleOffset, trajectory),
+        points: buildHomingSlerpPath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'HOMING_SLERP',
       };
     case 'ORBIT_ANCHOR':
       return {
-        points: buildOrbitAnchorPath(origin, theta, trajectory),
+        points: buildOrbitAnchorPath(visualOrigin, theta, trajectory),
         isClosed: true,
         trajectoryType: 'ORBIT_ANCHOR',
       };
     case 'BALLISTIC_ARC':
-      return buildBallisticArcPath(trajectory, origin, theta, muzzleOffset);
+      return buildBallisticArcPath(trajectory, origin, theta, muzzleOffset, 24, startZ);
     default:
       return {
-        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        points: buildLinearPath(visualOrigin, theta, muzzleOffset, maxRange),
         isClosed: false,
         trajectoryType: trajectory.type,
       };
@@ -473,6 +479,7 @@ export function resolveLiveAimingPaths(
   origin: { x: number; y: number },
   aimAngle: number,
   muzzleOffset = 0,
+  startZ = 0,
 ): PredictivePath[] {
   if (ability.targetingMode === 'GROUND_POINT') return [];
 
@@ -483,7 +490,7 @@ export function resolveLiveAimingPaths(
   const angles = computeSpreadAngles(config.emitter, aimAngle);
 
   return angles.map((theta) =>
-    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset),
+    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset, startZ),
   );
 }
 

@@ -18,6 +18,10 @@ import {
   parseGraphicsProfile,
 } from '../src/devtools/graphicsProfile';
 import {
+  DEFAULT_ENTITY_SHADOW_CONFIG,
+  entityShadowConfig,
+} from '../src/render/entityShadowConfig';
+import {
   DEFAULT_FCT_CLUSTER_CONFIG,
   fctClusterConfig,
 } from '../src/render/fctClusterConfig';
@@ -89,6 +93,7 @@ function resetGraphicsState(): void {
   saveGraphicsSettings({ ...DEFAULT_GRAPHICS_SETTINGS });
   Object.assign(hitFeedbackConfig, DEFAULT_HIT_FEEDBACK_CONFIG);
   Object.assign(fctClusterConfig, DEFAULT_FCT_CLUSTER_CONFIG);
+  Object.assign(entityShadowConfig, DEFAULT_ENTITY_SHADOW_CONFIG);
   setIconRenderStyle('SEMANTIC_GLYPH');
 }
 
@@ -158,6 +163,7 @@ function run(): void {
   hitFeedbackConfig.microHitstop = false;
   fctClusterConfig.clusterWindowMs = 650;
   fctClusterConfig.clusterPerTickMax = 12;
+  entityShadowConfig.maxAlpha = 0.72;
   setIconRenderStyle('SIMULATION_TRACE');
 
   const exported = exportGraphicsProfile();
@@ -172,6 +178,9 @@ function run(): void {
   }
   if (exported.fctCluster.clusterWindowMs !== 650) {
     failures.push('exportGraphicsProfile: fctCluster.clusterWindowMs should be 650');
+  }
+  if (exported.entityShadow.maxAlpha !== 0.72) {
+    failures.push('exportGraphicsProfile: entityShadow.maxAlpha should be 0.72');
   }
   if (exported.iconStyle !== 'SIMULATION_TRACE') {
     failures.push(`exportGraphicsProfile: iconStyle should be SIMULATION_TRACE, got ${exported.iconStyle}`);
@@ -195,6 +204,9 @@ function run(): void {
   }
   if (fctClusterConfig.clusterWindowMs !== 650 || fctClusterConfig.clusterPerTickMax !== 12) {
     failures.push('importGraphicsProfile: fct cluster config not restored');
+  }
+  if (entityShadowConfig.maxAlpha !== 0.72) {
+    failures.push('importGraphicsProfile: entity shadow config not restored');
   }
   if (getIconRenderStyle() !== 'SIMULATION_TRACE') {
     failures.push(`importGraphicsProfile: icon style should be SIMULATION_TRACE, got ${getIconRenderStyle()}`);

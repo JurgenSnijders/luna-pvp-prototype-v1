@@ -154,6 +154,107 @@ be attributed to the prompt rather than to the pipeline.
 
 ---
 
+### Q9 — Where does the caster action state machine live?
+
+[`04-upgrade-design.md`](04-upgrade-design.md) §8 Part C needs per-caster phase state (windup /
+active / recovery) with movement scaling and a delayed `ON_CAST` dispatch. Today the only
+"cannot act" states are per-slot cooldown, `resourceCost` lockout, and `APPLY_STASIS`, and
+`Interpreter.executeAbility` dispatches synchronously.
+
+Options:
+
+1. **On `Player`**, alongside `slotInputs`. Matches where charge/channel/combo state already
+   lives, but bots and summons then can't use phases.
+2. **On `Entity`**, so summons and bots inherit it. Wider blast radius, more correct.
+3. **A scheduler on the interpreter**, with phases as queued dispatches rather than entity
+   state. Cleanest separation, but movement scaling still needs to touch the entity.
+
+Related: `moveScale` must revert on phase exit. `applyModifyStat` writes `Player.moveSpeed`
+directly with no restore mechanism, so phases need something the morph system already has
+(`morphRemainingMs`) rather than reusing `MODIFY_STAT`.
+
+---
+
+### Q10 — What are the semantics of the contact trigger?
+
+[`04`](04-upgrade-design.md) §8 Part A proposes `ON_RAM`. Undecided:
+
+- **Who owns the trigger?** The rammer's spell, the target's spell, or both? The collision site
+  already picks a rammer and a target (`PhysicsWorld.ts` L932), so either is available.
+- **Does it need an armed spell?** Vertical slams use `groundSlamArmed` on the entity, set at
+  cast time. Ram could follow that pattern, or fire on any collision for any spell holding an
+  `ON_RAM` node.
+- **Threshold.** Reuse `RAMMING_SPEED_THRESHOLD` (350), or expose `minRamSpeed` per node as
+  `ON_BOUNCE` does with `minBounceSpeed`?
+- **Summons.** Should a charging turret or decoy trigger it? They already participate in
+  collision resolution.
+
+Leaning: rammer-owned, node-level `minRamSpeed`, fires without arming (simpler than
+`groundSlamArmed` and there is no ambiguity about which spell is responsible).
+
+---
+
+### Q11 — Should melee hit regions interact with projectiles?
+
+`applyField` returns early for anything not tagged `combatant`
+([`Fields.ts`](../../src/primitives/Fields.ts) L68–69), so an arc-constrained swing cannot bat
+away incoming shots. `REFLECT_PROJECTILES` exists as a separate action and already does this
+with a radius.
+
+Options: leave it (melee is anti-personnel, parry stays a distinct action); let `arcDeg` fields
+optionally affect projectiles; or generalise `REFLECT_PROJECTILES` to accept the same arc
+parameters so a directional parry is expressible.
+
+The third is most consistent with the composable-parameter thesis, and cheap — `REFLECT_PROJECTILES`
+already takes a `radius`.
+
+---
+
+### Q12 — What curve maps spell power to visual intensity?
+
+[`04-upgrade-design.md`](04-upgrade-design.md) §9 Part C derives impact intensity from
+`scoreAbilitySchema` normalized against `CATEGORY_BUDGETS[category].targetPower`. The mapping
+curve is undecided and it matters more than the inputs do.
+
+Power grows fast with nesting — `scoreAction` multiplies `SPAWN_PROJECTILE` by emitter count and
+recurses into child triggers — so a linear mapping saturates quickly and a late-tree spell
+produces permanent full-screen glitch. Options: asymptotic (`x / (x + k)`), logarithmic, or a
+hand-authored piecewise curve per channel.
+
+Related sub-questions:
+
+- **Per-channel or shared?** Shake almost certainly wants a lower ceiling than blur or particle
+  count. One normalized signal with per-channel response curves is probably right.
+- **Is intensity capped at the top tier, or does it keep growing?** Uncapped growth makes late
+  spells feel escalating but eventually unreadable.
+- **Does a glancing hit from a huge spell outrank a solid hit from a small one?** This is the
+  floor-versus-punch weighting between static scope and runtime impact.
+
+This is a feel question, so it likely wants a devtools slider before it wants a decision. The
+graphics inspector already hosts comparable tuning (`fctClusterConfig`, `hitFeedbackConfig`,
+reactive tuning).
+
+---
+
+### Q13 — Is `PLAY_VFX` an action, or a field on `TriggerNode`?
+
+[`04`](04-upgrade-design.md) §9 Part B proposes an action. The alternative is a `vfx` property on
+`TriggerNode` itself, so every node can carry a visual without occupying an action slot.
+
+Action favours: reuses the whole existing pipeline (schema branch, sanitizer, validator, budget
+scorer, `dispatchAction`), can be targeted, can appear in `ifFalseActions`, and the Evolution
+Tree can add one as a mutation like any other action.
+
+`TriggerNode` field favours: visuals are not gameplay, so they arguably should not consume
+action ordering or be scored by `scoreAbilitySchema` at all — an LLM adding flashier visuals
+should not raise a spell's cooldown.
+
+That last point is the strongest argument and cuts against the action form. A hybrid is
+possible: `PLAY_VFX` as an action with a zero budget cost. Worth settling before implementing,
+because it determines whether visual upgrades in the Evolution Tree are free.
+
+---
+
 ## Rejected options
 
 Recorded with reasons. Re-propose only with an argument the reason does not address.
@@ -196,6 +297,47 @@ existence.
 `repairTrajectoryConfig` already has the right pattern in its `isSkyDrop` branch — infer
 ballistic intent from the presence of `lobApex` or `bounces`, so repair *recovers* intent
 rather than merely not destroying it ([`02-pipeline-audit.md`](02-pipeline-audit.md) RC-1).
+
+### Leaving VFX calibration in authored `vfx` parameters
+
+**Rejected.** `vfx.shakeIntensity` and `vfx.impactScale` are currently absolute values the LLM
+must pick with no sense of a spell's power relative to others, which it does unreliably — and
+the same values then apply to a base spell and its tier-6 evolution identically.
+
+The engine already quantifies spell power in `scoreAbilitySchema` and already derives runtime
+impact magnitude (instability delta, projectile speed, closing speed). Deriving intensity and
+reducing the authored params to *multipliers* on that baseline
+([`04-upgrade-design.md`](04-upgrade-design.md) §9 Part C) keeps authored values useful for
+style while removing the LLM's responsibility for calibration.
+
+### Widening the `impactVfx` enum instead of addressing the primitives
+
+**Rejected**, for the same reason as the trajectory-enum rejection. Ten hardcoded recipes are
+compositions of four parameterized primitives; adding an eleventh recipe adds one look, whereas
+exposing the primitives adds a space. It also does not solve the per-moment problem — a spell
+would still have one `impactVfx` for hit, expiry, bounce, and apex
+([`01-engine-capabilities.md`](01-engine-capabilities.md) §"Visual vocabulary").
+
+### A dedicated `MELEE_SWING` input profile mode
+
+**Rejected.** A fifth `InputProfileMode` would make windup, active window, and recovery
+available *only* to melee, which is arbitrary — a telegraphed sniper shot or a ranged spell with
+punishing recovery are both good designs that the mode would exclude. It also hardcodes "melee"
+as a category the LLM and the Evolution Tree must be taught separately.
+
+Timing phases as optional properties on the existing `InputProfile`
+([`04-upgrade-design.md`](04-upgrade-design.md) §8 Part C) give melee everything it needs while
+composing with all four current modes and remaining available to ranged spells. Same reasoning
+as the trajectory-enum rejection above.
+
+### A dedicated melee subsystem (weapons, reach, attack states)
+
+**Rejected.** Melee is expressible as three orthogonal parameters the rest of the engine already
+wants — region shape (`arcDeg`), timing (phases), and a contact trigger (`ON_RAM`) — and
+critically, a full body-collision combat system with knockback, recoil, and instability already
+exists in `PhysicsWorld.applyRammingImpulse`. It simply isn't reachable from the schema.
+Building a parallel weapon subsystem would duplicate working physics and create a second
+combat vocabulary for the Evolution Tree to mutate.
 
 ### Building the Evolution Tree before fixing repair
 

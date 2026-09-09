@@ -1,4 +1,11 @@
 import {
+  clampEntityShadowConfig,
+  DEFAULT_ENTITY_SHADOW_CONFIG,
+  entityShadowConfig,
+  saveEntityShadowConfig,
+  type EntityShadowConfig,
+} from '../render/entityShadowConfig';
+import {
   DEFAULT_FCT_CLUSTER_CONFIG,
   fctClusterConfig,
   saveFctClusterConfig,
@@ -33,6 +40,7 @@ export interface GraphicsProfile {
   graphics: GraphicsSettings;
   hitFeedback: HitFeedbackConfig;
   fctCluster: FctClusterConfig;
+  entityShadow: EntityShadowConfig;
   iconStyle: IconRenderStyle;
 }
 
@@ -52,6 +60,13 @@ function parseFctCluster(raw: unknown): FctClusterConfig {
   return { ...DEFAULT_FCT_CLUSTER_CONFIG, ...(raw as Partial<FctClusterConfig>) };
 }
 
+function parseEntityShadow(raw: unknown): EntityShadowConfig {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_ENTITY_SHADOW_CONFIG };
+  }
+  return clampEntityShadowConfig(raw as Partial<EntityShadowConfig>);
+}
+
 function parseIconStyle(raw: unknown): IconRenderStyle {
   if (typeof raw === 'string' && VALID_ICON_STYLES.has(raw as IconRenderStyle)) {
     return raw as IconRenderStyle;
@@ -67,6 +82,7 @@ export function exportGraphicsProfile(): GraphicsProfile {
     graphics: { ...getGraphicsSettings() },
     hitFeedback: { ...hitFeedbackConfig },
     fctCluster: { ...fctClusterConfig },
+    entityShadow: { ...entityShadowConfig },
     iconStyle: getIconRenderStyle(),
   };
 }
@@ -89,6 +105,7 @@ export function parseGraphicsProfile(raw: unknown): GraphicsProfile {
     graphics: parseGraphicsSettings(envelope.graphics),
     hitFeedback: parseHitFeedback(envelope.hitFeedback),
     fctCluster: parseFctCluster(envelope.fctCluster),
+    entityShadow: parseEntityShadow(envelope.entityShadow),
     iconStyle: parseIconStyle(envelope.iconStyle),
   };
 }
@@ -100,6 +117,8 @@ export function importGraphicsProfile(raw: unknown): GraphicsProfile {
   saveHitFeedbackConfig();
   Object.assign(fctClusterConfig, profile.fctCluster);
   saveFctClusterConfig();
+  Object.assign(entityShadowConfig, profile.entityShadow);
+  saveEntityShadowConfig();
   setIconRenderStyle(profile.iconStyle);
   return profile;
 }

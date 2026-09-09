@@ -2,6 +2,7 @@ import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
 import { LAVA_AIRBORNE_IMMUNITY_Z, Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
+import { entityShadowConfig } from '../../render/entityShadowConfig';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import type { ParticleSystem } from '../ParticleSystem';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
@@ -22,7 +23,8 @@ export function drawEntityContactShadow(
 ): void {
   const z = Math.max(0, elevationPx);
   const shadowScale = Math.max(0.25, 1 - z / 350);
-  const shadowAlpha = Math.max(0.08, 0.55 * (1 - z / 450));
+  const { maxAlpha, minAlpha, fadeDistance } = entityShadowConfig;
+  const shadowAlpha = Math.max(minAlpha, maxAlpha * (1 - z / fadeDistance));
   const shadowRadius = radius * 1.25 * shadowScale;
   const shadowY = y + radius * 0.25;
 
@@ -252,12 +254,12 @@ function drawCombatantBody(
 
   if (aimColor && 'facingAngle' in entity) {
     const facing = (entity as { facingAngle: number }).facingAngle;
-    const aimEnd = physicsPos.add(Vector2D.fromAngle(facing, radius + 14));
+    const elevatedAimEnd = drawPos.add(Vector2D.fromAngle(facing, radius + 14));
     ctx.strokeStyle = aimColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(physicsPos.x, physicsPos.y);
-    ctx.lineTo(aimEnd.x, aimEnd.y);
+    ctx.moveTo(drawPos.x, drawPos.y);
+    ctx.lineTo(elevatedAimEnd.x, elevatedAimEnd.y);
     ctx.stroke();
   }
 
