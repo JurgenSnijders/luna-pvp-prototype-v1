@@ -28,7 +28,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v19';
+export const STYLE_ID = 'luna-workshop-styles-v20';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -104,6 +104,8 @@ export function injectStyles(): void {
       padding: 16px;
       box-sizing: border-box;
       overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
     }
 
     .inspector-empty {
@@ -122,8 +124,10 @@ export function injectStyles(): void {
     .inspector-panel {
       display: flex;
       flex-direction: column;
-      height: 100%;
-      gap: 12px;
+      height: auto;
+      min-height: min-content;
+      flex: 1 0 auto;
+      gap: 10px;
     }
 
     .inspector-hero-wrap {
@@ -133,12 +137,21 @@ export function injectStyles(): void {
       align-items: center;
       width: 100%;
       box-sizing: border-box;
-      padding: 14px 6px 12px 6px;
+      padding: 12px 6px 10px 6px;
       background: radial-gradient(ellipse at center, rgba(16, 24, 44, 0.95) 0%, rgba(4, 6, 12, 0.98) 100%);
       border: 1.5px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       border-radius: 4px;
       box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.85);
       overflow: hidden;
+      flex-shrink: 0;
+      min-height: 144px;
+    }
+
+    .inspector-header,
+    .inspector-telemetry-grid,
+    .inspector-profile-card,
+    .inspector-actions-section {
+      flex-shrink: 0;
     }
 
     .inspector-hero-wrap canvas {
@@ -496,8 +509,8 @@ export function injectStyles(): void {
       font-size: 11px;
       line-height: 1.4;
       color: var(--retro-text-secondary, #9ba8c7);
-      flex: 0 1 auto;
-      overflow-y: auto;
+      flex: 0 0 auto;
+      overflow-y: visible;
     }
 
     .inspector-actions-section {
@@ -1091,7 +1104,7 @@ export function injectStyles(): void {
       grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
       gap: 10px;
       padding: 8px 4px 16px 4px;
-      overflow-y: auto;
+      overflow-y: visible;
     }
 
     .spell-tile {
@@ -1322,7 +1335,7 @@ export function injectStyles(): void {
       background: rgba(255, 68, 68, 0.2);
     }
 
-    @media (max-width: 1100px), (max-height: 720px) {
+    @media (max-width: 960px) {
       .workspace-split {
         flex-direction: column;
       }
@@ -1336,9 +1349,35 @@ export function injectStyles(): void {
       }
     }
 
-    @media (max-width: 800px), (max-height: 600px) {
+    @media (max-width: 800px) {
       .forge-cards {
         grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-height: 760px) {
+      .workshop-panel {
+        padding: 10px 14px 12px !important;
+      }
+      .workshop-header {
+        margin-bottom: 6px !important;
+      }
+      .workshop-container {
+        gap: 8px;
+      }
+      .workspace-inspector-pane {
+        flex: 0 0 290px;
+        padding: 12px;
+      }
+      .inspector-panel {
+        gap: 8px;
+      }
+      .bottom-loadout-bay {
+        padding: 4px 8px;
+      }
+      .bottom-slot {
+        width: 56px;
+        height: 56px;
       }
     }
 
