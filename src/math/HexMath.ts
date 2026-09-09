@@ -2,11 +2,13 @@ import { Vector2D } from './Vector2D';
 
 const SQRT3 = Math.sqrt(3);
 const HALF_SQRT3 = SQRT3 / 2;
-const INNER_HALF_WIDTH = HALF_SQRT3;
 
 /**
- * Flat-top regular hexagon with circumradius R (center to vertex).
- * Containment uses quadrant-1 symmetry after mirroring into the first quadrant.
+ * Flat-top regular hexagon with circumradius R (center to vertex), matching the
+ * vertices produced by `getHexVertices`: x spans ±R, y spans ±R*sqrt(3)/2.
+ * Containment uses quadrant-1 symmetry after mirroring into the first quadrant:
+ * the apothem bounds the flat top/bottom edges, the half-plane test bounds the
+ * four slanted edges.
  */
 export function isInsideHex(
   point: Vector2D,
@@ -15,9 +17,8 @@ export function isInsideHex(
 ): boolean {
   const xp = Math.abs(point.x - center.x);
   const yp = Math.abs(point.y - center.y);
-  const maxX = radius * INNER_HALF_WIDTH;
-  const maxY = radius * INNER_HALF_WIDTH;
-  return xp <= maxX && HALF_SQRT3 * xp + 0.5 * yp <= maxY;
+  const apothem = radius * HALF_SQRT3;
+  return yp <= apothem && HALF_SQRT3 * xp + 0.5 * yp <= apothem;
 }
 
 /** Six outer vertices of a flat-top hexagon, starting at the rightmost point. */
