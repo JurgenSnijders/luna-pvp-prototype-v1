@@ -4,7 +4,7 @@ import type { Camera2D, StreakBody } from '../camera/Camera2D';
 
 import type { ParticleSystem } from './ParticleSystem';
 
-import { drawHexPlatform } from './canvas/arena';
+import { drawHexPlatform, updateAndDrawDebris } from './canvas/arena';
 
 import { drawLavaSeaFallback } from './canvas/background';
 
@@ -34,7 +34,7 @@ import {
 
 import { AimingIndicatorRenderer } from './canvas/AimingIndicator';
 
-import { lerpPos } from './canvas/helpers';
+import { lerpPos, lerpZ } from './canvas/helpers';
 
 import type { CanvasRenderCtx } from './canvas/renderCtx';
 
@@ -65,8 +65,6 @@ import { flashArenaCrosshair } from '../ui/palette';
 
 
 export type { DebugOptions } from './canvas/debug';
-
-
 
 export class CanvasRenderer {
 
@@ -206,7 +204,7 @@ export class CanvasRenderer {
 
     world: PhysicsWorld,
 
-    _particles: ParticleSystem,
+    particles: ParticleSystem,
 
     alpha: number,
 
@@ -295,13 +293,15 @@ export class CanvasRenderer {
 
     decalManager.render(ctx, performance.now());
 
+    updateAndDrawDebris(ctx);
+
     drawTerrainPatches(ctx, world);
 
     drawZones(ctx, state, world);
 
     drawObstacles(ctx, state, world);
 
-    drawCombatants(ctx, state, world, alpha);
+    drawCombatants(ctx, state, world, alpha, particles);
 
     drawSummons(ctx, world, alpha);
 
@@ -312,11 +312,9 @@ export class CanvasRenderer {
     const aimingState = aimingPlayer?.activeAimingState ?? null;
 
     if (aimingState && aimingPlayer) {
-
-      const origin = lerpPos(aimingPlayer, alpha);
-
-      this.aimingRenderer.render(ctx, aimingState, origin);
-
+      const planarOrigin = lerpPos(aimingPlayer, alpha);
+      const casterZ = lerpZ(aimingPlayer, alpha);
+      this.aimingRenderer.render(ctx, aimingState, planarOrigin, casterZ);
     }
 
     drawOverheadHUD(ctx, world, alpha);

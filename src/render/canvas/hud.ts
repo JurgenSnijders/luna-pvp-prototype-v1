@@ -1,9 +1,10 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import type { ActiveStatusTimer } from '../../entities/Entity';
 import { Entity } from '../../entities/Entity';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
-import { lerpPos } from './helpers';
+import { lerpPos, lerpZ } from './helpers';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { canvasFont } from '../../ui/tokens';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
@@ -82,10 +83,17 @@ export function drawOverheadHUD(
   const barWidth = 40;
   const fillMaxWidth = barWidth - 2;
 
+  const nowMs = performance.now();
+
   for (const entity of entities) {
-    const pos = lerpPos(entity, alpha);
-    const barX = pos.x - barWidth / 2;
-    const barY = pos.y - entity.effectiveRadius - OVERHEAD_BAR_TOP_OFFSET;
+    const physicsPos = lerpPos(entity, alpha);
+    const currentZ = lerpZ(entity, alpha);
+    const hasGravity = entity.activeStatuses.has('GRAVITY');
+    const gravityBob =
+      hasGravity && currentZ <= Z_EPSILON ? Math.sin(nowMs * 0.006) * 3 : 0;
+    const visualY = physicsPos.y - currentZ * Z_TO_SCREEN + gravityBob;
+    const barX = physicsPos.x - barWidth / 2;
+    const barY = visualY - entity.effectiveRadius - OVERHEAD_BAR_TOP_OFFSET;
 
     ctx.beginPath();
     ctx.roundRect(barX, barY, barWidth, OVERHEAD_BAR_HEIGHT, 2);
@@ -152,16 +160,16 @@ export function drawOverheadHUD(
     ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
     ctx.fillText(
       `${Math.round(pct)}`,
-      pos.x,
-      pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET,
+      physicsPos.x,
+      visualY - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET,
     );
     ctx.globalAlpha = 1;
 
     const activeStatuses = entity.getActiveStatusTimers();
     if (activeStatuses.length > 0) {
       const statusStartY =
-        pos.y - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET + OVERHEAD_STATUS_BAR_GAP;
-      const statusStartX = pos.x - OVERHEAD_STATUS_BAR_TOTAL_WIDTH / 2;
+        visualY - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET + OVERHEAD_STATUS_BAR_GAP;
+      const statusStartX = physicsPos.x - OVERHEAD_STATUS_BAR_TOTAL_WIDTH / 2;
       drawStatusDurationBars(ctx, activeStatuses, statusStartX, statusStartY);
     }
   }

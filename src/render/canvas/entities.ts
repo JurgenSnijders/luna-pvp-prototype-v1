@@ -1,8 +1,10 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
-import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
+import { LAVA_AIRBORNE_IMMUNITY_Z, Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
+import { entityShadowConfig } from '../../render/entityShadowConfig';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
+import type { ParticleSystem } from '../ParticleSystem';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getActiveColors } from '../../ui/tokens';
 import { lerpPos, lerpZ } from './helpers';
@@ -10,30 +12,40 @@ import type { CanvasRenderCtx } from './renderCtx';
 import { drawStatusAuras } from './statusAuras';
 
 const combatantSortScratch: Entity[] = [];
+let lavaSizzleFrame = 0;
 
 export function drawEntityContactShadow(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
-  elevation = 0,
+  elevationPx = 0,
 ): void {
-  const shadowRadius = radius * 1.25 * (1 - elevation * 0.2);
-  const shadowY = y + radius * 0.25 + elevation * 4;
-  const grad = ctx.createRadialGradient(
-    x,
-    shadowY,
-    shadowRadius * 0.2,
-    x,
-    shadowY,
-    shadowRadius,
-  );
-  grad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
-  grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.25)');
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  const z = Math.max(0, elevationPx);
+  const shadowScale = Math.max(0.25, 1 - z / 350);
+  const { maxAlpha, minAlpha, fadeDistance } = entityShadowConfig;
+  const shadowAlpha = Math.max(minAlpha, maxAlpha * (1 - z / fadeDistance));
+  const shadowRadius = radius * 1.25 * shadowScale;
+  const shadowY = y + radius * 0.25;
 
   ctx.save();
-  ctx.fillStyle = grad;
+  ctx.globalAlpha *= shadowAlpha;
+  if (useCheapCanvasEffects()) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha * 0.85})`;
+  } else {
+    const grad = ctx.createRadialGradient(
+      x,
+      shadowY,
+      shadowRadius * 0.2,
+      x,
+      shadowY,
+      shadowRadius,
+    );
+    grad.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`);
+    grad.addColorStop(0.6, `rgba(0, 0, 0, ${shadowAlpha * 0.45})`);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+  }
   ctx.beginPath();
   ctx.ellipse(x, shadowY, shadowRadius, shadowRadius * 0.55, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -63,7 +75,9 @@ export function drawCombatants(
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
+  particles?: ParticleSystem,
 ): void {
+  lavaSizzleFrame++;
   combatantSortScratch.length = 0;
 
   for (const player of world.players) {
@@ -92,7 +106,7 @@ export function drawCombatants(
     const isBot = entity.tags.has('bot');
     const baseColor = isDummy || isBot ? colors.botOrange : colors.playerCyan;
     const aimColor = isDummy ? undefined : isBot ? colors.botOrangeAim : colors.playerCyanAim;
-    drawCombatantBody(ctx, state, world, entity, pos, alpha, baseColor, aimColor);
+    drawCombatantBody(ctx, state, world, entity, pos, alpha, baseColor, aimColor, particles);
   }
 }
 
@@ -105,6 +119,7 @@ function drawCombatantBody(
   alpha: number,
   fillColor: string,
   aimColor?: string,
+  particles?: ParticleSystem,
 ): void {
   const prevAlpha = ctx.globalAlpha;
   if (entity.isStealthed()) {
@@ -122,7 +137,7 @@ function drawCombatantBody(
     physicsPos.x,
     physicsPos.y - currentZ * Z_TO_SCREEN + gravityBob,
   );
-  const elevation = Math.min(1, currentZ / 180);
+  const elevation = currentZ;
 
   const radius = entity.effectiveRadius;
   const shadowAlpha = entity.isStealthed() ? ctx.globalAlpha * 0.35 : ctx.globalAlpha;
@@ -130,6 +145,32 @@ function drawCombatantBody(
   ctx.globalAlpha = shadowAlpha;
   drawEntityContactShadow(ctx, physicsPos.x, physicsPos.y, radius, elevation);
   ctx.restore();
+
+  if (entity.inLava && currentZ <= LAVA_AIRBORNE_IMMUNITY_Z) {
+    ctx.save();
+    if (!useCheapCanvasEffects()) {
+      ctx.shadowColor = '#ff6600';
+      ctx.shadowBlur = 10;
+    }
+    ctx.strokeStyle = 'rgba(255, 68, 0, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(
+      physicsPos.x,
+      physicsPos.y,
+      radius * 1.25,
+      radius * 0.65,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.stroke();
+    ctx.restore();
+
+    if (lavaSizzleFrame % 4 === 0) {
+      particles?.emitLavaSizzle(physicsPos);
+    }
+  }
 
   drawStatusAuras(ctx, entity, visualPos, nowMs, physicsPos, world);
 
@@ -213,12 +254,12 @@ function drawCombatantBody(
 
   if (aimColor && 'facingAngle' in entity) {
     const facing = (entity as { facingAngle: number }).facingAngle;
-    const aimEnd = physicsPos.add(Vector2D.fromAngle(facing, radius + 14));
+    const elevatedAimEnd = drawPos.add(Vector2D.fromAngle(facing, radius + 14));
     ctx.strokeStyle = aimColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(physicsPos.x, physicsPos.y);
-    ctx.lineTo(aimEnd.x, aimEnd.y);
+    ctx.moveTo(drawPos.x, drawPos.y);
+    ctx.lineTo(elevatedAimEnd.x, elevatedAimEnd.y);
     ctx.stroke();
   }
 

@@ -1,5 +1,6 @@
 import type { Camera2D } from '../../camera/Camera2D';
 import { getEffectiveDprCap, getEffectiveTier, getGraphicsSettings } from '../../devtools/graphicsSettings';
+import type { Vector2D } from '../../math/Vector2D';
 import {
   compileShader,
   createFullscreenQuad,
@@ -19,14 +20,17 @@ export class BackgroundRenderer {
   private gl: WebGL2RenderingContext | null = null;
   private program: WebGLProgram | null = null;
   private vao: WebGLVertexArrayObject | null = null;
+  private cssWidth = 1;
+  private cssHeight = 1;
   private locResolution: WebGLUniformLocation | null = null;
   private locCameraPos: WebGLUniformLocation | null = null;
   private locCameraZoom: WebGLUniformLocation | null = null;
   private locTime: WebGLUniformLocation | null = null;
   private locHexRadius: WebGLUniformLocation | null = null;
+  private locInitialRadius: WebGLUniformLocation | null = null;
+  private locHexCenter: WebGLUniformLocation | null = null;
   private locTier: WebGLUniformLocation | null = null;
   private locParallaxVoid: WebGLUniformLocation | null = null;
-  private locParallaxLava: WebGLUniformLocation | null = null;
   private locLavaScroll: WebGLUniformLocation | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -54,9 +58,10 @@ export class BackgroundRenderer {
       this.locCameraZoom = gl.getUniformLocation(this.program, 'u_cameraZoom');
       this.locTime = gl.getUniformLocation(this.program, 'u_time');
       this.locHexRadius = gl.getUniformLocation(this.program, 'u_hexRadius');
+      this.locInitialRadius = gl.getUniformLocation(this.program, 'u_initialRadius');
+      this.locHexCenter = gl.getUniformLocation(this.program, 'u_hexCenter');
       this.locTier = gl.getUniformLocation(this.program, 'u_tier');
       this.locParallaxVoid = gl.getUniformLocation(this.program, 'u_parallaxVoid');
-      this.locParallaxLava = gl.getUniformLocation(this.program, 'u_parallaxLava');
       this.locLavaScroll = gl.getUniformLocation(this.program, 'u_lavaScroll');
     } catch (err) {
       console.warn('[BackgroundRenderer] init failed:', err);
@@ -79,6 +84,8 @@ export class BackgroundRenderer {
     const dpr = getEffectiveDprCap(cssWidth, cssHeight);
     const pixelW = Math.max(1, Math.floor(cssWidth * dpr));
     const pixelH = Math.max(1, Math.floor(cssHeight * dpr));
+    this.cssWidth = cssWidth;
+    this.cssHeight = cssHeight;
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
     if (this.canvas.width !== pixelW || this.canvas.height !== pixelH) {
@@ -88,7 +95,14 @@ export class BackgroundRenderer {
     gl.viewport(0, 0, pixelW, pixelH);
   }
 
-  render(camera: Camera2D, hexRadius: number, nowMs: number): void {
+  render(
+    camera: Camera2D,
+    hexCenter: Vector2D,
+    hexRadius: number,
+    initialRadius: number,
+    shake: { x: number; y: number },
+    nowMs: number,
+  ): void {
     const gl = this.gl;
     const program = this.program;
     if (!gl || !program || !this.vao) return;
@@ -98,16 +112,21 @@ export class BackgroundRenderer {
 
     const settings = getGraphicsSettings();
 
+    const zoom = Math.max(0.001, camera.zoom);
+    const camX = camera.pos.x - shake.x / zoom;
+    const camY = camera.pos.y - shake.y / zoom;
+
     gl.useProgram(program);
     gl.bindVertexArray(this.vao);
-    gl.uniform2f(this.locResolution!, this.canvas.width, this.canvas.height);
-    gl.uniform2f(this.locCameraPos!, camera.pos.x, camera.pos.y);
+    gl.uniform2f(this.locResolution!, this.cssWidth, this.cssHeight);
+    gl.uniform2f(this.locCameraPos!, camX, camY);
     gl.uniform1f(this.locCameraZoom!, camera.zoom);
     gl.uniform1f(this.locTime!, nowMs * 0.001);
     gl.uniform1f(this.locHexRadius!, hexRadius);
+    gl.uniform1f(this.locInitialRadius!, initialRadius);
+    gl.uniform2f(this.locHexCenter!, hexCenter.x, hexCenter.y);
     gl.uniform1i(this.locTier!, tierLod);
     gl.uniform1f(this.locParallaxVoid!, settings.bgParallaxVoid);
-    gl.uniform1f(this.locParallaxLava!, settings.bgParallaxLava);
     gl.uniform1f(this.locLavaScroll!, settings.bgLavaScrollSpeed);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);

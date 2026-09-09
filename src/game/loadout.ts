@@ -1,6 +1,7 @@
 import { compileAbilityPayload } from '../ai/Synthesizer';
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../ai/BudgetEngine';
 import { PRESETS } from '../devtools/Presets';
+import { DEFAULT_STARTER_PRESET_NAMES } from '../devtools/presetPacks/core';
 import { Player } from '../entities/Player';
 import { SpellInventoryManager } from './SpellInventory';
 import {
@@ -22,11 +23,9 @@ const compileGen: number[] = [0, 0, 0, 0, 0];
 const COMPILE_READY_DELAY_MS = 500;
 
 export function assignDefaultLoadout(target: Player): void {
-  target.setAbility(0, structuredClone(PRESETS['Kinetic Railgun']));
-  target.setAbility(1, structuredClone(PRESETS['Graviton Boomerang']));
-  target.setAbility(2, structuredClone(PRESETS['Cryo Ice Trail']));
-  target.setAbility(3, structuredClone(PRESETS['Singularity Scatter']));
-  target.setAbility(4, structuredClone(PRESETS['Phase Nova']));
+  DEFAULT_STARTER_PRESET_NAMES.forEach((name, i) => {
+    target.setAbility(i, structuredClone(PRESETS[name]));
+  });
 }
 
 export function storeForgedSpell(app: GameApp, ability: AbilitySchema): AbilitySchema {

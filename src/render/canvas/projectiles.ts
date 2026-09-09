@@ -10,6 +10,48 @@ import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 const scopeSpriteCache = new SpriteCache();
 
+function isSkyDropProjectile(
+  spawnAltitude: number | undefined,
+  vz: number,
+  zNow: number,
+): boolean {
+  return (spawnAltitude ?? 0) > 0 || (vz < 0 && zNow > 80);
+}
+
+function drawProjectileGroundShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  zNow: number,
+  skyDrop: boolean,
+): void {
+  let shadowRx: number;
+  let shadowRy: number;
+  let alpha: number;
+
+  if (skyDrop) {
+    const t = 1 - Math.min(1, zNow / 600);
+    shadowRx = Math.max(2, radius * (1.5 - t * 0.75));
+    shadowRy = Math.max(1, shadowRx * 0.5);
+    alpha = 0.15 + t * 0.5;
+  } else {
+    const maxShadowZ = 180;
+    const t = Math.min(1, zNow / maxShadowZ);
+    shadowRx = Math.max(2, radius * (1 - t * 0.4));
+    shadowRy = Math.max(1, radius * 0.5 * (1 - t * 0.4));
+    alpha = 0.35 * (1 - t * 0.7);
+  }
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.ellipse(x, y, shadowRx, shadowRy, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#000000';
+  ctx.fill();
+  ctx.restore();
+}
+
 export function drawProjectiles(
   ctx: CanvasRenderingContext2D,
   state: CanvasRenderCtx,
@@ -22,23 +64,12 @@ export function drawProjectiles(
     const pos = lerpPos(proj, alpha);
     const zNow = lerpZ(proj, alpha);
     if (zNow > Z_EPSILON) {
-      const maxShadowZ = 180;
-      const t = Math.min(1, zNow / maxShadowZ);
-      ctx.save();
-      ctx.globalAlpha = 0.35 * (1 - t * 0.7);
-      ctx.beginPath();
-      ctx.ellipse(
-        pos.x,
-        pos.y,
-        Math.max(2, proj.radius * (1 - t * 0.4)),
-        Math.max(1, proj.radius * 0.5 * (1 - t * 0.4)),
-        0,
-        0,
-        Math.PI * 2,
+      const skyDrop = isSkyDropProjectile(
+        proj.config.spawnAltitude,
+        proj.vz,
+        zNow,
       );
-      ctx.fillStyle = '#000000';
-      ctx.fill();
-      ctx.restore();
+      drawProjectileGroundShadow(ctx, pos.x, pos.y, proj.radius, zNow, skyDrop);
       pos.y -= zNow * Z_TO_SCREEN;
     }
     const color = proj.visuals?.color ?? '#00e5ff';
@@ -298,26 +329,12 @@ export function drawScopeProjectile(
   color: string,
   timeMs: number,
   z = 0,
+  options: { spawnAltitude?: number; vz?: number } = {},
 ): void {
   const groundY = y;
   if (z > Z_EPSILON) {
-    const maxShadowZ = 180;
-    const t = Math.min(1, z / maxShadowZ);
-    ctx.save();
-    ctx.globalAlpha = 0.35 * (1 - t * 0.7);
-    ctx.beginPath();
-    ctx.ellipse(
-      x,
-      groundY,
-      Math.max(2, radius * (1 - t * 0.4)),
-      Math.max(1, radius * 0.5 * (1 - t * 0.4)),
-      0,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fillStyle = '#000000';
-    ctx.fill();
-    ctx.restore();
+    const skyDrop = isSkyDropProjectile(options.spawnAltitude, options.vz ?? 0, z);
+    drawProjectileGroundShadow(ctx, x, groundY, radius, z, skyDrop);
     y -= z * Z_TO_SCREEN;
   }
 

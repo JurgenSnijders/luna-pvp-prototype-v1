@@ -1,13 +1,27 @@
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { PRESETS } from '../src/devtools/Presets';
+import {
+  getEffectiveFeatureFlags,
+  getGraphicsSettings,
+  getTierLimits,
+  seedEffectiveTierForTests,
+} from '../src/devtools/graphicsSettings';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { HAZARD_CLEARANCE_Z } from '../src/engine/verticalConstants';
+import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
+import { Obstacle } from '../src/entities/Obstacle';
 import { Player } from '../src/entities/Player';
+import { Projectile } from '../src/entities/Projectile';
 import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
-import type { AbilitySchema, VisualDescriptor } from '../src/types/schema';
+import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
+import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
+import { BACKGROUND_FRAGMENT_SHADER } from '../src/render/gl/shaders';
+import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
+import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -125,7 +139,7 @@ export function runHeadlessSimulation(
     world.updateSpatialZones(dt);
     applySpatialFields(world, dt);
     world.step(dt);
-    interpreter.processLifecycleEvents(world, dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
 
     const dist = caster.pos.dist(target.pos);
     minDistance = Math.min(minDistance, dist);
@@ -610,6 +624,637 @@ function assertSkyDropBalancePreservesZeroSpeed(): { pass: boolean; reason: stri
   return { pass: true, reason: `sky-drop speed preserved at ${schema.trajectory?.speed}` };
 }
 
+function assertObstacleVerticalClearance(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  world.addObstacle(
+    new Obstacle(new Vector2D(50, 0), {
+      shape: 'CIRCLE',
+      width: 40,
+      height: 40,
+      durationMs: 5000,
+      clearanceHeight: 40,
+    }),
+  );
+
+  const triggerMap = new Map<string, TriggerNode[]>();
+  const projectile = new Projectile(
+    new Vector2D(25, 0),
+    { type: 'LINEAR', speed: 800 },
+    'caster_stub',
+    0,
+    triggerMap,
+  );
+  projectile.z = 60;
+  projectile.clearanceHeight = 0;
+  projectile.gravityScale = 0;
+  projectile.vel = new Vector2D(800, 0);
+  world.addProjectile(projectile);
+
+  world.step(1 / 60);
+
+  if (projectile.isDead && projectile.expiryReason === 'wall') {
+    return { pass: false, reason: 'projectile died on low wall despite flying above clearance' };
+  }
+
+  return {
+    pass: true,
+    reason: `z=${projectile.z.toFixed(0)} cleared wall (expiry=${projectile.expiryReason ?? 'none'})`,
+  };
+}
+
+function assertGroundBounceDamping(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  const triggerMap = new Map<string, TriggerNode[]>();
+  const projectile = new Projectile(
+    Vector2D.zero(),
+    { type: 'LINEAR', speed: 0 },
+    'caster_stub',
+    0,
+    triggerMap,
+  );
+  projectile.z = 100;
+  projectile.vz = 0;
+  projectile.gravityScale = 1;
+  projectile.bouncesRemaining = 2;
+  projectile.groundRestitution = 0.6;
+  projectile.groundFriction = 0.25;
+  projectile.vel = Vector2D.zero();
+  world.addProjectile(projectile);
+
+  let impactSpeed = 0;
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    if (projectile.bounceCount === 1) {
+      impactSpeed = Math.sqrt(2 * 1400 * 100);
+      break;
+    }
+  }
+
+  if (projectile.bounceCount !== 1) {
+    return { pass: false, reason: 'projectile never bounced' };
+  }
+  if (projectile.bouncesRemaining !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 bounce remaining, got ${projectile.bouncesRemaining}`,
+    };
+  }
+  if (projectile.vz <= 0) {
+    return { pass: false, reason: `expected reflected vz>0, got ${projectile.vz.toFixed(1)}` };
+  }
+  if (projectile.vz >= impactSpeed) {
+    return {
+      pass: false,
+      reason: `expected damped bounce (${projectile.vz.toFixed(0)} < ${impactSpeed.toFixed(0)})`,
+    };
+  }
+  if (world.pendingGroundImpacts.length > 0) {
+    return { pass: false, reason: 'mid-bounce impact queued ground slam' };
+  }
+
+  return {
+    pass: true,
+    reason: `bounce vz=${projectile.vz.toFixed(0)} < impact≈${impactSpeed.toFixed(0)}, remaining=${projectile.bouncesRemaining}`,
+  };
+}
+
+function assertGroundSlamAreaTargeting(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  const caster = new Player(new Vector2D(0, 0));
+  const dummy = new Dummy(new Vector2D(30, 0));
+  world.addPlayer(caster);
+  world.addDummy(dummy);
+
+  const triggerMap = new Map<string, TriggerNode[]>([
+    [
+      'ON_GROUND_SLAM',
+      [
+        {
+          trigger: 'ON_GROUND_SLAM',
+          actions: [
+            {
+              type: 'APPLY_STATUS',
+              archetype: 'FIRE',
+              durationMs: 3000,
+              target: 'TARGET',
+            },
+          ],
+        },
+      ],
+    ],
+  ]);
+
+  const projectile = new Projectile(
+    Vector2D.zero(),
+    { type: 'LINEAR', speed: 0 },
+    caster.id,
+    0,
+    triggerMap,
+    1,
+    null,
+    'slam_test',
+    'FIRE',
+  );
+  projectile.isDead = true;
+  projectile.expiryReason = 'ground';
+  world.addProjectile(projectile);
+
+  world.pendingGroundImpacts.push({
+    entityId: projectile.id,
+    pos: Vector2D.zero(),
+    vz: 500,
+    isProjectile: true,
+    archetype: 'FIRE',
+  });
+
+  const interpreter = new Interpreter();
+  interpreter.processLifecycleEvents(world, 1 / 60, HEADLESS_LIFECYCLE_FX);
+
+  if (!dummy.activeStatuses.has('FIRE')) {
+    return { pass: false, reason: 'dummy did not receive FIRE status from slam radius' };
+  }
+  if (caster.activeStatuses.has('FIRE')) {
+    return { pass: false, reason: 'caster incorrectly received FIRE status from slam' };
+  }
+
+  return { pass: true, reason: 'FIRE applied to dummy only within slam radius' };
+}
+
+const FROST_FIELD_CONFIG = {
+  fieldType: 'FRICTION_OVERRIDE' as const,
+  radius: 60,
+  strength: 0,
+  durationMs: 5000,
+  frictionValue: 0.02,
+  zBase: 0,
+  zHeight: 80,
+};
+
+function assertFieldStatusApplicationAndAirborneClearance(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const stepMs = 400;
+
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  world.airborneCount = 1;
+
+  const caster = new Player(new Vector2D(0, 0));
+  const dummy = new Dummy(new Vector2D(0, 0));
+  world.addPlayer(caster);
+  world.addDummy(dummy);
+
+  const zone = new SpatialZone(Vector2D.zero(), FROST_FIELD_CONFIG, caster.id, 'FROST');
+  zone.affects = 'ENEMIES';
+  world.addZone(zone);
+
+  const stepField = (entity: typeof dummy, ms: number): void => {
+    const n = Math.ceil(ms / (dt * 1000));
+    for (let i = 0; i < n; i++) {
+      applyField(zone, entity, dt, world);
+    }
+  };
+
+  stepField(dummy, stepMs);
+  if (!dummy.activeStatuses.has('FROST')) {
+    return { pass: false, reason: 'grounded enemy at center did not receive FROST status' };
+  }
+  if (caster.activeStatuses.has('FROST')) {
+    return { pass: false, reason: 'caster incorrectly received FROST from ENEMIES zone' };
+  }
+
+  dummy.activeStatuses.clear();
+  dummy.z = HAZARD_CLEARANCE_Z + 48;
+  dummy.isGrounded = false;
+  stepField(dummy, stepMs);
+  if (dummy.activeStatuses.has('FROST')) {
+    return {
+      pass: false,
+      reason: `airborne dummy at z=${dummy.z} should not receive FROST (clearance=${HAZARD_CLEARANCE_Z})`,
+    };
+  }
+
+  dummy.activeStatuses.clear();
+  dummy.pos = new Vector2D(55, 0);
+  dummy.z = 0;
+  dummy.isGrounded = true;
+  stepField(dummy, stepMs);
+  if (dummy.activeStatuses.has('FROST')) {
+    return {
+      pass: false,
+      reason: 'dummy in outer rim deadband (falloff < 0.15) should not receive FROST',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: 'FROST applied to grounded center enemy; owner, airborne, and rim cases blocked',
+  };
+}
+
+function assertBallisticArcTrajectorySampling(): { pass: boolean; reason: string } {
+  const path = buildBallisticArcPath(
+    {
+      type: 'BALLISTIC_ARC',
+      speed: 320,
+      maxRange: 480,
+      lobApex: 150,
+    },
+    { x: 0, y: 0 },
+    0,
+    0,
+  );
+
+  if (path.points.length < 3) {
+    return { pass: false, reason: 'expected at least 3 arc samples' };
+  }
+
+  const hasAirborne = path.points.some((p) => (p.z ?? 0) > 0);
+  if (!hasAirborne) {
+    return { pass: false, reason: 'expected airborne z>0 samples along arc' };
+  }
+
+  if (path.apexIndex === undefined) {
+    return { pass: false, reason: 'missing apex index' };
+  }
+
+  let maxZ = -1;
+  let maxZIndex = 0;
+  for (let i = 0; i < path.points.length; i++) {
+    const z = path.points[i].z ?? 0;
+    if (z > maxZ) {
+      maxZ = z;
+      maxZIndex = i;
+    }
+  }
+  if (maxZIndex !== path.apexIndex) {
+    return {
+      pass: false,
+      reason: `apex index ${path.apexIndex} != max-z index ${maxZIndex}`,
+    };
+  }
+
+  const impact = path.points[path.impactIndex ?? path.points.length - 1];
+  if ((impact.z ?? 0) > 0.01) {
+    return { pass: false, reason: `terminal impact z=${impact.z?.toFixed(1)} expected ~0` };
+  }
+
+  if (!path.groundPoints || path.groundPoints.length !== path.points.length) {
+    return {
+      pass: false,
+      reason: `groundPoints length ${path.groundPoints?.length ?? 0} != points ${path.points.length}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `samples=${path.points.length} maxZ=${maxZ.toFixed(0)} apex@${path.apexIndex}`,
+  };
+}
+
+function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
+  const groundAbility: AbilitySchema = {
+    id: 'bot_ground_test',
+    name: 'Bot Ground Test',
+    targetingMode: 'GROUND_POINT',
+    maxTargetRange: 550,
+    cooldownMs: 1000,
+    triggers: [],
+    visuals: DEFAULT_VISUALS,
+  };
+
+  const botPos = Vector2D.zero();
+  const heading = new Vector2D(1, 0);
+
+  const near = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(200, 0),
+    groundAbility,
+  );
+  if (!near || near.dist(botPos) < 1 || Math.abs(near.x - 200) > 0.01) {
+    return {
+      pass: false,
+      reason: `expected aim at (200,0), got (${near?.x.toFixed(1)}, ${near?.y.toFixed(1)})`,
+    };
+  }
+
+  const clampedAbility: AbilitySchema = {
+    ...groundAbility,
+    maxTargetRange: 400,
+  };
+  const far = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(800, 0),
+    clampedAbility,
+  );
+  if (!far || Math.abs(far.dist(botPos) - 400) > 0.01) {
+    return {
+      pass: false,
+      reason: `expected clamped distance 400, got ${far?.dist(botPos).toFixed(1)}`,
+    };
+  }
+
+  const directional = resolveBotGroundAimPoint(
+    botPos,
+    heading,
+    new Vector2D(100, 0),
+    { ...groundAbility, targetingMode: undefined },
+  );
+  if (directional !== undefined) {
+    return { pass: false, reason: 'non-GROUND_POINT ability should not produce aimPoint' };
+  }
+
+  return { pass: true, reason: 'aim at target; clamped to maxTargetRange; skipped for non-ground' };
+}
+
+function stepWorldWithLifecycle(world: PhysicsWorld, interp: Interpreter, frames: number): void {
+  for (let i = 0; i < frames; i++) {
+    world.step(1 / 60);
+    interp.processLifecycleEvents(world, 1 / 60, HEADLESS_LIFECYCLE_FX);
+  }
+}
+
+function assertLavaHazardDamageTick(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 0;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 61);
+
+  if (!dummy.inLava) {
+    return { pass: false, reason: `expected inLava after off-hex wade, got inLava=${dummy.inLava}` };
+  }
+  if (dummy.health < 75 || dummy.health > 77) {
+    return {
+      pass: false,
+      reason: `expected ~24 HP loss (health 75-77), got ${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return { pass: true, reason: `inLava wading, health=${dummy.health.toFixed(1)} after 1s` };
+}
+
+function assertLavaAirborneEdgeRecoveryImmunity(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 60;
+  dummy.vz = 200;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 12);
+
+  if (dummy.z <= 0) {
+    return { pass: false, reason: `expected airborne z > 0, got z=${dummy.z.toFixed(1)}` };
+  }
+  if (dummy.inLava) {
+    return { pass: false, reason: 'airborne off-hex should not be inLava' };
+  }
+  if (dummy.health !== 100) {
+    return {
+      pass: false,
+      reason: `expected zero lava damage while airborne, health=${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return { pass: true, reason: `z=${dummy.z.toFixed(1)}, no damage while airborne over lava` };
+}
+
+function assertLavaPlatformReEntrySafety(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+  const interp = new Interpreter();
+
+  const dummy = new Dummy(new Vector2D(800, 0));
+  dummy.health = 100;
+  dummy.z = 0;
+  world.addDummy(dummy);
+
+  stepWorldWithLifecycle(world, interp, 18);
+  const healthAfterWade = dummy.health;
+
+  dummy.pos = new Vector2D(0, 0);
+  stepWorldWithLifecycle(world, interp, 30);
+
+  if (dummy.inLava) {
+    return { pass: false, reason: 'expected inLava=false after re-entering platform' };
+  }
+  if (dummy.health !== healthAfterWade) {
+    return {
+      pass: false,
+      reason: `health changed after re-entry: ${healthAfterWade.toFixed(1)} -> ${dummy.health.toFixed(1)}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `re-entry safe, health stable at ${dummy.health.toFixed(1)}`,
+  };
+}
+
+function assertDebrisKinematicBounceAndSettling(): { pass: boolean; reason: string } {
+  const debris = DebrisManager.getInstance();
+  debris.clear();
+
+  let simMs = 0;
+  debris.spawnShatterCluster(Vector2D.zero(), 6);
+  const shards = debris.getShardsReadonly();
+
+  if (shards.length !== 6) {
+    return { pass: false, reason: `expected 6 shards, got ${shards.length}` };
+  }
+  for (const s of shards) {
+    if (s.z <= 0 || s.vz <= 0) {
+      return { pass: false, reason: `spawn shard ${s.id} not launched upward (z=${s.z}, vz=${s.vz})` };
+    }
+  }
+
+  let sawNegativeVz = false;
+  for (let i = 0; i < 20; i++) {
+    for (const s of shards) {
+      if (s.vz < 0) sawNegativeVz = true;
+    }
+    debris.update(1 / 60, simMs);
+    simMs += 1000 / 60;
+  }
+  if (!sawNegativeVz) {
+    return { pass: false, reason: 'expected negative vz during gravity arc' };
+  }
+
+  let bounced = false;
+  for (let step = 0; step < 120; step++) {
+    for (const s of shards) {
+      if (s.bouncesRemaining < s.initialBounces) bounced = true;
+    }
+    debris.update(1 / 60, simMs);
+    simMs += 1000 / 60;
+    if (shards.every((s) => s.z <= 0)) break;
+  }
+
+  if (!shards.every((s) => s.z <= 0)) {
+    return { pass: false, reason: 'shards did not reach floor within 120 steps' };
+  }
+  if (!bounced) {
+    return { pass: false, reason: 'no shard recorded a floor bounce' };
+  }
+
+  debris.update(4.0, simMs);
+  simMs += 4000;
+  if (!shards.every((s) => s.settled)) {
+    return {
+      pass: false,
+      reason: `expected all settled after 4s, settled=${shards.filter((s) => s.settled).length}/${shards.length}`,
+    };
+  }
+
+  const fadeStart = Math.max(...shards.map((s) => s.settledAt)) + 2600;
+  const countBeforeFade = debris.getActiveShardCount();
+  debris.update(1.0, fadeStart);
+  const faded =
+    debris.getActiveShardCount() < countBeforeFade || shards.some((s) => s.alpha < 1);
+  if (!faded) {
+    return { pass: false, reason: 'expected alpha fade after settle hold + 2.6s' };
+  }
+
+  debris.clear();
+  return { pass: true, reason: 'launch, gravity, bounce, settle, and fade verified' };
+}
+
+function assertDebrisPoolCap(): { pass: boolean; reason: string } {
+  const debris = DebrisManager.getInstance();
+  debris.clear();
+
+  for (let i = 0; i < 10; i++) {
+    debris.spawnShatterCluster(Vector2D.zero(), 10);
+  }
+
+  const count = debris.getActiveShardCount();
+  if (count > DEBRIS_MAX_SHARDS) {
+    return { pass: false, reason: `pool exceeded cap: ${count} > ${DEBRIS_MAX_SHARDS}` };
+  }
+
+  debris.clear();
+  return { pass: true, reason: `${count} active shards capped at ${DEBRIS_MAX_SHARDS}` };
+}
+
+function assertLavaShaderTectonicPrototype(): { pass: boolean; reason: string } {
+  const src = BACKGROUND_FRAGMENT_SHADER;
+  const match = src.match(/vec3 lavaLayer\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+  if (!match) {
+    return { pass: false, reason: 'lavaLayer function not found in BACKGROUND_FRAGMENT_SHADER' };
+  }
+
+  const body = match[1];
+  const paletteTokens = [
+    'cBasaltCharcoal',
+    'cBasaltWarm',
+    'cMagmaDull',
+    'cMagmaHot',
+    'cFissureCore',
+    'rockGrain',
+  ] as const;
+  for (const token of paletteTokens) {
+    if (!src.includes(token)) {
+      return { pass: false, reason: `missing basalt palette token: ${token}` };
+    }
+  }
+  if (src.includes('cWhiteHot')) {
+    return { pass: false, reason: 'cWhiteHot should be removed (overdriven bloom highlight)' };
+  }
+  const warpMatch = body.match(/\(warp - 0\.5\) \* ([\d.]+)/);
+  if (!warpMatch) {
+    return { pass: false, reason: 'missing damped warp multiplier in lavaLayer' };
+  }
+  const warpFactor = parseFloat(warpMatch[1]);
+  if (!Number.isFinite(warpFactor) || warpFactor > 0.5) {
+    return { pass: false, reason: `warp factor too large: ${warpMatch[1]} (max 0.5)` };
+  }
+  const fissureMatch = body.match(/pow\(clamp\(ridge, 0\.0, 1\.0\), ([\d.]+)\)/);
+  if (!fissureMatch) {
+    return { pass: false, reason: 'missing fissure ridge exponent in lavaLayer' };
+  }
+  const fissureExponent = parseFloat(fissureMatch[1]);
+  if (!Number.isFinite(fissureExponent) || fissureExponent < 10.0) {
+    return { pass: false, reason: `fissure exponent too soft: ${fissureMatch[1]} (min 10.0)` };
+  }
+  if (!src.includes('hexSdf')) {
+    return { pass: false, reason: 'missing hexSdf helper for rim glow and arena fade' };
+  }
+  if (!src.includes('u_initialRadius')) {
+    return { pass: false, reason: 'missing u_initialRadius uniform for shrink-stable fade' };
+  }
+  if (body.includes('u_parallaxLava') || body.includes('parallaxPos')) {
+    return { pass: false, reason: 'lavaLayer still references parallax uniforms or parallaxPos' };
+  }
+  if (!body.includes('world - u_hexCenter')) {
+    return { pass: false, reason: 'lavaLayer must derive base coords from (world - u_hexCenter)' };
+  }
+  if ('bgParallaxLava' in getGraphicsSettings()) {
+    return { pass: false, reason: 'bgParallaxLava should be removed from GraphicsSettings' };
+  }
+
+  return { pass: true, reason: 'Basalt tectonic lava shader with damped warp, narrow fissures, and no bgParallaxLava' };
+}
+
+function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
+  const tiers = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'] as const;
+  for (const tier of tiers) {
+    seedEffectiveTierForTests(tier);
+    const limits = getTierLimits();
+    if (limits.presentIntervalMs !== 0) {
+      return {
+        pass: false,
+        reason: `${tier} presentIntervalMs should be 0, got ${limits.presentIntervalMs}`,
+      };
+    }
+  }
+
+  seedEffectiveTierForTests('LOW');
+  const low = getTierLimits();
+  seedEffectiveTierForTests('MEDIUM');
+  const medium = getTierLimits();
+  seedEffectiveTierForTests('HIGH');
+  const high = getTierLimits();
+
+  if (low.particleBudget >= medium.particleBudget || medium.particleBudget >= high.particleBudget) {
+    return {
+      pass: false,
+      reason:
+        `particle budgets not monotonic: LOW=${low.particleBudget} MEDIUM=${medium.particleBudget} HIGH=${high.particleBudget}`,
+    };
+  }
+
+  seedEffectiveTierForTests('LOW');
+  const flags = getEffectiveFeatureFlags();
+  if (!flags.webglBackground) {
+    return {
+      pass: false,
+      reason: 'LOW should inherit webglBackground when enabled in settings',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: 'present uncapped, budgets monotonic, LOW keeps GPU background',
+  };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -659,7 +1304,85 @@ function run(): void {
   console.log(`  ${DIM}${skyDropBalance.reason}${RESET}`);
   if (skyDropBalance.pass) passed++;
 
-  const totalCases = suite.length + 3;
+  const obstacleClearance = assertObstacleVerticalClearance();
+  const obstacleTag = obstacleClearance.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${obstacleTag} Obstacle vertical clearance`);
+  console.log(`  ${DIM}${obstacleClearance.reason}${RESET}`);
+  if (obstacleClearance.pass) passed++;
+
+  const bounceDamping = assertGroundBounceDamping();
+  const bounceTag = bounceDamping.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${bounceTag} Ground bounce damping`);
+  console.log(`  ${DIM}${bounceDamping.reason}${RESET}`);
+  if (bounceDamping.pass) passed++;
+
+  const slamTargeting = assertGroundSlamAreaTargeting();
+  const slamTag = slamTargeting.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${slamTag} Ground slam area targeting`);
+  console.log(`  ${DIM}${slamTargeting.reason}${RESET}`);
+  if (slamTargeting.pass) passed++;
+
+  const fieldStatus = assertFieldStatusApplicationAndAirborneClearance();
+  const fieldStatusTag = fieldStatus.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${fieldStatusTag} Field status application and airborne clearance`);
+  console.log(`  ${DIM}${fieldStatus.reason}${RESET}`);
+  if (fieldStatus.pass) passed++;
+
+  const ballisticArc = assertBallisticArcTrajectorySampling();
+  const ballisticTag = ballisticArc.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${ballisticTag} Ballistic arc trajectory sampling`);
+  console.log(`  ${DIM}${ballisticArc.reason}${RESET}`);
+  if (ballisticArc.pass) passed++;
+
+  const botAim = assertBotGroundAimPoint();
+  const botAimTag = botAim.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${botAimTag} Bot ground aim point`);
+  console.log(`  ${DIM}${botAim.reason}${RESET}`);
+  if (botAim.pass) passed++;
+
+  const lavaDamage = assertLavaHazardDamageTick();
+  const lavaDamageTag = lavaDamage.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaDamageTag} Lava hazard damage tick`);
+  console.log(`  ${DIM}${lavaDamage.reason}${RESET}`);
+  if (lavaDamage.pass) passed++;
+
+  const lavaAirborne = assertLavaAirborneEdgeRecoveryImmunity();
+  const lavaAirborneTag = lavaAirborne.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaAirborneTag} Lava airborne edge recovery immunity`);
+  console.log(`  ${DIM}${lavaAirborne.reason}${RESET}`);
+  if (lavaAirborne.pass) passed++;
+
+  const lavaReEntry = assertLavaPlatformReEntrySafety();
+  const lavaReEntryTag = lavaReEntry.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaReEntryTag} Lava platform re-entry safety`);
+  console.log(`  ${DIM}${lavaReEntry.reason}${RESET}`);
+  if (lavaReEntry.pass) passed++;
+
+  const debrisKinematics = assertDebrisKinematicBounceAndSettling();
+  const debrisKinematicsTag = debrisKinematics.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${debrisKinematicsTag} Debris kinematic bounce and settling`);
+  console.log(`  ${DIM}${debrisKinematics.reason}${RESET}`);
+  if (debrisKinematics.pass) passed++;
+
+  const debrisPool = assertDebrisPoolCap();
+  const debrisPoolTag = debrisPool.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${debrisPoolTag} Debris pool cap`);
+  console.log(`  ${DIM}${debrisPool.reason}${RESET}`);
+  if (debrisPool.pass) passed++;
+
+  const lavaWorldLock = assertLavaShaderTectonicPrototype();
+  const lavaWorldLockTag = lavaWorldLock.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${lavaWorldLockTag} Lava tectonic prototype shader`);
+  console.log(`  ${DIM}${lavaWorldLock.reason}${RESET}`);
+  if (lavaWorldLock.pass) passed++;
+
+  const graphicsTiers = assertGraphicsTierMonotonicLimits();
+  const graphicsTiersTag = graphicsTiers.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${graphicsTiersTag} Graphics tier monotonic limits`);
+  console.log(`  ${DIM}${graphicsTiers.reason}${RESET}`);
+  if (graphicsTiers.pass) passed++;
+
+  const totalCases = suite.length + 16;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

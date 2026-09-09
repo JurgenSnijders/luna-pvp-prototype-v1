@@ -1,4 +1,13 @@
 import type { AbilitySchema } from '../../types/schema';
+import { VERTICAL_RECIPES } from './verticalRecipes';
+
+export const DEFAULT_STARTER_PRESET_NAMES = [
+  'Kinetic Railgun',
+  'Graviton Boomerang',
+  'Cryo Ice Trail',
+  'Cluster Mortar',
+  'Phase Nova',
+] as const;
 
 export const CORE_PRESETS: Record<string, AbilitySchema> = {
   'Kinetic Railgun': {
@@ -263,4 +272,6 @@ export const CORE_PRESETS: Record<string, AbilitySchema> = {
       },
     ],
   },
+
+  'Cluster Mortar': VERTICAL_RECIPES.clusterMortar,
 };

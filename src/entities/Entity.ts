@@ -83,6 +83,8 @@ export class Entity {
   ghostInstabilityTimer = 0;
   plasmaDetonatedThisFrame = false;
   groundSlamArmed?: { ability: AbilitySchema; depth: number };
+  inLava = false;
+  lavaImmersionTimer = 0;
 
   constructor(
     id: string,

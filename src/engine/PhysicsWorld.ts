@@ -10,6 +10,7 @@ import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
 import { isAlliedTo, isOwnerSummonPair } from './allegiance';
 import type { SpellArchetype, TerrainMutationConfig, TerrainType } from '../types/schema';
+import type { ObstacleShape } from '../types/schema';
 import {
   DEBUG_VECTOR_COLORS,
   makeDebugVector,
@@ -20,7 +21,7 @@ import { vecTelemetry } from '../types/telemetry';
 import {
   AIR_DRAG,
   GROUND_SLAM_VZ,
-  HAZARD_CLEARANCE_Z,
+  LAVA_SURFACE_H_DRAG,
   LIP_HEIGHT,
   MAX_ABS_VZ,
   MAX_GROUND_SUBSTEPS,
@@ -34,7 +35,7 @@ const obstacleEntityScratch: Entity[] = [];
 
 export const MAX_ENTITIES = 256;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
-export const LAVA_DAMAGE_PER_SEC = 25;
+export const LAVA_DAMAGE_PER_SEC = 24;
 
 export function getInstabilityScale(instabilityPct: number): number {
   return 1 + (instabilityPct / Math.max(1, Entity.knockbackScaleRef)) * 1.5;
@@ -96,6 +97,8 @@ export interface PendingObstacleDestruction {
   pos: Vector2D;
   radius: number;
   isDestructible: boolean;
+  shape: ObstacleShape;
+  spawnArchetype?: SpellArchetype;
 }
 
 export interface GroundImpactEvent {
@@ -217,6 +220,11 @@ export class PhysicsWorld {
   getEntityById(id: string): Entity | null {
     const entity = this.entityRegistry.get(id);
     return entity && !entity.isDead ? entity : null;
+  }
+
+  /** Resolves entities even when marked dead (e.g. ground-expired projectiles awaiting slam dispatch). */
+  getEntityByIdIncludingDead(id: string): Entity | null {
+    return this.entityRegistry.get(id) ?? null;
   }
 
   addPlayer(player: Player): void {
@@ -347,6 +355,10 @@ export class PhysicsWorld {
 
   getCombatants(): Entity[] {
     return this.combatantsCache;
+  }
+
+  isPointInsidePlatform(pos: Vector2D): boolean {
+    return isInsideHex(pos, this.hexCenter, this.hexRadius);
   }
 
   applyKnockback(target: Entity, direction: Vector2D, baseForce: number): void {
@@ -661,7 +673,98 @@ export class PhysicsWorld {
   private stepVerticalKinematics(dt: number): void {
     let activeAirborne = 0;
 
-    const integrateEntity = (e: Entity): void => {
+    const integrateCombatant = (e: Entity): void => {
+      if (e.isDead) return;
+
+      const onPlatform = this.isPointInsidePlatform(e.pos);
+
+      if (!onPlatform && e.z <= 0) {
+        e.prevZ = e.z;
+        e.z = 0;
+        e.vz = 0;
+        e.isGrounded = true;
+        return;
+      }
+
+      if (onPlatform && e.gravityScale === 0 && e.vz === 0 && e.z <= Z_EPSILON) {
+        e.z = 0;
+        e.isGrounded = true;
+        return;
+      }
+
+      e.prevZ = e.z;
+      let remainingDt = dt;
+      const gravScale = !onPlatform && e.z > 0 ? Math.max(e.gravityScale, 1) : e.gravityScale;
+
+      for (let iter = 0; iter < MAX_GROUND_SUBSTEPS && remainingDt > 1e-6; iter++) {
+        const vzStart = e.vz;
+        const zStart = e.z;
+
+        e.vz -= WORLD_GRAVITY * gravScale * remainingDt;
+        if (e.vz > MAX_ABS_VZ) e.vz = MAX_ABS_VZ;
+        else if (e.vz < -MAX_ABS_VZ) e.vz = -MAX_ABS_VZ;
+
+        const zEnd = zStart + e.vz * remainingDt;
+
+        if (zEnd > 0) {
+          e.z = zEnd;
+          break;
+        }
+
+        if (!onPlatform) {
+          e.z = 0;
+          e.vz = 0;
+          e.isGrounded = true;
+          break;
+        }
+
+        const span = zStart - zEnd;
+        const tHit = span > 1e-9 ? (zStart / span) * remainingDt : 0;
+        const vzImpact = vzStart - WORLD_GRAVITY * gravScale * tHit;
+
+        const impactSpeed = Math.abs(vzImpact);
+        const willBounce = e instanceof Projectile && e.bouncesRemaining > 0;
+        if (impactSpeed >= GROUND_SLAM_VZ && !willBounce) {
+          this.pendingGroundImpacts.push({
+            entityId: e.id,
+            pos: e.pos.clone(),
+            vz: impactSpeed,
+            isProjectile: e.tags.has('projectile'),
+            archetype:
+              e instanceof Summon
+                ? e.spellArchetype
+                : e.groundSlamArmed?.ability.archetype,
+          });
+        }
+
+        e.z = 0;
+
+        e.vz = -vzImpact * e.groundRestitution;
+
+        if (e.groundFriction > 0) {
+          e.vel.scaleMut(1 - e.groundFriction);
+        }
+
+        if (e.vz < VZ_SETTLE) {
+          e.vz = 0;
+          e.gravityScale = 0;
+          e.isGrounded = true;
+          break;
+        }
+
+        remainingDt -= tHit;
+      }
+
+      if (e.z > 0) {
+        e.isGrounded = false;
+        activeAirborne++;
+        e.vel.scaleMut(1 - AIR_DRAG * dt);
+      } else {
+        e.isGrounded = true;
+      }
+    };
+
+    const integrateProjectile = (e: Entity): void => {
       if (e.isDead) return;
 
       if (e.gravityScale === 0 && e.vz === 0 && e.z <= Z_EPSILON) {
@@ -693,7 +796,8 @@ export class PhysicsWorld {
         const vzImpact = vzStart - WORLD_GRAVITY * e.gravityScale * tHit;
 
         const impactSpeed = Math.abs(vzImpact);
-        if (impactSpeed >= GROUND_SLAM_VZ) {
+        const willBounce = e instanceof Projectile && e.bouncesRemaining > 0;
+        if (impactSpeed >= GROUND_SLAM_VZ && !willBounce) {
           this.pendingGroundImpacts.push({
             entityId: e.id,
             pos: e.pos.clone(),
@@ -756,18 +860,15 @@ export class PhysicsWorld {
       if (e.z > 0) {
         e.isGrounded = false;
         activeAirborne++;
-        if (!e.tags.has('projectile')) {
-          e.vel.scaleMut(1 - AIR_DRAG * dt);
-        }
       } else {
         e.isGrounded = true;
       }
     };
 
-    for (const e of this.players) integrateEntity(e);
-    for (const e of this.dummies) integrateEntity(e);
-    for (const e of this.summons) integrateEntity(e);
-    for (const e of this.projectiles) integrateEntity(e);
+    for (const e of this.players) integrateCombatant(e);
+    for (const e of this.dummies) integrateCombatant(e);
+    for (const e of this.summons) integrateCombatant(e);
+    for (const e of this.projectiles) integrateProjectile(e);
 
     this.airborneCount = activeAirborne;
   }
@@ -1059,12 +1160,9 @@ export class PhysicsWorld {
             entity.obstacleGraceFrames--;
             continue;
           }
-          const rawClearance = obstacle.config.clearanceHeight;
-          const wallTop =
-            rawClearance === undefined || rawClearance === 0
-              ? Number.POSITIVE_INFINITY
-              : rawClearance;
-          if (entity.z - entity.radius > wallTop) {
+          const projElev = Math.max(entity.z, entity.clearanceHeight ?? 0);
+          const wallHeight = obstacle.config.clearanceHeight ?? 40;
+          if (projElev - entity.radius > wallHeight) {
             continue;
           }
           entity.isDead = true;
@@ -1111,44 +1209,43 @@ export class PhysicsWorld {
         pos: obstacle.pos.clone(),
         radius: obstacle.getCollisionRadius(),
         isDestructible: obstacle.config.isDestructible ?? false,
+        shape: obstacle.config.shape,
+        spawnArchetype: obstacle.spawnArchetype,
       });
     }
   }
 
   private updateLavaTag(entity: Entity, dt: number): void {
     const override = this.getTerrainOverride(entity.pos);
+    const onPlatform = this.isPointInsidePlatform(entity.pos);
 
     if (override === 'SAFE') {
+      entity.inLava = false;
       entity.tags.delete('in_lava');
-      this.lavaDamageAccumulator.delete(entity.id);
+      entity.linearDrag = entity.baseLinearDrag;
       return;
     }
 
-    if (this.verticalActive && entity.z > HAZARD_CLEARANCE_Z) {
+    if (onPlatform || entity.z > 0) {
+      entity.inLava = false;
       entity.tags.delete('in_lava');
-      this.lavaDamageAccumulator.delete(entity.id);
+      entity.linearDrag = entity.baseLinearDrag;
       return;
     }
 
-    if (override === 'LAVA') {
+    if (override === 'LAVA' || !onPlatform) {
+      entity.inLava = true;
       entity.tags.add('in_lava');
-      const dmg = LAVA_DAMAGE_PER_SEC * dt;
-      entity.health = Math.max(0, entity.health - dmg);
-      this.emitLavaDamage(entity, dmg);
       entity.linearDrag = LAVA_DRAG;
+      if (entity.inLava && entity.z <= 0) {
+        entity.vel.scaleMut(Math.max(0, 1 - LAVA_SURFACE_H_DRAG * dt));
+      }
       return;
     }
 
-    if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
-      entity.tags.delete('in_lava');
-      this.lavaDamageAccumulator.delete(entity.id);
-    } else {
-      entity.tags.add('in_lava');
-      const dmg = LAVA_DAMAGE_PER_SEC * dt;
-      entity.health = Math.max(0, entity.health - dmg);
-      this.emitLavaDamage(entity, dmg);
-      entity.linearDrag = LAVA_DRAG;
-    }
+    entity.inLava = false;
+    entity.tags.delete('in_lava');
+    entity.linearDrag = entity.baseLinearDrag;
   }
 
   private resolveProjectileHits(): void {

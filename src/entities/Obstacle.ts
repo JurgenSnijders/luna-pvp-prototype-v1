@@ -1,5 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
-import type { ObstacleConfig } from '../types/schema';
+import type { ObstacleConfig, SpellArchetype } from '../types/schema';
 import { generateEntityId } from './Entity';
 
 export class Obstacle {
@@ -8,6 +8,7 @@ export class Obstacle {
   config: ObstacleConfig;
   health: number;
   remainingDurationMs: number;
+  spawnArchetype?: SpellArchetype;
   isDead = false;
 
   constructor(pos: Vector2D, config: ObstacleConfig) {

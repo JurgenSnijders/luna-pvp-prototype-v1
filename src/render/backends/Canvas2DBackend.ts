@@ -391,4 +391,9 @@ export class Canvas2DBackend implements ParticleBackend {
     const back = velocity.normalize().scale(-1);
     this.spawnStreak(pos.add(back.scale(6)), back.scale(40), 10, '#e0f8ff', 0.65, 0.2, 'SECONDARY');
   }
+
+  emitLavaSizzle(pos: Vector2D): void {
+    this.spawn(pos, new Vector2D((Math.random() - 0.5) * 15, -60 - Math.random() * 40), 0.25, '#ffccaa', 3);
+    this.spawn(pos, new Vector2D((Math.random() - 0.5) * 20, -20), 0.2, '#ff6600', 2);
+  }
 }

@@ -386,7 +386,11 @@ export function dispatchAction(
           obstacleConfig.angle = Math.atan2(aim.y, aim.x);
         }
       }
-      world.addObstacle(new Obstacle(pos, obstacleConfig));
+      world.addObstacle(
+        Object.assign(new Obstacle(pos, obstacleConfig), {
+          spawnArchetype: ctx.ability?.archetype,
+        }),
+      );
       break;
     }
     case 'MUTATE_TERRAIN': {

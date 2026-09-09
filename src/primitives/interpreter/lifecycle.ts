@@ -1,7 +1,15 @@
+import { LIVE_SFX } from '../../audio/AudioEngine';
+import { NULL_SFX, type SfxSink } from '../../audio/types';
 import { Vector2D } from '../../math/Vector2D';
-import { GROUND_SLAM_VZ } from '../../engine/verticalConstants';
+import {
+  LAVA_AIRBORNE_IMMUNITY_Z,
+  LAVA_HAZARD_HP_PER_SEC,
+  LAVA_HAZARD_INSTABILITY_PER_SEC,
+  LAVA_HAZARD_TICK_S,
+  GROUND_SLAM_VZ,
+} from '../../engine/verticalConstants';
 import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
-import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { PhysicsWorld, PendingObstacleDestruction } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
 import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
@@ -10,6 +18,7 @@ import { reactiveFx } from '../../render/gl/reactiveFx';
 import { screenShake } from '../../render/ScreenShake';
 import { decalManager, mapArchetypeToDecal, type DecalType } from '../../render/canvas/decals';
 import { floorGridManager } from '../../render/canvas/floorGrid';
+import { DebrisManager } from '../../render/canvas/debris';
 import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
 import { Projectile } from '../../entities/Projectile';
@@ -19,9 +28,15 @@ import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
 import { MAX_DEPTH } from './constants';
-import { safeNormalize, secondaryColor, trailColor } from './helpers';
+import { safeNormalize, secondaryColor, trailColor, getActionPriority } from './helpers';
 import type { TriggerHost } from './TriggerHost';
-import { dispatchTriggerNode } from './triggers';
+import { evaluateConditions } from './conditions';
+import { dispatchActions, dispatchTriggerNode } from './triggers';
+import {
+  actionRequiresTarget,
+  queryCombatantsInRadius,
+  resolveSlamBlastRadius,
+} from './targeting';
 
 function resolveImpactColor(archetype?: SpellArchetype): string {
   return getArchetypeColor(archetype, '#00e5ff');
@@ -84,6 +99,7 @@ let statusVfxFrame = 0;
 export interface LifecycleFx {
   /** False for sandbox runs: also skips the modules that memoize entity ids. */
   readonly persistsWorldFx: boolean;
+  readonly sfx: SfxSink;
   decal(x: number, y: number, radius: number, type: DecalType, color: string): void;
   ripple(x: number, y: number, radius: number, intensity: number, color: string): void;
   shake(intensity: number, durationSec: number): void;
@@ -93,6 +109,7 @@ export interface LifecycleFx {
 
 export const LIVE_LIFECYCLE_FX: LifecycleFx = {
   persistsWorldFx: true,
+  sfx: LIVE_SFX,
   decal(x, y, radius, type, color) {
     decalManager.addDecal(x, y, radius, type, color);
   },
@@ -113,6 +130,7 @@ export const LIVE_LIFECYCLE_FX: LifecycleFx = {
 
 export const HEADLESS_LIFECYCLE_FX: LifecycleFx = {
   persistsWorldFx: false,
+  sfx: NULL_SFX,
   decal() {},
   ripple() {},
   shake() {},
@@ -166,6 +184,17 @@ function stampZoneExpirationDecals(world: PhysicsWorld, fx: LifecycleFx): void {
   }
 }
 
+function resolveDebrisColor(death: PendingObstacleDestruction): string {
+  const arch = death.spawnArchetype;
+  if (arch === 'FIRE' || arch === 'PLASMA') return '#ff6622';
+  if (arch === 'EARTH') return '#aa8855';
+  if (arch === 'VOID') return '#8844cc';
+  if (arch === 'FROST') return '#44ddff';
+  if (death.shape === 'CIRCLE') return '#ff6622';
+  if (death.shape === 'BOX') return '#aa8855';
+  return '#8899aa';
+}
+
 function processObstacleDestructions(
   interp: Interpreter,
   world: PhysicsWorld,
@@ -184,6 +213,15 @@ function processObstacleDestructions(
     );
     fx.ripple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
     interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
+
+    if (getGraphicsSettings().dynamicDebris) {
+      DebrisManager.getInstance().spawnShatterCluster(
+        death.pos,
+        6 + Math.floor(Math.random() * 5),
+        resolveDebrisColor(death),
+        Math.min(420, 200 + death.radius * 4),
+      );
+    }
   }
 }
 
@@ -224,6 +262,41 @@ function processLavaBoundaryRipples(world: PhysicsWorld, fx: LifecycleFx): void 
   for (const id of wasOnPlatform.keys()) {
     if (!liveIds.has(id)) {
       wasOnPlatform.delete(id);
+    }
+  }
+}
+
+function processLavaHazardTicks(world: PhysicsWorld, dt: number): void {
+  const tickDamage = LAVA_HAZARD_HP_PER_SEC * LAVA_HAZARD_TICK_S;
+  const tickInstability = LAVA_HAZARD_INSTABILITY_PER_SEC * LAVA_HAZARD_TICK_S;
+
+  for (const combatant of world.getCombatants()) {
+    if (combatant.isDead) continue;
+
+    const submerged =
+      combatant.inLava &&
+      combatant.z <= LAVA_AIRBORNE_IMMUNITY_Z &&
+      combatant.stasisRemainingMs <= 0;
+
+    if (!submerged) {
+      combatant.lavaImmersionTimer = 0;
+      continue;
+    }
+
+    combatant.lavaImmersionTimer += dt;
+    while (combatant.lavaImmersionTimer >= LAVA_HAZARD_TICK_S) {
+      combatant.lavaImmersionTimer -= LAVA_HAZARD_TICK_S;
+      combatant.health = Math.max(0, combatant.health - tickDamage);
+      combatant.addInstability(tickInstability, world);
+      world.emitCombatVisualEvent({
+        type: 'DAMAGE',
+        pos: { x: combatant.pos.x, y: combatant.pos.y },
+        value: Math.round(tickDamage),
+        targetId: combatant.id,
+      });
+      if (combatant.tags.has('dummy') && combatant.health <= 0) {
+        combatant.isDead = true;
+      }
     }
   }
 }
@@ -358,10 +431,82 @@ function dispatchProjectileTriggers(
 
 function nodeRequiresTarget(node: TriggerNode): boolean {
   const check = (actions: ActionPayload[]): boolean =>
-    actions.some((a) => 'target' in a && a.target === 'TARGET');
+    actions.some((a) => actionRequiresTarget(a));
   if (check(node.actions)) return true;
   if (node.ifFalseActions && check(node.ifFalseActions)) return true;
   return false;
+}
+
+function dispatchSlamTriggerNode(
+  interp: Interpreter,
+  node: TriggerNode,
+  baseCtx: TriggerContext,
+  world: PhysicsWorld,
+  targets: Entity[],
+): void {
+  let passed = true;
+  if (node.conditions && node.conditions.length > 0) {
+    passed = evaluateConditions(node.conditions, baseCtx, world);
+  }
+
+  const actionsToRun = passed ? node.actions : (node.ifFalseActions ?? []);
+  const envActions = actionsToRun.filter((a) => !actionRequiresTarget(a));
+  const targetActions = actionsToRun.filter((a) => actionRequiresTarget(a));
+
+  const sortByPriority = (actions: ActionPayload[]) =>
+    [...actions].sort((a, b) => getActionPriority(a.type) - getActionPriority(b.type));
+
+  if (envActions.length > 0) {
+    dispatchActions(interp, sortByPriority(envActions), baseCtx, world);
+  }
+
+  if (targetActions.length > 0) {
+    for (const target of targets) {
+      dispatchActions(
+        interp,
+        sortByPriority(targetActions),
+        { ...baseCtx, targetEntity: target },
+        world,
+      );
+    }
+  }
+
+  if (node.children) {
+    for (const child of node.children) {
+      dispatchSlamTriggerNode(interp, child, baseCtx, world, targets);
+    }
+  }
+}
+
+function dispatchProjectileGroundSlam(
+  interp: Interpreter,
+  projectile: Projectile,
+  impactPos: Vector2D,
+  world: PhysicsWorld,
+): void {
+  const nodes = projectile.getTriggers('ON_GROUND_SLAM');
+  if (nodes.length === 0) return;
+
+  const ctx = buildLifecycleContext(
+    projectile,
+    null,
+    impactPos,
+    projectile.depth + 1,
+    world,
+  );
+  if (!ctx) return;
+
+  const blastRadius = resolveSlamBlastRadius(projectile);
+  const targets = queryCombatantsInRadius(
+    world,
+    impactPos,
+    blastRadius,
+    ctx.caster.id,
+  );
+
+  for (const node of nodes) {
+    dispatchSlamTriggerNode(interp, node, ctx, world, targets);
+  }
 }
 
 function dispatchHostTicks(
@@ -574,19 +719,14 @@ export function processLifecycleEvents(
       }
     }
 
-    const entity = world.getEntityById(impact.entityId);
-    if (!entity || entity.isDead) continue;
+    const entity = world.getEntityByIdIncludingDead(impact.entityId);
+    if (!entity) continue;
+    const isGroundSlamProjectile =
+      entity instanceof Projectile && entity.expiryReason === 'ground';
+    if (entity.isDead && !isGroundSlamProjectile) continue;
 
     if (entity instanceof Projectile) {
-      dispatchProjectileTriggers(
-        interp,
-        entity,
-        'ON_GROUND_SLAM',
-        null,
-        world,
-        impact.pos,
-        entity.depth + 1,
-      );
+      dispatchProjectileGroundSlam(interp, entity, impact.pos, world);
     } else if (entity instanceof Summon) {
       const nodes = entity.getTriggers('ON_GROUND_SLAM');
       if (nodes.length > 0) {
@@ -742,6 +882,7 @@ export function processLifecycleEvents(
     processObstacleDestructions(interp, world, fx);
     processLavaBoundaryRipples(world, fx);
   }
+  processLavaHazardTicks(world, dt);
   processZoneParticleTicks(interp, world);
   processStatusParticleTicks(interp, world);
 }

@@ -1,3 +1,4 @@
+import { WORLD_GRAVITY, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { DEFAULT_EMITTER } from '../../primitives/interpreter/constants';
 import type {
   AbilitySchema,
@@ -42,8 +43,19 @@ function walkTriggers(
   }
 }
 
+export interface TrajectorySample {
+  x: number;
+  y: number;
+  z?: number;
+  isApex?: boolean;
+  isImpact?: boolean;
+}
+
 export interface PredictivePath {
-  points: { x: number; y: number }[];
+  points: TrajectorySample[];
+  groundPoints?: { x: number; y: number }[];
+  apexIndex?: number;
+  impactIndex?: number;
   isClosed: boolean;
   trajectoryType: TrajectoryType;
 }
@@ -320,48 +332,142 @@ function buildOrbitAnchorPath(
   return points;
 }
 
+export function buildBallisticArcPath(
+  trajectory: TrajectoryConfig,
+  origin: Point,
+  theta: number,
+  muzzleOffset: number,
+  steps = 24,
+  startZ = 0,
+): PredictivePath {
+  const g = WORLD_GRAVITY * (trajectory.gravityScale ?? 1);
+  const lobApex = trajectory.lobApex ?? 80;
+  const speed = trajectory.speed ?? 400;
+  const maxRange = trajectory.maxRange ?? 500;
+  const vz0 = Math.sqrt(2 * g * lobApex);
+  const tImpact = (2 * vz0) / g;
+
+  const muzzle = muzzlePoint(origin, theta, muzzleOffset);
+  const d = dirFromAngle(theta);
+
+  const points: TrajectorySample[] = [];
+  const groundPoints: { x: number; y: number }[] = [];
+  let apexIndex = 0;
+  let impactIndex = 0;
+  let maxZ = -1;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * tImpact;
+    const planarDist = speed * t;
+    const x = muzzle.x + d.x * planarDist;
+    const y = muzzle.y + d.y * planarDist;
+    let z = startZ + vz0 * t - 0.5 * g * t * t;
+
+    if (planarDist >= maxRange) {
+      const clampedDist = maxRange;
+      const clampedX = muzzle.x + d.x * clampedDist;
+      const clampedY = muzzle.y + d.y * clampedDist;
+      const clampedT = clampedDist / speed;
+      const clampedZ = Math.max(0, startZ + vz0 * clampedT - 0.5 * g * clampedT * clampedT);
+      groundPoints.push({ x: clampedX, y: clampedY });
+      points.push({
+        x: clampedX,
+        y: clampedY - clampedZ * Z_TO_SCREEN,
+        z: clampedZ,
+        isImpact: clampedZ <= 0,
+      });
+      impactIndex = points.length - 1;
+      break;
+    }
+
+    if (z <= 0 && t > 0) {
+      groundPoints.push({ x, y });
+      points.push({
+        x,
+        y: y - z * Z_TO_SCREEN,
+        z: 0,
+        isImpact: true,
+      });
+      impactIndex = points.length - 1;
+      break;
+    }
+
+    if (z > maxZ) {
+      maxZ = z;
+      apexIndex = points.length;
+    }
+
+    groundPoints.push({ x, y });
+    points.push({
+      x,
+      y: y - z * Z_TO_SCREEN,
+      z,
+    });
+  }
+
+  if (points.length > 0 && apexIndex < points.length) {
+    points[apexIndex] = { ...points[apexIndex], isApex: true };
+  }
+
+  return {
+    points,
+    groundPoints,
+    apexIndex,
+    impactIndex,
+    isClosed: false,
+    trajectoryType: 'BALLISTIC_ARC',
+  };
+}
+
 function buildPredictivePath(
   trajectory: TrajectoryConfig,
   origin: Point,
   theta: number,
   muzzleOffset: number,
+  startZ = 0,
 ): PredictivePath {
   const maxRange = trajectory.maxRange ?? 500;
+  const visualOrigin: Point =
+    startZ > 0
+      ? { x: origin.x, y: origin.y - startZ * Z_TO_SCREEN }
+      : origin;
 
   switch (trajectory.type) {
     case 'LINEAR':
       return {
-        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        points: buildLinearPath(visualOrigin, theta, muzzleOffset, maxRange),
         isClosed: false,
         trajectoryType: 'LINEAR',
       };
     case 'DISCONTINUOUS_BLINK':
       return {
-        points: buildDiscontinuousBlinkPath(origin, theta, muzzleOffset, trajectory),
+        points: buildDiscontinuousBlinkPath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'DISCONTINUOUS_BLINK',
       };
     case 'RETURN_TO_SOURCE':
       return {
-        points: buildReturnToSourcePath(origin, theta, muzzleOffset, trajectory),
+        points: buildReturnToSourcePath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'RETURN_TO_SOURCE',
       };
     case 'HOMING_SLERP':
       return {
-        points: buildHomingSlerpPath(origin, theta, muzzleOffset, trajectory),
+        points: buildHomingSlerpPath(visualOrigin, theta, muzzleOffset, trajectory),
         isClosed: false,
         trajectoryType: 'HOMING_SLERP',
       };
     case 'ORBIT_ANCHOR':
       return {
-        points: buildOrbitAnchorPath(origin, theta, trajectory),
+        points: buildOrbitAnchorPath(visualOrigin, theta, trajectory),
         isClosed: true,
         trajectoryType: 'ORBIT_ANCHOR',
       };
+    case 'BALLISTIC_ARC':
+      return buildBallisticArcPath(trajectory, origin, theta, muzzleOffset, 24, startZ);
     default:
       return {
-        points: buildLinearPath(origin, theta, muzzleOffset, maxRange),
+        points: buildLinearPath(visualOrigin, theta, muzzleOffset, maxRange),
         isClosed: false,
         trajectoryType: trajectory.type,
       };
@@ -373,6 +479,7 @@ export function resolveLiveAimingPaths(
   origin: { x: number; y: number },
   aimAngle: number,
   muzzleOffset = 0,
+  startZ = 0,
 ): PredictivePath[] {
   if (ability.targetingMode === 'GROUND_POINT') return [];
 
@@ -383,7 +490,7 @@ export function resolveLiveAimingPaths(
   const angles = computeSpreadAngles(config.emitter, aimAngle);
 
   return angles.map((theta) =>
-    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset),
+    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset, startZ),
   );
 }
 
@@ -588,6 +695,18 @@ function sampleTrajectoryPath(
       return { points: sampleOrbit(trajectory, aimOffsetDeg), hasReturn: false };
     case 'DISCONTINUOUS_BLINK':
       return { points: sampleDiscontinuousBlink(trajectory), hasReturn: false };
+    case 'BALLISTIC_ARC': {
+      const arc = buildBallisticArcPath(
+        trajectory,
+        { x: 0, y: 0 },
+        -Math.PI / 4,
+        0,
+      );
+      return {
+        points: arc.points.map((p) => ({ x: p.x, y: p.y })),
+        hasReturn: false,
+      };
+    }
     default:
       return { points: sampleLinear(trajectory), hasReturn: false };
   }

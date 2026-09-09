@@ -31,6 +31,27 @@ export const ARCHETYPE_TUNING: Record<SpellArchetype, ArchetypeTuning> = {
   CHAOS: { impactInstabilityScale: 1.5, tickInstabilityScale: 1.5, fieldStrengthScale: 1.5 },
 };
 
+/** Archetypes whose status is a debuff, safe to auto-apply from field overlap.
+ * Excludes KINETIC (fallback), AERO (mobility), and self/exotic sets. */
+export const FIELD_STATUS_ARCHETYPES: ReadonlySet<SpellArchetype> = new Set([
+  'FROST',
+  'FIRE',
+  'TOXIC',
+  'VOID',
+  'GRAVITY',
+  'EARTH',
+  'PLASMA',
+  'LIGHTNING',
+  'SONIC',
+  'MAGNETIC',
+  'CHAOS',
+]);
+
+export const FIELD_STATUS_INTERVAL_MS = 300;
+export const FIELD_STATUS_DURATION_MS = 1200;
+/** Rim deadband: the occupant's center must be inside ~85% of the zone radius. */
+export const FIELD_STATUS_MIN_FALLOFF = 0.15;
+
 export const DEFAULT_EMITTER: EmitterConfig = {
   count: 1,
   spreadDeg: 0,

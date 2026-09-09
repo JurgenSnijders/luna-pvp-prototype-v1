@@ -96,6 +96,7 @@ export interface ParticleBackend {
   statusThermal(pos: Vector2D, radius: number, intensity: number): void;
   statusVoid(pos: Vector2D, radius: number): void;
   statusKinetic(pos: Vector2D, velocity: Vector2D): void;
+  emitLavaSizzle(pos: Vector2D): void;
 }
 
 export function parseColor(hex: string): [number, number, number] {

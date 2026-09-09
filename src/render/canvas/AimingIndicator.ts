@@ -1,3 +1,4 @@
+import { Z_TO_SCREEN } from '../../engine/verticalConstants';
 import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
 import {
@@ -9,6 +10,13 @@ import {
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
 export type AimingMode = 'directional' | 'radial';
+
+export function resolveAimIndicatorOrigin(
+  pos: { x: number; y: number },
+  z = 0,
+): { x: number; y: number } {
+  return { x: pos.x, y: pos.y - z * Z_TO_SCREEN };
+}
 
 export interface AimingState {
   slotIndex: number;
@@ -305,6 +313,52 @@ function drawEndpointDiamond(
   ctx.restore();
 }
 
+function drawBallisticArcMarkers(
+  ctx: CanvasRenderingContext2D,
+  path: PredictivePath,
+  color: string,
+): void {
+  if (path.groundPoints && path.groundPoints.length >= 2) {
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(color, 0.25);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(path.groundPoints[0].x, path.groundPoints[0].y);
+    for (let i = 1; i < path.groundPoints.length; i++) {
+      ctx.lineTo(path.groundPoints[i].x, path.groundPoints[i].y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  if (path.apexIndex !== undefined && path.points[path.apexIndex]) {
+    const apex = path.points[path.apexIndex];
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(color, 0.9);
+    ctx.fillStyle = hexToRgba(color, 0.35);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(apex.x, apex.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (path.impactIndex !== undefined && path.points[path.impactIndex]) {
+    const impact = path.points[path.impactIndex];
+    const ground =
+      path.groundPoints?.[path.groundPoints.length - 1] ?? impact;
+    const prev =
+      path.groundPoints && path.groundPoints.length >= 2
+        ? path.groundPoints[path.groundPoints.length - 2]
+        : path.points[Math.max(0, path.impactIndex - 1)];
+    const tipAngle = Math.atan2(ground.y - prev.y, ground.x - prev.x);
+    drawEndpointDiamond(ctx, ground, tipAngle, color, 1);
+  }
+}
+
 function drawPredictivePath(
   ctx: CanvasRenderingContext2D,
   path: PredictivePath,
@@ -342,7 +396,11 @@ function drawPredictivePath(
     drawLinearChevrons(ctx, path, color);
   }
 
-  if (!path.isClosed) {
+  if (path.trajectoryType === 'BALLISTIC_ARC') {
+    drawBallisticArcMarkers(ctx, path, color);
+  }
+
+  if (!path.isClosed && path.trajectoryType !== 'BALLISTIC_ARC') {
     const last = path.points[path.points.length - 1];
     const prev = path.points[path.points.length - 2];
     const tipAngle = Math.atan2(last.y - prev.y, last.x - prev.x);
@@ -356,16 +414,20 @@ function drawPredictivePath(
 export function drawPredictivePaths(
   ctx: CanvasRenderingContext2D,
   state: AimingState,
+  startZ = 0,
+  planarOrigin?: { x: number; y: number },
 ): void {
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
   const muzzleOffset =
     state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
+  const origin = planarOrigin ?? state.origin;
   const paths = resolveLiveAimingPaths(
     state.ability,
-    state.origin,
+    origin,
     state.angle,
     muzzleOffset,
+    startZ,
   );
 
   if (paths.length === 0) return;
@@ -446,13 +508,18 @@ export class AimingIndicatorRenderer {
   render(
     ctx: CanvasRenderingContext2D,
     state: AimingState,
-    origin?: { x: number; y: number },
+    planarOrigin?: { x: number; y: number },
+    casterZ = 0,
   ): void {
-    const visual = origin ? layoutAimingVisual(state, origin) : state;
     const now = performance.now();
-    if (visual.mode === 'directional') {
-      drawPredictivePaths(ctx, visual);
+    if (state.mode === 'directional') {
+      const layoutOrigin = planarOrigin
+        ? resolveAimIndicatorOrigin(planarOrigin, casterZ)
+        : state.origin;
+      const visual = planarOrigin ? layoutAimingVisual(state, layoutOrigin) : state;
+      drawPredictivePaths(ctx, visual, casterZ, planarOrigin);
     } else {
+      const visual = planarOrigin ? layoutAimingVisual(state, planarOrigin) : state;
       drawAoERadial(ctx, visual, now);
     }
   }

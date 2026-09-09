@@ -160,4 +160,8 @@ export class VfxDirector {
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {
     this.backend.statusKinetic(pos, velocity);
   }
+
+  emitLavaSizzle(pos: Vector2D): void {
+    this.backend.emitLavaSizzle(pos);
+  }
 }

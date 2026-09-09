@@ -40,6 +40,7 @@ import {
   statusKineticSlipstream as statusKineticSlipstreamImpl,
   statusThermalSparks as statusThermalSparksImpl,
   statusVoidCollapse as statusVoidCollapseImpl,
+  lavaSizzleParticle as lavaSizzleParticleImpl,
 } from './webgl/vfxRecipes';
 
 const EMPTY_COUNTERS: VfxCounters = {
@@ -410,5 +411,9 @@ export class WebGLBackend implements ParticleBackend {
 
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {
     statusKineticSlipstreamImpl(this.spawnCtx(), pos, velocity);
+  }
+
+  emitLavaSizzle(pos: Vector2D): void {
+    lavaSizzleParticleImpl(this.spawnCtx(), pos);
   }
 }

@@ -70,6 +70,31 @@ function hasTeleportAction(ability: AbilitySchema | null | undefined): boolean {
   return false;
 }
 
+export function resolveBotGroundAimPoint(
+  botPos: Vector2D,
+  heading: Vector2D,
+  targetPos: Vector2D,
+  ability: AbilitySchema,
+): Vector2D | undefined {
+  if (ability.targetingMode !== 'GROUND_POINT') return undefined;
+
+  const maxR = ability.maxTargetRange ?? 400;
+  let aimPoint = targetPos.clone();
+
+  const toTarget = targetPos.sub(botPos);
+  if (toTarget.magSq() < 0.01) {
+    const angle = heading.magSq() > 0 ? Math.atan2(heading.y, heading.x) : 0;
+    aimPoint = botPos.add(Vector2D.fromAngle(angle, Math.min(250, maxR)));
+  }
+
+  const dist = botPos.dist(aimPoint);
+  if (dist > maxR) {
+    aimPoint = botPos.add(aimPoint.sub(botPos).normalize().scale(maxR));
+  }
+
+  return aimPoint;
+}
+
 export class BotController {
   enabled = true;
   difficulty = 1.0;
@@ -181,7 +206,7 @@ export class BotController {
           outsideHex) &&
         this.bot.isSlotReady(MOBILITY_SLOT)
       ) {
-        if (this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world)) {
+        if (this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world, intercept)) {
           this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
         }
       } else if (
@@ -191,7 +216,7 @@ export class BotController {
         const slots = [...OFFENSIVE_SLOTS].sort(() => Math.random() - 0.5);
         for (const slotIndex of slots) {
           if (this.bot.isSlotReady(slotIndex)) {
-            if (this.tryCastSlot(this.bot, slotIndex, interpreter, world)) {
+            if (this.tryCastSlot(this.bot, slotIndex, interpreter, world, intercept)) {
               this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
               break;
             }
@@ -263,6 +288,7 @@ export class BotController {
     slotIndex: number,
     interpreter: Interpreter,
     world: PhysicsWorld,
+    targetPos: Vector2D,
   ): boolean {
     const ability = bot.getAbility(slotIndex);
     if (!ability || !bot.isSlotReady(slotIndex)) return false;
@@ -271,6 +297,7 @@ export class BotController {
     if (aimDir.magSq() < 0.01) return false;
 
     const heading = aimDir.normalize();
+    const aimPoint = resolveBotGroundAimPoint(bot.pos, heading, targetPos, ability);
     interpreter.executeAbility(
       ability,
       {
@@ -278,6 +305,7 @@ export class BotController {
         heading,
         caster: bot,
         depth: 0,
+        ...(aimPoint ? { aimPoint } : {}),
       },
       world,
     );

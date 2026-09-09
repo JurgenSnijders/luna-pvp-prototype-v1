@@ -18,6 +18,10 @@ import {
   parseGraphicsProfile,
 } from '../src/devtools/graphicsProfile';
 import {
+  DEFAULT_ENTITY_SHADOW_CONFIG,
+  entityShadowConfig,
+} from '../src/render/entityShadowConfig';
+import {
   DEFAULT_FCT_CLUSTER_CONFIG,
   fctClusterConfig,
 } from '../src/render/fctClusterConfig';
@@ -26,6 +30,8 @@ import {
   hitFeedbackConfig,
 } from '../src/render/hitFeedbackConfig';
 import { getIconRenderStyle, setIconRenderStyle } from '../src/render/gl/retroVfxConfig';
+import { detectSeedTier } from '../src/render/detectQualityTier';
+import type { GpuCapabilities } from '../src/devtools/PerfMonitor';
 
 const memoryStorage = new Map<string, string>();
 
@@ -60,11 +66,34 @@ function installMockWindow(dpr = 1, width = 1920, height = 1080): void {
   });
 }
 
+function installMockNavigator(cores: number, deviceMemory?: number): void {
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      hardwareConcurrency: cores,
+      deviceMemory,
+    },
+    configurable: true,
+  });
+}
+
+function gpuCaps(overrides: Partial<GpuCapabilities> = {}): GpuCapabilities {
+  return {
+    webgl2Available: true,
+    maxTextureSize: 8192,
+    extensions: [],
+    dpr: 1,
+    renderer: 'ANGLE (NVIDIA)',
+    vendor: 'Google Inc.',
+    ...overrides,
+  };
+}
+
 function resetGraphicsState(): void {
   memoryStorage.clear();
   saveGraphicsSettings({ ...DEFAULT_GRAPHICS_SETTINGS });
   Object.assign(hitFeedbackConfig, DEFAULT_HIT_FEEDBACK_CONFIG);
   Object.assign(fctClusterConfig, DEFAULT_FCT_CLUSTER_CONFIG);
+  Object.assign(entityShadowConfig, DEFAULT_ENTITY_SHADOW_CONFIG);
   setIconRenderStyle('SEMANTIC_GLYPH');
 }
 
@@ -85,16 +114,12 @@ function run(): void {
 
   const clamped = parseGraphicsSettings({
     bgParallaxVoid: 2,
-    bgParallaxLava: -1,
     bgLavaScrollSpeed: 5,
     activePreset: 'NOT_A_PRESET',
     crosshairStyle: 'NOT_A_CROSSHAIR',
   });
   if (clamped.bgParallaxVoid !== 1) {
     failures.push(`bgParallaxVoid clamp: expected 1, got ${clamped.bgParallaxVoid}`);
-  }
-  if (clamped.bgParallaxLava !== 0) {
-    failures.push(`bgParallaxLava clamp: expected 0, got ${clamped.bgParallaxLava}`);
   }
   if (clamped.bgLavaScrollSpeed !== 1) {
     failures.push(`bgLavaScrollSpeed clamp: expected 1, got ${clamped.bgLavaScrollSpeed}`);
@@ -138,6 +163,7 @@ function run(): void {
   hitFeedbackConfig.microHitstop = false;
   fctClusterConfig.clusterWindowMs = 650;
   fctClusterConfig.clusterPerTickMax = 12;
+  entityShadowConfig.maxAlpha = 0.72;
   setIconRenderStyle('SIMULATION_TRACE');
 
   const exported = exportGraphicsProfile();
@@ -152,6 +178,9 @@ function run(): void {
   }
   if (exported.fctCluster.clusterWindowMs !== 650) {
     failures.push('exportGraphicsProfile: fctCluster.clusterWindowMs should be 650');
+  }
+  if (exported.entityShadow.maxAlpha !== 0.72) {
+    failures.push('exportGraphicsProfile: entityShadow.maxAlpha should be 0.72');
   }
   if (exported.iconStyle !== 'SIMULATION_TRACE') {
     failures.push(`exportGraphicsProfile: iconStyle should be SIMULATION_TRACE, got ${exported.iconStyle}`);
@@ -176,6 +205,9 @@ function run(): void {
   if (fctClusterConfig.clusterWindowMs !== 650 || fctClusterConfig.clusterPerTickMax !== 12) {
     failures.push('importGraphicsProfile: fct cluster config not restored');
   }
+  if (entityShadowConfig.maxAlpha !== 0.72) {
+    failures.push('importGraphicsProfile: entity shadow config not restored');
+  }
   if (getIconRenderStyle() !== 'SIMULATION_TRACE') {
     failures.push(`importGraphicsProfile: icon style should be SIMULATION_TRACE, got ${getIconRenderStyle()}`);
   }
@@ -193,6 +225,9 @@ function run(): void {
   }
   if (low.bloomIntensity !== 0) {
     failures.push(`applyTierPreset(LOW): bloomIntensity should be 0, got ${low.bloomIntensity}`);
+  }
+  if (!low.webglBackground) {
+    failures.push('applyTierPreset(LOW): webglBackground should stay enabled');
   }
   if (getPostEffectUserEnabled('SCANLINES') || getPostEffectUserEnabled('PHOSPHOR')) {
     failures.push('applyTierPreset(LOW): quality post-effects should be disabled');
@@ -249,8 +284,11 @@ function run(): void {
   });
   seedEffectiveTierForTests('LOW');
   const lowFlags = getEffectiveFeatureFlags();
-  if (lowFlags.webglBackground || lowFlags.crtEnabled || lowFlags.arcadeBezel) {
-    failures.push('effective LOW flags should disable heavy features while stored toggles remain');
+  if (!lowFlags.webglBackground) {
+    failures.push('effective LOW flags should keep webglBackground when stored true');
+  }
+  if (lowFlags.crtEnabled || lowFlags.arcadeBezel) {
+    failures.push('effective LOW flags should disable CRT and bezel while stored toggles remain');
   }
   if (!getGraphicsSettings().webglBackground || !getGraphicsSettings().crtEnabled) {
     failures.push('effective LOW should not rewrite stored graphics toggles');
@@ -261,13 +299,35 @@ function run(): void {
     failures.push(`getEffectiveDprCap LOW: expected ~${expectedLowDpr}, got ${lowDpr}`);
   }
 
+  installMockNavigator(4, 4);
+  if (detectSeedTier(gpuCaps()) !== 'MEDIUM') {
+    failures.push('detectSeedTier: 4-core / 4GB laptop should seed MEDIUM');
+  }
+
+  installMockNavigator(8, 8);
+  if (detectSeedTier(gpuCaps()) !== 'HIGH') {
+    failures.push('detectSeedTier: 8-core / 8GB device should seed HIGH');
+  }
+
+  if (detectSeedTier(gpuCaps({ webgl2Available: false })) !== 'LOW') {
+    failures.push('detectSeedTier: missing WebGL2 should seed LOW');
+  }
+
+  if (detectSeedTier(gpuCaps({ renderer: 'SwiftShader', vendor: 'Google Inc.' })) !== 'LOW') {
+    failures.push('detectSeedTier: software renderer should seed LOW');
+  }
+
+  if (detectSeedTier(gpuCaps({ maxTextureSize: 2048 })) !== 'LOW') {
+    failures.push('detectSeedTier: maxTextureSize < 4096 should seed LOW');
+  }
+
   if (failures.length > 0) {
     console.error('test:graphics-settings  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
     process.exit(1);
   }
 
-  console.log('test:graphics-settings  OK  23 graphics profile checks passed');
+  console.log('test:graphics-settings  OK  28 graphics profile checks passed');
 }
 
 run();

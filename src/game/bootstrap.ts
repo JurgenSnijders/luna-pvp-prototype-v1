@@ -1,3 +1,5 @@
+import { AudioEngine } from '../audio/AudioEngine';
+import { loadAudioSettings } from '../audio/audioSettings';
 import { Camera2D } from '../camera/Camera2D';
 import { InspectorUI } from '../devtools/InspectorUI';
 import { SpellLibrary } from '../devtools/SpellLibrary';
@@ -49,6 +51,7 @@ import { BackgroundRenderer, createBackgroundCanvas } from '../render/gl/Backgro
 import { applyArcadeBezel } from '../ui/arcadeBezel';
 import { applyCrtOverlay } from '../ui/crtOverlay';
 import { applyPalette } from '../ui/palette';
+import { loadEntityShadowConfig } from '../render/entityShadowConfig';
 import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { applyViewportLayout } from '../ui/viewportLayout';
@@ -68,7 +71,10 @@ function syncWebGLBackground(app: GameApp): void {
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
+  loadAudioSettings();
+  AudioEngine.getInstance().applySettings(loadAudioSettings());
   loadFctClusterConfig();
+  loadEntityShadowConfig();
   app.camera = new Camera2D();
   app.camera.setViewport(window.innerWidth, window.innerHeight);
   resize(app);
@@ -243,17 +249,26 @@ function init(app: GameApp): void {
 
   let pendingAimMouse: { x: number; y: number } | null = null;
   let aimMouseRafPending = false;
+  let pointerInitialized = false;
   let middleMouseDown = false;
   let lastPanX = 0;
   let lastPanY = 0;
 
   const updatePointerState = (e: MouseEvent): void => {
+    pointerInitialized = true;
     app.camera.pointerScreenX = e.clientX;
     app.camera.pointerScreenY = e.clientY;
     app.camera.pointerOverGame = !isCameraInputBlocked(e.target);
   };
 
+  document.addEventListener('visibilitychange', () => {
+    const settings = loadAudioSettings();
+    if (!settings.muteOnBlur) return;
+    AudioEngine.getInstance().setBlurMuted(document.hidden);
+  });
+
   window.addEventListener('keydown', (e) => {
+    AudioEngine.getInstance().unlockFromUserGesture();
     if (e.code === 'F8' || (e.code === 'F2' && e.shiftKey)) {
       e.preventDefault();
       app.toggleTelemetryInspector();
@@ -375,6 +390,7 @@ function init(app: GameApp): void {
   }, { passive: false });
 
   app.canvas.addEventListener('mousedown', (e) => {
+    AudioEngine.getInstance().unlockFromUserGesture();
     if (e.button === 1) {
       e.preventDefault();
       middleMouseDown = true;
@@ -440,12 +456,26 @@ function init(app: GameApp): void {
       const shake = screenShake.update(frameDt);
       const followPos = lerpPos(app.player, alpha);
       app.camera.update(frameDt, followPos);
+      if (
+        pointerInitialized &&
+        app.player.activeAimingState &&
+        app.camera.pointerOverGame
+      ) {
+        updatePlayerAimFromScreen(app, app.camera.pointerScreenX, app.camera.pointerScreenY);
+      }
 
       const flags = getEffectiveFeatureFlags();
       const bg = app.backgroundRenderer;
       const webglBg = flags.webglBackground && bg !== null && bg.isAvailable();
       if (webglBg) {
-        bg.render(app.camera, app.world.hexRadius, performance.now());
+        bg.render(
+          app.camera,
+          app.world.hexCenter,
+          app.world.hexRadius,
+          app.arenaShrink?.initialRadius ?? app.world.hexRadius,
+          shake,
+          performance.now(),
+        );
       }
 
       app.ctx.save();

@@ -6,6 +6,7 @@ import {
   getLastSynthesisMeta,
   synthesizeAbility,
 } from '../ai/Synthesizer';
+import { AudioEngine } from '../audio/AudioEngine';
 import type {
   ActionSlotKey,
   CardRarity,
@@ -53,11 +54,16 @@ import {
   btnStyle,
   btnStyleRarity,
   chipStyle,
+  getTierCrest,
   hexToRgba,
   injectStyles,
+  normalizeForgeTierRarity,
   renderPowerBar,
+  resolveSpellRarity,
   showQuickEquipMenu,
 } from './workshopStyles';
+
+export { normalizeForgeTierRarity, resolveSpellRarity } from './workshopStyles';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   getSpellRoleLabel,
@@ -150,28 +156,6 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
 
 const FORGE_TIER_ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
 
-export function normalizeForgeTierRarity(rarity: string): string {
-  const upper = (rarity || 'COMMON').toUpperCase();
-  if (upper === 'LEGENDARY') return 'CHAOTIC';
-  if (upper === 'COMMON' || upper === 'RARE' || upper === 'EPIC' || upper === 'CHAOTIC') return upper;
-  return 'COMMON';
-}
-
-export function getTierCrest(rarity: string): string {
-  switch (normalizeForgeTierRarity(rarity)) {
-    case 'COMMON':
-      return '◈ COMMON';
-    case 'RARE':
-      return '◈◈ RARE';
-    case 'EPIC':
-      return '✦✦ EPIC ✦✦';
-    case 'CHAOTIC':
-      return '★ CHAOTIC ★';
-    default:
-      return rarity.toUpperCase();
-  }
-}
-
 export function stampDraftCardMetadataOntoAbility(
   ability: AbilitySchema,
   card: DraftCard,
@@ -181,12 +165,6 @@ export function stampDraftCardMetadataOntoAbility(
     rarity: card.rarity,
     ...(card.evolutionDiff?.length ? { evolutionDiff: [...card.evolutionDiff] } : {}),
   };
-}
-
-export function resolveSpellRarity(spell: AbilitySchema): CardRarity {
-  const meta = spell.metadata?.rarity;
-  if (typeof meta === 'string') return normalizeForgeTierRarity(meta) as CardRarity;
-  return 'COMMON';
 }
 
 export function resolveSpellEvolutionDiff(spell: AbilitySchema): string[] {
@@ -886,6 +864,7 @@ export class DraftModal {
   }
 
   open(): void {
+    AudioEngine.getInstance().unlockFromUserGesture();
     this.intermissionMode = false;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;
@@ -929,6 +908,7 @@ export class DraftModal {
   }
 
   openIntermission(cards: DraftCard[]): void {
+    AudioEngine.getInstance().unlockFromUserGesture();
     this.intermissionMode = true;
     this.mode = 'FORGE_NEW';
     this.evolutionContext = null;

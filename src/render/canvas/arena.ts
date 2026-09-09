@@ -1,14 +1,16 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { getHexVertices } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
-import { getEffectiveFeatureFlags } from '../../devtools/graphicsSettings';
+import { getEffectiveFeatureFlags, getGraphicsSettings } from '../../devtools/graphicsSettings';
 import { getActiveColors } from '../../ui/tokens';
 import { floorGridManager } from './floorGrid';
+import { DebrisManager } from './debris';
 import type { CanvasRenderCtx } from './renderCtx';
 
 const LIP_HEIGHT = 14;
 const SHADOW_OFFSET_Y = 24;
 let lastGridFrameTime = performance.now();
+let lastDebrisFrameTime = performance.now();
 
 function traceHexPath(ctx: CanvasRenderingContext2D, vertices: { x: number; y: number }[]): void {
   ctx.beginPath();
@@ -162,4 +164,16 @@ export function drawHexPlatform(
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const n = parseInt(hex.replace('#', ''), 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+export function updateAndDrawDebris(ctx: CanvasRenderingContext2D): void {
+  if (!getGraphicsSettings().dynamicDebris) return;
+
+  const now = performance.now();
+  const dt = Math.min((now - lastDebrisFrameTime) / 1000, 0.1);
+  lastDebrisFrameTime = now;
+
+  const debris = DebrisManager.getInstance();
+  debris.update(dt, now);
+  debris.render(ctx);
 }
