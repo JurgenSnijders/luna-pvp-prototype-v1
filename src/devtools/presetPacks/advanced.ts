@@ -320,6 +320,47 @@ export const ADVANCED_PRESETS: Record<string, AbilitySchema> = {
     ],
   },
 
+  'Serpent Lash': {
+    id: 'test_serpent_lash',
+    name: 'Serpent Lash',
+    archetype: 'NATURE',
+    cooldownMs: 1300,
+    recoilKick: 45,
+    trajectory: {
+      type: 'DRAWN_PATH',
+      speed: 420,
+      maxRange: 520,
+      pathSpace: 'CASTER_RELATIVE',
+      pathPoints: [
+        { x: 0, y: 0 },
+        { x: 80, y: -40 },
+        { x: 160, y: 40 },
+        { x: 240, y: -20 },
+        { x: 320, y: 0 },
+      ],
+    },
+    visuals: {
+      color: '#66dd44',
+      size: 8,
+      projectileStyle: 'PLASMA_TENDRIL',
+      trailType: 'NEON_RIBBON',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 550,
+            target: 'TARGET',
+            directionMode: 'ALONG_TRAJECTORY',
+          },
+        ],
+      },
+    ],
+  },
+
   'Gravity Curse': {
     id: 'test_gravity_curse',
     name: 'Gravity Curse',

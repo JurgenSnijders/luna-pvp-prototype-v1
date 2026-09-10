@@ -1,6 +1,7 @@
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import type { MovementProfile } from '../devtools/movementSettings';
+import { simplifyPath, toCasterLocalFrame } from '../primitives/drawnPath';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
@@ -237,6 +238,7 @@ export class Player extends Entity {
       width: params.width,
       radialRadius: params.radialRadius,
       playerRadius: this.radius,
+      drawnPoints: [],
     };
   }
 
@@ -287,12 +289,41 @@ export class Player extends Entity {
   confirmAimCast(onCast: SlotCastCallback): void {
     if (!this.activeAimingState) return;
 
-    const slotIndex = this.activeAimingState.slotIndex;
-    this.facingAngle = this.activeAimingState.angle;
-    this.aimTarget = new Vector2D(
-      this.activeAimingState.target.x,
-      this.activeAimingState.target.y,
-    );
+    const state = this.activeAimingState;
+    const slotIndex = state.slotIndex;
+
+    if (state.mode === 'draw') {
+      const simplified = simplifyPath(state.drawnPoints, 6, 24);
+      if (simplified.length < 2) {
+        this.activeAimingState = null;
+        return;
+      }
+
+      const muzzleOffset =
+        this.radius + Math.max(4, state.ability.visuals?.size ?? 8);
+      const spawnOrigin = {
+        x: this.pos.x + Math.cos(state.angle) * muzzleOffset,
+        y: this.pos.y + Math.sin(state.angle) * muzzleOffset,
+      };
+      const pathSpace = state.ability.trajectory?.pathSpace ?? 'CASTER_RELATIVE';
+      const facingAngle = Math.atan2(
+        simplified[1].y - simplified[0].y,
+        simplified[1].x - simplified[0].x,
+      );
+      const drawnPath =
+        pathSpace === 'WORLD'
+          ? simplified
+          : toCasterLocalFrame(simplified, spawnOrigin, facingAngle);
+
+      this.facingAngle = facingAngle;
+      this.aimTarget = new Vector2D(simplified[simplified.length - 1].x, simplified[simplified.length - 1].y);
+      this.activeAimingState = null;
+      this.requestCast(slotIndex, { drawnPath }, false, onCast);
+      return;
+    }
+
+    this.facingAngle = state.angle;
+    this.aimTarget = new Vector2D(state.target.x, state.target.y);
     this.activeAimingState = null;
     this.requestCast(slotIndex, {}, false, onCast);
   }

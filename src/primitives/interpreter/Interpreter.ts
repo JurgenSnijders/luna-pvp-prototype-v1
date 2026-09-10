@@ -14,7 +14,7 @@ import {
   updateTrajectories as updateTrajectoriesImpl,
   type LifecycleFx,
 } from './lifecycle';
-import { hasBallisticParams, initBallisticKinematics } from '../Trajectories';
+import { hasBallisticParams, initBallisticKinematics, initDrawnPath } from '../Trajectories';
 import { dispatchTriggerNode } from './triggers';
 
 export class Interpreter {
@@ -96,9 +96,13 @@ export class Interpreter {
       const triggerMap = buildTriggerMap(
         schema.triggers.filter((t) => t.trigger !== 'ON_CAST'),
       );
+      const trajectoryConfig = { ...schema.trajectory };
+      if (overrides?.drawnPath) {
+        trajectoryConfig.pathPoints = overrides.drawnPath;
+      }
       const projectile = new Projectile(
         spawnPos,
-        schema.trajectory,
+        trajectoryConfig,
         castCtx.caster.id,
         aimAngle,
         triggerMap,
@@ -107,11 +111,14 @@ export class Interpreter {
         schema.name,
         schema.archetype,
       );
-      if (schema.trajectory.type === 'ORBIT_ANCHOR') {
+      if (trajectoryConfig.type === 'ORBIT_ANCHOR') {
         projectile.maxLifetimeMs = 3000;
       }
-      if (hasBallisticParams(schema.trajectory)) {
-        initBallisticKinematics(projectile, schema.trajectory);
+      if (trajectoryConfig.type === 'DRAWN_PATH') {
+        initDrawnPath(projectile, trajectoryConfig, spawnPos, aimAngle);
+      }
+      if (hasBallisticParams(trajectoryConfig)) {
+        initBallisticKinematics(projectile, trajectoryConfig);
       }
       world.addProjectile(projectile);
     }

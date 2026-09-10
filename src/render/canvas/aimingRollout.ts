@@ -54,7 +54,9 @@ function quantizeAimAngle(angle: number): number {
 }
 
 function abilitySchemaFingerprint(ability: AbilitySchema): string {
-  const traj = resolveRootTrajectory(ability)?.type ?? 'NONE';
+  const rootTrajectory = resolveRootTrajectory(ability);
+  const traj = rootTrajectory?.type ?? 'NONE';
+  const pathPoints = rootTrajectory?.pathPoints?.length ?? 0;
   const triggers = (ability.triggers ?? []).map((t) => t.trigger).join(',');
   let spawnCount = 0;
   walkTriggers(ability.triggers ?? [], (_node, action) => {
@@ -62,7 +64,7 @@ function abilitySchemaFingerprint(ability: AbilitySchema): string {
       spawnCount += action.emitter?.count ?? 1;
     }
   });
-  return `${ability.id ?? ability.name}|${traj}|${triggers}|spawns:${spawnCount}`;
+  return `${ability.id ?? ability.name}|${traj}|path:${pathPoints}|${triggers}|spawns:${spawnCount}`;
 }
 
 function applyRolloutFields(world: PhysicsWorld, dt: number): void {

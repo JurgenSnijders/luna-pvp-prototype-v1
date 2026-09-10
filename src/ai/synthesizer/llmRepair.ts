@@ -1,6 +1,7 @@
 import { sanitizeAbilitySchema } from '../BudgetEngine';
 import type { CardRarity, SkillCategory } from '../../types/cards';
 import type { TriggerNode } from '../../types/schema';
+import { TRAJECTORY_TYPES } from '../../types/schema/constants';
 import {
   ACTION_TYPES,
   normalizeAbilityPayload,
@@ -308,16 +309,12 @@ const TRAJECTORY_ALIASES: Record<string, string> = {
   SHOT: 'LINEAR',
   RAIL: 'LINEAR',
   RAILGUN: 'LINEAR',
+  DRAWN: 'DRAWN_PATH',
+  PATH: 'DRAWN_PATH',
+  CURVE: 'DRAWN_PATH',
+  SERPENT: 'DRAWN_PATH',
+  LASH: 'DRAWN_PATH',
 };
-
-const VALID_TRAJECTORY_TYPES = new Set([
-  'LINEAR',
-  'RETURN_TO_SOURCE',
-  'ORBIT_ANCHOR',
-  'HOMING_SLERP',
-  'DISCONTINUOUS_BLINK',
-  'BALLISTIC_ARC',
-]);
 
 const VALID_TRAIL_TYPES = new Set([
   'NONE', 'SMOKE', 'ICE_GLOW', 'MAGMA_SPARKS', 'NEON_RIBBON',
@@ -462,12 +459,39 @@ function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
   return result;
 }
 
+function repairPathPoints(raw: unknown): Array<{ x: number; y: number }> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const points: Array<{ x: number; y: number }> = [];
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue;
+    const obj = entry as Record<string, unknown>;
+    const x = ensureFiniteNumber(obj.x, Number.NaN);
+    const y = ensureFiniteNumber(obj.y, Number.NaN);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    points.push({
+      x: Math.max(-2000, Math.min(2000, x)),
+      y: Math.max(-2000, Math.min(2000, y)),
+    });
+    if (points.length >= 24) break;
+  }
+  return points.length >= 2 ? points : undefined;
+}
+
 function repairTrajectoryConfig(traj: unknown): unknown {
   if (traj === null || typeof traj !== 'object') {
     return { type: 'LINEAR', speed: 400, maxRange: 500 };
   }
   const t = { ...(traj as Record<string, unknown>) };
   stripNullFields(t);
+  const repairedPathPoints = repairPathPoints(t.pathPoints);
+  if (repairedPathPoints) {
+    t.pathPoints = repairedPathPoints;
+  } else {
+    delete t.pathPoints;
+  }
+  if (t.pathSpace !== undefined && t.pathSpace !== 'WORLD' && t.pathSpace !== 'CASTER_RELATIVE') {
+    t.pathSpace = 'CASTER_RELATIVE';
+  }
   coerceNumericFields(t, [
     'speed',
     'maxRange',
@@ -505,7 +529,9 @@ function repairTrajectoryConfig(traj: unknown): unknown {
     // Recover mortar/bounce intent when the LLM emitted LINEAR (or an unknown type)
     // alongside ballistic fields — mirrors the isSkyDrop recovery branch above.
     t.type = 'BALLISTIC_ARC';
-  } else if (typeof t.type !== 'string' || !VALID_TRAJECTORY_TYPES.has(t.type)) {
+  } else if (repairedPathPoints) {
+    t.type = 'DRAWN_PATH';
+  } else if (typeof t.type !== 'string' || !TRAJECTORY_TYPES.has(t.type)) {
     t.type = 'LINEAR';
   }
   return t;

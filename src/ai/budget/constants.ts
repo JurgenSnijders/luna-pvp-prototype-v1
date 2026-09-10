@@ -19,6 +19,7 @@ export const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
   ORBIT_ANCHOR: 1.3,
   DISCONTINUOUS_BLINK: 1.6,
   BALLISTIC_ARC: 2.0,
+  DRAWN_PATH: 2.2,
 };
 
 export const MAX_DEPTH = 3;
@@ -35,6 +36,7 @@ export const TRAJECTORY_TYPES = new Set([
   'HOMING_SLERP',
   'DISCONTINUOUS_BLINK',
   'BALLISTIC_ARC',
+  'DRAWN_PATH',
 ]);
 
 export const EMITTER_DISTRIBUTIONS = new Set([

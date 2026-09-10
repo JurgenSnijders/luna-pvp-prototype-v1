@@ -1,5 +1,5 @@
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
-import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
+import type { AbilitySchema, PathPoint, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveLiveAimingPaths } from './aimingRollout';
 import {
@@ -9,7 +9,10 @@ import {
 } from './trajectoryTracer';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 
-export type AimingMode = 'directional' | 'radial';
+export type AimingMode = 'directional' | 'radial' | 'draw';
+
+const DRAW_POINT_MIN_SPACING = 8;
+const DRAW_POINT_MAX_SAMPLES = 256;
 
 export function resolveAimIndicatorOrigin(
   pos: { x: number; y: number },
@@ -31,6 +34,7 @@ export interface AimingState {
   width: number;
   radialRadius: number;
   playerRadius: number;
+  drawnPoints: PathPoint[];
 }
 
 function clampGroundPointTarget(
@@ -50,6 +54,19 @@ export function syncAimFromCursorState(
   state: AimingState,
   casterPos: { x: number; y: number },
 ): void {
+  if (state.mode === 'draw') {
+    const last = state.drawnPoints[state.drawnPoints.length - 1];
+    const dx = state.cursor.x - (last?.x ?? casterPos.x);
+    const dy = state.cursor.y - (last?.y ?? casterPos.y);
+    if (
+      state.drawnPoints.length < DRAW_POINT_MAX_SAMPLES &&
+      (!last || Math.hypot(dx, dy) >= DRAW_POINT_MIN_SPACING)
+    ) {
+      state.drawnPoints.push({ x: state.cursor.x, y: state.cursor.y });
+    }
+    return;
+  }
+
   const ox = casterPos.x;
   const oy = casterPos.y;
   const dx = state.cursor.x - ox;
@@ -143,6 +160,9 @@ export function resolveTrajectoryVisualMode(ability: AbilitySchema): AimingMode 
   }
 
   const trajectory = resolveRootTrajectory(ability);
+  if (trajectory?.type === 'DRAWN_PATH') {
+    return 'draw';
+  }
   if (trajectory) {
     return 'directional';
   }
@@ -419,6 +439,21 @@ export function drawPredictivePaths(
 ): void {
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
+
+  if (state.mode === 'draw') {
+    if (state.drawnPoints.length < 2) return;
+    drawPredictivePath(
+      ctx,
+      {
+        points: state.drawnPoints.map((p) => ({ x: p.x, y: p.y, z: startZ })),
+        isClosed: false,
+        trajectoryType: 'DRAWN_PATH',
+      },
+      color,
+    );
+    return;
+  }
+
   const muzzleOffset =
     state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
   const origin = planarOrigin ?? state.origin;

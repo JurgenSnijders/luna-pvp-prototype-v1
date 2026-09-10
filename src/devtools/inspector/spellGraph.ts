@@ -259,6 +259,9 @@ function formatTrajectory(trajectory: TrajectoryConfig): string {
   if (trajectory.maxRange !== undefined) parts.push(`range=${trajectory.maxRange}`);
   if (trajectory.bounces !== undefined) parts.push(`bounces=${trajectory.bounces}`);
   if (trajectory.lobApex !== undefined) parts.push(`apex=${trajectory.lobApex}`);
+  if (trajectory.pathPoints !== undefined) parts.push(`points=${trajectory.pathPoints.length}`);
+  if (trajectory.pathSpace !== undefined) parts.push(`pathSpace=${trajectory.pathSpace}`);
+  if (trajectory.pathLoop) parts.push('loop');
   return parts.join(' · ');
 }
 

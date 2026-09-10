@@ -41,6 +41,10 @@ export class Projectile extends Entity {
 
   obstacleGraceFrames = 0;
 
+  pathWorldPoints: Vector2D[] | null = null;
+  pathCumulative: number[] | null = null;
+  pathTotalLength = 0;
+
   constructor(
     pos: Vector2D,
     config: TrajectoryConfig,

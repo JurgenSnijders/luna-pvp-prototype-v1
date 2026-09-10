@@ -1,6 +1,26 @@
-import { TRAJECTORY_TYPES } from '../constants';
-import type { TrajectoryConfig, TrajectoryType } from '../types';
+import { PATH_SPACE_SET, TRAJECTORY_TYPES } from '../constants';
+import type { PathPoint, TrajectoryConfig, TrajectoryType } from '../types';
 import { clamp, isNumber, isObject, isString } from './helpers';
+
+const PATH_COORD_MIN = -2000;
+const PATH_COORD_MAX = 2000;
+const PATH_POINT_MIN = 2;
+const PATH_POINT_MAX = 24;
+
+function validatePathPoints(value: unknown): PathPoint[] | null {
+  if (!Array.isArray(value) || value.length < PATH_POINT_MIN || value.length > PATH_POINT_MAX) {
+    return null;
+  }
+  const points: PathPoint[] = [];
+  for (const entry of value) {
+    if (!isObject(entry) || !isNumber(entry.x) || !isNumber(entry.y)) return null;
+    points.push({
+      x: clamp(entry.x, PATH_COORD_MIN, PATH_COORD_MAX),
+      y: clamp(entry.y, PATH_COORD_MIN, PATH_COORD_MAX),
+    });
+  }
+  return points.length >= PATH_POINT_MIN ? points : null;
+}
 
 function clampOptional(
   value: unknown,
@@ -88,6 +108,24 @@ export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | nul
     const v = clampOptional(value.fallSpeed, 0, 3000);
     if (v === null) return null;
     config.fallSpeed = v;
+  }
+
+  if (value.pathPoints !== undefined) {
+    const pathPoints = validatePathPoints(value.pathPoints);
+    if (!pathPoints) return null;
+    config.pathPoints = pathPoints;
+  }
+  if (value.pathSpace !== undefined) {
+    if (!isString(value.pathSpace) || !PATH_SPACE_SET.has(value.pathSpace)) return null;
+    config.pathSpace = value.pathSpace as TrajectoryConfig['pathSpace'];
+  }
+  if (value.pathLoop !== undefined) {
+    if (typeof value.pathLoop !== 'boolean') return null;
+    config.pathLoop = value.pathLoop;
+  }
+
+  if (config.type === 'DRAWN_PATH') {
+    if (!config.pathPoints) return null;
   }
 
   const isSkyDrop = (config.spawnAltitude ?? 0) > 0;

@@ -11,7 +11,12 @@ function getTrajectoryWeight(traj?: TrajectoryConfig): number {
   if (!traj) return 1.0;
   const base = TRAJECTORY_WEIGHTS[traj.type] ?? 1.0;
   const pierce = traj.piercing ?? 0;
-  return base * (1.0 + pierce * 0.25);
+  let weight = base * (1.0 + pierce * 0.25);
+  const pointCount = traj.pathPoints?.length ?? 0;
+  if (pointCount > 0) {
+    weight *= 1 + pointCount * 0.04;
+  }
+  return weight;
 }
 
 function scoreAction(action: ActionPayload, depth: number): number {

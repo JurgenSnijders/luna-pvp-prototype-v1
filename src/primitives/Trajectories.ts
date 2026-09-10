@@ -4,6 +4,11 @@ import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { WORLD_GRAVITY } from '../engine/verticalConstants';
 import type { Projectile } from '../entities/Projectile';
 import type { TrajectoryConfig } from '../types/schema';
+import {
+  buildArcLengthTable,
+  resolvePathWorldPoints,
+  samplePathAtDistance,
+} from './drawnPath';
 
 const RETURN_CONTACT_RADIUS = 24;
 const BLINK_INTERVAL_MS = 150;
@@ -47,6 +52,29 @@ export function initBallisticKinematics(
   }
 
   proj.isGrounded = false;
+}
+
+export function initDrawnPath(
+  proj: Projectile,
+  trajectory: TrajectoryConfig,
+  spawnPos: Vector2D,
+  aimAngle: number,
+): void {
+  const worldPoints = resolvePathWorldPoints(trajectory, spawnPos, aimAngle);
+  if (worldPoints.length < 2) {
+    proj.pathWorldPoints = null;
+    proj.pathCumulative = null;
+    proj.pathTotalLength = 0;
+    return;
+  }
+
+  const { cumulative, total } = buildArcLengthTable(worldPoints);
+  proj.pathWorldPoints = worldPoints;
+  proj.pathCumulative = cumulative;
+  proj.pathTotalLength = total;
+  proj.pos = worldPoints[0].clone();
+  const initialDir = worldPoints[1].sub(worldPoints[0]).normalize();
+  proj.vel = initialDir.scale(trajectory.speed ?? 400);
 }
 
 function rotateToward(current: Vector2D, target: Vector2D, maxRadians: number): Vector2D {
@@ -94,6 +122,9 @@ export function updateTrajectory(
       break;
     case 'BALLISTIC_ARC':
       updateBallisticArc(proj, dt, speed, maxRange);
+      break;
+    case 'DRAWN_PATH':
+      updateDrawnPath(proj, dt, speed, maxRange);
       break;
   }
 
@@ -270,6 +301,61 @@ function updateDiscontinuousBlink(
     proj.isDead = true;
     proj.expiryReason = 'range';
   }
+}
+
+function updateDrawnPath(
+  proj: Projectile,
+  dt: number,
+  speed: number,
+  maxRange: number,
+): void {
+  if (!proj.pathWorldPoints || !proj.pathCumulative || proj.pathWorldPoints.length < 2) {
+    updateLinear(proj, dt, speed, maxRange);
+    return;
+  }
+
+  const pathLoop = proj.config.pathLoop ?? false;
+  const pathLength = proj.pathTotalLength;
+  proj.distanceTraveled += speed * dt;
+
+  if (proj.distanceTraveled >= maxRange) {
+    const terminalDist = pathLoop && pathLength > 0
+      ? proj.distanceTraveled % pathLength
+      : Math.min(proj.distanceTraveled, pathLength);
+    const sample = samplePathAtDistance(
+      proj.pathWorldPoints,
+      proj.pathCumulative,
+      terminalDist,
+    );
+    proj.pos = sample.pos;
+    proj.vel = sample.dir.scale(speed);
+    proj.isDead = true;
+    proj.expiryReason = 'range';
+    return;
+  }
+
+  if (!pathLoop && proj.distanceTraveled >= pathLength) {
+    const sample = samplePathAtDistance(
+      proj.pathWorldPoints,
+      proj.pathCumulative,
+      pathLength,
+    );
+    proj.pos = sample.pos;
+    proj.vel = sample.dir.scale(speed);
+    proj.isDead = true;
+    proj.expiryReason = 'range';
+    return;
+  }
+
+  const sampleDist =
+    pathLoop && pathLength > 0 ? proj.distanceTraveled % pathLength : proj.distanceTraveled;
+  const sample = samplePathAtDistance(
+    proj.pathWorldPoints,
+    proj.pathCumulative,
+    sampleDist,
+  );
+  proj.pos = sample.pos;
+  proj.vel = sample.dir.scale(speed);
 }
 
 function updateBallisticArc(

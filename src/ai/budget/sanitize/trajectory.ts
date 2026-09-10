@@ -1,6 +1,23 @@
-import type { TrajectoryConfig, TrajectoryType } from '../../../types/schema';
+import type { PathPoint, TrajectoryConfig, TrajectoryType } from '../../../types/schema';
 import { TRAJECTORY_TYPES } from '../constants';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
+
+const PATH_COORD_MIN = -2000;
+const PATH_COORD_MAX = 2000;
+
+function sanitizePathPoints(raw: unknown, maxPoints = 24): PathPoint[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const points: PathPoint[] = [];
+  for (const entry of raw) {
+    if (!isObject(entry)) continue;
+    points.push({
+      x: clamp(ensureFiniteNumber(entry.x, 0), PATH_COORD_MIN, PATH_COORD_MAX),
+      y: clamp(ensureFiniteNumber(entry.y, 0), PATH_COORD_MIN, PATH_COORD_MAX),
+    });
+    if (points.length >= maxPoints) break;
+  }
+  return points.length >= 2 ? points : undefined;
+}
 
 export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   const obj = isObject(raw) ? raw : {};
@@ -77,6 +94,17 @@ export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
   }
   if (obj.detonateAtZ !== undefined) {
     config.detonateAtZ = clamp(ensureFiniteNumber(obj.detonateAtZ, 0), 0, 400);
+  }
+
+  if (type === 'DRAWN_PATH' || obj.pathPoints !== undefined) {
+    const pathPoints = sanitizePathPoints(obj.pathPoints);
+    if (pathPoints) {
+      config.pathPoints = pathPoints;
+    }
+    config.pathSpace = obj.pathSpace === 'WORLD' ? 'WORLD' : 'CASTER_RELATIVE';
+    if (obj.pathLoop === true) {
+      config.pathLoop = true;
+    }
   }
 
   return config;

@@ -32,7 +32,11 @@ export const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'HOMING_SLERP',
   'DISCONTINUOUS_BLINK',
   'BALLISTIC_ARC',
+  'DRAWN_PATH',
 ]);
+
+export const PATH_SPACES = ['CASTER_RELATIVE', 'WORLD'] as const;
+export const PATH_SPACE_SET: ReadonlySet<string> = new Set(PATH_SPACES);
 
 export const FIELD_TYPES: ReadonlySet<string> = new Set([
   'RADIAL_IMPULSE',

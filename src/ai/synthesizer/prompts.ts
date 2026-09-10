@@ -100,8 +100,9 @@ resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, recharg
   HEALTH_PCT: cost is percent of max health
 targetingMode: "DIRECTIONAL" (default for skillshots/beams/fans) | "GROUND_POINT" (cursor-targeted sky drops, fields, mortars, traps)
 maxTargetRange: number (100-1000, default 500 — maximum distance from caster to ground cursor anchor)
-trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, spawnAltitude?, fallSpeed?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction? }
+trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC|DRAWN_PATH, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, spawnAltitude?, fallSpeed?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction?, pathPoints?, pathSpace?, pathLoop? }
   BALLISTIC_ARC: lobApex 20-300 (forward mortar lob from caster) | spawnAltitude 300-900 + fallSpeed 600-2500 (sky drop from above target; pair with targetingMode GROUND_POINT) | speed: 0 for plumb vertical sky drops, >0 for angled arcs | bounces: 0-5 ground bounces before expiry | bounceRestitution: 0.1-0.8 | clearanceHeight: 0-200 (fly over low obstacles) | detonateAtZ: 10-100 (airburst altitude) | gravityScale/groundFriction optional.
+  DRAWN_PATH: pathPoints 2-24 {x,y} in local frame (default pathSpace CASTER_RELATIVE, heading +X) or WORLD absolute polyline | pathLoop optional | composes with lobApex/bounces for arcing drawn paths.
 CRITICAL TRAJECTORY RULES:
 - For ANY falling projectile, meteor, or sky drop: trajectory.type MUST be "BALLISTIC_ARC", NEVER "LINEAR".
 - Set speed: 0, spawnAltitude: 600-800, fallSpeed: 1400-1800 for vertical drops.
@@ -218,6 +219,7 @@ Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
 Greatsword Cleave: inputProfile:{ mode:"INSTANT", windupMs:250, activeMs:150, recoveryMs:400, moveScale:{ windup:0.5, recovery:0.6 } } + ON_CAST SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:90, strength:650, durationMs:200, attachToSource:true, arcDeg:90, arcFacing:"CASTER_FACING" } } + ON_RAM -> APPLY_IMPULSE { baseForce:500, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
+Serpent Lash: trajectory DRAWN_PATH { speed:420, maxRange:520, pathSpace:"CASTER_RELATIVE", pathPoints:[{x:0,y:0},{x:80,y:-40},{x:160,y:40},{x:240,y:-20},{x:320,y:0}] } + ON_HIT APPLY_IMPULSE { baseForce:550, target:"TARGET", directionMode:"ALONG_TRAJECTORY" } — S-curve skillshot that bends around cover.
 Charged Shot: inputProfile:{ mode:"CHARGE_AND_RELEASE", minChargeMs:200, maxChargeMs:1200 } + trajectory LINEAR + ON_HIT APPLY_IMPULSE
 Heat Flamer: inputProfile:{ mode:"CHANNELED", channelIntervalMs:100 } + resourceCost:{ type:"HEAT", cost:8, rechargeRate:20, lockoutDurationMs:2500 } + cooldownMs:0 + ON_CAST SPAWN_FIELD { field: { fieldType:"RADIAL_IMPULSE", radius:80, strength:600, durationMs:400 } }
 Stasis Combo: inputProfile:{ mode:"COMBO_CHAIN", comboWindowMs:3000 } + two ON_CAST nodes with conditions COMBO_STEP EQ 0 (APPLY_STASIS CASTER) and EQ 1 (RELEASE_STASIS CASTER)

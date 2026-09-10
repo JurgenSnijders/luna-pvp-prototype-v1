@@ -25,7 +25,15 @@ export type TrajectoryType =
   | 'ORBIT_ANCHOR'
   | 'HOMING_SLERP'
   | 'DISCONTINUOUS_BLINK'
-  | 'BALLISTIC_ARC';
+  | 'BALLISTIC_ARC'
+  | 'DRAWN_PATH';
+
+export type PathSpace = 'CASTER_RELATIVE' | 'WORLD';
+
+export interface PathPoint {
+  x: number;
+  y: number;
+}
 
 export type FieldType =
   | 'RADIAL_IMPULSE'
@@ -228,6 +236,9 @@ export interface TrajectoryConfig {
   detonateAtZ?: number;
   spawnAltitude?: number;
   fallSpeed?: number;
+  pathPoints?: PathPoint[];
+  pathSpace?: PathSpace;
+  pathLoop?: boolean;
 }
 
 export interface FieldConfig {

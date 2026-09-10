@@ -32,7 +32,12 @@ import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
-import { initBallisticKinematics } from '../src/primitives/Trajectories';
+import {
+  buildArcLengthTable,
+  resolvePathWorldPoints,
+  simplifyPath,
+} from '../src/primitives/drawnPath';
+import { initBallisticKinematics, initDrawnPath, updateTrajectory } from '../src/primitives/Trajectories';
 import {
   clearAimingPathCache,
   resolveLiveAimingPaths,
@@ -1950,6 +1955,250 @@ function buildEvolutionTree(
   return tree;
 }
 
+function assertDrawnPathFollowing(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const speed = 300;
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  world.setViewportBounds(4000, 4000);
+
+  const densePath = {
+    type: 'DRAWN_PATH' as const,
+    speed,
+    maxRange: 2000,
+    pathSpace: 'CASTER_RELATIVE' as const,
+    pathPoints: Array.from({ length: 40 }, (_, i) => ({
+      x: i * 5,
+      y: Math.sin(i * 0.4) * 12,
+    })),
+  };
+  const sparsePath = {
+    ...densePath,
+    pathPoints: [
+      { x: 0, y: 0 },
+      { x: 120, y: 30 },
+      { x: 240, y: -20 },
+      { x: 360, y: 0 },
+    ],
+  };
+
+  for (const trajectory of [densePath, sparsePath]) {
+    const spawnPos = Vector2D.create(100, 50);
+    const aimAngle = Math.PI / 6;
+    const projectile = new Projectile(
+      spawnPos.clone(),
+      trajectory,
+      'caster_stub',
+      aimAngle,
+      new Map<string, TriggerNode[]>(),
+    );
+    initDrawnPath(projectile, trajectory, spawnPos, aimAngle);
+
+    for (let i = 0; i < 90; i++) {
+      if (projectile.isDead) break;
+      const prev = projectile.pos.clone();
+      updateTrajectory(projectile, dt, world);
+      if (projectile.isDead) break;
+      const step = projectile.pos.sub(prev).mag();
+      const expected = speed * dt;
+      if (Math.abs(step - expected) > expected * 0.08 + 0.5) {
+        return {
+          pass: false,
+          reason: `constant-speed drift ${step.toFixed(2)} vs ${expected.toFixed(2)} (${trajectory.pathPoints.length} pts)`,
+        };
+      }
+    }
+  }
+
+  const fidelityTrajectory = {
+    type: 'DRAWN_PATH' as const,
+    speed,
+    maxRange: 2000,
+    pathSpace: 'CASTER_RELATIVE' as const,
+    pathPoints: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 200, y: 80 },
+      { x: 300, y: 80 },
+    ],
+  };
+  const fidelitySpawn = Vector2D.zero();
+  const fidelityWorld = resolvePathWorldPoints(fidelityTrajectory, fidelitySpawn, 0);
+  const fidelityProj = new Projectile(
+    fidelitySpawn.clone(),
+    fidelityTrajectory,
+    'caster_stub',
+    0,
+    new Map<string, TriggerNode[]>(),
+  );
+  initDrawnPath(fidelityProj, fidelityTrajectory, fidelitySpawn, 0);
+
+  let nextCheckpoint = 1;
+  for (let i = 0; i < 240 && !fidelityProj.isDead && nextCheckpoint < fidelityWorld.length; i++) {
+    updateTrajectory(fidelityProj, dt, world);
+    const target = fidelityWorld[nextCheckpoint];
+    if (fidelityProj.pos.dist(target) <= 10) {
+      nextCheckpoint++;
+    }
+  }
+  if (nextCheckpoint < fidelityWorld.length) {
+    return {
+      pass: false,
+      reason: `path fidelity missed checkpoint ${nextCheckpoint}/${fidelityWorld.length - 1}`,
+    };
+  }
+
+  const basePath = fidelityTrajectory.pathPoints;
+  const world0 = resolvePathWorldPoints(
+    { ...fidelityTrajectory, pathPoints: basePath },
+    Vector2D.zero(),
+    0,
+  );
+  const world90 = resolvePathWorldPoints(
+    { ...fidelityTrajectory, pathPoints: basePath },
+    Vector2D.zero(),
+    Math.PI / 2,
+  );
+  for (let i = 0; i < world0.length; i++) {
+    const rotated = world0[i].rotate(Math.PI / 2);
+    if (rotated.dist(world90[i]) > 0.5) {
+      return {
+        pass: false,
+        reason: `rotation mismatch at point ${i}: ${rotated.dist(world90[i]).toFixed(2)}`,
+      };
+    }
+  }
+
+  const shortRangeTrajectory = {
+    ...fidelityTrajectory,
+    maxRange: 120,
+  };
+  const shortProj = new Projectile(
+    fidelitySpawn.clone(),
+    shortRangeTrajectory,
+    'caster_stub',
+    0,
+    new Map<string, TriggerNode[]>(),
+  );
+  initDrawnPath(shortProj, shortRangeTrajectory, fidelitySpawn, 0);
+  for (let i = 0; i < 120 && !shortProj.isDead; i++) {
+    updateTrajectory(shortProj, dt, world);
+  }
+  if (!shortProj.isDead || shortProj.expiryReason !== 'range') {
+    return {
+      pass: false,
+      reason: `short maxRange expected range expiry, got dead=${shortProj.isDead} reason=${shortProj.expiryReason}`,
+    };
+  }
+  if (shortProj.distanceTraveled < 110 || shortProj.distanceTraveled > 130) {
+    return {
+      pass: false,
+      reason: `short maxRange traveled=${shortProj.distanceTraveled.toFixed(1)} expected ~120`,
+    };
+  }
+
+  const endTrajectory = {
+    ...fidelityTrajectory,
+    maxRange: 5000,
+  };
+  const endProj = new Projectile(
+    fidelitySpawn.clone(),
+    endTrajectory,
+    'caster_stub',
+    0,
+    new Map<string, TriggerNode[]>(),
+  );
+  initDrawnPath(endProj, endTrajectory, fidelitySpawn, 0);
+  const { total: pathLength } = buildArcLengthTable(fidelityWorld);
+  for (let i = 0; i < 600 && !endProj.isDead; i++) {
+    updateTrajectory(endProj, dt, world);
+  }
+  if (!endProj.isDead || endProj.expiryReason !== 'range') {
+    return {
+      pass: false,
+      reason: `path-end expiry expected range, got dead=${endProj.isDead} reason=${endProj.expiryReason}`,
+    };
+  }
+  if (Math.abs(endProj.distanceTraveled - pathLength) > pathLength * 0.05 + 2) {
+    return {
+      pass: false,
+      reason: `path-end traveled=${endProj.distanceTraveled.toFixed(1)} expected ~${pathLength.toFixed(1)}`,
+    };
+  }
+
+  const verticalTrajectory = {
+    type: 'DRAWN_PATH' as const,
+    speed: 280,
+    maxRange: 2000,
+    pathSpace: 'CASTER_RELATIVE' as const,
+    pathPoints: [
+      { x: 0, y: 0 },
+      { x: 180, y: 0 },
+      { x: 360, y: 0 },
+    ],
+    lobApex: 100,
+    bounces: 1,
+  };
+  const verticalProj = new Projectile(
+    Vector2D.zero(),
+    verticalTrajectory,
+    'caster_stub',
+    0,
+    new Map<string, TriggerNode[]>(),
+  );
+  initDrawnPath(verticalProj, verticalTrajectory, Vector2D.zero(), 0);
+  initBallisticKinematics(verticalProj, verticalTrajectory);
+  world.addProjectile(verticalProj);
+  const interpreter = new Interpreter();
+  let apexQueued = 0;
+  let maxZ = 0;
+  for (let i = 0; i < 360 && !verticalProj.isDead; i++) {
+    interpreter.updateTrajectories(world, dt);
+    if (world.pendingApexEvents.includes(verticalProj)) {
+      apexQueued += 1;
+    }
+    world.step(dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+    maxZ = Math.max(maxZ, verticalProj.z);
+    if (apexQueued >= 1 && verticalProj.bounceCount >= 1) {
+      break;
+    }
+  }
+  if (maxZ < 40) {
+    return { pass: false, reason: `drawn vertical composition never arced (maxZ=${maxZ.toFixed(1)})` };
+  }
+  if (apexQueued < 1) {
+    return { pass: false, reason: 'drawn vertical composition never queued ON_AIR_APEX' };
+  }
+  if (verticalProj.bounceCount < 1) {
+    return {
+      pass: false,
+      reason: `drawn vertical composition expected bounce, got ${verticalProj.bounceCount}`,
+    };
+  }
+
+  const noisyStroke = Array.from({ length: 300 }, (_, i) => ({
+    x: i * 2,
+    y: Math.sin(i * 0.25) * 20 + (i % 3) * 0.5,
+  }));
+  const simplified = simplifyPath(noisyStroke, 4, 24);
+  if (simplified.length > 24) {
+    return { pass: false, reason: `simplifyPath returned ${simplified.length} points (>24)` };
+  }
+  if (
+    simplified[0].x !== noisyStroke[0].x ||
+    simplified[0].y !== noisyStroke[0].y ||
+    simplified[simplified.length - 1].x !== noisyStroke[noisyStroke.length - 1].x ||
+    simplified[simplified.length - 1].y !== noisyStroke[noisyStroke.length - 1].y
+  ) {
+    return { pass: false, reason: 'simplifyPath did not preserve endpoints' };
+  }
+
+  return {
+    pass: true,
+    reason: `constant-speed dense/sparse, fidelity, rotation, expiry, vertical, simplify=${simplified.length}`,
+  };
+}
+
 function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
   const dt = 1 / 60;
   const player = new Player(Vector2D.zero());
@@ -2458,7 +2707,15 @@ function run(): void {
   console.log(`  ${DIM}${castPhaseTimeline.reason}${RESET}`);
   if (castPhaseTimeline.pass) passed++;
 
-  const totalCases = suite.length + 26;
+  const drawnPathFollowing = assertDrawnPathFollowing();
+  const drawnPathFollowingTag = drawnPathFollowing.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${drawnPathFollowingTag} Drawn path following`);
+  console.log(`  ${DIM}${drawnPathFollowing.reason}${RESET}`);
+  if (drawnPathFollowing.pass) passed++;
+
+  const totalCases = suite.length + 27;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -17,6 +17,7 @@ import {
   SPELL_ARCHETYPES,
   TERRAIN_TYPES,
   TRAIL_TYPES,
+  PATH_SPACES,
   TRAJECTORY_TYPES,
   TRIGGER_TYPES,
   TARGETING_MODES,
@@ -25,6 +26,7 @@ import {
   VFX_DRAW_LAYERS,
   VFX_LAYER_KINDS,
 } from '../../types/schema/constants';
+import { TRAJECTORY_TYPES as BUDGET_TRAJECTORY_TYPES } from '../budget/constants';
 
 function stringEnum(values: ReadonlySet<string> | readonly string[]): { type: 'string'; enum: string[] } {
   const list = values instanceof Set ? [...values] : [...values];
@@ -54,6 +56,20 @@ const trajectoryConfig = {
     detonateAtZ: { type: 'number' },
     spawnAltitude: { type: 'number' },
     fallSpeed: { type: 'number' },
+    pathPoints: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['x', 'y'],
+        properties: {
+          x: { type: 'number' },
+          y: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+    },
+    pathSpace: stringEnum(PATH_SPACES),
+    pathLoop: { type: 'boolean' },
   },
   additionalProperties: false,
 };
@@ -467,6 +483,17 @@ const coveredActionTypes = new Set(
 for (const actionType of ACTION_TYPES) {
   if (!coveredActionTypes.has(actionType)) {
     throw new Error(`abilityResponseSchema missing action branch: ${actionType}`);
+  }
+}
+
+for (const trajectoryType of TRAJECTORY_TYPES) {
+  if (!BUDGET_TRAJECTORY_TYPES.has(trajectoryType)) {
+    throw new Error(`TRAJECTORY_TYPES drift: schema missing budget type ${trajectoryType}`);
+  }
+}
+for (const trajectoryType of BUDGET_TRAJECTORY_TYPES) {
+  if (!TRAJECTORY_TYPES.has(trajectoryType)) {
+    throw new Error(`TRAJECTORY_TYPES drift: budget missing schema type ${trajectoryType}`);
   }
 }
 
