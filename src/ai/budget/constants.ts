@@ -24,6 +24,10 @@ export const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
 export const MAX_DEPTH = 3;
 export const MODIFY_STAT_COST = 5.0;
 
+export const MAX_EVOLUTION_TIER = 6;
+export const TIER_POWER_GROWTH = 0.35;
+export const MAX_EVOLVED_RECOIL = 450;
+
 export const TRAJECTORY_TYPES = new Set([
   'LINEAR',
   'RETURN_TO_SOURCE',

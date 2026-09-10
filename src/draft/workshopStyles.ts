@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v20';
+export const STYLE_ID = 'luna-workshop-styles-v21';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1458,6 +1458,174 @@ export function injectStyles(): void {
 
     html[data-cheap-ui='1'] .action-slot-rarity-frame {
       box-shadow: none;
+    }
+
+    .evolution-tree-host {
+      display: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      padding: 4px 2px 8px;
+    }
+
+    .evolution-tree-root {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .evolution-tree-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .evolution-tree-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .evolution-tree-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+      color: #9cc;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+    }
+
+    .evolution-tree-header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .evolution-tree-hint {
+      font-size: 11px;
+      color: #7a9;
+      line-height: 1.35;
+    }
+
+    .evolution-saturation-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .evolution-saturation-chip {
+      font-size: 10px;
+      line-height: 1.2;
+      padding: 2px 6px;
+      border-radius: 2px;
+      border: 1px solid rgba(255, 170, 0, 0.45);
+      background: rgba(255, 170, 0, 0.12);
+      color: #ffcc66;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+    }
+
+    .evolution-tree-preview {
+      display: flex;
+      justify-content: center;
+    }
+
+    .evolution-tree-preview .inspector-hero-wrap {
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .evolution-tree-tiers {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .evolution-tier-row {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .evolution-tier-row.evolution-tier-locked {
+      opacity: 0.45;
+    }
+
+    .evolution-tier-label {
+      font-size: 11px;
+      color: #7ad;
+      padding-top: 10px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .evolution-tier-cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .evolution-node-card {
+      width: 148px;
+      min-height: 72px;
+      padding: 8px 10px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      background: rgba(0, 0, 0, 0.35);
+      color: var(--retro-text-primary, #e0f8ff);
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+    }
+
+    .evolution-node-card:hover:not(:disabled) {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.25);
+    }
+
+    .evolution-node-card.tile-selected {
+      border-color: #ffd700;
+      box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.25), 0 0 8px rgba(255, 215, 0, 0.35);
+    }
+
+    .evolution-node-card.evolution-node-locked {
+      cursor: not-allowed;
+    }
+
+    .evolution-node-title {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .evolution-node-desc {
+      font-size: 10px;
+      color: #9ab;
+      line-height: 1.3;
+    }
+
+    .evolution-tree-cap-msg {
+      padding: 8px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 215, 0, 0.35);
+      background: rgba(255, 215, 0, 0.08);
+      color: #ffd700;
+      font-size: 12px;
+      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+    }
+
+    .evolution-tree-empty {
+      padding: 24px;
+      text-align: center;
+      color: #8aa;
+      font-size: 13px;
     }
   `;
   document.head.appendChild(style);

@@ -1,7 +1,11 @@
 import type { PassiveModifierPayload, SkillCategory } from '../../types/cards';
 import type { AbilitySchema, TriggerNode } from '../../types/schema';
 import { validateAbilitySchema } from '../../types/schema';
-import { CATEGORY_BUDGETS } from './constants';
+import {
+  CATEGORY_BUDGETS,
+  MAX_EVOLVED_RECOIL,
+  TIER_POWER_GROWTH,
+} from './constants';
 import { clamp } from './helpers';
 import { scoreAbilitySchema } from './score';
 import { sanitizeAbilitySchema } from './sanitize/ability';
@@ -18,7 +22,7 @@ function clampTrajectorySpeed(traj: TrajectoryConfig): void {
   traj.speed = clamp(traj.speed, minSpeed, 1600);
 }
 
-function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
+export function clampSchemaValues(schema: AbilitySchema): AbilitySchema {
   const s = structuredClone(schema);
 
   if (s.trajectory) {
@@ -80,8 +84,10 @@ function minimalFallbackSchema(): AbilitySchema {
 export function balanceAbilitySchema(
   schema: AbilitySchema,
   category: SkillCategory = 'SECONDARY',
+  tier = 1,
 ): AbilitySchema {
   const budget = CATEGORY_BUDGETS[category];
+  const scaledTargetPower = budget.targetPower * (1 + TIER_POWER_GROWTH * (tier - 1));
   const sanitized = sanitizeAbilitySchema(schema, category);
   const originalRecoil = schema.recoilKick;
   const clamped = clampSchemaValues(sanitized);
@@ -89,13 +95,16 @@ export function balanceAbilitySchema(
 
   clamped.cooldownMs = Math.max(
     budget.minCdMs,
-    Math.round((totalPower / budget.targetPower) * budget.baseCdScale),
+    Math.round((totalPower / scaledTargetPower) * budget.baseCdScale),
   );
 
   if (category === 'MOBILITY') {
     clamped.recoilKick = originalRecoil;
   } else {
-    clamped.recoilKick = Math.max(0, Math.round(totalPower / 2.5));
+    clamped.recoilKick = Math.min(
+      MAX_EVOLVED_RECOIL,
+      Math.max(0, Math.round(totalPower / 2.5)),
+    );
   }
 
   const validated = validateAbilitySchema(clamped);

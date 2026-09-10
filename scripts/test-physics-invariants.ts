@@ -1,4 +1,9 @@
-import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
+import { balanceAbilitySchema, clampSchemaValues, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
+import { getStatCatalogEntry } from '../src/ai/budget/modifiers';
+import { analyzeSaturation } from '../src/ai/budget/saturation';
+import { MAX_EVOLVED_RECOIL } from '../src/ai/budget/constants';
+import { resolveEvolutionTree } from '../src/game/EvolutionStore';
+import type { EvolutionNode, EvolutionTree } from '../src/types/evolution';
 import { scoreAbilitySchema } from '../src/ai/budget/score';
 import { sanitizeVisuals } from '../src/ai/budget/sanitize/visuals';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
@@ -15,7 +20,7 @@ import {
   intensityParticleScale,
   normalizeScopePower,
 } from '../src/render/gl/impactIntensity';
-import { PhysicsWorld } from '../src/engine/PhysicsWorld';
+import { MAX_ENTITIES, PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { HAZARD_CLEARANCE_Z } from '../src/engine/verticalConstants';
 import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
@@ -1883,6 +1888,172 @@ function assertLavaShaderTectonicPrototype(): { pass: boolean; reason: string } 
   return { pass: true, reason: 'Basalt tectonic lava shader with damped warp, narrow fissures, and no bgParallaxLava' };
 }
 
+function assertClusterMortarStructure(schema: AbilitySchema): { pass: boolean; reason: string } {
+  const apexOut = schema.triggers.find((t) => t.trigger === 'ON_AIR_APEX');
+  if (!apexOut) {
+    return { pass: false, reason: 'ON_AIR_APEX node missing' };
+  }
+
+  const childSpawn = apexOut.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+  if (!childSpawn || childSpawn.type !== 'SPAWN_PROJECTILE') {
+    return { pass: false, reason: 'ON_AIR_APEX SPAWN_PROJECTILE missing' };
+  }
+
+  if (childSpawn.projectileTrajectory?.type !== 'BALLISTIC_ARC') {
+    return {
+      pass: false,
+      reason: `child trajectory.type=${childSpawn.projectileTrajectory?.type ?? 'undefined'} expected BALLISTIC_ARC`,
+    };
+  }
+
+  if (schema.trajectory?.type !== 'BALLISTIC_ARC') {
+    return {
+      pass: false,
+      reason: `root trajectory.type=${schema.trajectory?.type ?? 'undefined'} expected BALLISTIC_ARC`,
+    };
+  }
+
+  return { pass: true, reason: 'cluster mortar structure intact' };
+}
+
+function buildEvolutionTree(
+  baseSchema: AbilitySchema,
+  catalogIds: string[],
+): EvolutionTree {
+  const tree: EvolutionTree = {
+    version: 1,
+    rootSpellId: baseSchema.id,
+    baseSchema: structuredClone(baseSchema),
+    nodes: [],
+    activePath: [],
+  };
+
+  let parentId: string | null = null;
+  for (let i = 0; i < catalogIds.length; i++) {
+    const entry = getStatCatalogEntry(catalogIds[i]);
+    if (!entry) {
+      throw new Error(`Missing stat catalog entry: ${catalogIds[i]}`);
+    }
+    const node: EvolutionNode = {
+      id: `evo-tier-${i + 1}`,
+      parentId,
+      tier: i + 1,
+      kind: 'STAT',
+      label: entry.label,
+      modifiers: structuredClone(entry.modifiers),
+    };
+    tree.nodes.push(node);
+    tree.activePath.push(node.id);
+    parentId = node.id;
+  }
+
+  return tree;
+}
+
+function assertSixTierEvolution(): { pass: boolean; reason: string } {
+  const base = structuredClone(VERTICAL_RECIPES.clusterMortar) as AbilitySchema;
+  base.id = 'test_cluster_mortar_evolution';
+  const category = 'SECONDARY';
+  const sequence = ['quickened', 'sharpened', 'extended', 'heavier', 'ricochet', 'braced'];
+
+  const tier1 = resolveEvolutionTree(
+    {
+      version: 1,
+      rootSpellId: base.id,
+      baseSchema: structuredClone(base),
+      nodes: [],
+      activePath: [],
+    },
+    category,
+  );
+  const tier1Cooldown = tier1.schema.cooldownMs;
+  const schemasByTier: AbilitySchema[] = [tier1.schema];
+
+  for (let tier = 1; tier <= sequence.length; tier++) {
+    const tree = buildEvolutionTree(base, sequence.slice(0, tier));
+    const resolvedOnce = resolveEvolutionTree(tree, category);
+    const resolvedTwice = resolveEvolutionTree(tree, category);
+
+    if (JSON.stringify(resolvedOnce.schema) !== JSON.stringify(resolvedTwice.schema)) {
+      return { pass: false, reason: `tier ${tier} resolve is not deterministic` };
+    }
+
+    const structure = assertClusterMortarStructure(resolvedOnce.schema);
+    if (!structure.pass) {
+      return { pass: false, reason: `tier ${tier}: ${structure.reason}` };
+    }
+
+    if (resolvedOnce.schema.cooldownMs > tier1Cooldown * 1.6) {
+      return {
+        pass: false,
+        reason: `tier ${tier} cooldown ${resolvedOnce.schema.cooldownMs} exceeds 1.6x tier-1 (${tier1Cooldown})`,
+      };
+    }
+
+    if (resolvedOnce.schema.recoilKick > MAX_EVOLVED_RECOIL) {
+      return {
+        pass: false,
+        reason: `tier ${tier} recoil ${resolvedOnce.schema.recoilKick} exceeds MAX_EVOLVED_RECOIL`,
+      };
+    }
+
+    const preClamp = structuredClone(resolvedOnce.schema);
+    const postClamp = clampSchemaValues(preClamp);
+    const saturation = analyzeSaturation(preClamp, postClamp);
+    if (saturation.entityCapRisk) {
+      return {
+        pass: false,
+        reason: `tier ${tier} entityCapRisk (~${saturation.estimatedEntities})`,
+      };
+    }
+
+    const world = new PhysicsWorld(Vector2D.zero(), 400);
+    world.setViewportBounds(2000, 2000);
+    const casterRadius = world.getCombatantRadius();
+    const caster = new Player(new Vector2D(casterRadius + 1, 0));
+    caster.tags.add('kinematic');
+    const target = new Dummy(new Vector2D(casterRadius + 1 + 200, 0));
+    world.addPlayer(caster);
+    world.addDummy(target);
+    const interpreter = new Interpreter();
+    interpreter.executeAbility(
+      resolvedOnce.schema,
+      {
+        origin: caster.pos.clone(),
+        heading: new Vector2D(1, 0),
+        caster,
+        depth: 0,
+      },
+      world,
+    );
+    if (world.getEntityCount() >= MAX_ENTITIES) {
+      return {
+        pass: false,
+        reason: `tier ${tier} headless cast hit MAX_ENTITIES (${MAX_ENTITIES})`,
+      };
+    }
+
+    schemasByTier.push(resolvedOnce.schema);
+  }
+
+  for (let tier = sequence.length; tier >= 2; tier--) {
+    const tree = buildEvolutionTree(base, sequence.slice(0, tier));
+    tree.activePath = tree.activePath.slice(0, tier - 1);
+    const resolved = resolveEvolutionTree(tree, category);
+    if (JSON.stringify(resolved.schema) !== JSON.stringify(schemasByTier[tier - 1])) {
+      return {
+        pass: false,
+        reason: `tier ${tier - 1} reversibility failed after dropping tier-${tier} node`,
+      };
+    }
+  }
+
+  return {
+    pass: true,
+    reason: `6-tier path deterministic, cooldown-banded, reversible; tier-6 cd=${schemasByTier[6].cooldownMs}ms`,
+  };
+}
+
 function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } {
   const tiers = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'] as const;
   for (const tier of tiers) {
@@ -2111,7 +2282,15 @@ function run(): void {
   console.log(`  ${DIM}${angularHit.reason}${RESET}`);
   if (angularHit.pass) passed++;
 
-  const totalCases = suite.length + 24;
+  const sixTierEvolution = assertSixTierEvolution();
+  const sixTierEvolutionTag = sixTierEvolution.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${sixTierEvolutionTag} Six-tier evolution tree`);
+  console.log(`  ${DIM}${sixTierEvolution.reason}${RESET}`);
+  if (sixTierEvolution.pass) passed++;
+
+  const totalCases = suite.length + 25;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

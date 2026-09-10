@@ -85,12 +85,16 @@ import {
   parseForgeCardDragPayload,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
+import { clampSchemaValues } from '../ai/budget/balance';
+import { analyzeSaturation, formatSaturationChips } from '../ai/budget/saturation';
+import { EvolutionStore } from '../game/EvolutionStore';
+import { renderEvolutionTree } from './EvolutionTreePanel';
 import { recordSpellPlayback, type PlaybackRecording } from './InspectorPlaybackSim';
 import { drawScopeProjectile } from '../render/canvas/projectiles';
 import { ActionBarHUD } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
-type WorkshopTab = 'VAULT' | 'FORGE';
+type WorkshopTab = 'VAULT' | 'FORGE' | 'TREE';
 
 interface DisplayTrajectory {
   trajectory?: TrajectoryConfig;
@@ -587,6 +591,7 @@ export class DraftModal {
   private workspaceContent!: HTMLElement;
   private vaultRoot!: HTMLElement;
   private forgeRoot!: HTMLElement;
+  private treeRoot!: HTMLElement;
   private vaultTabBtn!: HTMLButtonElement;
   private forgeTabBtn!: HTMLButtonElement;
   private vaultSearchInput!: HTMLInputElement;
@@ -641,6 +646,7 @@ export class DraftModal {
   private forgeVaultPickerActive = false;
   private vaultSavedCardIndex: number | null = null;
   private selectedSpellId: string | null = null;
+  private treeSpellId: string | null = null;
   private hoveredSpellId: string | null = null;
   private heroScopeAnimId: number | null = null;
   private activePlaybackRecording: PlaybackRecording | null = null;
@@ -821,10 +827,15 @@ export class DraftModal {
     this.vaultRoot = document.createElement('div');
     this.vaultRoot.className = 'vault-root';
 
+    this.treeRoot = document.createElement('div');
+    this.treeRoot.className = 'evolution-tree-host';
+    this.treeRoot.style.display = 'none';
+
     this.workspaceContent = document.createElement('div');
     this.workspaceContent.className = 'workspace-content';
     this.workspaceContent.appendChild(this.vaultRoot);
     this.workspaceContent.appendChild(this.forgeRoot);
+    this.workspaceContent.appendChild(this.treeRoot);
 
     this.workspaceMain = document.createElement('div');
     this.workspaceMain.className = 'workspace-main';
@@ -987,6 +998,8 @@ export class DraftModal {
     this.forgeTabBtn.classList.toggle('active', this.activeTab === 'FORGE');
     this.vaultRoot.style.display = this.activeTab === 'VAULT' ? 'block' : 'none';
     this.forgeRoot.style.display = this.activeTab === 'FORGE' ? 'flex' : 'none';
+    this.treeRoot.style.display = this.activeTab === 'TREE' ? 'flex' : 'none';
+    this.inspectorPane.style.display = this.activeTab === 'TREE' ? 'none' : '';
   }
 
   private setActiveTab(tab: WorkshopTab): void {
@@ -1003,7 +1016,88 @@ export class DraftModal {
       this.renderVaultGrid();
       return;
     }
+    if (this.activeTab === 'TREE') {
+      this.renderEvolutionTreeView();
+      return;
+    }
     this.renderForge();
+  }
+
+  private resolveTreeCategory(spellId: string): SkillCategory {
+    const loadout = SpellInventoryManager.getLoadout();
+    for (const key of ACTION_SLOT_KEYS) {
+      if (loadout[key] === spellId) return SLOT_CATEGORY_MAP[key];
+    }
+    return 'SECONDARY';
+  }
+
+  private openEvolutionTree(spellId: string): void {
+    const resolvedId = EvolutionStore.getResolvedSpellId(spellId);
+    this.treeSpellId = resolvedId;
+    this.selectedSpellId = resolvedId;
+    EvolutionStore.ensureTree(resolvedId, this.resolveTreeCategory(resolvedId));
+    this.setActiveTab('TREE');
+  }
+
+  private renderEvolutionTreeView(): void {
+    if (!this.treeSpellId) {
+      this.treeRoot.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'evolution-tree-empty';
+      empty.textContent = 'Select a spell in the vault to open its evolution tree.';
+      this.treeRoot.appendChild(empty);
+      return;
+    }
+
+    const category = this.resolveTreeCategory(this.treeSpellId);
+    renderEvolutionTree(this.treeRoot, {
+      spellId: this.treeSpellId,
+      category,
+      onGenerateMechanic: (resolvedId) => {
+        this.startEvolution(resolvedId);
+      },
+      onCommitted: () => {
+        this.renderBottomLoadoutBay();
+        if (this.activeTab === 'VAULT') {
+          this.renderVaultGrid();
+          this.renderTacticalInspector();
+        }
+      },
+      stopPreview: () => this.stopHeroScopeAnimation(),
+      startPreview: (container, spell) => this.mountHeroScopePreview(container, spell),
+    });
+  }
+
+  private mountHeroScopePreview(container: HTMLElement, spell: AbilitySchema): void {
+    this.stopHeroScopeAnimation();
+    container.innerHTML = '';
+
+    const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const heroWrap = document.createElement('div');
+    heroWrap.className = 'inspector-hero-wrap';
+    heroWrap.style.borderColor = archetypeColor;
+    heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
+
+    const scopeCanvas = document.createElement('canvas');
+    const dpr = window.devicePixelRatio || 1;
+    scopeCanvas.width = SCOPE_WIDTH * dpr;
+    scopeCanvas.height = SCOPE_HEIGHT * dpr;
+    scopeCanvas.style.width = `${SCOPE_WIDTH}px`;
+    scopeCanvas.style.height = `${SCOPE_HEIGHT}px`;
+    heroWrap.appendChild(scopeCanvas);
+    container.appendChild(heroWrap);
+
+    this.activePlaybackRecording = recordSpellPlayback(spell, SCOPE_WIDTH, SCOPE_HEIGHT, 16);
+    const scopeCtx = scopeCanvas.getContext('2d');
+    if (scopeCtx) {
+      scopeCtx.scale(dpr, dpr);
+      this.startHeroScopeAnimation(
+        scopeCanvas,
+        scopeCtx,
+        this.activePlaybackRecording,
+        archetypeColor,
+      );
+    }
   }
 
   private buildVault(): void {
@@ -1378,7 +1472,7 @@ export class DraftModal {
     upgradeBtn.className = 'inspector-upgrade-btn';
     upgradeBtn.innerHTML = '<span>✦</span> UPGRADE / EVOLVE SPELL';
     upgradeBtn.addEventListener('click', () => {
-      this.startEvolution(spell.id);
+      this.openEvolutionTree(spell.id);
     });
     actionsSection.appendChild(upgradeBtn);
 
@@ -1874,17 +1968,28 @@ export class DraftModal {
     if (this.vaultSavedCardIndex !== null || !card.abilityPayload) return;
 
     const ability = structuredClone(card.abilityPayload);
-    ability.id = this.mintSpellId();
     ability.name = card.title || ability.name;
     ability.tagline = card.tagline;
     ability.description = card.description;
     stampDraftCardMetadataOntoAbility(ability, card);
 
-    const stored = this.callbacks.onStoreSpell(ability);
-    card.abilityPayload = stored;
-    this.vaultSavedCardIndex = cardIndex;
-
     const category = this.resolveSynthesisCategory();
+
+    if (this.evolvingBaseSpellId) {
+      const spellId = EvolutionStore.getResolvedSpellId(this.evolvingBaseSpellId);
+      ability.id = spellId;
+      EvolutionStore.addMechanicNode(spellId, ability, card.evolutionDiff, category);
+      const resolved = EvolutionStore.resolveSpell(spellId, category);
+      card.abilityPayload = resolved.schema;
+      this.treeSpellId = spellId;
+      this.selectedSpellId = spellId;
+    } else {
+      ability.id = this.mintSpellId();
+      const stored = this.callbacks.onStoreSpell(ability);
+      card.abilityPayload = stored;
+    }
+
+    this.vaultSavedCardIndex = cardIndex;
     this.evolvingBaseSpellId = null;
     this.evolutionContext = null;
     this.mode = 'FORGE_NEW';
@@ -2773,6 +2878,24 @@ export class DraftModal {
           `font-size:${FONTS.size.sm};color:#6cf;margin-bottom:6px;line-height:1.35;flex-shrink:0;`;
         diffList.textContent = card.evolutionDiff.join(' · ');
         el.appendChild(diffList);
+      }
+
+      if (card.abilityPayload) {
+        const preClamp = structuredClone(card.abilityPayload);
+        const postClamp = clampSchemaValues(preClamp);
+        const saturationChips = formatSaturationChips(analyzeSaturation(preClamp, postClamp));
+        if (saturationChips.length > 0) {
+          const chipRow = document.createElement('div');
+          chipRow.className = 'evolution-saturation-chips';
+          chipRow.style.marginBottom = '6px';
+          for (const chip of saturationChips) {
+            const chipEl = document.createElement('span');
+            chipEl.className = 'evolution-saturation-chip';
+            chipEl.textContent = chip;
+            chipRow.appendChild(chipEl);
+          }
+          el.appendChild(chipRow);
+        }
       }
 
       el.appendChild(
