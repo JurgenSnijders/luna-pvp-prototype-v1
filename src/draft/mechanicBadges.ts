@@ -73,6 +73,9 @@ export function extractMechanicBadgesFromAbility(
   if (s.inputProfile?.mode && s.inputProfile.mode !== 'INSTANT') {
     pushBadge(`[${s.inputProfile.mode.replace(/_/g, ' ')}]`, 'cast');
   }
+  if ((s.inputProfile?.windupMs ?? 0) > 0) {
+    pushBadge(`[WINDUP ${s.inputProfile!.windupMs}ms]`, 'cast');
+  }
   if (s.resourceCost?.type) {
     pushBadge(`[${s.resourceCost.type.replace(/_/g, ' ')}]`, 'cast');
   }

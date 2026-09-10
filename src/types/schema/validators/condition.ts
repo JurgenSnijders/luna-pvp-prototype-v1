@@ -5,6 +5,7 @@ import {
   RESOURCE_TYPES,
 } from '../constants';
 import type {
+  CastPhaseMoveScale,
   ComparisonOperator,
   ConditionNode,
   ConditionQuery,
@@ -84,6 +85,25 @@ export function validateConditionNode(value: unknown): ConditionNode | null {
   }
 }
 
+function validateCastPhaseMoveScale(value: unknown): CastPhaseMoveScale | null {
+  if (!isObject(value)) return null;
+  const scale: CastPhaseMoveScale = {};
+  if (value.windup !== undefined) {
+    if (!isNumber(value.windup) || value.windup < 0 || value.windup > 2) return null;
+    scale.windup = value.windup;
+  }
+  if (value.active !== undefined) {
+    if (!isNumber(value.active) || value.active < 0 || value.active > 2) return null;
+    scale.active = value.active;
+  }
+  if (value.recovery !== undefined) {
+    if (!isNumber(value.recovery) || value.recovery < 0 || value.recovery > 2) return null;
+    scale.recovery = value.recovery;
+  }
+  if (Object.keys(scale).length === 0) return null;
+  return scale;
+}
+
 export function validateInputProfile(value: unknown): InputProfile | null {
   if (!isObject(value)) return null;
   const modeRaw = isString(value.mode) ? value.mode.toUpperCase() : 'INSTANT';
@@ -106,6 +126,27 @@ export function validateInputProfile(value: unknown): InputProfile | null {
   if (value.comboWindowMs !== undefined) {
     if (!isNumber(value.comboWindowMs) || value.comboWindowMs < 16) return null;
     profile.comboWindowMs = value.comboWindowMs;
+  }
+  if (value.windupMs !== undefined) {
+    if (!isNumber(value.windupMs) || value.windupMs < 0 || value.windupMs > 3000) return null;
+    profile.windupMs = value.windupMs;
+  }
+  if (value.activeMs !== undefined) {
+    if (!isNumber(value.activeMs) || value.activeMs < 0 || value.activeMs > 3000) return null;
+    profile.activeMs = value.activeMs;
+  }
+  if (value.recoveryMs !== undefined) {
+    if (!isNumber(value.recoveryMs) || value.recoveryMs < 0 || value.recoveryMs > 3000) return null;
+    profile.recoveryMs = value.recoveryMs;
+  }
+  if (value.moveScale !== undefined) {
+    const moveScale = validateCastPhaseMoveScale(value.moveScale);
+    if (!moveScale) return null;
+    profile.moveScale = moveScale;
+  }
+  if (value.cancelable !== undefined) {
+    if (typeof value.cancelable !== 'boolean') return null;
+    profile.cancelable = value.cancelable;
   }
 
   const minCharge = profile.minChargeMs ?? 0;

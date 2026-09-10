@@ -1,4 +1,5 @@
 import type {
+  CastPhaseMoveScale,
   ComparisonOperator,
   ConditionNode,
   ConditionQuery,
@@ -61,6 +62,35 @@ export function sanitizeInputProfile(raw: unknown): InputProfile {
 
   if (mode === 'COMBO_CHAIN') {
     profile.comboWindowMs = clamp(ensureFiniteNumber(obj.comboWindowMs, 1500), 16, 10000);
+  }
+
+  if (obj.windupMs !== undefined) {
+    profile.windupMs = clamp(ensureFiniteNumber(obj.windupMs, 0), 0, 3000);
+  }
+  if (obj.activeMs !== undefined) {
+    profile.activeMs = clamp(ensureFiniteNumber(obj.activeMs, 0), 0, 3000);
+  }
+  if (obj.recoveryMs !== undefined) {
+    profile.recoveryMs = clamp(ensureFiniteNumber(obj.recoveryMs, 0), 0, 3000);
+  }
+  if (obj.moveScale !== undefined && isObject(obj.moveScale)) {
+    const rawScale = obj.moveScale;
+    const moveScale: CastPhaseMoveScale = {};
+    if (rawScale.windup !== undefined) {
+      moveScale.windup = clamp(ensureFiniteNumber(rawScale.windup, 1), 0, 2);
+    }
+    if (rawScale.active !== undefined) {
+      moveScale.active = clamp(ensureFiniteNumber(rawScale.active, 1), 0, 2);
+    }
+    if (rawScale.recovery !== undefined) {
+      moveScale.recovery = clamp(ensureFiniteNumber(rawScale.recovery, 1), 0, 2);
+    }
+    if (Object.keys(moveScale).length > 0) {
+      profile.moveScale = moveScale;
+    }
+  }
+  if (obj.cancelable !== undefined) {
+    profile.cancelable = Boolean(obj.cancelable);
   }
 
   return profile;

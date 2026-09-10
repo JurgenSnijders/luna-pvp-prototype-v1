@@ -9,6 +9,7 @@ import { Vector2D } from '../math/Vector2D';
 import type { Interpreter } from '../primitives/Interpreter';
 import type { DraftCard, DraftSelection } from '../types/cards';
 import type { AbilitySchema } from '../types/schema';
+import type { ExecutionOverrides } from '../types/triggerContext';
 import type { Player } from './Player';
 
 const W_PURSUIT = 1.0;
@@ -193,6 +194,10 @@ export class BotController {
       Vector2D.fromAngle(this.currentFacingAngle, AIM_PROJECTION_DIST),
     );
 
+    this.bot.tickCastPhases(dt, (slotIndex, overrides, isChannelTick) => {
+      this.dispatchBotCast(slotIndex, interpreter, world, intercept, overrides, isChannelTick);
+    });
+
     const outsideHex = !isInsideHex(
       this.bot.pos,
       world.hexCenter,
@@ -283,6 +288,40 @@ export class BotController {
     return { card: best, slot };
   }
 
+  private dispatchBotCast(
+    slotIndex: number,
+    interpreter: Interpreter,
+    world: PhysicsWorld,
+    targetPos: Vector2D,
+    overrides: ExecutionOverrides,
+    isChannelTick: boolean,
+  ): void {
+    const bot = this.bot;
+    const ability = bot.getAbility(slotIndex);
+    if (!ability) return;
+
+    const aimDir = bot.aimTarget.sub(bot.pos);
+    if (aimDir.magSq() < 0.01) return;
+
+    const heading = aimDir.normalize();
+    const aimPoint = resolveBotGroundAimPoint(bot.pos, heading, targetPos, ability);
+    interpreter.executeAbility(
+      ability,
+      {
+        origin: bot.pos.clone(),
+        heading,
+        caster: bot,
+        depth: 0,
+        chargeRatio: overrides.chargeRatio,
+        comboStep: overrides.comboStep,
+        ...(aimPoint ? { aimPoint } : {}),
+      },
+      world,
+      overrides,
+    );
+    bot.triggerSlotCooldown(slotIndex, isChannelTick);
+  }
+
   private tryCastSlot(
     bot: Player,
     slotIndex: number,
@@ -296,20 +335,9 @@ export class BotController {
     const aimDir = bot.aimTarget.sub(bot.pos);
     if (aimDir.magSq() < 0.01) return false;
 
-    const heading = aimDir.normalize();
-    const aimPoint = resolveBotGroundAimPoint(bot.pos, heading, targetPos, ability);
-    interpreter.executeAbility(
-      ability,
-      {
-        origin: bot.pos.clone(),
-        heading,
-        caster: bot,
-        depth: 0,
-        ...(aimPoint ? { aimPoint } : {}),
-      },
-      world,
-    );
-    bot.triggerSlotCooldown(slotIndex);
+    bot.requestCast(slotIndex, {}, false, (si, overrides, isChannelTick) => {
+      this.dispatchBotCast(si, interpreter, world, targetPos, overrides, isChannelTick);
+    });
     return true;
   }
 }

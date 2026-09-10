@@ -133,6 +133,58 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
     ],
   },
 
+  'Greatsword Cleave': {
+    id: 'test_greatsword_cleave',
+    name: 'Greatsword Cleave',
+    archetype: 'KINETIC',
+    cooldownMs: 900,
+    recoilKick: 30,
+    inputProfile: {
+      mode: 'INSTANT',
+      windupMs: 250,
+      activeMs: 150,
+      recoveryMs: 400,
+      moveScale: { windup: 0.5, recovery: 0.6 },
+    },
+    visuals: {
+      color: '#c8a86e',
+      size: 10,
+      projectileStyle: 'DISC',
+      trailType: 'SMOKE',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_FIELD',
+            field: {
+              fieldType: 'RADIAL_IMPULSE',
+              radius: 90,
+              strength: 650,
+              durationMs: 200,
+              attachToSource: true,
+              arcDeg: 90,
+              arcFacing: 'CASTER_FACING',
+            },
+          },
+        ],
+      },
+      {
+        trigger: 'ON_RAM',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 500,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
+    ],
+  },
+
   'Triple Tap Combo': {
     id: 'test_triple_tap_combo',
     name: 'Triple Tap Combo',

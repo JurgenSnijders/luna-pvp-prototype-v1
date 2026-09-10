@@ -89,10 +89,11 @@ Archetype scaling cheat sheet:
   SONIC: 2.2× impact spike — concussive bursts
   TOXIC: sustained tick vulnerability, moderate field pressure
   LIGHTNING: balanced impact and tick scaling
-inputProfile: { mode: INSTANT|CHARGE_AND_RELEASE|CHANNELED|COMBO_CHAIN, minChargeMs?, maxChargeMs?, channelIntervalMs?, comboWindowMs? }
+inputProfile: { mode: INSTANT|CHARGE_AND_RELEASE|CHANNELED|COMBO_CHAIN, minChargeMs?, maxChargeMs?, channelIntervalMs?, comboWindowMs?, windupMs?, activeMs?, recoveryMs?, moveScale?:{windup?,active?,recovery?}, cancelable? }
   CHARGE_AND_RELEASE: minChargeMs+maxChargeMs — power scales with hold time
   CHANNELED: channelIntervalMs — re-fires ON_CAST every interval while held
   COMBO_CHAIN: comboWindowMs — pair with COMBO_STEP conditions to branch per press
+  TIMING PHASES (compose with any mode): windupMs delays ON_CAST; activeMs keeps hit window live; recoveryMs is committed vulnerability; moveScale slows movement per phase (0-2); cancelable allows feint during windup
 resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, rechargeRate?, lockoutDurationMs? }
   HEAT: cost per shot, rechargeRate/sec, lockoutDurationMs on overheat — set cooldownMs 0
   AMMO: cost per shot, maxCapacity magazine, lockoutDurationMs reload time
@@ -216,6 +217,7 @@ Personal Jump Pad: targetingMode "GROUND_POINT" + ON_CAST -> SPAWN_FIELD { field
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
+Greatsword Cleave: inputProfile:{ mode:"INSTANT", windupMs:250, activeMs:150, recoveryMs:400, moveScale:{ windup:0.5, recovery:0.6 } } + ON_CAST SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:90, strength:650, durationMs:200, attachToSource:true, arcDeg:90, arcFacing:"CASTER_FACING" } } + ON_RAM -> APPLY_IMPULSE { baseForce:500, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
 Charged Shot: inputProfile:{ mode:"CHARGE_AND_RELEASE", minChargeMs:200, maxChargeMs:1200 } + trajectory LINEAR + ON_HIT APPLY_IMPULSE
 Heat Flamer: inputProfile:{ mode:"CHANNELED", channelIntervalMs:100 } + resourceCost:{ type:"HEAT", cost:8, rechargeRate:20, lockoutDurationMs:2500 } + cooldownMs:0 + ON_CAST SPAWN_FIELD { field: { fieldType:"RADIAL_IMPULSE", radius:80, strength:600, durationMs:400 } }
 Stasis Combo: inputProfile:{ mode:"COMBO_CHAIN", comboWindowMs:3000 } + two ON_CAST nodes with conditions COMBO_STEP EQ 0 (APPLY_STASIS CASTER) and EQ 1 (RELEASE_STASIS CASTER)

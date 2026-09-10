@@ -14,6 +14,14 @@ import {
   type AimingMode,
   type AimingState,
 } from '../render/canvas/AimingIndicator';
+import {
+  advanceCastPhase,
+  createCastPhaseState,
+  hasTimingPhases,
+  phaseMoveScale,
+  type CastPhaseState,
+  type PendingCast,
+} from './castPhases';
 import { Entity, generateEntityId } from './Entity';
 
 const SLOT_COUNT = 5;
@@ -115,6 +123,7 @@ export class Player extends Entity {
   slotInputs: SlotInputState[];
   slotResources: SlotResourceState[];
   activeAimingState: AimingState | null = null;
+  activeCastPhase: CastPhaseState | null = null;
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -285,7 +294,7 @@ export class Player extends Entity {
       this.activeAimingState.target.y,
     );
     this.activeAimingState = null;
-    onCast(slotIndex, {}, false);
+    this.requestCast(slotIndex, {}, false, onCast);
   }
 
   cancelAiming(): void {
@@ -294,6 +303,7 @@ export class Player extends Entity {
 
   isSlotReady(slotIndex: number): boolean {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    if (this.activeCastPhase) return false;
     if (this.slotCompiling[slotIndex]) return false;
 
     const ability = this.abilities[slotIndex];
@@ -372,6 +382,113 @@ export class Player extends Entity {
     }
   }
 
+  requestCast(
+    slotIndex: number,
+    overrides: ExecutionOverrides,
+    isChannelTick: boolean,
+    onCast: SlotCastCallback,
+  ): void {
+    const ability = this.abilities[slotIndex];
+    if (!ability) return;
+
+    const profile = getInputProfile(ability);
+    if (!hasTimingPhases(profile)) {
+      onCast(slotIndex, overrides, isChannelTick);
+      return;
+    }
+
+    const state = createCastPhaseState(
+      slotIndex,
+      profile,
+      { overrides, isChannelTick },
+      false,
+    );
+    if (!state) {
+      onCast(slotIndex, overrides, isChannelTick);
+      return;
+    }
+
+    this.activeCastPhase = state;
+  }
+
+  private beginTimedCast(
+    slotIndex: number,
+    profile: InputProfile,
+    pendingCast: PendingCast | null,
+    armChannelOnActive: boolean,
+  ): void {
+    const state = createCastPhaseState(slotIndex, profile, pendingCast, armChannelOnActive);
+    if (state) {
+      this.activeCastPhase = state;
+    }
+  }
+
+  private canCancelRecoveryIntoCast(slotIndex: number): boolean {
+    const phase = this.activeCastPhase;
+    return (
+      phase !== null &&
+      phase.phase === 'RECOVERY' &&
+      phase.cancelable &&
+      phase.slotIndex === slotIndex
+    );
+  }
+
+  private abortCancelableWindup(slotIndex: number): void {
+    const phase = this.activeCastPhase;
+    if (
+      phase &&
+      phase.phase === 'WINDUP' &&
+      phase.cancelable &&
+      phase.slotIndex === slotIndex
+    ) {
+      this.activeCastPhase = null;
+    }
+  }
+
+  tickCastPhases(dt: number, onCast: SlotCastCallback): void {
+    if (this.stasisRemainingMs > 0) return;
+    if (!this.activeCastPhase) return;
+
+    let guard = 8;
+    let dtMs = dt * 1000;
+
+    while (this.activeCastPhase && guard-- > 0) {
+      const state = this.activeCastPhase;
+      const result = advanceCastPhase(state, dtMs);
+      dtMs = 0;
+
+      if (result.kind === 'dispatched') {
+        const { overrides, isChannelTick } = result.pending;
+        onCast(state.slotIndex, overrides, isChannelTick);
+      }
+
+      if (result.kind === 'channel_armed') {
+        this.slotInputs[state.slotIndex].channelArmed = true;
+      }
+
+      if (result.kind === 'completed') {
+        if (result.armChannel) {
+          this.slotInputs[state.slotIndex].channelArmed = true;
+        }
+        this.activeCastPhase = null;
+        return;
+      }
+
+      if (result.kind === 'continuing') {
+        return;
+      }
+
+      if (state.remainingMs > 0) {
+        return;
+      }
+    }
+  }
+
+  getCastPhaseMoveScale(): number {
+    if (!this.activeCastPhase) return 1;
+    return phaseMoveScale(this.activeCastPhase);
+  }
+
   setSlotInput(
     slotIndex: number,
     isHeld: boolean,
@@ -390,18 +507,28 @@ export class Player extends Entity {
 
     if (isHeld) {
       switch (profile.mode) {
-        case 'INSTANT':
-          if (this.isSlotReady(slotIndex)) {
-            onCast(slotIndex, {}, false);
+        case 'INSTANT': {
+          const recoveryCancel = this.canCancelRecoveryIntoCast(slotIndex);
+          if (this.isSlotReady(slotIndex) || recoveryCancel) {
+            if (recoveryCancel) {
+              this.activeCastPhase = null;
+            }
+            this.requestCast(slotIndex, {}, false, onCast);
           }
           break;
-        case 'COMBO_CHAIN':
-          if (this.isSlotReady(slotIndex) || slot.comboStep > 0) {
-            onCast(slotIndex, { comboStep: slot.comboStep }, false);
+        }
+        case 'COMBO_CHAIN': {
+          const recoveryCancel = this.canCancelRecoveryIntoCast(slotIndex);
+          if (this.isSlotReady(slotIndex) || slot.comboStep > 0 || recoveryCancel) {
+            if (recoveryCancel) {
+              this.activeCastPhase = null;
+            }
+            this.requestCast(slotIndex, { comboStep: slot.comboStep }, false, onCast);
             slot.comboStep++;
             slot.idleMs = 0;
           }
           break;
+        }
         case 'CHARGE_AND_RELEASE':
           if (this.isSlotReady(slotIndex)) {
             if (this.isStealthed() && this.stealthRevealOnCast) {
@@ -414,12 +541,18 @@ export class Player extends Entity {
           break;
         case 'CHANNELED':
           if (this.isSlotReady(slotIndex)) {
-            slot.channelArmed = true;
-            slot.channelTimerMs = 0;
+            if (hasTimingPhases(profile)) {
+              this.beginTimedCast(slotIndex, profile, null, true);
+              slot.channelTimerMs = 0;
+            } else {
+              slot.channelArmed = true;
+              slot.channelTimerMs = 0;
+            }
           }
           break;
       }
     } else {
+      this.abortCancelableWindup(slotIndex);
       switch (profile.mode) {
         case 'CHARGE_AND_RELEASE': {
           if (slot.charging) {
@@ -434,7 +567,7 @@ export class Player extends Entity {
                   this.activeAimingState.target.y,
                 );
               }
-              onCast(slotIndex, { chargeRatio: ratio }, false);
+              this.requestCast(slotIndex, { chargeRatio: ratio }, false, onCast);
             }
             slot.chargeMs = 0;
             slot.charging = false;
@@ -453,6 +586,7 @@ export class Player extends Entity {
   }
 
   updateSlotInputs(dt: number, onCast: SlotCastCallback): void {
+    this.tickCastPhases(dt, onCast);
     const dtMs = dt * 1000;
 
     for (let i = 0; i < SLOT_COUNT; i++) {
@@ -476,6 +610,11 @@ export class Player extends Entity {
       }
 
       if (slot.isHeld && profile.mode === 'CHANNELED' && slot.channelArmed) {
+        const phase = this.activeCastPhase;
+        if (phase && phase.slotIndex === i && phase.phase !== 'ACTIVE') {
+          continue;
+        }
+
         slot.channelTimerMs += dtMs;
         const intervalMs = profile.channelIntervalMs ?? 100;
         if (slot.channelTimerMs >= intervalMs) {
@@ -668,7 +807,8 @@ export class Player extends Entity {
 
     const moveDir =
       this.smoothedInputMove.magSq() > 0 ? this.smoothedInputMove.normalize() : Vector2D.zero();
-    const speedMultiplier = this.activeMorph?.speedMultiplier ?? 1;
+    const speedMultiplier =
+      (this.activeMorph?.speedMultiplier ?? 1) * this.getCastPhaseMoveScale();
     const targetVel = moveDir.scale(this.getEffectiveMoveSpeed() * speedMultiplier);
     const velDiff = targetVel.sub(this.vel);
 
@@ -726,6 +866,7 @@ export class Player extends Entity {
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
     this.activeAimingState = null;
+    this.activeCastPhase = null;
     this.resetSlotInputs();
     this.smoothedInputMove = Vector2D.zero();
     this.resetStasis();

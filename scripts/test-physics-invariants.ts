@@ -1950,6 +1950,166 @@ function buildEvolutionTree(
   return tree;
 }
 
+function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const player = new Player(Vector2D.zero());
+  player.aimTarget = new Vector2D(100, 0);
+
+  const syncAbility: AbilitySchema = {
+    id: 'bench_sync_cast',
+    name: 'Sync Cast',
+    archetype: 'KINETIC',
+    cooldownMs: 100,
+    recoilKick: 0,
+    inputProfile: { mode: 'INSTANT' },
+    visuals: DEFAULT_VISUALS,
+    triggers: [{ trigger: 'ON_CAST', actions: [] }],
+  };
+
+  let dispatchCount = 0;
+  let cooldownCount = 0;
+  const onCast = (slotIndex: number, _overrides: unknown, isChannelTick: boolean) => {
+    dispatchCount++;
+    player.triggerSlotCooldown(slotIndex, isChannelTick);
+    cooldownCount++;
+  };
+
+  player.setAbility(0, syncAbility);
+  player.requestCast(0, {}, false, onCast);
+  if (dispatchCount !== 1) {
+    return { pass: false, reason: `no-phase cast expected 1 dispatch, got ${dispatchCount}` };
+  }
+
+  const phasedAbility: AbilitySchema = {
+    ...syncAbility,
+    id: 'bench_phased_cast',
+    inputProfile: {
+      mode: 'INSTANT',
+      windupMs: 200,
+      activeMs: 100,
+      recoveryMs: 300,
+      moveScale: { windup: 0.5, active: 1.25, recovery: 0.6 },
+    },
+  };
+
+  player.resetCombatState();
+  player.setAbility(0, phasedAbility);
+  dispatchCount = 0;
+  cooldownCount = 0;
+
+  player.requestCast(0, {}, false, onCast);
+  if (dispatchCount !== 0) {
+    return { pass: false, reason: `phased cast dispatched during windup (${dispatchCount})` };
+  }
+  if (!player.activeCastPhase || player.activeCastPhase.phase !== 'WINDUP') {
+    return { pass: false, reason: 'expected WINDUP phase after requestCast' };
+  }
+
+  if (Math.abs(player.getCastPhaseMoveScale() - 0.5) > 0.001) {
+    return {
+      pass: false,
+      reason: `windup moveScale=${player.getCastPhaseMoveScale()} expected 0.5`,
+    };
+  }
+
+  const windupRemainingStart = player.activeCastPhase.remainingMs;
+  player.stasisRemainingMs = 500;
+  player.tickCastPhases(dt, onCast);
+  if (player.activeCastPhase?.remainingMs !== windupRemainingStart) {
+    return { pass: false, reason: 'cast phase advanced during stasis' };
+  }
+  player.stasisRemainingMs = 0;
+
+  let elapsed = 0;
+  while (dispatchCount === 0 && elapsed < 500) {
+    player.tickCastPhases(dt, onCast);
+    player.update(dt);
+    elapsed += dt * 1000;
+  }
+  if (dispatchCount !== 1) {
+    return { pass: false, reason: `expected exactly 1 deferred dispatch, got ${dispatchCount}` };
+  }
+  if (cooldownCount !== 1) {
+    return { pass: false, reason: `cooldown should arrive with dispatch, got ${cooldownCount}` };
+  }
+  if (player.activeCastPhase?.phase !== 'ACTIVE') {
+    return {
+      pass: false,
+      reason: `expected ACTIVE after dispatch, got ${player.activeCastPhase?.phase}`,
+    };
+  }
+  if (Math.abs(player.getCastPhaseMoveScale() - 1.25) > 0.001) {
+    return {
+      pass: false,
+      reason: `active moveScale=${player.getCastPhaseMoveScale()} expected 1.25`,
+    };
+  }
+  if (player.isSlotReady(0)) {
+    return { pass: false, reason: 'slot ready during ACTIVE phase' };
+  }
+
+  elapsed = 0;
+  while (player.activeCastPhase && elapsed < 1000) {
+    player.tickCastPhases(dt, onCast);
+    player.update(dt);
+    elapsed += dt * 1000;
+    if (player.isSlotReady(0) && player.activeCastPhase) {
+      return { pass: false, reason: 'slot ready while cast phase active' };
+    }
+  }
+  if (player.activeCastPhase) {
+    return { pass: false, reason: 'cast phases did not complete' };
+  }
+  if (Math.abs(player.getCastPhaseMoveScale() - 1) > 0.001) {
+    return {
+      pass: false,
+      reason: `moveScale after phases=${player.getCastPhaseMoveScale()} expected 1`,
+    };
+  }
+
+  while (!player.isSlotReady(0) && elapsed < 5000) {
+    player.update(dt);
+    elapsed += dt * 1000;
+  }
+  if (!player.isSlotReady(0)) {
+    return { pass: false, reason: 'slot not ready after cooldown cleared' };
+  }
+
+  const cancelAbility: AbilitySchema = {
+    ...phasedAbility,
+    id: 'bench_cancel_cast',
+    inputProfile: {
+      mode: 'INSTANT',
+      windupMs: 200,
+      activeMs: 100,
+      recoveryMs: 300,
+      cancelable: true,
+    },
+  };
+  player.resetCombatState();
+  player.setAbility(0, cancelAbility);
+  dispatchCount = 0;
+  cooldownCount = 0;
+
+  player.setSlotInput(0, true, onCast);
+  if (!player.activeCastPhase) {
+    return { pass: false, reason: 'cancelable cast did not enter windup' };
+  }
+  player.setSlotInput(0, false, onCast);
+  if (player.activeCastPhase) {
+    return { pass: false, reason: 'cancelable feint did not abort windup' };
+  }
+  player.tickCastPhases(dt, onCast);
+  if (dispatchCount !== 0 || cooldownCount !== 0) {
+    return { pass: false, reason: 'cancelable feint should not dispatch or cooldown' };
+  }
+
+  return {
+    pass: true,
+    reason: 'sync + deferred + gating + moveScale + stasis + feint',
+  };
+}
+
 function assertSixTierEvolution(): { pass: boolean; reason: string } {
   const base = structuredClone(VERTICAL_RECIPES.clusterMortar) as AbilitySchema;
   base.id = 'test_cluster_mortar_evolution';
@@ -2290,7 +2450,15 @@ function run(): void {
   console.log(`  ${DIM}${sixTierEvolution.reason}${RESET}`);
   if (sixTierEvolution.pass) passed++;
 
-  const totalCases = suite.length + 25;
+  const castPhaseTimeline = assertCastPhaseTimeline();
+  const castPhaseTimelineTag = castPhaseTimeline.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${castPhaseTimelineTag} Cast phase timeline`);
+  console.log(`  ${DIM}${castPhaseTimeline.reason}${RESET}`);
+  if (castPhaseTimeline.pass) passed++;
+
+  const totalCases = suite.length + 26;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

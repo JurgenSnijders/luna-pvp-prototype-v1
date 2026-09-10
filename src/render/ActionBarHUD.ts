@@ -710,9 +710,19 @@ export class ActionBarHUD {
       }
 
       const slotInput = player.slotInputs[i];
+      const castPhase = player.activeCastPhase;
+      const isWindupPhase =
+        castPhase?.phase === 'WINDUP' && castPhase.slotIndex === i;
+      const isRecoveryPhase =
+        castPhase?.phase === 'RECOVERY' && castPhase.slotIndex === i;
       const isCharging =
         ability?.inputProfile?.mode === 'CHARGE_AND_RELEASE' && slotInput.charging;
-      if (isCharging) {
+      if (isWindupPhase) {
+        const windupRatio =
+          castPhase.totalMs > 0 ? castPhase.remainingMs / castPhase.totalMs : 0;
+        slot.chargeOverlay.style.display = 'block';
+        slot.chargeOverlay.style.height = `${Math.min(1, windupRatio) * 100}%`;
+      } else if (isCharging) {
         const maxCharge = ability.inputProfile?.maxChargeMs ?? 1000;
         const chargeRatio = maxCharge > 0 ? slotInput.chargeMs / maxCharge : 0;
         slot.chargeOverlay.style.display = 'block';
@@ -726,9 +736,16 @@ export class ActionBarHUD {
       // per-slot cooldown fill already communicates the lockout.
       const gcdRatio = player.getGlobalCooldownRatio();
       const gcdOnly = ability && remaining <= 0 && gcdRatio > 0;
-      slot.gcdOverlay.style.display = gcdOnly ? 'block' : 'none';
-      if (gcdOnly) {
-        slot.gcdOverlay.style.height = `${gcdRatio * 100}%`;
+      if (isRecoveryPhase) {
+        const recoveryRatio =
+          castPhase.totalMs > 0 ? castPhase.remainingMs / castPhase.totalMs : 0;
+        slot.gcdOverlay.style.display = 'block';
+        slot.gcdOverlay.style.height = `${Math.min(1, recoveryRatio) * 100}%`;
+      } else {
+        slot.gcdOverlay.style.display = gcdOnly ? 'block' : 'none';
+        if (gcdOnly) {
+          slot.gcdOverlay.style.height = `${gcdRatio * 100}%`;
+        }
       }
 
       if (player.isSlotOverheated(i) || player.isSlotReloading(i)) {

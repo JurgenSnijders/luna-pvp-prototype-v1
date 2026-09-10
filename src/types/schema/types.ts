@@ -95,12 +95,23 @@ export type InputProfileMode =
   | 'CHANNELED'
   | 'COMBO_CHAIN';
 
+export interface CastPhaseMoveScale {
+  windup?: number;
+  active?: number;
+  recovery?: number;
+}
+
 export interface InputProfile {
   mode: InputProfileMode;
   maxChargeMs?: number;
   minChargeMs?: number;
   channelIntervalMs?: number;
   comboWindowMs?: number;
+  windupMs?: number;
+  activeMs?: number;
+  recoveryMs?: number;
+  moveScale?: CastPhaseMoveScale;
+  cancelable?: boolean;
 }
 
 export type ResourceType = 'COOLDOWN' | 'HEAT' | 'AMMO' | 'HEALTH_PCT';
