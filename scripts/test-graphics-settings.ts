@@ -84,6 +84,9 @@ function gpuCaps(overrides: Partial<GpuCapabilities> = {}): GpuCapabilities {
     dpr: 1,
     renderer: 'ANGLE (NVIDIA)',
     vendor: 'Google Inc.',
+    fragmentHighpPrecision: 23,
+    unmaskedRenderer: '',
+    isLegacyGpu: false,
     ...overrides,
   };
 }
@@ -321,13 +324,29 @@ function run(): void {
     failures.push('detectSeedTier: maxTextureSize < 4096 should seed LOW');
   }
 
+  if (detectSeedTier(gpuCaps({ isLegacyGpu: true })) !== 'LOW') {
+    failures.push('detectSeedTier: isLegacyGpu should seed LOW');
+  }
+
+  if (detectSeedTier(gpuCaps({ fragmentHighpPrecision: 16 })) !== 'LOW') {
+    failures.push('detectSeedTier: fragmentHighpPrecision < 23 should seed LOW');
+  }
+
+  if (
+    detectSeedTier(
+      gpuCaps({ unmaskedRenderer: 'Intel(R) HD Graphics 4000' }),
+    ) !== 'LOW'
+  ) {
+    failures.push('detectSeedTier: Intel HD 4000 unmasked renderer should seed LOW');
+  }
+
   if (failures.length > 0) {
     console.error('test:graphics-settings  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
     process.exit(1);
   }
 
-  console.log('test:graphics-settings  OK  28 graphics profile checks passed');
+  console.log('test:graphics-settings  OK  31 graphics profile checks passed');
 }
 
 run();

@@ -1,3 +1,4 @@
+import { perfMonitor } from './PerfMonitor';
 import {
   POST_EFFECTS,
   POST_EFFECT_IDS,
@@ -282,6 +283,12 @@ export function getEffectiveTier(): Exclude<QualityTier, 'AUTO'> {
   const s = getGraphicsSettings();
   if (s.tier === 'AUTO') return effectiveTier;
   return s.tier;
+}
+
+/** True when fragment highp is reliable on the probed GPU (not legacy / degraded). */
+export function getFragmentHighpReliable(): boolean {
+  const caps = perfMonitor.getCapabilities();
+  return caps ? !caps.isLegacyGpu : true;
 }
 
 export function setAdaptiveEffectiveTier(tier: Exclude<QualityTier, 'AUTO'>): void {

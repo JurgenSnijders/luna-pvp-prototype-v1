@@ -9,8 +9,28 @@ const SOFTWARE_RENDERER_PATTERNS = [
   /mesa offscreen/i,
 ];
 
+const LEGACY_IGPU_PATTERNS = [
+  /Intel.*HD Graphics (3000|4000|5000)/i,
+  /Intel.*\(.*HD Graphics (3000|4000|5000)/i,
+  /AMD Radeon HD [67]\d{3}/i,
+];
+
+export function isLegacyIntegratedGpu(renderer: string): boolean {
+  return LEGACY_IGPU_PATTERNS.some((re) => re.test(renderer));
+}
+
 export function detectSeedTier(caps: GpuCapabilities | null): Exclude<QualityTier, 'AUTO'> {
   if (!caps?.webgl2Available) return 'LOW';
+
+  if (caps.isLegacyGpu) return 'LOW';
+
+  if (caps.fragmentHighpPrecision > 0 && caps.fragmentHighpPrecision < 23) {
+    return 'LOW';
+  }
+
+  if (isLegacyIntegratedGpu(caps.unmaskedRenderer)) {
+    return 'LOW';
+  }
 
   const renderer = `${caps.renderer} ${caps.vendor}`;
   if (SOFTWARE_RENDERER_PATTERNS.some((re) => re.test(renderer))) {

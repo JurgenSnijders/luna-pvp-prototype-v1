@@ -1,4 +1,5 @@
 import type { Camera2D } from '../../camera/Camera2D';
+import { perfMonitor } from '../../devtools/PerfMonitor';
 import { getEffectiveDprCap, getEffectiveTier, getGraphicsSettings } from '../../devtools/graphicsSettings';
 import type { Vector2D } from '../../math/Vector2D';
 import {
@@ -32,6 +33,8 @@ export class BackgroundRenderer {
   private locTier: WebGLUniformLocation | null = null;
   private locParallaxVoid: WebGLUniformLocation | null = null;
   private locLavaScroll: WebGLUniformLocation | null = null;
+  private locWarpStrength: WebGLUniformLocation | null = null;
+  private isLegacyGpu = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', {
@@ -63,6 +66,10 @@ export class BackgroundRenderer {
       this.locTier = gl.getUniformLocation(this.program, 'u_tier');
       this.locParallaxVoid = gl.getUniformLocation(this.program, 'u_parallaxVoid');
       this.locLavaScroll = gl.getUniformLocation(this.program, 'u_lavaScroll');
+      this.locWarpStrength = gl.getUniformLocation(this.program, 'u_warpStrength');
+
+      const caps = perfMonitor.probeCapabilities(gl);
+      this.isLegacyGpu = caps.isLegacyGpu;
     } catch (err) {
       console.warn('[BackgroundRenderer] init failed:', err);
       this.destroy();
@@ -121,13 +128,18 @@ export class BackgroundRenderer {
     gl.uniform2f(this.locResolution!, this.cssWidth, this.cssHeight);
     gl.uniform2f(this.locCameraPos!, camX, camY);
     gl.uniform1f(this.locCameraZoom!, camera.zoom);
-    gl.uniform1f(this.locTime!, nowMs * 0.001);
+    const wrappedTime = (nowMs * 0.001) % 628.31853;
+    gl.uniform1f(this.locTime!, wrappedTime);
     gl.uniform1f(this.locHexRadius!, hexRadius);
     gl.uniform1f(this.locInitialRadius!, initialRadius);
     gl.uniform2f(this.locHexCenter!, hexCenter.x, hexCenter.y);
     gl.uniform1i(this.locTier!, tierLod);
     gl.uniform1f(this.locParallaxVoid!, settings.bgParallaxVoid);
     gl.uniform1f(this.locLavaScroll!, settings.bgLavaScrollSpeed);
+    const warpStrength = this.isLegacyGpu || tierLod === 0 ? 0.0 : 1.0;
+    if (this.locWarpStrength) {
+      gl.uniform1f(this.locWarpStrength, warpStrength);
+    }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null);
   }

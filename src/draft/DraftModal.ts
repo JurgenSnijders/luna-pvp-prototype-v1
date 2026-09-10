@@ -672,8 +672,9 @@ export class DraftModal {
     `;
 
     this.panel = document.createElement('div');
+    this.panel.className = 'workshop-panel';
     this.panel.style.cssText = `
-      width: min(1180px, 100%); height: min(92vh, 880px); overflow: hidden;
+      width: min(1180px, 100%); height: min(95vh, 880px); overflow: hidden;
       display: flex; flex-direction: column;
       padding: 16px 20px 18px; border-radius: 4px;
       ${retroPanelStyle('cyan')}
@@ -684,6 +685,7 @@ export class DraftModal {
     this.panel.dataset.panel = 'true';
 
     const header = document.createElement('div');
+    header.className = 'workshop-header';
     header.style.cssText =
       'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;gap:10px;';
     const title = document.createElement('h2');
