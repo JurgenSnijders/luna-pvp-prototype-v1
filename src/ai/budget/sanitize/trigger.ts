@@ -43,6 +43,7 @@ export function sanitizeTriggerNode(
     'ON_BOUNCE',
     'ON_AIR_APEX',
     'ON_GROUND_SLAM',
+    'ON_RAM',
   ]);
   if (!validTriggers.has(trigger)) return null;
 
@@ -78,6 +79,9 @@ export function sanitizeTriggerNode(
 
   if (raw.minBounceSpeed !== undefined) {
     node.minBounceSpeed = clamp(ensureFiniteNumber(raw.minBounceSpeed, 0), 0, 4000);
+  }
+  if (raw.minRamSpeed !== undefined) {
+    node.minRamSpeed = clamp(ensureFiniteNumber(raw.minRamSpeed, 0), 0, 4000);
   }
   if (raw.bounceIndex !== undefined) {
     node.bounceIndex = clamp(Math.floor(ensureFiniteNumber(raw.bounceIndex, 1)), 1, 6);

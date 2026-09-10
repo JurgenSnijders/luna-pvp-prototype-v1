@@ -43,7 +43,7 @@ export function getInstabilityScale(instabilityPct: number): number {
 const LAVA_DRAG = 0.15;
 const DEFAULT_COLLISION_RESTITUTION = 0.3;
 const OBSTACLE_PROJECTILE_DAMAGE = 25;
-const RAMMING_SPEED_THRESHOLD = 350;
+export const RAMMING_SPEED_THRESHOLD = 350;
 const RAMMING_IMPULSE_FACTOR = 0.6;
 const RAMMING_RECOIL_FACTOR = 0.35;
 const RAMMING_INSTABILITY_SCALE = 0.06;
@@ -132,11 +132,20 @@ export class PhysicsWorld {
     impactSpeed: number;
     bounceIndex: number;
   }> = [];
+  pendingRamEvents: Array<{
+    rammer: Entity;
+    target: Entity;
+    closingSpeed: number;
+    knockDir: Vector2D;
+  }> = [];
   pendingApexEvents: Projectile[] = [];
   pendingGroundImpacts: GroundImpactEvent[] = [];
   pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
+
+  /** Pair keys that already emitted ON_RAM for the current continuous contact. */
+  private ramContactPairs = new Set<string>();
 
   private readonly maxCombatVisualEvents = 128;
   private lavaDamageAccumulator = new Map<string, number>();
@@ -541,12 +550,14 @@ export class PhysicsWorld {
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
     this.pendingBounceEvents = [];
+    this.pendingRamEvents = [];
     this.pendingApexEvents = [];
     this.pendingGroundImpacts = [];
     this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
     this.lavaDamageAccumulator.clear();
+    this.ramContactPairs.clear();
   }
 
   emitCombatVisualEvent(event: CombatVisualEvent): void {
@@ -606,6 +617,7 @@ export class PhysicsWorld {
     this.pendingExpirations = [];
     this.pendingWallImpacts = [];
     this.pendingBounceEvents = [];
+    this.pendingRamEvents = [];
     this.pendingApexEvents = [];
     this.pendingGroundImpacts = [];
     this.pendingObstacleDestructions = [];
@@ -900,7 +912,11 @@ export class PhysicsWorld {
     const dist = delta.mag();
     const minDist = a.effectiveRadius + b.effectiveRadius;
 
-    if (dist >= minDist) return;
+    if (dist >= minDist) {
+      const pairKey = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+      this.ramContactPairs.delete(pairKey);
+      return;
+    }
 
     const normal = dist === 0 ? Vector2D.fromAngle(0) : delta.scale(1 / dist);
     const overlap = minDist - dist;
@@ -929,6 +945,16 @@ export class PhysicsWorld {
       const rammer = aApproach >= bApproach ? a : b;
       const target = rammer === a ? b : a;
       const { J, knockDir } = this.applyRammingImpulse(rammer, target, approachSpeed);
+      const pairKey = rammer.id < target.id ? `${rammer.id}|${target.id}` : `${target.id}|${rammer.id}`;
+      if (!this.ramContactPairs.has(pairKey)) {
+        this.ramContactPairs.add(pairKey);
+        this.pendingRamEvents.push({
+          rammer,
+          target,
+          closingSpeed: approachSpeed,
+          knockDir,
+        });
+      }
       if (this.debugPhysicsEnabled && J > 0) {
         const contact = rammer.pos.add(target.pos).scale(0.5);
         this.recordDebugVector(

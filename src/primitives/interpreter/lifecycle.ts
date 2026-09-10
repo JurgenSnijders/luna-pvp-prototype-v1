@@ -21,6 +21,7 @@ import { floorGridManager } from '../../render/canvas/floorGrid';
 import { DebrisManager } from '../../render/canvas/debris';
 import { FIELD_COLORS } from '../../render/canvas/colors';
 import type { Entity } from '../../entities/Entity';
+import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
 import type { AbilitySchema, ActionPayload, ImpactVfx, SpellArchetype, TriggerNode, TriggerType } from '../../types/schema';
@@ -707,6 +708,51 @@ export function processLifecycleEvents(
     );
   }
   world.pendingBounceEvents = [];
+
+  for (const event of world.pendingRamEvents) {
+    if (event.rammer.isDead || event.target.isDead) continue;
+
+    const contact = event.rammer.pos.add(event.target.pos).scale(0.5);
+    const ramColor = '#ff8866';
+    const sparkCount = Math.max(3, Math.min(10, Math.round(event.closingSpeed / 80)));
+    interp.particles?.burstSparks(contact, sparkCount, ramColor);
+    interp.particles?.spawnDirectionalImpactRing(contact, event.knockDir, ramColor);
+
+    const dispatchRamNodes = (nodes: TriggerNode[], ability?: AbilitySchema): void => {
+      if (nodes.length === 0) return;
+      const ctx: TriggerContext = {
+        origin: contact.clone(),
+        heading: event.knockDir.clone(),
+        caster: event.rammer,
+        sourceEntity: event.rammer,
+        targetEntity: event.target,
+        depth: 1,
+        ability: ability
+          ? { archetype: ability.archetype, name: ability.name }
+          : undefined,
+      };
+      for (const node of nodes) {
+        if (node.minRamSpeed !== undefined && event.closingSpeed < node.minRamSpeed) {
+          continue;
+        }
+        dispatchTriggerNode(interp, node, ctx, world);
+      }
+    };
+
+    if (event.rammer instanceof Player) {
+      for (let slot = 0; slot < 5; slot++) {
+        const ability = event.rammer.getAbility(slot);
+        if (!ability) continue;
+        dispatchRamNodes(
+          ability.triggers.filter((t) => t.trigger === 'ON_RAM'),
+          ability,
+        );
+      }
+    } else if (event.rammer instanceof Summon) {
+      dispatchRamNodes(event.rammer.getTriggers('ON_RAM'));
+    }
+  }
+  world.pendingRamEvents = [];
 
   for (const impact of world.pendingGroundImpacts) {
     const intensity = Math.min(2.5, impact.vz / GROUND_SLAM_VZ);

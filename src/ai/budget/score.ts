@@ -124,6 +124,8 @@ function scoreTriggerNode(node: TriggerNode, depth: number): number {
   }
   if (node.trigger === 'ON_BOUNCE') {
     total *= 1.15;
+  } else if (node.trigger === 'ON_RAM') {
+    total *= 1.15;
   } else if (node.trigger === 'ON_AIR_APEX') {
     total *= 1.1;
   } else if (node.trigger === 'ON_GROUND_SLAM') {

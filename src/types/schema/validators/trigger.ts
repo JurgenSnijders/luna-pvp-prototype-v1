@@ -59,6 +59,13 @@ export function validateTriggerNode(
     node.minBounceSpeed = value.minBounceSpeed;
   }
 
+  if (value.minRamSpeed !== undefined) {
+    if (!isNumber(value.minRamSpeed) || value.minRamSpeed < 0) {
+      return validationFail(issues, `${path}.minRamSpeed`, 'invalid minRamSpeed');
+    }
+    node.minRamSpeed = value.minRamSpeed;
+  }
+
   if (value.bounceIndex !== undefined) {
     if (!isNumber(value.bounceIndex) || value.bounceIndex < 1 || !Number.isInteger(value.bounceIndex)) {
       return validationFail(issues, `${path}.bounceIndex`, 'invalid bounceIndex');

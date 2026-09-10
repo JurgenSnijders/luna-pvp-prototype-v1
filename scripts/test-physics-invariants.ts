@@ -1131,6 +1131,83 @@ function assertHomingBallisticComposition(): { pass: boolean; reason: string } {
   };
 }
 
+/**
+ * Phase 5 — ON_RAM fires once per contact for the rammer only (Q10: no arming).
+ */
+function assertOnRamDispatchesOnce(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  world.setViewportBounds(4000, 4000);
+
+  const ramAbility: AbilitySchema = {
+    id: 'bench_on_ram',
+    name: 'Shoulder Charge',
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: { ...DEFAULT_VISUALS, color: '#ff8866' },
+    triggers: [
+      {
+        trigger: 'ON_RAM',
+        actions: [
+          {
+            type: 'SPAWN_OBSTACLE',
+            obstacle: {
+              shape: 'CIRCLE',
+              width: 32,
+              height: 32,
+              durationMs: 2000,
+              isDestructible: true,
+            },
+            target: 'CASTER',
+          },
+        ],
+      },
+    ],
+  };
+
+  const caster = new Player(new Vector2D(0, 0));
+  const target = new Player(new Vector2D(38, 0));
+  caster.setAbility(0, ramAbility);
+  // Target also holds ON_RAM — must not dispatch for the target.
+  target.setAbility(0, ramAbility);
+  caster.vel = new Vector2D(500, 0);
+  target.vel = Vector2D.zero();
+  caster.prevPos = caster.pos.sub(caster.vel.scale(dt));
+  target.prevPos = target.pos.clone();
+  world.addPlayer(caster);
+  world.addPlayer(target);
+
+  const interpreter = new Interpreter();
+  let queuedRamEvents = 0;
+
+  for (let i = 0; i < 45; i++) {
+    world.step(dt);
+    queuedRamEvents += world.pendingRamEvents.length;
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+  }
+
+  const obstacles = world.obstacles.filter((o) => !o.isDead).length;
+
+  if (queuedRamEvents !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 pendingRamEvent over contact, got ${queuedRamEvents}`,
+    };
+  }
+  if (obstacles !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 obstacle from rammer ON_RAM (not target), got ${obstacles}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `ON_RAM once: events=${queuedRamEvents} obstacles=${obstacles}`,
+  };
+}
+
 function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   const groundAbility: AbilitySchema = {
     id: 'bot_ground_test',
@@ -1619,7 +1696,13 @@ function run(): void {
   console.log(`  ${DIM}${homingBallistic.reason}${RESET}`);
   if (homingBallistic.pass) passed++;
 
-  const totalCases = suite.length + 19;
+  const onRam = assertOnRamDispatchesOnce();
+  const onRamTag = onRam.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${onRamTag} ON_RAM dispatches once`);
+  console.log(`  ${DIM}${onRam.reason}${RESET}`);
+  if (onRam.pass) passed++;
+
+  const totalCases = suite.length + 20;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
