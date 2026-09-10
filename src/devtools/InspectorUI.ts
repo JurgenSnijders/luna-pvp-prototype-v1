@@ -13,6 +13,7 @@ import { FONTS, RETRO_COLORS, RETRO_GLOW, retroPanelStyle } from '../ui/tokens';
 import { buttonStyle } from './inspector/domHelpers';
 import { attachFloatingPanel, type FloatingPanelController, type ResolvedPanelLayout } from './inspector/floatingPanel';
 import { buildGraphicsTab } from './inspector/graphicsTab';
+import { buildGraphTab } from './inspector/graphTab';
 import { buildHarnessTab } from './inspector/harnessTab';
 import { buildJsonTab, type JsonTabRefs } from './inspector/jsonTab';
 import { buildPresetsTab } from './inspector/presetsTab';
@@ -117,7 +118,7 @@ export class InspectorUI {
     this.bodyEl = document.createElement('div');
     this.bodyEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;';
 
-    const tabs = ['Stats', 'Presets', 'JSON', 'Graphics', 'Harness'];
+    const tabs = ['Stats', 'Presets', 'JSON', 'Graph', 'Graphics', 'Harness'];
     const tabBar = document.createElement('div');
     tabBar.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;';
     const content = document.createElement('div');
@@ -137,6 +138,9 @@ export class InspectorUI {
             break;
           case 'JSON':
             this.jsonTabRefs = buildJsonTab(content, this.ctx);
+            break;
+          case 'Graph':
+            buildGraphTab(content, this.ctx);
             break;
           case 'Graphics':
             buildGraphicsTab(content, this.ctx);

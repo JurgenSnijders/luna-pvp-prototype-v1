@@ -625,5 +625,5 @@ Update as phases complete. Keep it in this file so it travels with the repo.
 - [x] Phase 9 — Angular hit regions
 - [x] Phase 10 — Evolution Tree
 - [x] Phase 11 — Timing phases
-- [ ] Phase 12 — Node graph
+- [x] Phase 12 — Node graph
 - [ ] Phase 13 — Drawn trajectories

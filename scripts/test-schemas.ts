@@ -7,6 +7,11 @@ import { PRESETS, KINETIC_RECIPES } from '../src/devtools/Presets';
 import type { AbilitySchema, ActionPayload, TriggerNode, ValidationIssue } from '../src/types/schema';
 import { validateAbilitySchema, walkActions } from '../src/types/schema';
 import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
+import {
+  abilityGraphFromSchema,
+  buildSpellGraphDisplay,
+  schemaFromAbilityGraph,
+} from '../src/devtools/inspector/spellGraph';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_PATH = join(__dirname, 'schema-scores.snapshot.json');
@@ -616,6 +621,64 @@ function runHitExpiryDedupeAssertions(): string[] {
   return failures;
 }
 
+function stripUndefined(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripUndefined(entry));
+  }
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(obj)) {
+    if (entry !== undefined) {
+      out[key] = stripUndefined(entry);
+    }
+  }
+  return out;
+}
+
+function canonicalJson(value: unknown): string {
+  const normalized = stripUndefined(value);
+  if (normalized === null || typeof normalized !== 'object') {
+    return JSON.stringify(normalized);
+  }
+  if (Array.isArray(normalized)) {
+    return `[${normalized.map((entry) => canonicalJson(entry)).join(',')}]`;
+  }
+  const obj = normalized as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(obj[key])}`)
+    .join(',')}}`;
+}
+
+function runSpellGraphRoundTripAssertions(): string[] {
+  const failures: string[] = [];
+
+  for (const [name, preset] of Object.entries(PRESETS)) {
+    const source = structuredClone(preset);
+    const roundTrip = schemaFromAbilityGraph(abilityGraphFromSchema(source));
+    if (canonicalJson(source) !== canonicalJson(roundTrip)) {
+      failures.push(`spell graph round-trip mismatch: ${name}`);
+    }
+  }
+
+  const clusterGraph = buildSpellGraphDisplay(PRESETS['Cluster Mortar']);
+  const hasApex = clusterGraph.children.some((child) =>
+    child.label.includes('BALLISTIC_ARC'),
+  );
+  const hasBounceBranch = JSON.stringify(clusterGraph).includes('ON_BOUNCE');
+  if (!hasApex) {
+    failures.push('Cluster Mortar graph: expected root BALLISTIC_ARC trajectory node');
+  }
+  if (!hasBounceBranch) {
+    failures.push('Cluster Mortar graph: expected nested ON_BOUNCE branch');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
@@ -624,6 +687,7 @@ function run(): void {
     ...runDeployableRepairAssertions(),
     ...runHitExpiryDedupeAssertions(),
     ...runPresetContractAssertions(),
+    ...runSpellGraphRoundTripAssertions(),
   ];
 
   for (const [name, preset] of Object.entries(PRESETS)) {
