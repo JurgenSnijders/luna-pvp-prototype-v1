@@ -12,6 +12,17 @@
 
 ---
 
+## ▶ Here to implement? Go to [`06-execution-plan.md`](06-execution-plan.md)
+
+That file is the runbook: numbered phases, each with the Cursor mode to use, the model tier,
+the exact files to touch, the acceptance gate, and the conditions that justify stopping to ask.
+Every design question that would otherwise block you is **already decided** there.
+
+Docs 01–05 are reference material. You do not need to read them all before starting — each
+phase names the specific sections it depends on.
+
+---
+
 ## Why this set exists
 
 The prototype's premise is that a player can describe *any* spell and get something playable
@@ -33,12 +44,16 @@ Evolution Tree feature that depends on it.
 | [`02-pipeline-audit.md`](02-pipeline-audit.md) | Where authored intent is lost, with anchors | Facts |
 | [`03-repair-rules-matrix.md`](03-repair-rules-matrix.md) | Rule-by-rule classification of semantic repair | Facts |
 | [`04-upgrade-design.md`](04-upgrade-design.md) | Proposed architecture changes | **Proposals** |
-| [`05-open-questions.md`](05-open-questions.md) | Unresolved decisions + rejected options | Decisions |
+| [`05-open-questions.md`](05-open-questions.md) | Design questions + rejected options | Decisions |
+| [`06-execution-plan.md`](06-execution-plan.md) | **Phase-by-phase implementation runbook** | **Execute** |
 
 **The facts/proposals split is deliberate.** Docs 01–03 describe the codebase as it is and
-should only change when the code changes. Doc 04 describes what we think we should build and
-is expected to be argued with. When discussing design with an LLM, supply 01–03 as context
-and 04 as the thing under review — otherwise the model will "improve" the factual claims.
+should only change when the code changes. Doc 04 describes what we think we should build.
+Doc 06 is what to actually do, in order.
+
+Note that `06` **overrides** `05` for execution purposes: its "Pre-decided decisions" table
+settles every open question so implementation never blocks on one. `05` remains the record of
+*why* each was decided and what was rejected.
 
 ---
 
@@ -106,14 +121,33 @@ pasted version flies flat, RC-1 is confirmed.
 
 ## Using this set with an LLM
 
-Suggested framing when handing these to a design model:
+### To implement
+
+Open a new chat and say:
+
+> Execute Phase N from `docs/spell-pipeline/06-execution-plan.md`. Follow the standing rules
+> in that file. Do not ask me questions unless you hit a listed Stop-if condition.
+
+Each phase is written to be executable from a **cold start** — no memory of prior phases or
+conversations required. That matters because switching between Agent and Plan mode in Cursor
+starts a fresh context window, and because work will span machines and sessions.
+
+### To review
+
+**Do not send this set out for general design review.** The design is settled and the open
+questions are decided in `06`. A broad "review this" prompt produces re-litigation of closed
+decisions and a pile of clarifying questions, which is the opposite of useful.
+
+Bring in an outside model only at the **Review gate** markers in `06` — currently Phase 3 and
+Phase 7 — and only with the narrow question stated there. Supply the specific reference doc
+plus the diff, not the whole set.
+
+If you do need a broader conversation, this framing keeps it productive:
 
 > Docs 01–03 are verified facts about an existing codebase; treat them as given and do not
-> revise them. Doc 04 is a proposal I want you to critique. Doc 05 lists options already
-> rejected and why — do not re-propose them without new argument.
-
-Each file is self-contained enough to paste individually. If context is tight, 03 and 04
-are the two that matter for the repair redesign; 01 and 02 are background.
+> revise them. Doc 04 is a proposal. Doc 05 lists options already rejected and why — do not
+> re-propose them without a new argument. Doc 06 is the agreed execution order; its
+> Pre-decided decisions table is final.
 
 ---
 
