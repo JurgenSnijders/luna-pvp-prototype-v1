@@ -86,7 +86,19 @@ export const ACTION_TYPES: ReadonlySet<string> = new Set([
   'APPLY_STATUS',
   'LAUNCH_VERTICAL',
   'SET_GRAVITY_SCALE',
+  'PLAY_VFX',
 ]);
+
+export const VFX_LAYER_KINDS: ReadonlySet<string> = new Set([
+  'RING',
+  'FLASH',
+  'STREAK',
+  'SPARKS',
+]);
+
+export const VFX_COLOR_REFS: ReadonlySet<string> = new Set(['PRIMARY', 'SECONDARY']);
+
+export const VFX_DRAW_LAYERS: ReadonlySet<string> = new Set(['CORE', 'PRIMARY', 'SECONDARY']);
 
 export const OBSTACLE_SHAPES: ReadonlySet<string> = new Set(['CIRCLE', 'BOX']);
 export const TERRAIN_TYPES: ReadonlySet<string> = new Set(['SAFE', 'LAVA']);

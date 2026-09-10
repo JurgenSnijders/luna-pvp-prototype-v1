@@ -24,7 +24,15 @@ import type { Entity } from '../../entities/Entity';
 import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
-import type { AbilitySchema, ActionPayload, ImpactVfx, SpellArchetype, TriggerNode, TriggerType } from '../../types/schema';
+import type {
+  AbilitySchema,
+  ActionPayload,
+  ImpactVfx,
+  SpellArchetype,
+  TriggerNode,
+  TriggerType,
+  VfxLayer,
+} from '../../types/schema';
 import type { TriggerContext } from '../../types/triggerContext';
 import { updateTrajectory } from '../Trajectories';
 import type { Interpreter } from './Interpreter';
@@ -349,12 +357,20 @@ function emitArchetypeImpact(
   sec: string,
   scale: number,
   authoredVfx: ImpactVfx,
+  impactLayers?: VfxLayer[],
 ): void {
   const archetype = hit.projectile.spellArchetype;
   const heading = projectileHeading(hit.projectile);
   const vfx = resolveImpactVfx(archetype, authoredVfx);
 
-  interp.particles?.triggerImpactBurst(hit.hitPos, color, vfx, sec, scale);
+  interp.particles?.triggerImpactBurst(
+    hit.hitPos,
+    color,
+    vfx,
+    sec,
+    scale,
+    impactLayers,
+  );
 
   const useDirectionalRing =
     (archetype !== undefined && DIRECTIONAL_RING_ARCHETYPES.has(archetype)) ||
@@ -595,7 +611,7 @@ export function processLifecycleEvents(
     const instabBefore = hit.target.instabilityPct;
     const detonatedBefore = hit.target.plasmaDetonatedThisFrame;
 
-    emitArchetypeImpact(interp, hit, color, sec, scale, vfx);
+    emitArchetypeImpact(interp, hit, color, sec, scale, vfx, visuals?.impactLayers);
     const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
     if (shake > 0) fx.shake(shake * 4, 0.12);
 

@@ -451,6 +451,32 @@ export function dispatchAction(
       }
       break;
     }
+    case 'PLAY_VFX': {
+      const visuals = ctx.ability?.visuals;
+      const primary = visuals?.color ?? '#ff6644';
+      const sec = secondaryColor(visuals, '#ffffff');
+      const burstScale = action.scale ?? visuals?.vfx?.impactScale ?? 1;
+      let pos = ctx.origin.clone();
+      if (action.target) {
+        const t = resolveActionTarget(action.target, ctx);
+        if (t) pos = t.pos.clone();
+      } else if (ctx.sourceEntity) {
+        pos = ctx.sourceEntity.pos.clone();
+      }
+      if (action.layers && action.layers.length > 0) {
+        interp.particles?.triggerImpactBurst(
+          pos,
+          primary,
+          action.vfx ?? 'SPARKS',
+          sec,
+          burstScale,
+          action.layers,
+        );
+      } else if (action.vfx) {
+        interp.particles?.triggerImpactBurst(pos, primary, action.vfx, sec, burstScale);
+      }
+      break;
+    }
     case 'SPAWN_ACTOR': {
       const t = resolveActionTarget(action.target, ctx);
       let pos = t ? t.pos.clone() : ctx.origin.clone();

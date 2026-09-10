@@ -1,6 +1,7 @@
 import type { CameraView } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
-import type { ImpactVfx } from '../../types/schema';
+import type { ImpactVfx, VfxLayer } from '../../types/schema';
+import { playVfxLayers } from './vfxLayerComposer';
 import type { ParticleBackend, SpawnPriority, VfxCounters } from './ParticleBackend';
 
 const POOL_SIZE = 128;
@@ -232,7 +233,13 @@ export class RecordingBackend implements ParticleBackend {
     secondaryColor: string,
     vfxType: ImpactVfx,
     scale = 1,
+    layers?: VfxLayer[],
   ): void {
+    if (layers && layers.length > 0) {
+      playVfxLayers(this, pos, layers, color, secondaryColor, scale);
+      return;
+    }
+
     switch (vfxType) {
       case 'SHOCKWAVE':
       case 'MINI_NUKE':

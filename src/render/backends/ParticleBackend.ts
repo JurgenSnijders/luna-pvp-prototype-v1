@@ -1,6 +1,6 @@
 import type { CameraView } from '../../camera/Camera2D';
 import type { Vector2D } from '../../math/Vector2D';
-import type { ImpactVfx } from '../../types/schema';
+import type { ImpactVfx, VfxLayer } from '../../types/schema';
 
 export type SpawnPriority = 'CORE' | 'PRIMARY' | 'SECONDARY' | 'AMBIENT';
 
@@ -79,6 +79,7 @@ export interface ParticleBackend {
     secondaryColor: string,
     vfxType: ImpactVfx,
     scale?: number,
+    layers?: VfxLayer[],
   ): void;
   trail(pos: Vector2D, color: string, trailKind: string): void;
   neonRibbon(pos: Vector2D, color: string): void;

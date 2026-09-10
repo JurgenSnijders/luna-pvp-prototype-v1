@@ -1,6 +1,6 @@
 import type { CameraView } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
-import type { ImpactVfx } from '../../types/schema';
+import type { ImpactVfx, VfxLayer } from '../../types/schema';
 import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsSettings';
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
@@ -357,8 +357,9 @@ export class WebGLBackend implements ParticleBackend {
     secondaryColor: string,
     vfxType: ImpactVfx,
     scale = 1,
+    layers?: VfxLayer[],
   ): void {
-    triggerImpactBurstImpl(this.spawnCtx(), pos, color, secondaryColor, vfxType, scale);
+    triggerImpactBurstImpl(this.spawnCtx(), pos, color, secondaryColor, vfxType, scale, layers);
   }
 
   trail(pos: Vector2D, color: string, trailKind: string): void {

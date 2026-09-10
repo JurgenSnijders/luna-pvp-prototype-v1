@@ -2,7 +2,8 @@ import type { CameraView } from '../../camera/Camera2D';
 import { getTierLimits } from '../../devtools/graphicsSettings';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
-import type { ImpactVfx } from '../../types/schema';
+import type { ImpactVfx, VfxLayer } from '../../types/schema';
+import { playVfxLayers } from './vfxLayerComposer';
 import type { ParticleBackend, SpawnPriority, VfxCounters } from './ParticleBackend';
 
 const POOL_SIZE = 2048;
@@ -226,7 +227,13 @@ export class Canvas2DBackend implements ParticleBackend {
     secondaryColor: string,
     vfxType: ImpactVfx,
     scale = 1,
+    layers?: VfxLayer[],
   ): void {
+    if (layers && layers.length > 0) {
+      playVfxLayers(this, pos, layers, color, secondaryColor, scale);
+      return;
+    }
+
     switch (vfxType) {
       case 'SHOCKWAVE':
         this.spawnRing(pos, 50 * scale, 3, color, 0.85, 0.45, 'CORE');

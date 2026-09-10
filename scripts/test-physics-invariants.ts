@@ -1,4 +1,6 @@
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
+import { scoreAbilitySchema } from '../src/ai/budget/score';
+import { sanitizeVisuals } from '../src/ai/budget/sanitize/visuals';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
 import { PRESETS } from '../src/devtools/Presets';
 import { VERTICAL_RECIPES } from '../src/devtools/presetPacks/verticalRecipes';
@@ -1152,6 +1154,70 @@ function serializePredictivePaths(paths: ReturnType<typeof resolveLiveAimingPath
 /**
  * Phase 6 — rollout aiming shows cluster splits and bounces; cache is deterministic.
  */
+/**
+ * Phase 7 — PLAY_VFX is zero budget cost; impactLayers survive sanitize.
+ */
+function assertPlayVfxZeroBudgetAndLayers(): { pass: boolean; reason: string } {
+  const base: AbilitySchema = {
+    id: 'test_play_vfx_base',
+    name: 'Vfx Base',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [],
+  };
+  const withPlayVfx: AbilitySchema = {
+    ...base,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [{ type: 'PLAY_VFX', vfx: 'MINI_NUKE' }],
+      },
+    ],
+  };
+  const baseScore = scoreAbilitySchema(base);
+  const withScore = scoreAbilitySchema(withPlayVfx);
+  if (baseScore !== withScore) {
+    return {
+      pass: false,
+      reason: `PLAY_VFX changed score ${baseScore} -> ${withScore}`,
+    };
+  }
+
+  const visuals = sanitizeVisuals({
+    color: '#ff4400',
+    size: 12,
+    projectileStyle: 'DISC',
+    trailType: 'NONE',
+    impactVfx: 'SPARKS',
+    impactLayers: [
+      {
+        kind: 'RING',
+        size: 40,
+        lifetime: 0.4,
+        colorRef: 'PRIMARY',
+        layer: 'CORE',
+      },
+      {
+        kind: 'SPARKS',
+        count: 12,
+        size: 8,
+        lifetime: 0.3,
+        colorRef: 'SECONDARY',
+        layer: 'PRIMARY',
+      },
+    ],
+  });
+  if (!visuals.impactLayers || visuals.impactLayers.length < 2) {
+    return { pass: false, reason: 'impactLayers stripped by sanitize' };
+  }
+
+  return {
+    pass: true,
+    reason: `score=${baseScore} layers=${visuals.impactLayers.length}`,
+  };
+}
+
 function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
   clearAimingPathCache();
   const ability = VERTICAL_RECIPES.clusterMortar;
@@ -1783,7 +1849,13 @@ function run(): void {
   console.log(`  ${DIM}${clusterMortarAiming.reason}${RESET}`);
   if (clusterMortarAiming.pass) passed++;
 
-  const totalCases = suite.length + 21;
+  const playVfx = assertPlayVfxZeroBudgetAndLayers();
+  const playVfxTag = playVfx.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${playVfxTag} PLAY_VFX zero budget + impactLayers`);
+  console.log(`  ${DIM}${playVfx.reason}${RESET}`);
+  if (playVfx.pass) passed++;
+
+  const totalCases = suite.length + 22;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -1,6 +1,6 @@
 import type { CameraView } from '../camera/Camera2D';
 import { Vector2D } from '../math/Vector2D';
-import type { ImpactVfx } from '../types/schema';
+import type { ImpactVfx, VfxLayer } from '../types/schema';
 import type { ParticleBackend } from './backends/ParticleBackend';
 import { createParticleBackend } from './backends/createParticleBackend';
 import { VfxDirector } from './VfxDirector';
@@ -102,6 +102,7 @@ export class ParticleSystem {
     vfxType: ImpactVfx = 'SPARKS',
     secondaryColor?: string,
     scale?: number,
+    layers?: VfxLayer[],
   ): void {
     this.director.triggerImpactBurst(
       pos,
@@ -109,6 +110,7 @@ export class ParticleSystem {
       secondaryColor ?? '#ffffff',
       vfxType,
       scale,
+      layers,
     );
   }
 

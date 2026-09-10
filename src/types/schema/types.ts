@@ -69,7 +69,10 @@ export type ActionType =
   | 'MORPH_ENTITY'
   | 'SPAWN_ACTOR'
   | 'APPLY_STEALTH'
-  | 'APPLY_STATUS';
+  | 'APPLY_STATUS'
+  | 'LAUNCH_VERTICAL'
+  | 'SET_GRAVITY_SCALE'
+  | 'PLAY_VFX';
 
 export type ObstacleShape = 'CIRCLE' | 'BOX';
 export type TerrainType = 'SAFE' | 'LAVA';
@@ -167,6 +170,22 @@ export type ImpactVfx =
 
 export type VfxBlendMode = 'NORMAL' | 'ADDITIVE';
 
+export type VfxLayerKind = 'RING' | 'FLASH' | 'STREAK' | 'SPARKS';
+export type VfxColorRef = 'PRIMARY' | 'SECONDARY';
+export type VfxDrawLayer = 'CORE' | 'PRIMARY' | 'SECONDARY';
+
+export interface VfxLayer {
+  kind: VfxLayerKind;
+  count?: number;
+  size: number;
+  speed?: number;
+  lifetime: number;
+  thickness?: number;
+  spreadDeg?: number;
+  colorRef: VfxColorRef;
+  layer: VfxDrawLayer;
+}
+
 export interface VfxParams {
   glowIntensity?: number;
   trailDensity?: number;
@@ -227,6 +246,7 @@ export interface VisualDescriptor {
   projectileStyle: ProjectileStyle;
   trailType: TrailType;
   impactVfx: ImpactVfx;
+  impactLayers?: VfxLayer[];
   vfx?: VfxParams;
 }
 
@@ -300,6 +320,14 @@ export interface SetGravityScaleAction {
   type: 'SET_GRAVITY_SCALE';
   scale: number;
   durationMs?: number;
+  target?: ActionTarget;
+}
+
+export interface PlayVfxAction {
+  type: 'PLAY_VFX';
+  vfx?: ImpactVfx;
+  layers?: VfxLayer[];
+  scale?: number;
   target?: ActionTarget;
 }
 
@@ -462,4 +490,5 @@ export type ActionPayload =
   | ApplyStealthAction
   | ApplyStatusAction
   | LaunchVerticalAction
-  | SetGravityScaleAction;
+  | SetGravityScaleAction
+  | PlayVfxAction;

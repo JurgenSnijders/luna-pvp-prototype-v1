@@ -102,6 +102,8 @@ function scoreAction(action: ActionPayload, depth: number): number {
     }
     case 'SET_GRAVITY_SCALE':
       return action.scale * ((action.durationMs ?? 1000) / 1000) * 3;
+    case 'PLAY_VFX':
+      return 0;
   }
 }
 

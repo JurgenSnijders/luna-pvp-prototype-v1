@@ -1,4 +1,4 @@
-import { ACTION_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
+import { ACTION_TYPES, IMPACT_VFX_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
 import type {
   ActionPayload,
   ApplyImpulseAction,
@@ -10,6 +10,7 @@ import type {
   ReflectProjectilesAction,
   ReleaseStasisAction,
   LaunchVerticalAction,
+  PlayVfxAction,
   SetGravityScaleAction,
   SpawnConstraintAction,
   SpawnFieldAction,
@@ -45,7 +46,7 @@ import {
 } from './obstacle';
 import { validateTriggerNode } from './trigger';
 import { validateTrajectoryConfig } from './trajectory';
-import { validateVisualDescriptor } from './visuals';
+import { validateImpactLayers, validateVisualDescriptor } from './visuals';
 
 export function validateActionPayload(
   value: unknown,
@@ -354,6 +355,30 @@ export function validateActionPayload(
           return validationFail(issues, `${path}.durationMs`, 'invalid durationMs');
         }
         action.durationMs = clamp(value.durationMs, 0, 10000);
+      }
+      const target = parseActionTarget(value.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'PLAY_VFX': {
+      const action: PlayVfxAction = { type: 'PLAY_VFX' };
+      if (value.vfx !== undefined) {
+        if (!isString(value.vfx) || !IMPACT_VFX_TYPES.has(value.vfx)) {
+          return validationFail(issues, `${path}.vfx`, 'invalid vfx');
+        }
+        action.vfx = value.vfx as PlayVfxAction['vfx'];
+      }
+      if (value.layers !== undefined) {
+        const layers = validateImpactLayers(value.layers);
+        if (!layers) return validationFail(issues, `${path}.layers`, 'invalid layers');
+        action.layers = layers;
+      }
+      if (value.scale !== undefined) {
+        if (!isNumber(value.scale)) {
+          return validationFail(issues, `${path}.scale`, 'invalid scale');
+        }
+        action.scale = clamp(value.scale, 0.25, 3);
       }
       const target = parseActionTarget(value.target);
       if (target) action.target = target;

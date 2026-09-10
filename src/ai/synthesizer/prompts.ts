@@ -110,6 +110,7 @@ visuals: { color: hex, size: 4-32, projectileStyle, trailType, impactVfx, vfx?: 
 projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL|PLASMA_TENDRIL|VOID_RIFT|CRYSTAL_SHARD
 trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
 impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE|PLASMA_BLOOM|SHATTER|IMPLOSION|LIGHTNING_FORK|RUNE_FLASH
+impactLayers?: optional stack overriding impactVfx — each layer { kind: RING|FLASH|STREAK|SPARKS, size, lifetime, colorRef: PRIMARY|SECONDARY, layer: CORE|PRIMARY|SECONDARY, count?, speed?, thickness?, spreadDeg? }. Use for unusual looks; presets stay the default.
 secondaryColor should contrast with color. glowIntensity tracks power (0.6 subtle, 1.2 strong, 1.8 ultimate).
 
 TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.
@@ -163,6 +164,7 @@ SPAWN_ACTOR { actor: { actorArchetype: TURRET|DECOY, health, durationMs, anchore
 APPLY_STEALTH { durationMs, revealOnCast?, target? }
 LAUNCH_VERTICAL { verticalImpulse?, targetApex?, target? } — launch target upward. verticalImpulse: direct vz (px/s). targetApex: peak height (engine computes impulse). Does not affect anchored turrets.
 SET_GRAVITY_SCALE { scale: 0-8, durationMs?, target? } — override gravity multiplier; durationMs restores default when expired.
+PLAY_VFX { vfx?, layers?, scale?, target? } — zero-cost visual burst at a trigger moment (apex puff, bounce scuff, windup telegraph). layers overrides vfx preset when present. No physics.
 
 SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE/SPAWN_ACTOR). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
 

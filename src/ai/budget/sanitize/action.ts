@@ -1,8 +1,8 @@
 import type { SkillCategory } from '../../../types/cards';
-import type { ActionPayload, SpellArchetype, TriggerNode } from '../../../types/schema';
+import type { ActionPayload, ImpactVfx, SpellArchetype, TriggerNode } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
 import { MAX_ABS_VZ, HAZARD_CLEARANCE_Z } from '../../../engine/verticalConstants';
-import { FIELD_TYPES, MAX_DEPTH } from '../constants';
+import { FIELD_TYPES, IMPACT_VFX_TYPES, MAX_DEPTH } from '../constants';
 import {
   clamp,
   ensureFiniteNumber,
@@ -22,6 +22,7 @@ import {
 } from './obstacle';
 import { sanitizeTriggerNode } from './trigger';
 import { sanitizeTrajectory } from './trajectory';
+import { sanitizeImpactLayers } from './vfxLayers';
 import { sanitizeVisuals } from './visuals';
 
 export function sanitizeAction(
@@ -380,6 +381,27 @@ export function sanitizeAction(
       };
       if (raw.durationMs !== undefined) {
         action.durationMs = clamp(ensureFiniteNumber(raw.durationMs, 2000), 0, 10000);
+      }
+      const target = parseActionTarget(raw.target);
+      if (target) action.target = target;
+      return action;
+    }
+
+    case 'PLAY_VFX': {
+      const action: Extract<ActionPayload, { type: 'PLAY_VFX' }> = {
+        type: 'PLAY_VFX',
+      };
+      const layers = sanitizeImpactLayers(raw.layers);
+      if (layers) {
+        action.layers = layers;
+      } else if (typeof raw.vfx === 'string') {
+        const vfxRaw = raw.vfx.toUpperCase();
+        if (IMPACT_VFX_TYPES.has(vfxRaw)) {
+          action.vfx = vfxRaw as ImpactVfx;
+        }
+      }
+      if (raw.scale !== undefined) {
+        action.scale = clamp(ensureFiniteNumber(raw.scale, 1), 0.25, 3);
       }
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;

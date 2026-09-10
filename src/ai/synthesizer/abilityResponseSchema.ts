@@ -20,6 +20,9 @@ import {
   TRIGGER_TYPES,
   TARGETING_MODES,
   VFX_BLEND_MODES,
+  VFX_COLOR_REFS,
+  VFX_DRAW_LAYERS,
+  VFX_LAYER_KINDS,
 } from '../../types/schema/constants';
 
 function stringEnum(values: ReadonlySet<string> | readonly string[]): { type: 'string'; enum: string[] } {
@@ -78,6 +81,23 @@ const fieldConfig = {
   additionalProperties: false,
 };
 
+const vfxLayer = {
+  type: 'object',
+  required: ['kind', 'size', 'lifetime', 'colorRef', 'layer'],
+  properties: {
+    kind: stringEnum(VFX_LAYER_KINDS),
+    count: { type: 'number' },
+    size: { type: 'number' },
+    speed: { type: 'number' },
+    lifetime: { type: 'number' },
+    thickness: { type: 'number' },
+    spreadDeg: { type: 'number' },
+    colorRef: stringEnum(VFX_COLOR_REFS),
+    layer: stringEnum(VFX_DRAW_LAYERS),
+  },
+  additionalProperties: false,
+};
+
 const visualDescriptor = {
   type: 'object',
   required: ['color', 'size', 'projectileStyle', 'trailType', 'impactVfx'],
@@ -87,6 +107,10 @@ const visualDescriptor = {
     projectileStyle: stringEnum(PROJECTILE_STYLES),
     trailType: stringEnum(TRAIL_TYPES),
     impactVfx: stringEnum(IMPACT_VFX_TYPES),
+    impactLayers: {
+      type: 'array',
+      items: vfxLayer,
+    },
     vfx: {
       type: 'object',
       properties: {
@@ -408,6 +432,21 @@ const actionBranches = [
       type: { type: 'string', enum: ['SET_GRAVITY_SCALE'] },
       scale: { type: 'number' },
       durationMs: { type: 'number' },
+      target: actionTarget,
+    },
+    additionalProperties: false,
+  },
+  {
+    type: 'object',
+    required: ['type'],
+    properties: {
+      type: { type: 'string', enum: ['PLAY_VFX'] },
+      vfx: stringEnum(IMPACT_VFX_TYPES),
+      layers: {
+        type: 'array',
+        items: vfxLayer,
+      },
+      scale: { type: 'number' },
       target: actionTarget,
     },
     additionalProperties: false,

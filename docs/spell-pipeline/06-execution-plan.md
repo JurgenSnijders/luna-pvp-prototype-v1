@@ -620,7 +620,7 @@ Update as phases complete. Keep it in this file so it travels with the repo.
 - [x] Phase 4 — Composable motion Part A
 - [x] Phase 5 — `ON_RAM` contact trigger
 - [x] Phase 6 — Preview fidelity
-- [ ] Phase 7 — Layered VFX + `PLAY_VFX`
+- [x] Phase 7 — Layered VFX + `PLAY_VFX`
 - [ ] Phase 8 — Derived impact intensity
 - [ ] Phase 9 — Angular hit regions
 - [ ] Phase 10 — Evolution Tree

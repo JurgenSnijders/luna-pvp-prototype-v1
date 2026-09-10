@@ -1,6 +1,6 @@
 import type { CameraView } from '../camera/Camera2D';
 import type { Vector2D } from '../math/Vector2D';
-import type { ImpactVfx } from '../types/schema';
+import type { ImpactVfx, VfxLayer } from '../types/schema';
 import type { ParticleBackend, SpawnPriority } from './backends/ParticleBackend';
 
 const DEV = typeof import.meta !== 'undefined' && (import.meta as { env?: { DEV?: boolean } }).env?.DEV;
@@ -91,8 +91,9 @@ export class VfxDirector {
     secondaryColor: string,
     vfxType: ImpactVfx,
     scale = 1,
+    layers?: VfxLayer[],
   ): void {
-    this.backend.triggerImpactBurst(pos, color, secondaryColor, vfxType, scale);
+    this.backend.triggerImpactBurst(pos, color, secondaryColor, vfxType, scale, layers);
   }
 
   trail(pos: Vector2D, color: string, trailKind: string): void {

@@ -1,6 +1,7 @@
 import { isInsideHex } from '../../../math/HexMath';
 import { Vector2D } from '../../../math/Vector2D';
-import type { ImpactVfx } from '../../../types/schema';
+import type { ImpactVfx, VfxLayer } from '../../../types/schema';
+import { playVfxLayers } from '../vfxLayerComposer';
 import { ShapeId } from '../../gl/shaders';
 import { parseColor } from '../ParticleBackend';
 import { makeParticle } from './particleSim';
@@ -41,7 +42,28 @@ export function triggerImpactBurst(
   secondaryColor: string,
   vfxType: ImpactVfx,
   scale = 1,
+  layers?: VfxLayer[],
 ): void {
+  if (layers && layers.length > 0) {
+    playVfxLayers(
+      {
+        spawnRing: (p, radius, thickness, c, alpha, life, priority) =>
+          spawnRing(ctx, p, radius, thickness, c, alpha, life, priority),
+        spawnFlash: (p, size, c, alpha, life, priority) =>
+          spawnFlash(ctx, p, size, c, alpha, life, priority),
+        spawnStreak: (p, vel, length, c, alpha, life, priority) =>
+          spawnStreak(ctx, p, vel, length, c, alpha, life, priority),
+        burstSparks: (p, count, c, priority) => burstSparks(ctx, p, count, c, priority),
+      },
+      pos,
+      layers,
+      color,
+      secondaryColor,
+      scale,
+    );
+    return;
+  }
+
   switch (vfxType) {
     case 'SHOCKWAVE':
       spawnRing(ctx, pos, 50 * scale, 3, color, 0.85, 0.45, 'CORE');
