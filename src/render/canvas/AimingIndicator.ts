@@ -1,9 +1,9 @@
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
 import type { AbilitySchema, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
+import { resolveLiveAimingPaths } from './aimingRollout';
 import {
   collectGroundImpactFieldRadii,
-  resolveLiveAimingPaths,
   resolveRootTrajectory,
   type PredictivePath,
 } from './trajectoryTracer';

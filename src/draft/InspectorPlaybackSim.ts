@@ -7,6 +7,8 @@ import { applyField } from '../primitives/Fields';
 import { Interpreter } from '../primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../primitives/interpreter/lifecycle';
 import { FIELD_COLORS } from '../render/canvas/colors';
+import { RecordingBackend } from '../render/backends/RecordingBackend';
+import { ParticleSystem } from '../render/ParticleSystem';
 import { resolveRootTrajectory } from '../render/canvas/trajectoryTracer';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import type { AbilitySchema, ProjectileStyle } from '../types/schema';
@@ -37,10 +39,19 @@ export interface ImpactFrameData {
   age: number;
 }
 
+export interface ParticleFrameData {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  alpha: number;
+}
+
 export interface PlaybackFrame {
   projectiles: ProjectileFrameData[];
   zones: ZoneFrameData[];
   impacts: ImpactFrameData[];
+  particles: ParticleFrameData[];
 }
 
 export interface PlaybackRecording {
@@ -152,7 +163,11 @@ function snapshotFrame(
     age: impact.age,
   }));
 
-  return { projectiles, zones, impacts };
+  return { projectiles, zones, impacts, particles: [] };
+}
+
+function snapshotParticles(recordingBackend: RecordingBackend): ParticleFrameData[] {
+  return recordingBackend.snapshotParticles();
 }
 
 function hasActiveEntities(world: PhysicsWorld, activeImpacts: ActiveImpact[]): boolean {
@@ -251,6 +266,9 @@ function transformRecording(
     for (const impact of frame.impacts) {
       inflate(impact.x, impact.y, impact.radius * (1 + impact.age));
     }
+    for (const particle of frame.particles) {
+      inflate(particle.x, particle.y, particle.radius);
+    }
   }
 
   const bboxW = Math.max(maxX - minX, 120);
@@ -287,6 +305,11 @@ function transformRecording(
       ...impact,
       ...mapPoint(impact.x, impact.y),
       radius: impact.radius * scale * (1 + impact.age * 0.5),
+    })),
+    particles: frame.particles.map((particle) => ({
+      ...particle,
+      ...mapPoint(particle.x, particle.y),
+      radius: Math.max(1, particle.radius * scale),
     })),
   }));
 
@@ -325,7 +348,10 @@ function runSandboxSimulation(spell: AbilitySchema): {
   dummy.tags.add('kinematic');
   world.addDummy(dummy);
 
+  const recordingBackend = new RecordingBackend();
+  const particles = ParticleSystem.fromBackend(recordingBackend);
   const interp = new Interpreter();
+  interp.setParticleSystem(particles);
   interp.executeAbility(
     spell,
     {
@@ -344,14 +370,19 @@ function runSandboxSimulation(spell: AbilitySchema): {
   let idleFrames = 0;
 
   for (let frame = 0; frame < MAX_FRAMES; frame++) {
+    particles.beginFrame(SIM_DT);
     interp.updateTrajectories(world, SIM_DT);
+    interp.processLifecycleEvents(world, SIM_DT, HEADLESS_LIFECYCLE_FX);
     world.updateSpatialZones(SIM_DT);
     applySandboxFields(world, SIM_DT);
     world.step(SIM_DT);
     interp.processLifecycleEvents(world, SIM_DT, HEADLESS_LIFECYCLE_FX);
+    particles.update(SIM_DT);
 
     seedImpactsFromEvents(world, spell, activeImpacts);
-    rawFrames.push(snapshotFrame(world, activeImpacts));
+    const frameSnapshot = snapshotFrame(world, activeImpacts);
+    frameSnapshot.particles = snapshotParticles(recordingBackend);
+    rawFrames.push(frameSnapshot);
     ageImpacts(activeImpacts);
 
     if (!hasActiveEntities(world, activeImpacts)) {
@@ -385,7 +416,9 @@ export function recordSpellPlayback(
   try {
     const { rawFrames, casterPos, targetPos } = runSandboxSimulation(spell);
     const recording = transformRecording(
-      rawFrames.length > 0 ? rawFrames : [{ projectiles: [], zones: [], impacts: [] }],
+      rawFrames.length > 0
+        ? rawFrames
+        : [{ projectiles: [], zones: [], impacts: [], particles: [] }],
       casterPos,
       targetPos,
       canvasWidth,

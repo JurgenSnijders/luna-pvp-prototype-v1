@@ -2052,6 +2052,16 @@ export class DraftModal {
         );
       }
 
+      for (const particle of frame.particles) {
+        ctx.save();
+        ctx.globalAlpha = particle.alpha;
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       for (const impact of frame.impacts) {
         this.drawScopeImpact(ctx, impact.x, impact.y, impact.radius, impact.color, impact.age);
       }

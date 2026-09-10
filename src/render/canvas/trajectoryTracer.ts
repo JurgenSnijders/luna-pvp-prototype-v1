@@ -117,7 +117,7 @@ function emitterHasSpread(emitter: EmitterConfig): boolean {
   );
 }
 
-function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
+export function resolveLiveCastConfig(ability: AbilitySchema): LiveCastConfig | null {
   const onCast = findOnCastProjectileConfig(ability);
 
   if (onCast && (!ability.trajectory || emitterHasSpread(onCast.emitter))) {
@@ -474,26 +474,6 @@ function buildPredictivePath(
   }
 }
 
-export function resolveLiveAimingPaths(
-  ability: AbilitySchema,
-  origin: { x: number; y: number },
-  aimAngle: number,
-  muzzleOffset = 0,
-  startZ = 0,
-): PredictivePath[] {
-  if (ability.targetingMode === 'GROUND_POINT') return [];
-
-  const config = resolveLiveCastConfig(ability);
-  if (!config) return [];
-
-  const originPt = { x: origin.x, y: origin.y };
-  const angles = computeSpreadAngles(config.emitter, aimAngle);
-
-  return angles.map((theta) =>
-    buildPredictivePath(config.trajectory, originPt, theta, muzzleOffset, startZ),
-  );
-}
-
 export interface IconTrajectoryResult {
   origin: { x: number; y: number };
   paths: { points: { x: number; y: number }[]; isClosed: boolean }[];
@@ -531,11 +511,10 @@ export function resolveIconTrajectoryPaths(
 
   const canonicalAngle =
     config.trajectory.type === 'ORBIT_ANCHOR' ? 0 : -Math.PI / 4;
-  const rawPaths = resolveLiveAimingPaths(
-    ability,
-    { x: 0, y: 0 },
-    canonicalAngle,
-    0,
+  const originPt = { x: 0, y: 0 };
+  const angles = computeSpreadAngles(config.emitter, canonicalAngle);
+  const rawPaths = angles.map((theta) =>
+    buildPredictivePath(config.trajectory, originPt, theta, 0, 0),
   );
   if (rawPaths.length === 0) return emptyResult;
 

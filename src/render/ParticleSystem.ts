@@ -1,6 +1,7 @@
 import type { CameraView } from '../camera/Camera2D';
 import { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx } from '../types/schema';
+import type { ParticleBackend } from './backends/ParticleBackend';
 import { createParticleBackend } from './backends/createParticleBackend';
 import { VfxDirector } from './VfxDirector';
 
@@ -10,11 +11,22 @@ export class ParticleSystem {
   private glContext: ReturnType<typeof createParticleBackend>['glContext'];
   private useCanvas2d: boolean;
 
-  constructor(parent?: HTMLElement) {
+  constructor(parent?: HTMLElement, backend?: ParticleBackend) {
+    if (backend) {
+      this.director = new VfxDirector(backend);
+      this.glContext = null;
+      this.useCanvas2d = backend.name === 'canvas2d';
+      return;
+    }
     const bundle = createParticleBackend(parent ?? document.body);
     this.director = new VfxDirector(bundle.backend);
     this.glContext = bundle.glContext;
     this.useCanvas2d = bundle.backend.name === 'canvas2d';
+  }
+
+  /** Headless / recording path — no DOM or WebGL context required. */
+  static fromBackend(backend: ParticleBackend): ParticleSystem {
+    return new ParticleSystem(undefined, backend);
   }
 
   isWebGL(): boolean {

@@ -21,6 +21,10 @@ import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import { initBallisticKinematics } from '../src/primitives/Trajectories';
+import {
+  clearAimingPathCache,
+  resolveLiveAimingPaths,
+} from '../src/render/canvas/aimingRollout';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { BACKGROUND_FRAGMENT_SHADER } from '../src/render/gl/shaders';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
@@ -1134,6 +1138,75 @@ function assertHomingBallisticComposition(): { pass: boolean; reason: string } {
 /**
  * Phase 5 — ON_RAM fires once per contact for the rammer only (Q10: no arming).
  */
+function serializePredictivePaths(paths: ReturnType<typeof resolveLiveAimingPaths>): string {
+  return JSON.stringify(
+    paths.map((p) => ({
+      type: p.trajectoryType,
+      points: p.points,
+      apexIndex: p.apexIndex,
+      impactIndex: p.impactIndex,
+    })),
+  );
+}
+
+/**
+ * Phase 6 — rollout aiming shows cluster splits and bounces; cache is deterministic.
+ */
+function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
+  clearAimingPathCache();
+  const ability = VERTICAL_RECIPES.clusterMortar;
+  const origin = { x: 0, y: 0 };
+  const aimAngle = -Math.PI / 4;
+
+  const t0 = performance.now();
+  const pathsA = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0);
+  const coldMs = performance.now() - t0;
+
+  const t1 = performance.now();
+  const pathsB = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0);
+  const cachedMs = performance.now() - t1;
+
+  if (pathsA.length < 2) {
+    return {
+      pass: false,
+      reason: `expected >= 2 projectile groups, got ${pathsA.length}`,
+    };
+  }
+
+  const hasBounceMarker = pathsA.some(
+    (p) =>
+      p.points.some((pt) => pt.isImpact) ||
+      (p.impactIndex !== undefined && p.impactIndex > 0),
+  );
+  if (!hasBounceMarker) {
+    return { pass: false, reason: 'no bounce/impact marker on child paths' };
+  }
+
+  const serializedA = serializePredictivePaths(pathsA);
+  const serializedB = serializePredictivePaths(pathsB);
+  if (serializedA !== serializedB) {
+    return { pass: false, reason: 'cached rollout paths differ from first generation' };
+  }
+
+  if (cachedMs > 2) {
+    return {
+      pass: false,
+      reason: `cached rollout took ${cachedMs.toFixed(2)}ms (limit 2ms)`,
+    };
+  }
+  if (coldMs > 15) {
+    return {
+      pass: false,
+      reason: `cold rollout took ${coldMs.toFixed(2)}ms (stop-if 15ms)`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `paths=${pathsA.length} bounce=yes cache=${cachedMs.toFixed(2)}ms cold=${coldMs.toFixed(2)}ms`,
+  };
+}
+
 function assertOnRamDispatchesOnce(): { pass: boolean; reason: string } {
   const dt = 1 / 60;
   const world = new PhysicsWorld(Vector2D.zero(), 800);
@@ -1702,7 +1775,15 @@ function run(): void {
   console.log(`  ${DIM}${onRam.reason}${RESET}`);
   if (onRam.pass) passed++;
 
-  const totalCases = suite.length + 20;
+  const clusterMortarAiming = assertClusterMortarAimingRollout();
+  const clusterMortarAimingTag = clusterMortarAiming.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${clusterMortarAimingTag} Cluster mortar aiming rollout`);
+  console.log(`  ${DIM}${clusterMortarAiming.reason}${RESET}`);
+  if (clusterMortarAiming.pass) passed++;
+
+  const totalCases = suite.length + 21;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
