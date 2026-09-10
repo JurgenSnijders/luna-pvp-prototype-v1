@@ -656,6 +656,10 @@ export function processLifecycleEvents(
 
   for (const projectile of world.pendingApexEvents) {
     if (projectile.isDead) continue;
+    // Soft apex cue — not an impact: sparks + faint ring only (no shake/decal/hitstop).
+    const apexColor = projectile.visuals?.color ?? '#ffcc88';
+    interp.particles?.burstSparks(projectile.pos, 4, apexColor);
+    interp.particles?.expandingRing(projectile.pos, 36, apexColor);
     dispatchProjectileTriggers(
       interp,
       projectile,
@@ -670,6 +674,19 @@ export function processLifecycleEvents(
 
   for (const event of world.pendingBounceEvents) {
     if (event.proj.isDead) continue;
+    // Short ground scuff; spark count scales with impact speed. No shake on early bounces.
+    const bounceColor = event.proj.visuals?.color ?? '#ccaa66';
+    const sparkCount = Math.max(2, Math.min(8, Math.round(event.impactSpeed / 120)));
+    interp.particles?.burstSparks(event.proj.pos, sparkCount, bounceColor);
+    if (fx.persistsWorldFx && event.impactSpeed >= 400) {
+      fx.decal(
+        event.proj.pos.x,
+        event.proj.pos.y,
+        Math.min(28, 10 + event.impactSpeed * 0.02),
+        'KINETIC_CRATER',
+        bounceColor,
+      );
+    }
     dispatchProjectileTriggers(
       interp,
       event.proj,
