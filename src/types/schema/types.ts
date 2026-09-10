@@ -35,6 +35,8 @@ export type FieldType =
 
 export type FieldAffectsFilter = 'ENEMIES' | 'ALLIES' | 'CASTER_ONLY' | 'ALL';
 
+export type FieldArcFacing = 'CASTER_FACING' | 'CAST_HEADING' | 'FIXED';
+
 export type TriggerType =
   | 'ON_CAST'
   | 'ON_TICK'
@@ -230,6 +232,10 @@ export interface FieldConfig {
   zHeight?: number;
   verticalForce?: number;
   affects?: FieldAffectsFilter;
+  /** Arc width in degrees. Omitted or 360 = full radial field. */
+  arcDeg?: number;
+  arcFacing?: FieldArcFacing;
+  arcOffsetDeg?: number;
 }
 
 export interface EmitterConfig {

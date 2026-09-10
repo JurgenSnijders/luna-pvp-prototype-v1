@@ -1,5 +1,5 @@
-import { FIELD_TYPES } from '../constants';
-import type { FieldConfig, FieldType } from '../types';
+import { FIELD_ARC_FACING_SET, FIELD_TYPES } from '../constants';
+import type { FieldArcFacing, FieldConfig, FieldType } from '../types';
 import { clamp, isNumber, isObject, isString, parseFieldAffectsFilter } from './helpers';
 
 export function validateFieldConfig(value: unknown): FieldConfig | null {
@@ -54,6 +54,19 @@ export function validateFieldConfig(value: unknown): FieldConfig | null {
   const affects = parseFieldAffectsFilter(value.affects);
   if (value.affects !== undefined && !affects) return null;
   if (affects) config.affects = affects;
+
+  if (value.arcDeg !== undefined) {
+    if (!isNumber(value.arcDeg)) return null;
+    config.arcDeg = clamp(value.arcDeg, 0, 360);
+  }
+  if (value.arcFacing !== undefined) {
+    if (!isString(value.arcFacing) || !FIELD_ARC_FACING_SET.has(value.arcFacing)) return null;
+    config.arcFacing = value.arcFacing as FieldArcFacing;
+  }
+  if (value.arcOffsetDeg !== undefined) {
+    if (!isNumber(value.arcOffsetDeg)) return null;
+    config.arcOffsetDeg = clamp(value.arcOffsetDeg, -360, 360);
+  }
 
   return config;
 }

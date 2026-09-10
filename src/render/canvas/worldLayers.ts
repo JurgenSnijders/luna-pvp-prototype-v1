@@ -36,13 +36,22 @@ function drawHologramFill(
   y: number,
   radius: number,
   rgb: { r: number; g: number; b: number },
+  startAngle = 0,
+  endAngle = Math.PI * 2,
+  wedge = false,
 ): void {
   const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
   grad.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
   grad.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03)`);
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  if (wedge) {
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, radius, startAngle, endAngle);
+    ctx.closePath();
+  } else {
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+  }
   ctx.fill();
 }
 
@@ -53,14 +62,21 @@ function drawInnerReticle(
   radius: number,
   rot: number,
   rgb: { r: number; g: number; b: number },
+  startAngle = 0,
+  endAngle = Math.PI * 2,
+  wedge = false,
 ): void {
   const innerR = radius * 0.4;
   const tickLen = radius * 0.08;
   ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.55)`;
   ctx.lineWidth = 1.5;
 
-  for (let i = 0; i < 4; i++) {
-    const angle = (Math.PI / 2) * i;
+  const span = endAngle - startAngle;
+  const tickCount = wedge ? 3 : 4;
+  for (let i = 0; i < tickCount; i++) {
+    const angle = wedge
+      ? startAngle + (span * i) / Math.max(1, tickCount - 1)
+      : (Math.PI / 2) * i;
     const cx = x + Math.cos(angle) * innerR;
     const cy = y + Math.sin(angle) * innerR;
     const perpX = -Math.sin(angle);
@@ -77,11 +93,14 @@ function drawInnerReticle(
   ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(x, y, ringR, 0, Math.PI * 2);
+  ctx.arc(x, y, ringR, startAngle, endAngle);
   ctx.stroke();
 
-  for (let i = 0; i < 12; i++) {
-    const angle = rot + (Math.PI * 2 * i) / 12;
+  const marks = wedge ? 6 : 12;
+  for (let i = 0; i < marks; i++) {
+    const t = i / marks;
+    const angle = wedge ? startAngle + span * t : rot + (Math.PI * 2 * i) / 12;
+    if (wedge && (t <= 0 || t >= 1)) continue;
     const ix = x + Math.cos(angle) * ringR;
     const iy = y + Math.sin(angle) * ringR;
     const ox = x + Math.cos(angle) * (ringR + radius * 0.04);
@@ -101,6 +120,9 @@ function drawOuterPerimeter(
   now: number,
   rgb: { r: number; g: number; b: number },
   fieldType: FieldType,
+  startAngle = 0,
+  endAngle = Math.PI * 2,
+  wedge = false,
 ): void {
   const dashOffset = -now * 30;
   const dash = fieldType === 'VORTEX_TANGENT' ? [4, 10] : [8, 8];
@@ -110,14 +132,23 @@ function drawOuterPerimeter(
   ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`;
   ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.arc(x, y, radius, startAngle, endAngle);
   ctx.stroke();
 
   ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.arc(x, y, radius, startAngle, endAngle);
   ctx.stroke();
+  if (wedge) {
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(startAngle) * radius, y + Math.sin(startAngle) * radius);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(endAngle) * radius, y + Math.sin(endAngle) * radius);
+    ctx.stroke();
+  }
   ctx.setLineDash([]);
   ctx.lineDashOffset = 0;
 }
@@ -146,10 +177,26 @@ function drawZoneHologram(ctx: CanvasRenderingContext2D, zone: SpatialZone, now:
   const rgb = parseRgbaColor(baseColor);
   const accent = fieldAccentRgb(config.fieldType);
   const rot = now * (config.fieldType === 'FRICTION_OVERRIDE' ? 0.25 : 0.5);
+  const wedge = zone.isPartialArc();
+  const facing = zone.getArcFacingRad();
+  const half = (((config.arcDeg ?? 360) * Math.PI) / 180) / 2;
+  const startAngle = wedge ? facing - half : 0;
+  const endAngle = wedge ? facing + half : Math.PI * 2;
 
-  drawHologramFill(ctx, pos.x, pos.y, radius, rgb);
-  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, accent);
-  drawOuterPerimeter(ctx, pos.x, pos.y, radius, now, accent, config.fieldType);
+  drawHologramFill(ctx, pos.x, pos.y, radius, rgb, startAngle, endAngle, wedge);
+  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, accent, startAngle, endAngle, wedge);
+  drawOuterPerimeter(
+    ctx,
+    pos.x,
+    pos.y,
+    radius,
+    now,
+    accent,
+    config.fieldType,
+    startAngle,
+    endAngle,
+    wedge,
+  );
 
   if (config.fieldType === 'MASS_ATTRACTOR' || config.fieldType === 'VORTEX_TANGENT') {
     drawSingularityCore(ctx, pos.x, pos.y, now, accent);

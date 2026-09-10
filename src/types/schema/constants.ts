@@ -44,6 +44,9 @@ export const FIELD_TYPES: ReadonlySet<string> = new Set([
 export const FIELD_AFFECTS_FILTERS = ['ENEMIES', 'ALLIES', 'CASTER_ONLY', 'ALL'] as const;
 export const FIELD_AFFECTS_FILTER_SET: ReadonlySet<string> = new Set(FIELD_AFFECTS_FILTERS);
 
+export const FIELD_ARC_FACINGS = ['CASTER_FACING', 'CAST_HEADING', 'FIXED'] as const;
+export const FIELD_ARC_FACING_SET: ReadonlySet<string> = new Set(FIELD_ARC_FACINGS);
+
 export const TRIGGER_TYPES: ReadonlySet<string> = new Set([
   'ON_CAST',
   'ON_TICK',

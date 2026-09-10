@@ -94,14 +94,28 @@ export function drawPhysicsDebugOverlay(
     const fill = FIELD_COLORS[zone.config.fieldType] ?? 'rgba(168, 85, 247, 0.12)';
     ctx.fillStyle = fill;
     ctx.beginPath();
-    ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
+    if (zone.isPartialArc()) {
+      const facing = zone.getArcFacingRad();
+      const half = (((zone.config.arcDeg ?? 360) * Math.PI) / 180) / 2;
+      ctx.moveTo(zone.pos.x, zone.pos.y);
+      ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, facing - half, facing + half);
+      ctx.closePath();
+    } else {
+      ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
+    }
     ctx.fill();
 
     ctx.strokeStyle = 'rgba(168, 85, 247, 0.55)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
+    if (zone.isPartialArc()) {
+      const facing = zone.getArcFacingRad();
+      const half = (((zone.config.arcDeg ?? 360) * Math.PI) / 180) / 2;
+      ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, facing - half, facing + half);
+    } else {
+      ctx.arc(zone.pos.x, zone.pos.y, zone.config.radius, 0, Math.PI * 2);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
   }

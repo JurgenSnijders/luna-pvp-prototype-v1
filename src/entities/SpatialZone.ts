@@ -3,6 +3,17 @@ import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { Vector2D } from '../math/Vector2D';
 import { Entity, generateEntityId } from './Entity';
 
+function entityFacingAngle(entity: Entity): number {
+  const withFacing = entity as Entity & { facingAngle?: number };
+  if (typeof withFacing.facingAngle === 'number' && Number.isFinite(withFacing.facingAngle)) {
+    return withFacing.facingAngle;
+  }
+  if (entity.vel.magSq() > 0.01) {
+    return Math.atan2(entity.vel.y, entity.vel.x);
+  }
+  return 0;
+}
+
 export class SpatialZone extends Entity {
   config: FieldConfig;
   ownerId: string;
@@ -15,6 +26,8 @@ export class SpatialZone extends Entity {
   zHeight: number;
   verticalForce: number;
   affects: FieldAffectsFilter;
+  /** Heading captured at spawn for CAST_HEADING arcs. */
+  castHeading: Vector2D;
   /** Per-occupant elapsed-ms accumulators for throttled status reapplication. */
   statusAccumulatorsMs = new Map<string, number>();
 
@@ -41,6 +54,30 @@ export class SpatialZone extends Entity {
     this.zHeight = config.zHeight ?? HAZARD_CLEARANCE_Z;
     this.verticalForce = config.verticalForce ?? 0;
     this.affects = config.affects ?? 'ENEMIES';
+    this.castHeading = Vector2D.fromAngle(0);
+  }
+
+  /** World-space facing angle (radians) for the arc bisector. */
+  getArcFacingRad(): number {
+    const offset = ((this.config.arcOffsetDeg ?? 0) * Math.PI) / 180;
+    switch (this.config.arcFacing ?? 'CAST_HEADING') {
+      case 'CASTER_FACING': {
+        const parent = this.parentRef;
+        const facing = parent ? entityFacingAngle(parent) : Math.atan2(this.castHeading.y, this.castHeading.x);
+        return facing + offset;
+      }
+      case 'FIXED':
+        return offset;
+      case 'CAST_HEADING':
+      default:
+        return Math.atan2(this.castHeading.y, this.castHeading.x) + offset;
+    }
+  }
+
+  /** True when the field uses a partial arc (not a full circle). */
+  isPartialArc(): boolean {
+    const arc = this.config.arcDeg;
+    return arc !== undefined && arc < 360;
   }
 
   override update(dt: number): void {
@@ -51,6 +88,14 @@ export class SpatialZone extends Entity {
         } else {
           this.parentRef = null;
         }
+      } else if (this.config.arcFacing === 'CASTER_FACING') {
+        // Offset is local to parent facing — rotate each frame.
+        const a = entityFacingAngle(this.parentRef);
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        const ox = this.offset.x * c - this.offset.y * s;
+        const oy = this.offset.x * s + this.offset.y * c;
+        this.pos.copyFrom(this.parentRef.pos).addMut(new Vector2D(ox, oy));
       } else {
         this.pos.copyFrom(this.parentRef.pos).addMut(this.offset);
       }

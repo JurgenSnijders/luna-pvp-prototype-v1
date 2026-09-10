@@ -205,11 +205,29 @@ export function dispatchAction(
       }
 
       const offset = field.offset ? new Vector2D(field.offset.x, field.offset.y) : Vector2D.zero();
-      const spawnPos = parent
-        ? parent.pos.add(offset)
-        : resolveCastAnchor(ctx, world, ctx.origin);
+      let spawnPos: Vector2D;
+      if (parent) {
+        if (field.arcFacing === 'CASTER_FACING') {
+          const withFacing = parent as { facingAngle?: number };
+          const a =
+            typeof withFacing.facingAngle === 'number'
+              ? withFacing.facingAngle
+              : Math.atan2(ctx.heading.y, ctx.heading.x);
+          const c = Math.cos(a);
+          const s = Math.sin(a);
+          spawnPos = parent.pos.add(
+            new Vector2D(offset.x * c - offset.y * s, offset.x * s + offset.y * c),
+          );
+        } else {
+          spawnPos = parent.pos.add(offset);
+        }
+      } else {
+        spawnPos = resolveCastAnchor(ctx, world, ctx.origin);
+      }
       const archetype = ctx.ability?.archetype ?? 'KINETIC';
       const zone = new SpatialZone(spawnPos, field, ctx.caster.id, archetype);
+      zone.castHeading =
+        ctx.heading.magSq() > 0.01 ? ctx.heading.normalize() : Vector2D.fromAngle(0);
       if (parent) {
         zone.parentRef = parent;
         zone.offset = offset;

@@ -3,6 +3,7 @@ import type { ActionPayload, ImpactVfx, SpellArchetype, TriggerNode } from '../.
 import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
 import { MAX_ABS_VZ, HAZARD_CLEARANCE_Z } from '../../../engine/verticalConstants';
 import { FIELD_TYPES, IMPACT_VFX_TYPES, MAX_DEPTH } from '../constants';
+import { FIELD_ARC_FACING_SET } from '../../../types/schema/constants';
 import {
   clamp,
   ensureFiniteNumber,
@@ -181,6 +182,27 @@ export function sanitizeAction(
               }
             : {}),
           ...(fieldAffects ? { affects: fieldAffects } : {}),
+          ...(fieldObj.arcDeg !== undefined
+            ? { arcDeg: clamp(ensureFiniteNumber(fieldObj.arcDeg, 360), 0, 360) }
+            : {}),
+          ...(typeof fieldObj.arcFacing === 'string' &&
+          FIELD_ARC_FACING_SET.has(fieldObj.arcFacing.toUpperCase())
+            ? {
+                arcFacing: fieldObj.arcFacing.toUpperCase() as
+                  | 'CASTER_FACING'
+                  | 'CAST_HEADING'
+                  | 'FIXED',
+              }
+            : {}),
+          ...(fieldObj.arcOffsetDeg !== undefined
+            ? {
+                arcOffsetDeg: clamp(
+                  ensureFiniteNumber(fieldObj.arcOffsetDeg, 0),
+                  -360,
+                  360,
+                ),
+              }
+            : {}),
         },
       };
       const target = parseActionTarget(raw.target);

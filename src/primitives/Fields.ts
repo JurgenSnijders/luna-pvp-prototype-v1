@@ -105,6 +105,18 @@ export function applyField(
   const dist = entity.pos.dist(zone.pos);
   if (dist > zone.config.radius + entity.radius) return;
 
+  const arcDeg = zone.config.arcDeg;
+  if (arcDeg !== undefined && arcDeg < 360) {
+    if (arcDeg <= 0) return;
+    const radial = entity.pos.sub(zone.pos);
+    if (radial.magSq() > 1e-6) {
+      const facing = Vector2D.fromAngle(zone.getArcFacingRad());
+      const dir = radial.normalize();
+      const cosHalf = Math.cos((arcDeg * Math.PI) / 360);
+      if (facing.dot(dir) < cosHalf - 1e-6) return;
+    }
+  }
+
   const falloff = Math.max(0, 1 - dist / zone.config.radius);
   const radial = entity.pos.sub(zone.pos);
   const radialDir = radial.magSq() > 0 ? radial.normalize() : null;

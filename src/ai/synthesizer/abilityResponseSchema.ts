@@ -7,6 +7,7 @@ import {
   EMITTER_DISTRIBUTIONS,
   FIELD_TYPES,
   FIELD_AFFECTS_FILTERS,
+  FIELD_ARC_FACINGS,
   IMPACT_VFX_TYPES,
   IMPULSE_DIRECTION_MODES,
   INPUT_PROFILE_MODES,
@@ -77,6 +78,9 @@ const fieldConfig = {
     zHeight: { type: 'number' },
     verticalForce: { type: 'number' },
     affects: stringEnum(FIELD_AFFECTS_FILTERS),
+    arcDeg: { type: 'number' },
+    arcFacing: stringEnum(FIELD_ARC_FACINGS),
+    arcOffsetDeg: { type: 'number' },
   },
   additionalProperties: false,
 };
