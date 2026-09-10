@@ -8,6 +8,18 @@ import type { TrajectoryConfig } from '../types/schema';
 const RETURN_CONTACT_RADIUS = 24;
 const BLINK_INTERVAL_MS = 150;
 
+/** True when vertical/ballistic kinematics should apply, regardless of planar type. */
+export function hasBallisticParams(trajectory: TrajectoryConfig): boolean {
+  return (
+    trajectory.type === 'BALLISTIC_ARC' ||
+    trajectory.lobApex !== undefined ||
+    trajectory.bounces !== undefined ||
+    trajectory.spawnAltitude !== undefined ||
+    trajectory.fallSpeed !== undefined ||
+    trajectory.gravityScale !== undefined
+  );
+}
+
 export function initBallisticKinematics(
   proj: Projectile,
   trajectory: TrajectoryConfig,
@@ -81,8 +93,30 @@ export function updateTrajectory(
       updateDiscontinuousBlink(proj, dt, speed, config.blinkDistance ?? 60);
       break;
     case 'BALLISTIC_ARC':
-      updateBallisticArc(proj, dt, world, speed, maxRange);
+      updateBallisticArc(proj, dt, speed, maxRange);
       break;
+  }
+
+  // Apex is orthogonal to planar type: any projectile with vertical motion can fire ON_AIR_APEX.
+  maybeEmitApex(proj, world);
+
+  if (
+    proj.apexReached &&
+    proj.detonateAtZ !== undefined &&
+    proj.z <= proj.detonateAtZ
+  ) {
+    proj.isDead = true;
+    proj.expiryReason = 'lifetime';
+  }
+}
+
+function maybeEmitApex(proj: Projectile, world: PhysicsWorld): void {
+  if (proj.apexReached) return;
+  // Flat / non-ballistic projectiles sit at z≈0 with vz≈0 — that is not an apex crossing.
+  if (proj.z <= 0 && proj.vz <= 0 && proj.gravityScale <= 0) return;
+  if (proj.vz <= 0) {
+    proj.apexReached = true;
+    world.pendingApexEvents.push(proj);
   }
 }
 
@@ -241,7 +275,6 @@ function updateDiscontinuousBlink(
 function updateBallisticArc(
   proj: Projectile,
   dt: number,
-  world: PhysicsWorld,
   speed: number,
   maxRange: number,
 ): void {
@@ -256,19 +289,5 @@ function updateBallisticArc(
       proj.isDead = true;
       proj.expiryReason = 'range';
     }
-  }
-
-  if (!proj.apexReached && proj.vz <= 0) {
-    proj.apexReached = true;
-    world.pendingApexEvents.push(proj);
-  }
-
-  if (
-    proj.apexReached &&
-    proj.detonateAtZ !== undefined &&
-    proj.z <= proj.detonateAtZ
-  ) {
-    proj.isDead = true;
-    proj.expiryReason = 'lifetime';
   }
 }

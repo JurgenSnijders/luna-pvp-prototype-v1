@@ -20,7 +20,7 @@ import type { TriggerContext } from '../../types/triggerContext';
 import { deltaVec, vecTelemetry } from '../../types/telemetry';
 import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { Interpreter } from './Interpreter';
-import { initBallisticKinematics } from '../Trajectories';
+import { hasBallisticParams, initBallisticKinematics } from '../Trajectories';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
 import { buildTriggerMap, resolveCastAnchor, safeNormalize, secondaryColor } from './helpers';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
@@ -122,7 +122,7 @@ export function executeEmitter(
       projectile.orbitAngle = theta;
     }
 
-    if (trajectory.type === 'BALLISTIC_ARC') {
+    if (hasBallisticParams(trajectory)) {
       initBallisticKinematics(projectile, trajectory);
     }
 

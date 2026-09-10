@@ -20,6 +20,7 @@ import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
+import { initBallisticKinematics } from '../src/primitives/Trajectories';
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { BACKGROUND_FRAGMENT_SHADER } from '../src/render/gl/shaders';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
@@ -1061,6 +1062,75 @@ function assertClusterMortarStructureSurvives(): { pass: boolean; reason: string
   };
 }
 
+/**
+ * Phase 4 — vertical kinematics compose with non-BALLISTIC planar types.
+ * HOMING_SLERP + lobApex + bounces must arc, fire apex, and bounce.
+ */
+function assertHomingBallisticComposition(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  world.setViewportBounds(4000, 4000);
+
+  const caster = new Player(new Vector2D(0, 0));
+  world.addPlayer(caster);
+  const target = new Dummy(new Vector2D(500, 0));
+  world.addDummy(target);
+
+  const trajectory = {
+    type: 'HOMING_SLERP' as const,
+    speed: 320,
+    maxRange: 2500,
+    turnAccel: 500,
+    lobApex: 120,
+    bounces: 2,
+  };
+
+  const projectile = new Projectile(
+    caster.pos.clone(),
+    trajectory,
+    caster.id,
+    0,
+    new Map<string, TriggerNode[]>(),
+  );
+  initBallisticKinematics(projectile, trajectory);
+  world.addProjectile(projectile);
+
+  const interpreter = new Interpreter();
+  let apexQueued = 0;
+  let maxZ = 0;
+
+  for (let i = 0; i < 360; i++) {
+    interpreter.updateTrajectories(world, dt);
+    if (world.pendingApexEvents.includes(projectile)) {
+      apexQueued += 1;
+    }
+    world.step(dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+    maxZ = Math.max(maxZ, projectile.z);
+    if (apexQueued >= 1 && projectile.bounceCount >= 1 && maxZ >= 60) {
+      break;
+    }
+  }
+
+  if (maxZ < 60) {
+    return { pass: false, reason: `never arced vertically (maxZ=${maxZ.toFixed(1)})` };
+  }
+  if (apexQueued < 1) {
+    return { pass: false, reason: `ON_AIR_APEX never queued (maxZ=${maxZ.toFixed(1)})` };
+  }
+  if (projectile.bounceCount < 1) {
+    return {
+      pass: false,
+      reason: `expected bounce, got bounceCount=${projectile.bounceCount} (maxZ=${maxZ.toFixed(1)})`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `HOMING_SLERP maxZ=${maxZ.toFixed(0)} apexQueued=${apexQueued} bounces=${projectile.bounceCount}`,
+  };
+}
+
 function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   const groundAbility: AbilitySchema = {
     id: 'bot_ground_test',
@@ -1541,7 +1611,15 @@ function run(): void {
   console.log(`  ${DIM}${clusterMortarStructure.reason}${RESET}`);
   if (clusterMortarStructure.pass) passed++;
 
-  const totalCases = suite.length + 18;
+  const homingBallistic = assertHomingBallisticComposition();
+  const homingBallisticTag = homingBallistic.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${homingBallisticTag} Homing ballistic composition`);
+  console.log(`  ${DIM}${homingBallistic.reason}${RESET}`);
+  if (homingBallistic.pass) passed++;
+
+  const totalCases = suite.length + 19;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
