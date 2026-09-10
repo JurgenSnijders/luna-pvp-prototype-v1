@@ -1,5 +1,7 @@
 import { balanceAbilitySchema, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
+import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
 import { PRESETS } from '../src/devtools/Presets';
+import { VERTICAL_RECIPES } from '../src/devtools/presetPacks/verticalRecipes';
 import {
   getEffectiveFeatureFlags,
   getGraphicsSettings,
@@ -918,6 +920,71 @@ function assertBallisticArcTrajectorySampling(): { pass: boolean; reason: string
   };
 }
 
+/**
+ * Phase 1 RC-1 gate: cluster mortar ballistic types must survive repairAbilityPayload
+ * (and the subsequent sanitize/balance path without hostile flavor). Structure survival
+ * under evolved flavor containing ring/burst/self is Phase 3
+ * (assertClusterMortarStructureSurvives).
+ */
+function assertClusterMortarTrajectorySurvives(): { pass: boolean; reason: string } {
+  const source = VERTICAL_RECIPES.clusterMortar;
+  const corrupted = JSON.parse(JSON.stringify(source)) as AbilitySchema;
+
+  // Simulate the common LLM failure: LINEAR + ballistic fields still present.
+  if (corrupted.trajectory) {
+    corrupted.trajectory = { ...corrupted.trajectory, type: 'LINEAR' };
+  }
+  const apex = corrupted.triggers.find((t) => t.trigger === 'ON_AIR_APEX');
+  const spawn = apex?.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+  if (spawn && spawn.type === 'SPAWN_PROJECTILE' && spawn.projectileTrajectory) {
+    spawn.projectileTrajectory = {
+      ...spawn.projectileTrajectory,
+      type: 'LINEAR',
+    };
+  }
+
+  const repaired = repairAbilityPayload(corrupted) as AbilitySchema;
+  const sanitized = sanitizeAbilitySchema(repaired, 'SECONDARY');
+  const balanced = balanceAbilitySchema(sanitized);
+
+  if (balanced.trajectory?.type !== 'BALLISTIC_ARC') {
+    return {
+      pass: false,
+      reason: `root trajectory.type=${balanced.trajectory?.type ?? 'undefined'} expected BALLISTIC_ARC`,
+    };
+  }
+
+  const apexOut = balanced.triggers.find((t) => t.trigger === 'ON_AIR_APEX');
+  if (!apexOut) {
+    return { pass: false, reason: 'ON_AIR_APEX node missing after pipeline' };
+  }
+
+  const childSpawn = apexOut.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+  if (!childSpawn || childSpawn.type !== 'SPAWN_PROJECTILE') {
+    return { pass: false, reason: 'ON_AIR_APEX SPAWN_PROJECTILE missing after pipeline' };
+  }
+
+  if (childSpawn.projectileTrajectory?.type !== 'BALLISTIC_ARC') {
+    return {
+      pass: false,
+      reason: `child trajectory.type=${childSpawn.projectileTrajectory?.type ?? 'undefined'} expected BALLISTIC_ARC`,
+    };
+  }
+
+  const childBounces = childSpawn.projectileTrajectory?.bounces ?? 0;
+  if (childBounces < 1) {
+    return {
+      pass: false,
+      reason: `child bounces=${childBounces} expected >= 1`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `root+child BALLISTIC_ARC recovered; child bounces=${childBounces}`,
+  };
+}
+
 function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   const groundAbility: AbilitySchema = {
     id: 'bot_ground_test',
@@ -1382,7 +1449,15 @@ function run(): void {
   console.log(`  ${DIM}${graphicsTiers.reason}${RESET}`);
   if (graphicsTiers.pass) passed++;
 
-  const totalCases = suite.length + 16;
+  const clusterMortarTrajectory = assertClusterMortarTrajectorySurvives();
+  const clusterMortarTrajectoryTag = clusterMortarTrajectory.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${clusterMortarTrajectoryTag} Cluster mortar trajectory survives pipeline`);
+  console.log(`  ${DIM}${clusterMortarTrajectory.reason}${RESET}`);
+  if (clusterMortarTrajectory.pass) passed++;
+
+  const totalCases = suite.length + 17;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -296,6 +296,11 @@ const TRAJECTORY_ALIASES: Record<string, string> = {
   BOOMERANG: 'RETURN_TO_SOURCE',
   ORBIT: 'ORBIT_ANCHOR',
   BLINK: 'DISCONTINUOUS_BLINK',
+  MORTAR: 'BALLISTIC_ARC',
+  LOB: 'BALLISTIC_ARC',
+  BALLISTIC: 'BALLISTIC_ARC',
+  ARTILLERY: 'BALLISTIC_ARC',
+  ARCING: 'BALLISTIC_ARC',
   LASER: 'LINEAR',
   BEAM: 'LINEAR',
   PROJECTILE: 'LINEAR',
@@ -311,6 +316,7 @@ const VALID_TRAJECTORY_TYPES = new Set([
   'ORBIT_ANCHOR',
   'HOMING_SLERP',
   'DISCONTINUOUS_BLINK',
+  'BALLISTIC_ARC',
 ]);
 
 const VALID_TRAIL_TYPES = new Set([
@@ -480,7 +486,9 @@ function repairTrajectoryConfig(traj: unknown): unknown {
   const rawAltitude = ensureFiniteNumber(t.spawnAltitude, 0);
   const rawFallSpeed = ensureFiniteNumber(t.fallSpeed, 0);
   const rawLobApex = ensureFiniteNumber(t.lobApex, 0);
+  const rawBounces = ensureFiniteNumber(t.bounces, 0);
   const isSkyDrop = rawAltitude > 0 || (rawFallSpeed > 0 && rawLobApex <= 0);
+  const isBallisticLob = rawLobApex > 0 || rawBounces > 0;
   if (typeof t.type === 'string') {
     t.type = normalizeEnumToken(t.type, TRAJECTORY_ALIASES);
   }
@@ -493,6 +501,10 @@ function repairTrajectoryConfig(traj: unknown): unknown {
     if (rawSpeed > 100) {
       t.speed = 0;
     }
+  } else if (isBallisticLob) {
+    // Recover mortar/bounce intent when the LLM emitted LINEAR (or an unknown type)
+    // alongside ballistic fields — mirrors the isSkyDrop recovery branch above.
+    t.type = 'BALLISTIC_ARC';
   } else if (typeof t.type !== 'string' || !VALID_TRAJECTORY_TYPES.has(t.type)) {
     t.type = 'LINEAR';
   }
