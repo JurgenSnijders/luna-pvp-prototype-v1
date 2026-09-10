@@ -613,7 +613,7 @@ Only these justify interrupting the user. Everything else: decide and proceed.
 
 Update as phases complete. Keep it in this file so it travels with the repo.
 
-- [ ] Phase 0 — Pre-flight
+- [x] Phase 0 — Pre-flight
 - [ ] Phase 1 — RC-1 fix + round-trip invariant
 - [ ] Phase 2 — Bind apex/bounce visuals
 - [ ] Phase 3 — Semantic repair modes
