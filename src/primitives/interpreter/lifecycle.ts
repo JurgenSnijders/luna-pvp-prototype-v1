@@ -15,6 +15,12 @@ import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
 import { reactiveFx } from '../../render/gl/reactiveFx';
+import {
+  channelIntensity,
+  computeImpactIntensity,
+  intensityParticleScale,
+  normalizeScopePower,
+} from '../../render/gl/impactIntensity';
 import { screenShake } from '../../render/ScreenShake';
 import { decalManager, mapArchetypeToDecal, type DecalType } from '../../render/canvas/decals';
 import { floorGridManager } from '../../render/canvas/floorGrid';
@@ -24,6 +30,7 @@ import type { Entity } from '../../entities/Entity';
 import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
+import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, type SkillCategory } from '../../types/cards';
 import type {
   AbilitySchema,
   ActionPayload,
@@ -112,7 +119,8 @@ export interface LifecycleFx {
   decal(x: number, y: number, radius: number, type: DecalType, color: string): void;
   ripple(x: number, y: number, radius: number, intensity: number, color: string): void;
   shake(intensity: number, durationSec: number): void;
-  reactivePulse(x: number, y: number, isHeavy: boolean): void;
+  /** Accepts 0..1 intensity, or legacy boolean heavy flag. */
+  reactivePulse(x: number, y: number, intensityOrHeavy: number | boolean): void;
   hitstop(frames: number): void;
 }
 
@@ -128,9 +136,9 @@ export const LIVE_LIFECYCLE_FX: LifecycleFx = {
   shake(intensity, durationSec) {
     screenShake.trigger(intensity, durationSec);
   },
-  reactivePulse(x, y, isHeavy) {
+  reactivePulse(x, y, intensityOrHeavy) {
     reactiveFx.setTuning(getEffectiveCrtSettings().reactive);
-    reactiveFx.pulse(x, y, isHeavy);
+    reactiveFx.pulse(x, y, intensityOrHeavy);
   },
   hitstop(frames) {
     requestHitstop(frames);
@@ -146,6 +154,25 @@ export const HEADLESS_LIFECYCLE_FX: LifecycleFx = {
   reactivePulse() {},
   hitstop() {},
 };
+
+function resolveHitAbilityScope(
+  world: PhysicsWorld,
+  projectile: Projectile,
+): { scopeNorm: number; category: SkillCategory } {
+  const source = world.getEntityById(projectile.sourceEntityId);
+  if (source instanceof Player && projectile.abilityName) {
+    for (let i = 0; i < source.abilities.length; i++) {
+      const ability = source.abilities[i];
+      if (!ability || ability.name !== projectile.abilityName) continue;
+      const slotKey = ACTION_SLOT_KEYS[i];
+      const category = SLOT_CATEGORY_MAP[slotKey];
+      return { scopeNorm: normalizeScopePower(ability, category), category };
+    }
+  }
+  // Unknown forged/child projectile: depth gives a soft scope floor.
+  const depthFloor = 0.2 + Math.min(1, projectile.depth) * 0.25;
+  return { scopeNorm: depthFloor, category: 'SECONDARY' };
+}
 
 function stampImpactDecal(
   hit: { projectile: Projectile; hitPos: Vector2D },
@@ -607,18 +634,39 @@ export function processLifecycleEvents(
     const color = visuals?.color ?? '#ff6644';
     const vfx = visuals?.impactVfx ?? 'SPARKS';
     const sec = secondaryColor(visuals, '#ffffff');
-    const scale = visuals?.vfx?.impactScale ?? 1;
+    const authoredImpactScale = visuals?.vfx?.impactScale ?? 1;
+    const authoredShakeMul = visuals?.vfx?.shakeIntensity ?? 1;
     const instabBefore = hit.target.instabilityPct;
     const detonatedBefore = hit.target.plasmaDetonatedThisFrame;
 
-    emitArchetypeImpact(interp, hit, color, sec, scale, vfx, visuals?.impactLayers);
-    const shake = visuals?.vfx?.shakeIntensity ?? 0.4;
-    if (shake > 0) fx.shake(shake * 4, 0.12);
+    // Resolve triggers first so instability delta reflects this hit's payloads.
+    dispatchProjectileTriggers(
+      interp,
+      hit.projectile,
+      'ON_HIT',
+      hit.target,
+      world,
+      hit.hitPos,
+      hit.projectile.depth + 1,
+    );
 
     const detonated = hit.target.plasmaDetonatedThisFrame || detonatedBefore;
     hit.target.plasmaDetonatedThisFrame = false;
     const instabDelta = hit.target.instabilityPct - instabBefore;
-    const isHeavy = instabDelta >= 25 || detonated;
+    const { scopeNorm } = resolveHitAbilityScope(world, hit.projectile);
+    const intensity = computeImpactIntensity(scopeNorm, {
+      instabilityDelta: instabDelta,
+      projectileSpeed: hit.projectile.vel.mag(),
+      plasmaDetonated: detonated,
+    });
+    const isHeavy = intensity >= 0.55 || instabDelta >= 25 || detonated;
+    const scale = intensityParticleScale(intensity, authoredImpactScale);
+
+    emitArchetypeImpact(interp, hit, color, sec, scale, vfx, visuals?.impactLayers);
+
+    const shakeChannel = channelIntensity(intensity, 'shake');
+    const shake = shakeChannel * authoredShakeMul * 4;
+    if (shake > 0.05) fx.shake(shake, 0.12);
 
     if (isInsideHex(hit.hitPos, world.hexCenter, world.hexRadius)) {
       if (fx.persistsWorldFx) {
@@ -630,22 +678,12 @@ export function processLifecycleEvents(
           hit.hitPos.x,
           hit.hitPos.y,
           Math.min(320, 160 + forceProxy * 0.2),
-          isHeavy ? 1.0 : 0.7,
+          0.5 + intensity * 0.5,
           color,
         );
       }
     }
-    fx.reactivePulse(hit.hitPos.x, hit.hitPos.y, isHeavy);
-
-    dispatchProjectileTriggers(
-      interp,
-      hit.projectile,
-      'ON_HIT',
-      hit.target,
-      world,
-      hit.hitPos,
-      hit.projectile.depth + 1,
-    );
+    fx.reactivePulse(hit.hitPos.x, hit.hitPos.y, intensity);
 
     if (hitFeedbackConfig.microHitstop && isHeavy) {
       fx.hitstop(2);

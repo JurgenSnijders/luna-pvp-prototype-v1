@@ -68,14 +68,20 @@ class ReactiveFx {
     };
   }
 
-  pulse(worldX: number, worldY: number, isHeavy: boolean): void {
+  pulse(worldX: number, worldY: number, intensityOrHeavy: number | boolean): void {
     const t = this.tuning;
-    this.blurEnvelope = Math.max(this.blurEnvelope, envelope(isHeavy ? t.blurHeavy : t.blurLight));
-    this.glitchEnvelope = Math.max(
-      this.glitchEnvelope,
-      envelope(isHeavy ? t.glitchHeavy : t.glitchLight),
-    );
-    this.shockStrength = envelope(isHeavy ? t.shockHeavy : t.shockLight);
+    const intensity =
+      typeof intensityOrHeavy === 'boolean'
+        ? intensityOrHeavy
+          ? 1
+          : 0
+        : Math.max(0, Math.min(1, intensityOrHeavy));
+    const blur = t.blurLight + (t.blurHeavy - t.blurLight) * intensity;
+    const glitch = t.glitchLight + (t.glitchHeavy - t.glitchLight) * intensity;
+    const shock = t.shockLight + (t.shockHeavy - t.shockLight) * intensity;
+    this.blurEnvelope = Math.max(this.blurEnvelope, envelope(blur));
+    this.glitchEnvelope = Math.max(this.glitchEnvelope, envelope(glitch));
+    this.shockStrength = envelope(shock);
     this.shockAge = 0;
     this.worldX = worldX;
     this.worldY = worldY;

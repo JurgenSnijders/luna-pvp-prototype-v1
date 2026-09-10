@@ -40,6 +40,12 @@ import {
   type HitFeedbackConfig,
 } from '../../render/hitFeedbackConfig';
 import {
+  impactIntensityTuning,
+  resetImpactIntensityTuning,
+  saveImpactIntensityTuning,
+  type ImpactIntensityTuning,
+} from '../../render/gl/impactIntensity';
+import {
   DEFAULT_ENTITY_SHADOW_CONFIG,
   entityShadowConfig,
   saveEntityShadowConfig,
@@ -422,6 +428,54 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const hitSection = collapsibleSection(parent, 'Hit Impact', false);
   const hitBody = hitSection.body;
   const hitCheckboxes: Partial<Record<keyof HitFeedbackConfig, HTMLInputElement>> = {};
+
+  helperText(
+    hitBody,
+    'Derived impact intensity: scope (spell power) sets the floor, hit force the punch. Curve k and ceilings tune saturation.',
+  );
+
+  const intensityNumeric = (key: keyof ImpactIntensityTuning) => ({
+    get: () => impactIntensityTuning[key],
+    set: (v: number) => {
+      impactIntensityTuning[key] = v;
+      saveImpactIntensityTuning();
+    },
+  });
+
+  const intensityCurveK = intensityNumeric('curveK');
+  const intensityScopeWeight = intensityNumeric('scopeWeight');
+  const intensityBlurCeil = intensityNumeric('blurCeiling');
+  const intensityGlitchCeil = intensityNumeric('glitchCeiling');
+  const intensityShockCeil = intensityNumeric('shockCeiling');
+  const intensityShakeCeil = intensityNumeric('shakeCeiling');
+  const intensityParticleCeil = intensityNumeric('particleCeiling');
+
+  const intensitySliders = [
+    sliderRow(hitBody, 'Intensity curve k', 0.4, 4, 0.05, intensityCurveK.get, intensityCurveK.set),
+    sliderRow(hitBody, 'Scope weight', 0, 1, 0.05, intensityScopeWeight.get, intensityScopeWeight.set),
+    sliderRow(hitBody, 'Blur ceiling', 0.1, 1, 0.05, intensityBlurCeil.get, intensityBlurCeil.set),
+    sliderRow(hitBody, 'Glitch ceiling', 0.1, 1, 0.05, intensityGlitchCeil.get, intensityGlitchCeil.set),
+    sliderRow(hitBody, 'Shock ceiling', 0.1, 1, 0.05, intensityShockCeil.get, intensityShockCeil.set),
+    sliderRow(hitBody, 'Shake ceiling', 0.1, 1, 0.05, intensityShakeCeil.get, intensityShakeCeil.set),
+    sliderRow(
+      hitBody,
+      'Particle ceiling',
+      0.1,
+      1,
+      0.05,
+      intensityParticleCeil.get,
+      intensityParticleCeil.set,
+    ),
+  ];
+
+  const resetIntensityBtn = document.createElement('button');
+  resetIntensityBtn.textContent = 'Reset Intensity Curve';
+  resetIntensityBtn.style.cssText = buttonStyle(false) + 'margin:6px 0 12px;width:100%;';
+  resetIntensityBtn.onclick = () => {
+    resetImpactIntensityTuning();
+    for (const s of intensitySliders) s.refresh();
+  };
+  hitBody.appendChild(resetIntensityBtn);
 
   const addHitToggle = (key: keyof HitFeedbackConfig, label: string): void => {
     const row = document.createElement('label');

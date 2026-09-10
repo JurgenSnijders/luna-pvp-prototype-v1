@@ -54,6 +54,7 @@ import { applyPalette } from '../ui/palette';
 import { loadEntityShadowConfig } from '../render/entityShadowConfig';
 import { loadFctClusterConfig } from '../render/fctClusterConfig';
 import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
+import { loadImpactIntensityTuning } from '../render/gl/impactIntensity';
 import { applyViewportLayout } from '../ui/viewportLayout';
 import { lerpPos } from '../render/canvas/helpers';
 
@@ -71,6 +72,7 @@ function syncWebGLBackground(app: GameApp): void {
 
 function init(app: GameApp): void {
   loadHitFeedbackConfig();
+  loadImpactIntensityTuning();
   loadAudioSettings();
   AudioEngine.getInstance().applySettings(loadAudioSettings());
   loadFctClusterConfig();

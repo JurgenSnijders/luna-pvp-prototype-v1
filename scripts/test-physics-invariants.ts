@@ -10,6 +10,11 @@ import {
   getTierLimits,
   seedEffectiveTierForTests,
 } from '../src/devtools/graphicsSettings';
+import {
+  computeImpactIntensity,
+  intensityParticleScale,
+  normalizeScopePower,
+} from '../src/render/gl/impactIntensity';
 import { PhysicsWorld } from '../src/engine/PhysicsWorld';
 import { HAZARD_CLEARANCE_Z } from '../src/engine/verticalConstants';
 import { resolveBotGroundAimPoint } from '../src/entities/BotController';
@@ -1157,6 +1162,158 @@ function serializePredictivePaths(paths: ReturnType<typeof resolveLiveAimingPath
 /**
  * Phase 7 — PLAY_VFX is zero budget cost; impactLayers survive sanitize.
  */
+/**
+ * Phase 8 — derived impact intensity is monotonic with spell scope and never saturates.
+ */
+function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {
+  seedEffectiveTierForTests('LOW');
+  const runtime = {
+    instabilityDelta: 20,
+    projectileSpeed: 500,
+    plasmaDetonated: false,
+  };
+
+  const basicPrimary: AbilitySchema = {
+    id: 'test_intensity_primary',
+    name: 'Basic Bolt',
+    cooldownMs: 800,
+    recoilKick: 20,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 300 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'ADD_INSTABILITY', amount: 8, target: 'TARGET' }],
+      },
+    ],
+  };
+
+  const nestedUltimate: AbilitySchema = {
+    id: 'test_intensity_ultimate',
+    name: 'Nested Barrage',
+    cooldownMs: 8000,
+    recoilKick: 200,
+    trajectory: { type: 'LINEAR', speed: 500, maxRange: 700 },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          { type: 'ADD_INSTABILITY', amount: 40, target: 'TARGET' },
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 900,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
+      {
+        trigger: 'ON_EXPIRY',
+        actions: [
+          {
+            type: 'CAST_CHILD_PAYLOAD',
+            maxRecursionDepth: 2,
+            payload: {
+              id: 'test_intensity_child',
+              name: 'Barrage Child',
+              cooldownMs: 0,
+              recoilKick: 0,
+              triggers: [
+                {
+                  trigger: 'ON_CAST',
+                  actions: [
+                    {
+                      type: 'SPAWN_PROJECTILE',
+                      projectileTrajectory: {
+                        type: 'LINEAR',
+                        speed: 400,
+                        maxRange: 400,
+                      },
+                      emitter: { count: 8, spreadDeg: 90, distribution: 'FAN' },
+                      triggers: [
+                        {
+                          trigger: 'ON_HIT',
+                          actions: [
+                            {
+                              type: 'SPAWN_FIELD',
+                              field: {
+                                fieldType: 'RADIAL_IMPULSE',
+                                radius: 80,
+                                strength: 600,
+                                durationMs: 400,
+                              },
+                            },
+                            {
+                              type: 'ADD_INSTABILITY',
+                              amount: 20,
+                              target: 'TARGET',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const primaryScope = normalizeScopePower(basicPrimary, 'PRIMARY');
+  const ultimateScope = normalizeScopePower(nestedUltimate, 'ULTIMATE');
+  const primaryI = computeImpactIntensity(primaryScope, runtime);
+  const ultimateI = computeImpactIntensity(ultimateScope, runtime);
+
+  if (!(ultimateScope > primaryScope)) {
+    return {
+      pass: false,
+      reason: `scope not monotonic: ultimate ${ultimateScope.toFixed(3)} vs primary ${primaryScope.toFixed(3)}`,
+    };
+  }
+  if (!(ultimateI > primaryI)) {
+    return {
+      pass: false,
+      reason: `expected ultimate intensity ${ultimateI.toFixed(3)} > primary ${primaryI.toFixed(3)}`,
+    };
+  }
+
+  const lowBudget = getTierLimits().particleBudget;
+  const primaryScale = intensityParticleScale(primaryI, 1);
+  const ultimateScale = intensityParticleScale(ultimateI, 1);
+  // Scales are multipliers (~0.25..1+), not particle counts — both must stay modest on LOW.
+  if (primaryScale > 2 || ultimateScale > 2) {
+    return {
+      pass: false,
+      reason: `particle scale too high for LOW tier (${primaryScale.toFixed(2)}/${ultimateScale.toFixed(2)}, budget=${lowBudget})`,
+    };
+  }
+
+  let saturated: string | null = null;
+  for (const [name, schema] of Object.entries(PRESETS)) {
+    const scope = normalizeScopePower(schema, 'ULTIMATE');
+    const intensity = computeImpactIntensity(scope, {
+      instabilityDelta: 80,
+      projectileSpeed: 2000,
+      plasmaDetonated: true,
+      closingSpeed: 1000,
+    });
+    if (intensity >= 1) {
+      saturated = name;
+      break;
+    }
+  }
+  if (saturated) {
+    return { pass: false, reason: `intensity saturated to 1.0 for preset ${saturated}` };
+  }
+
+  return {
+    pass: true,
+    reason: `primary=${primaryI.toFixed(3)} ultimate=${ultimateI.toFixed(3)} scopes ${primaryScope.toFixed(2)}/${ultimateScope.toFixed(2)}`,
+  };
+}
+
 function assertPlayVfxZeroBudgetAndLayers(): { pass: boolean; reason: string } {
   const base: AbilitySchema = {
     id: 'test_play_vfx_base',
@@ -1855,7 +2012,15 @@ function run(): void {
   console.log(`  ${DIM}${playVfx.reason}${RESET}`);
   if (playVfx.pass) passed++;
 
-  const totalCases = suite.length + 22;
+  const derivedIntensity = assertDerivedImpactIntensity();
+  const derivedIntensityTag = derivedIntensity.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${derivedIntensityTag} Derived impact intensity monotonicity`);
+  console.log(`  ${DIM}${derivedIntensity.reason}${RESET}`);
+  if (derivedIntensity.pass) passed++;
+
+  const totalCases = suite.length + 23;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
