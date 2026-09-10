@@ -1,4 +1,4 @@
-import { CATEGORY_BUDGETS, sanitizeAbilitySchema } from '../BudgetEngine';
+import { CATEGORY_BUDGETS, sanitizeAbilitySchema, type SemanticRepairMode } from '../BudgetEngine';
 import type { DraftCard, SkillCategory } from '../../types/cards';
 import { CATEGORY_SLOT_MAP } from '../../types/cards';
 import type { AbilitySchema } from '../../types/schema';
@@ -27,9 +27,17 @@ function finalizeCompiledSchema(
   card: DraftCard,
   schema: AbilitySchema,
   category: SkillCategory,
+  repairMode: SemanticRepairMode,
 ): AbilitySchema {
   const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
-  const sanitized = sanitizeAbilitySchema(schema, category, 0, compileDescription);
+  const sanitized = sanitizeAbilitySchema(
+    schema,
+    category,
+    0,
+    compileDescription,
+    false,
+    repairMode,
+  );
   sanitized.tagline = card.tagline;
   sanitized.description = card.description;
   return sanitized;
@@ -96,7 +104,7 @@ function fallbackCompiledSchema(
   const compiled = source ? structuredClone(source) : sanitizeAbilitySchema({}, category);
   compiled.id = card.id || compiled.id;
   compiled.name = card.title || compiled.name;
-  return finalizeCompiledSchema(card, compiled, category);
+  return finalizeCompiledSchema(card, compiled, category, 'EVOLUTION');
 }
 
 /**
@@ -116,7 +124,12 @@ export async function compileAbilityPayload(
 
   // Offline heuristic / pre-compiled cards already carry a full payload — skip the network.
   if (card.abilityPayload) {
-    return finalizeCompiledSchema(card, structuredClone(card.abilityPayload), category);
+    return finalizeCompiledSchema(
+      card,
+      structuredClone(card.abilityPayload),
+      category,
+      'EVOLUTION',
+    );
   }
 
   const settings = getAiSettings();
@@ -148,7 +161,13 @@ export async function compileAbilityPayload(
   const normalized = deepNormalizeLLMValue(parseResult.value);
   const compileDescription = `${card.title} ${card.tagline} ${card.description}`;
   const repaired = repairAbilityPayload(normalized, compileDescription);
-  const finalized = finalizeCompiledSchema(card, repaired as AbilitySchema, category);
+  const repairMode: SemanticRepairMode = baseAbility ? 'EVOLUTION' : 'FIRST_GENERATION';
+  const finalized = finalizeCompiledSchema(
+    card,
+    repaired as AbilitySchema,
+    category,
+    repairMode,
+  );
 
   if (!validateAbilitySchema(finalized)) {
     console.warn('[Synthesizer] compileAbilityPayload validation failed, using fallback');

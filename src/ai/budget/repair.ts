@@ -11,6 +11,8 @@ import type {
 } from '../../types/schema';
 import { walkActionList, walkActions } from '../../types/schema';
 
+export type SemanticRepairMode = 'FIRST_GENERATION' | 'EVOLUTION';
+
 const PULL_KEYWORDS =
   /\b(pull|inward|attract|gravity|singularity|drag|vacuum|harpoon|black hole|suck|reel|implosion)\b/;
 const PUSH_KEYWORDS =
@@ -199,18 +201,27 @@ function hasInstabilityAction(schema: AbilitySchema): boolean {
 function repairImpulseSemantics(
   action: ApplyImpulseAction,
   text: string,
+  repairMode: SemanticRepairMode,
 ): ApplyImpulseAction {
   const patched = { ...action };
   if (!patched.target) patched.target = 'TARGET';
 
+  const preserveAuthoredDirection =
+    repairMode === 'EVOLUTION' && patched.directionMode !== undefined;
+
   if (isPushConcept(text) && !isPullConcept(text)) {
-    patched.directionMode = 'AWAY_FROM_ORIGIN';
+    if (!preserveAuthoredDirection) {
+      patched.directionMode = 'AWAY_FROM_ORIGIN';
+    }
     patched.baseForce = Math.max(patched.baseForce ?? 0, PUSH_FORCE_FLOOR);
     return patched;
   }
 
   if (isPullConcept(text)) {
-    if (!patched.directionMode || patched.directionMode === 'AWAY_FROM_ORIGIN') {
+    if (
+      !preserveAuthoredDirection &&
+      (!patched.directionMode || patched.directionMode === 'AWAY_FROM_ORIGIN')
+    ) {
       patched.directionMode = HARPOON_KEYWORDS.test(text)
         ? 'TOWARDS_CASTER'
         : 'TOWARDS_ORIGIN';
@@ -232,21 +243,22 @@ function repairActionsSemantics(
   actions: ActionPayload[],
   text: string,
   isHeadlessMode: boolean,
+  repairMode: SemanticRepairMode,
 ): ActionPayload[] {
   return actions.map((action) => {
     if (action.type === 'APPLY_IMPULSE') {
-      return repairImpulseSemantics(action, text);
+      return repairImpulseSemantics(action, text, repairMode);
     }
     if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
       return {
         ...action,
-        triggers: repairTriggersSemantics(action.triggers, text, isHeadlessMode),
+        triggers: repairTriggersSemantics(action.triggers, text, isHeadlessMode, repairMode),
       };
     }
     if (action.type === 'CAST_CHILD_PAYLOAD') {
       return {
         ...action,
-        payload: repairAbilitySemantics(action.payload, text, isHeadlessMode),
+        payload: repairAbilitySemantics(action.payload, text, isHeadlessMode, repairMode),
       };
     }
     if (action.type === 'SPAWN_ACTOR' && action.actor.triggers) {
@@ -254,7 +266,7 @@ function repairActionsSemantics(
         ...action,
         actor: {
           ...action.actor,
-          triggers: repairTriggersSemantics(action.actor.triggers, text, isHeadlessMode),
+          triggers: repairTriggersSemantics(action.actor.triggers, text, isHeadlessMode, repairMode),
         },
       };
     }
@@ -266,15 +278,16 @@ function repairTriggersSemantics(
   nodes: TriggerNode[],
   text: string,
   isHeadlessMode: boolean,
+  repairMode: SemanticRepairMode,
 ): TriggerNode[] {
   return nodes.map((node) => ({
     ...node,
-    actions: repairActionsSemantics(node.actions, text, isHeadlessMode),
+    actions: repairActionsSemantics(node.actions, text, isHeadlessMode, repairMode),
     ifFalseActions: node.ifFalseActions
-      ? repairActionsSemantics(node.ifFalseActions, text, isHeadlessMode)
+      ? repairActionsSemantics(node.ifFalseActions, text, isHeadlessMode, repairMode)
       : undefined,
     children: node.children
-      ? repairTriggersSemantics(node.children, text, isHeadlessMode)
+      ? repairTriggersSemantics(node.children, text, isHeadlessMode, repairMode)
       : undefined,
   }));
 }
@@ -334,6 +347,9 @@ function findOnCastProjectile(schema: AbilitySchema): {
 
 function ensureFanEmitter(emitter?: EmitterConfig): EmitterConfig {
   const count = emitter?.count ?? 1;
+  if (count >= 2 && emitter) {
+    return emitter;
+  }
   const spreadDeg = emitter?.spreadDeg ?? 0;
   if (count >= 3 && emitter?.distribution === 'FAN') {
     return emitter;
@@ -343,6 +359,7 @@ function ensureFanEmitter(emitter?: EmitterConfig): EmitterConfig {
     spreadDeg: Math.max(35, spreadDeg),
     distribution: 'FAN',
     aimOffsetDeg: emitter?.aimOffsetDeg,
+    inheritVelocityRatio: emitter?.inheritVelocityRatio,
   };
 }
 
@@ -355,7 +372,11 @@ function ensureOnCastNode(schema: AbilitySchema): TriggerNode {
   return onCast;
 }
 
-function applyRuleF_Obstacle(schema: AbilitySchema, text: string): void {
+function applyRuleF_Obstacle(
+  schema: AbilitySchema,
+  text: string,
+  repairMode: SemanticRepairMode,
+): void {
   if (!isObstacleConcept(text)) return;
 
   const onCast = ensureOnCastNode(schema);
@@ -374,7 +395,9 @@ function applyRuleF_Obstacle(schema: AbilitySchema, text: string): void {
     });
   }
 
-  delete schema.trajectory;
+  if (repairMode === 'FIRST_GENERATION') {
+    delete schema.trajectory;
+  }
 }
 
 function applyRuleH_Meteor(schema: AbilitySchema, text: string): void {
@@ -413,7 +436,11 @@ function applyRuleI_PersonalField(schema: AbilitySchema, text: string): void {
   });
 }
 
-function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
+function applyRuleG_Deployable(
+  schema: AbilitySchema,
+  text: string,
+  repairMode: SemanticRepairMode,
+): void {
   if (!isDeployableConcept(text, schema)) return;
 
   const thrown = isThrownDeployable(schema);
@@ -484,7 +511,7 @@ function applyRuleG_Deployable(schema: AbilitySchema, text: string): void {
     }
   }
 
-  if (!thrown) {
+  if (!thrown && repairMode === 'FIRST_GENERATION') {
     delete schema.trajectory;
   }
 }
@@ -982,11 +1009,11 @@ function placementKey(action: ActionPayload): string | null {
     case 'SPAWN_FIELD':
       return `SPAWN_FIELD:${action.field.fieldType}`;
     case 'SPAWN_PROJECTILE':
-      return 'SPAWN_PROJECTILE';
+      return `SPAWN_PROJECTILE:${action.projectileTrajectory?.type ?? 'NONE'}:${action.emitter?.count ?? 1}`;
     case 'SPAWN_ACTOR':
       return `SPAWN_ACTOR:${action.actor.actorArchetype}`;
     case 'CAST_CHILD_PAYLOAD':
-      return 'CAST_CHILD_PAYLOAD';
+      return `CAST_CHILD_PAYLOAD:${action.payload.id}`;
     case 'SPAWN_OBSTACLE':
       return `SPAWN_OBSTACLE:${action.obstacle.shape}`;
     case 'MUTATE_TERRAIN':
@@ -1096,6 +1123,7 @@ export function repairAbilitySemantics(
   payload: AbilitySchema,
   descriptionText = '',
   isHeadlessMode = false,
+  repairMode: SemanticRepairMode = 'FIRST_GENERATION',
 ): AbilitySchema {
   const text = (
     descriptionText ||
@@ -1103,23 +1131,31 @@ export function repairAbilitySemantics(
   ).toLowerCase();
 
   const cloned = structuredClone(payload);
-  cloned.triggers = repairTriggersSemantics(cloned.triggers, text, isHeadlessMode);
+  cloned.triggers = repairTriggersSemantics(cloned.triggers, text, isHeadlessMode, repairMode);
 
   if (text) {
-    applyRuleF_Obstacle(cloned, text);
-    applyRuleG_Deployable(cloned, text);
-    applyRuleE_Orbit(cloned, text);
+    applyRuleF_Obstacle(cloned, text, repairMode);
+    applyRuleG_Deployable(cloned, text, repairMode);
+    if (repairMode === 'FIRST_GENERATION') {
+      applyRuleE_Orbit(cloned, text);
+    }
     applyRuleA_PullGravity(cloned, text, isHeadlessMode);
     applyRuleB_LingeringHazard(cloned, text);
-    applyRuleC_ArcSweep(cloned, text);
+    if (repairMode === 'FIRST_GENERATION') {
+      applyRuleC_ArcSweep(cloned, text);
+    }
     applyRuleD_ChanneledStream(cloned, text);
-    applyRuleH_Meteor(cloned, text);
-    applyRuleI_PersonalField(cloned, text);
+    if (repairMode === 'FIRST_GENERATION') {
+      applyRuleH_Meteor(cloned, text);
+      applyRuleI_PersonalField(cloned, text);
+    }
     ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);
   }
 
   const result = ensureDisplacementSemantics(cloned, text, isHeadlessMode);
-  clampContinuousFieldStrength(result);
+  if (repairMode === 'FIRST_GENERATION') {
+    clampContinuousFieldStrength(result);
+  }
   result.triggers = collapseHitExpiryInTriggerTree(result.triggers);
   return result;
 }

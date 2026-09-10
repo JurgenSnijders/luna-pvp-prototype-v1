@@ -8,7 +8,7 @@ import type {
 import { CATEGORY_SLOT_MAP, getCategoryLabel, validateDraftCards } from '../../types/cards';
 import type { AbilitySchema } from '../../types/schema';
 import { validateAbilitySchema } from '../../types/schema';
-import { sanitizeAbilitySchema } from '../BudgetEngine';
+import { sanitizeAbilitySchema, type SemanticRepairMode } from '../BudgetEngine';
 import { balanceCards, makeActiveCard } from './cards';
 import {
   feedSseBuffer,
@@ -408,6 +408,7 @@ async function callUniversalAbility(
     onPartial?: (partial: PartialCardStream) => void;
     category: SkillCategory;
     cardIndex: number;
+    repairMode: SemanticRepairMode;
   },
 ): Promise<AbilitySchema | null> {
   const gen = streamNativeGemini(systemPrompt, userPrompt, settings, {
@@ -443,7 +444,14 @@ async function callUniversalAbility(
     [obj.name, obj.tagline, obj.description].filter((v) => typeof v === 'string').join(' ') ||
     userPrompt;
   const repaired = repairAbilityPayload(normalized, flavorHint);
-  const sanitized = sanitizeAbilitySchema(repaired, options.category, 0, flavorHint);
+  const sanitized = sanitizeAbilitySchema(
+    repaired,
+    options.category,
+    0,
+    flavorHint,
+    false,
+    options.repairMode,
+  );
 
   if (!validateAbilitySchema(sanitized)) {
     options.onError?.('AbilitySchema validation failed');
@@ -539,6 +547,7 @@ Generate ONE complete ability for this category.`;
           logSuffix: `${i + 1}`,
           category,
           cardIndex: i,
+          repairMode: 'FIRST_GENERATION',
           onError: (message) => {
             lastError = message;
           },
@@ -594,6 +603,7 @@ Generate ONE distinct evolved ability that preserves the base name's identity wh
           logSuffix: `evo/${i + 1}`,
           category: context.category,
           cardIndex: i,
+          repairMode: 'EVOLUTION',
           onError: (message) => {
             lastError = message;
           },

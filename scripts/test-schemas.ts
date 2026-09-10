@@ -113,6 +113,8 @@ function runSemanticRepairAssertions(): string[] {
     'SECONDARY',
     0,
     'Singularity Dart Fires a rapid dart that micro-pulls targets inward on impact',
+    false,
+    'FIRST_GENERATION',
   );
 
   if (schemaHasImpulseDirection(singularityDart, 'AWAY_FROM_ORIGIN')) {
@@ -138,6 +140,8 @@ function runSemanticRepairAssertions(): string[] {
     'SECONDARY',
     0,
     'Napalm Arc Fires a sweeping arc of lingering sticky fire across the arena',
+    false,
+    'FIRST_GENERATION',
   );
 
   if (!schemaHasFanEmitter(napalmArc, 3)) {

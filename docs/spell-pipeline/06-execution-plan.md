@@ -616,7 +616,7 @@ Update as phases complete. Keep it in this file so it travels with the repo.
 - [x] Phase 0 — Pre-flight
 - [x] Phase 1 — RC-1 fix + round-trip invariant
 - [x] Phase 2 — Bind apex/bounce visuals
-- [ ] Phase 3 — Semantic repair modes
+- [x] Phase 3 — Semantic repair modes
 - [ ] Phase 4 — Composable motion Part A
 - [ ] Phase 5 — `ON_RAM` contact trigger
 - [ ] Phase 6 — Preview fidelity

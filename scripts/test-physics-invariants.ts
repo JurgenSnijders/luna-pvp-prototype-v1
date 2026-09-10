@@ -985,6 +985,82 @@ function assertClusterMortarTrajectorySurvives(): { pass: boolean; reason: strin
   };
 }
 
+function schemaHasCasterOnlyField(schema: AbilitySchema): boolean {
+  const walk = (nodes: TriggerNode[]): boolean => {
+    for (const node of nodes) {
+      for (const action of node.actions) {
+        if (action.type === 'SPAWN_FIELD' && action.field.affects === 'CASTER_ONLY') {
+          return true;
+        }
+        if (action.type === 'SPAWN_PROJECTILE' && action.triggers && walk(action.triggers)) {
+          return true;
+        }
+        if (action.type === 'CAST_CHILD_PAYLOAD' && walk(action.payload.triggers ?? [])) {
+          return true;
+        }
+        if (action.type === 'SPAWN_ACTOR' && action.actor.triggers && walk(action.actor.triggers)) {
+          return true;
+        }
+      }
+      if (node.children && walk(node.children)) return true;
+    }
+    return false;
+  };
+  return walk(schema.triggers);
+}
+
+/**
+ * Phase 3 EVOLUTION gate: hostile flavor must not destroy cluster mortar structure.
+ */
+function assertClusterMortarStructureSurvives(): { pass: boolean; reason: string } {
+  const source = JSON.parse(JSON.stringify(VERTICAL_RECIPES.clusterMortar)) as AbilitySchema;
+  source.tagline = 'A ring of burst bomblets for self-defense';
+  source.description =
+    'Lobs a shell that splits in a ring at apex; self-igniting bomblets bounce and burst on impact.';
+
+  const flavorText = `${source.tagline} ${source.description}`;
+  const repaired = repairAbilityPayload(source, flavorText) as AbilitySchema;
+  const sanitized = sanitizeAbilitySchema(repaired, 'SECONDARY', 0, flavorText);
+  const balanced = balanceAbilitySchema(sanitized);
+
+  if (balanced.trajectory?.type !== 'BALLISTIC_ARC') {
+    return {
+      pass: false,
+      reason: `root trajectory.type=${balanced.trajectory?.type ?? 'undefined'} expected BALLISTIC_ARC`,
+    };
+  }
+
+  const apexOut = balanced.triggers.find((t) => t.trigger === 'ON_AIR_APEX');
+  if (!apexOut) {
+    return { pass: false, reason: 'ON_AIR_APEX node missing after EVOLUTION sanitize' };
+  }
+
+  const childSpawn = apexOut.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+  if (!childSpawn || childSpawn.type !== 'SPAWN_PROJECTILE') {
+    return { pass: false, reason: 'ON_AIR_APEX SPAWN_PROJECTILE missing after EVOLUTION sanitize' };
+  }
+
+  const childBounces = childSpawn.projectileTrajectory?.bounces ?? 0;
+  if (childBounces < 1) {
+    return {
+      pass: false,
+      reason: `child bounces=${childBounces} expected >= 1`,
+    };
+  }
+
+  if (schemaHasCasterOnlyField(balanced)) {
+    return {
+      pass: false,
+      reason: 'SPAWN_FIELD forced to CASTER_ONLY by personal-field repair',
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `structure preserved under ring/burst/self flavor; child bounces=${childBounces}`,
+  };
+}
+
 function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   const groundAbility: AbilitySchema = {
     id: 'bot_ground_test',
@@ -1457,7 +1533,15 @@ function run(): void {
   console.log(`  ${DIM}${clusterMortarTrajectory.reason}${RESET}`);
   if (clusterMortarTrajectory.pass) passed++;
 
-  const totalCases = suite.length + 17;
+  const clusterMortarStructure = assertClusterMortarStructureSurvives();
+  const clusterMortarStructureTag = clusterMortarStructure.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${clusterMortarStructureTag} Cluster mortar structure survives EVOLUTION flavor`);
+  console.log(`  ${DIM}${clusterMortarStructure.reason}${RESET}`);
+  if (clusterMortarStructure.pass) passed++;
+
+  const totalCases = suite.length + 18;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

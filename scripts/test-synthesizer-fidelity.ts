@@ -250,7 +250,7 @@ function buildScenarioText(scenario: FidelityScenario): string {
 function processScenario(scenario: FidelityScenario): AbilitySchema {
   const text = buildScenarioText(scenario);
   const repaired = repairAbilitySemantics(buildRawSchema(scenario), text, true);
-  return sanitizeAbilitySchema(repaired, scenario.category, 0, text, true);
+  return sanitizeAbilitySchema(repaired, scenario.category, 0, text, true, 'FIRST_GENERATION');
 }
 
 function formatTelemetry(t: SimulationTelemetry): string {
@@ -324,7 +324,14 @@ function runFlatSpawnFieldRepairTest(): boolean {
   };
 
   const repaired = repairAbilityPayload(normalizeAbilityPayload(raw));
-  const schema = sanitizeAbilitySchema(repaired, 'UTILITY', 0, description);
+  const schema = sanitizeAbilitySchema(
+    repaired,
+    'UTILITY',
+    0,
+    description,
+    false,
+    'FIRST_GENERATION',
+  );
 
   if (!validateAbilitySchema(schema)) {
     console.log(`${RED}[FAIL]${RESET} Flat SPAWN_FIELD repair (validation)`);
@@ -421,7 +428,14 @@ function runMeteorShowerCoercionTest(): boolean {
   };
 
   const repaired = repairAbilityPayload(normalizeAbilityPayload(raw));
-  const schema = sanitizeAbilitySchema(repaired, 'ULTIMATE', 0, description);
+  const schema = sanitizeAbilitySchema(
+    repaired,
+    'ULTIMATE',
+    0,
+    description,
+    false,
+    'FIRST_GENERATION',
+  );
 
   if (!validateAbilitySchema(schema)) {
     console.log(`${RED}[FAIL]${RESET} Meteor Shower coercion (validation)`);

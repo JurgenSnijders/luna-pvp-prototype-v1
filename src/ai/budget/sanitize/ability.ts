@@ -1,7 +1,7 @@
 import type { SkillCategory } from '../../../types/cards';
 import type { AbilitySchema, SpellArchetype, TargetingMode, TriggerNode, ValidationIssue } from '../../../types/schema';
 import { SPELL_ARCHETYPE_SET, TARGETING_MODE_SET, validateAbilitySchema } from '../../../types/schema';
-import { repairAbilitySemantics } from '../repair';
+import { repairAbilitySemantics, type SemanticRepairMode } from '../repair';
 import { ensureFiniteNumber, isObject } from '../helpers';
 
 const FLAVOR_MAX_LEN = 120;
@@ -23,6 +23,7 @@ export function sanitizeAbilitySchema(
   sanitizeDepth = 0,
   description?: string,
   isHeadlessMode = false,
+  repairMode: SemanticRepairMode = 'EVOLUTION',
 ): AbilitySchema {
   const obj = isObject(raw) ? { ...raw } : {};
 
@@ -121,6 +122,6 @@ export function sanitizeAbilitySchema(
   const repairText =
     description ??
     [validated.tagline, validated.description].filter(Boolean).join(' ');
-  const repaired = repairAbilitySemantics(validated, repairText, isHeadlessMode);
+  const repaired = repairAbilitySemantics(validated, repairText, isHeadlessMode, repairMode);
   return validateAbilitySchema(repaired) ?? repaired;
 }

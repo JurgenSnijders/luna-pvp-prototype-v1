@@ -2,4 +2,11 @@
 export { scoreAbilitySchema } from './budget/score';
 export { sanitizeAbilitySchema } from './budget/sanitize/ability';
 export { balanceAbilitySchema, balancePassiveModifiers } from './budget/balance';
-export { repairAbilitySemantics, applyHitExpiryOverlapRepair, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection } from './budget/repair';
+export {
+  repairAbilitySemantics,
+  applyHitExpiryOverlapRepair,
+  schemaHasApplyImpulse,
+  schemaHasFanEmitter,
+  schemaHasImpulseDirection,
+  type SemanticRepairMode,
+} from './budget/repair';
