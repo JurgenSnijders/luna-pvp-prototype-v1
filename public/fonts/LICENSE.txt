@@ -1,0 +1,11 @@
+Fixedsys Excelsior 3.01 (FSEX300.ttf)
+Author: Darien Gavin Valentine
+
+The author has stated this font is free to use, modify, and distribute,
+including for commercial use, and is intended to be in the public domain.
+
+Source: https://github.com/foxoman/fixedsys
+
+The ASCII letterforms are based on the classic Microsoft Fixedsys bitmap
+font; this file is a separate TrueType implementation, not a direct
+derivative of Microsoft's font software.

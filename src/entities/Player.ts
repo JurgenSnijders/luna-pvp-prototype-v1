@@ -286,8 +286,8 @@ export class Player extends Entity {
     this.syncAimFromCursor();
   }
 
-  confirmAimCast(onCast: SlotCastCallback): void {
-    if (!this.activeAimingState) return;
+  confirmAimCast(onCast: SlotCastCallback): 'ok' | 'no_state' | 'draw_too_short' {
+    if (!this.activeAimingState) return 'no_state';
 
     const state = this.activeAimingState;
     const slotIndex = state.slotIndex;
@@ -296,7 +296,7 @@ export class Player extends Entity {
       const simplified = simplifyPath(state.drawnPoints, 6, 24);
       if (simplified.length < 2) {
         this.activeAimingState = null;
-        return;
+        return 'draw_too_short';
       }
 
       const muzzleOffset =
@@ -319,13 +319,14 @@ export class Player extends Entity {
       this.aimTarget = new Vector2D(simplified[simplified.length - 1].x, simplified[simplified.length - 1].y);
       this.activeAimingState = null;
       this.requestCast(slotIndex, { drawnPath }, false, onCast);
-      return;
+      return 'ok';
     }
 
     this.facingAngle = state.angle;
     this.aimTarget = new Vector2D(state.target.x, state.target.y);
     this.activeAimingState = null;
     this.requestCast(slotIndex, {}, false, onCast);
+    return 'ok';
   }
 
   cancelAiming(): void {

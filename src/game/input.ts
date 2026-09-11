@@ -1,20 +1,38 @@
 import { Vector2D } from '../math/Vector2D';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { GameApp } from './GameApp';
+import { loadInputSettings, type InputSettings } from './inputSettings';
 import { canCombatInput } from './matchFlow';
+
+export type CastResult = 'ok' | 'no_ability' | 'zero_aim';
+
+const MOVEMENT_AIM_RANGE = 400;
+const POINTER_STALE_MS = 400;
+const TOAST_COOLDOWN_MS = 800;
+
+let lastToastMessage = '';
+let lastToastAt = 0;
+
+export function notifyCastBlocked(app: GameApp, message: string): void {
+  const now = performance.now();
+  if (message === lastToastMessage && now - lastToastAt < TOAST_COOLDOWN_MS) return;
+  lastToastMessage = message;
+  lastToastAt = now;
+  app.matchHUD.showTransientToast(message);
+}
 
 export function executePlayerCast(
   app: GameApp,
   slotIndex: number,
   overrides: ExecutionOverrides = {},
   isChannelTick = false,
-): void {
+): CastResult {
   const caster = app.player;
   const ability = caster.getAbility(slotIndex);
-  if (!ability) return;
+  if (!ability) return 'no_ability';
 
   const aimDir = caster.aimTarget.sub(caster.pos);
-  if (aimDir.magSq() < 0.01) return;
+  if (aimDir.magSq() < 0.01) return 'zero_aim';
 
   if (caster.isStealthed() && caster.stealthRevealOnCast) {
     caster.breakStealth();
@@ -36,11 +54,38 @@ export function executePlayerCast(
     overrides,
   );
   caster.triggerSlotCooldown(slotIndex, isChannelTick);
+  return 'ok';
 }
 
 function castCallback(app: GameApp) {
-  return (slotIndex: number, overrides: ExecutionOverrides, isChannelTick: boolean) =>
-    executePlayerCast(app, slotIndex, overrides, isChannelTick);
+  return (slotIndex: number, overrides: ExecutionOverrides, isChannelTick: boolean) => {
+    const result = executePlayerCast(app, slotIndex, overrides, isChannelTick);
+    if (result === 'zero_aim') {
+      notifyCastBlocked(app, 'Aim direction required');
+    }
+  };
+}
+
+function shouldConfirmAimOnRelease(slot: number, settings: InputSettings): boolean {
+  if (slot === 0) return true;
+  return settings.laptopModeEnabled;
+}
+
+function tryConfirmAimCast(app: GameApp, onCast: ReturnType<typeof castCallback>): void {
+  const player = app.player;
+  const aimingSlot = player.activeAimingState?.slotIndex;
+  if (aimingSlot === undefined) return;
+
+  if (!player.isSlotReady(aimingSlot)) {
+    notifyCastBlocked(app, 'Ability on cooldown');
+    player.cancelAiming();
+    return;
+  }
+
+  const result = player.confirmAimCast(onCast);
+  if (result === 'draw_too_short') {
+    notifyCastBlocked(app, 'Draw a longer path');
+  }
 }
 
 export function cancelPlayerAiming(app: GameApp): boolean {
@@ -55,6 +100,7 @@ export function handleCastInput(app: GameApp, slot: number, isDown: boolean): vo
 
   const player = app.player;
   const onCast = castCallback(app);
+  const inputSettings = loadInputSettings();
 
   if (isDown) {
     const aiming = player.activeAimingState;
@@ -64,9 +110,7 @@ export function handleCastInput(app: GameApp, slot: number, isDown: boolean): vo
 
     // LMB confirms a held keyboard/RMB telegraph.
     if (slot === 0 && aiming) {
-      if (player.isSlotReady(aiming.slotIndex)) {
-        player.confirmAimCast(onCast);
-      }
+      tryConfirmAimCast(app, onCast);
       return;
     }
 
@@ -99,15 +143,9 @@ export function handleCastInput(app: GameApp, slot: number, isDown: boolean): vo
     return;
   }
 
-  // Release of the held activation dismisses the telegraph without casting,
-  // except LMB: the same button is the confirm control, so release fires.
   if (player.activeAimingState?.slotIndex === slot) {
-    if (slot === 0) {
-      if (player.isSlotReady(slot)) {
-        player.confirmAimCast(onCast);
-      } else {
-        player.cancelAiming();
-      }
+    if (shouldConfirmAimOnRelease(slot, inputSettings)) {
+      tryConfirmAimCast(app, onCast);
     } else {
       player.cancelAiming();
     }
@@ -131,8 +169,24 @@ export function updatePlayerAimTarget(
   app: GameApp,
   mouseWorldPos: { x: number; y: number },
 ): void {
+  app.lastPointerAimMs = performance.now();
   app.player.aimTarget = new Vector2D(mouseWorldPos.x, mouseWorldPos.y);
   if (app.player.activeAimingState) {
     app.player.updateAimTarget(mouseWorldPos);
   }
+}
+
+export function applyMovementAimFallback(app: GameApp): void {
+  const settings = loadInputSettings();
+  if (!settings.laptopModeEnabled) return;
+
+  const player = app.player;
+  if (player.inputMove.magSq() <= 0) return;
+
+  const pointerStale = performance.now() - app.lastPointerAimMs > POINTER_STALE_MS;
+  const pointerOffGame = !!player.activeAimingState && !app.camera.pointerOverGame;
+  if (!pointerStale && !pointerOffGame) return;
+
+  const aimWorld = player.pos.add(player.inputMove.scale(MOVEMENT_AIM_RANGE));
+  updatePlayerAimTarget(app, { x: aimWorld.x, y: aimWorld.y });
 }

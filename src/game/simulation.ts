@@ -6,7 +6,7 @@ import { applyField } from '../primitives/Fields';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import type { GameApp } from './GameApp';
 import { getHexCenter } from './arena';
-import { applyPlayerInput, executePlayerCast } from './input';
+import { applyPlayerInput, applyMovementAimFallback, executePlayerCast } from './input';
 
 let hitstopFramesRemaining = 0;
 
@@ -57,6 +57,7 @@ export function runSimulationStep(app: GameApp, dt: number): void {
   app.world.beginDebugFrame();
   syncArenaRadius(app, dt);
   applyPlayerInput(app);
+  applyMovementAimFallback(app);
   app.player.updateSlotInputs(dt, (slotIndex, overrides, isChannelTick) =>
     executePlayerCast(app, slotIndex, overrides, isChannelTick),
   );

@@ -34,8 +34,13 @@ import {
   getStoredCooldownScale,
   getStoredGlobalCooldownMs,
 } from '../../game/settings';
+import {
+  loadInputSettings,
+  saveInputSettings,
+} from '../../game/inputSettings';
+import { ActionBarHUD } from '../../render/ActionBarHUD';
 import type { InspectorContext } from '../InspectorUI';
-import { buttonStyle, helperText, numberRow, numberSliderRow, sectionDivider, sectionHeader, sliderRow } from './domHelpers';
+import { buttonStyle, helperText, numberRow, numberSliderRow, sectionDivider, sectionHeader, sliderRow, toggleRow } from './domHelpers';
 import { MIN_PANEL_HEIGHT, MIN_PANEL_WIDTH } from './floatingPanel';
 
 function applyProfileToCombatants(
@@ -162,6 +167,24 @@ export function buildStatsTab(parent: HTMLElement, ctx: InspectorContext): void 
     'ms',
   );
   parent.appendChild(pacingSection);
+
+  const inputSection = document.createElement('div');
+  inputSection.style.cssText = sectionDivider();
+  inputSection.appendChild(sectionHeader('Input'));
+  helperText(
+    inputSection,
+    'Laptop mode: confirm aimed spells on key release, 1/2 for primary slots, cast from action bar, WASD aim fallback.',
+  );
+  toggleRow(
+    inputSection,
+    'Laptop mode',
+    () => loadInputSettings().laptopModeEnabled,
+    (enabled) => {
+      saveInputSettings({ laptopModeEnabled: enabled });
+      ActionBarHUD.setLaptopMode(enabled);
+    },
+  );
+  parent.appendChild(inputSection);
 
   const movementSection = document.createElement('div');
   movementSection.style.cssText = sectionDivider();

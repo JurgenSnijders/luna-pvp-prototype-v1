@@ -44,6 +44,8 @@ export class GameApp {
   intermissionHandled = false;
   isIntermissionDraft = false;
   keys = new Set<string>();
+  /** Timestamp of the last pointer-driven aim update (performance.now()). */
+  lastPointerAimMs = 0;
   debugOptions: DebugOptions = {
     showVectors: false,
     showRadii: false,

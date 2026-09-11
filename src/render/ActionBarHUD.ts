@@ -12,12 +12,15 @@ import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 export interface ActionBarHUDCallbacks {
   onSlotAssign: (slotIndex: number, schema: AbilitySchema) => void;
   onEmptySlotClick: (slotIndex: number) => void;
+  onSlotCastInput?: (slotIndex: number, isDown: boolean) => void;
 }
 
 interface SlotElements {
   root: HTMLElement;
   iconContainer: HTMLElement;
   badge: HTMLElement;
+  slotIndex: number;
+  slotKey: ActionSlotKey;
   rarityGlyph: HTMLElement;
   rarityFrame: HTMLElement;
   label: HTMLElement;
@@ -244,6 +247,7 @@ export class ActionBarHUD {
   private activeHoveredSlot: number | null = null;
   private cachedPlayerRef: Player | null = null;
   private aimingSlotIndex: number | null = null;
+  private laptopModeEnabled = false;
 
   constructor(private callbacks: ActionBarHUDCallbacks) {
     injectStyles();
@@ -294,6 +298,28 @@ export class ActionBarHUD {
 
   static restore(): void {
     ActionBarHUD.activeInstance?.restore();
+  }
+
+  static setLaptopMode(enabled: boolean): void {
+    ActionBarHUD.activeInstance?.setLaptopMode(enabled);
+  }
+
+  setLaptopMode(enabled: boolean): void {
+    if (this.laptopModeEnabled === enabled) return;
+    this.laptopModeEnabled = enabled;
+    this.refreshSlotBadges();
+  }
+
+  private getSlotBadgeLabel(slotIndex: number): string {
+    if (this.laptopModeEnabled && slotIndex === 0) return '1';
+    if (this.laptopModeEnabled && slotIndex === 1) return '2';
+    return ACTION_SLOT_KEYS[slotIndex];
+  }
+
+  private refreshSlotBadges(): void {
+    for (const slot of this.slots) {
+      slot.badge.textContent = this.getSlotBadgeLabel(slot.slotIndex);
+    }
   }
 
   suppress(): void {
@@ -391,7 +417,7 @@ export class ActionBarHUD {
     `;
 
     const badge = document.createElement('div');
-    badge.textContent = key;
+    badge.textContent = this.getSlotBadgeLabel(slotIndex);
     badge.style.cssText = `
       font-size: 12px; font-weight: 700; color: ${accent.color};
       background: ${accent.bg}; padding: 1px 3px; border-radius: 4px;
@@ -530,10 +556,31 @@ export class ActionBarHUD {
       ]);
     });
 
+    const onPointerUp = (e: PointerEvent): void => {
+      if (!this.laptopModeEnabled || !this.callbacks.onSlotCastInput) return;
+      if (root.dataset.hasAbility !== 'true') return;
+      if (root.hasPointerCapture(e.pointerId)) {
+        root.releasePointerCapture(e.pointerId);
+      }
+      this.callbacks.onSlotCastInput(slotIndex, false);
+    };
+
+    root.addEventListener('pointerdown', (e) => {
+      if (!this.laptopModeEnabled || !this.callbacks.onSlotCastInput) return;
+      if (root.dataset.hasAbility !== 'true') return;
+      e.preventDefault();
+      root.setPointerCapture(e.pointerId);
+      this.callbacks.onSlotCastInput(slotIndex, true);
+    });
+    root.addEventListener('pointerup', onPointerUp);
+    root.addEventListener('pointercancel', onPointerUp);
+
     return {
       root,
-      iconContainer,
       badge,
+      slotIndex,
+      slotKey: key,
+      iconContainer,
       rarityGlyph,
       rarityFrame,
       label,

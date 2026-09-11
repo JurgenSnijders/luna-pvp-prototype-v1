@@ -1,5 +1,5 @@
 export const FONTS = {
-  mono: "'Fixedsys', 'FixedSys', 'Courier New', monospace",
+  mono: "'Fixedsys', 'Courier New', monospace",
   size: {
     badge: '12px',
     sm: '13px',

@@ -143,7 +143,7 @@ export function injectStyles(): void {
       align-items: center;
       justify-content: center;
       text-align: center;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 13px;
       color: var(--retro-text-muted, #6d8896);
       line-height: 1.4;
@@ -192,7 +192,7 @@ export function injectStyles(): void {
 
     .scope-corner-hud {
       position: absolute;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 8px;
       line-height: 1;
       color: rgba(0, 229, 255, 0.65);
@@ -229,7 +229,7 @@ export function injectStyles(): void {
     }
 
     .inspector-title {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 16px;
       color: #ffffff;
       text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
@@ -240,7 +240,7 @@ export function injectStyles(): void {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       padding: 2px 6px;
       border-radius: 2px;
@@ -260,7 +260,7 @@ export function injectStyles(): void {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       padding: 2px 6px;
       border-radius: 2px;
@@ -353,14 +353,14 @@ export function injectStyles(): void {
     }
 
     .telemetry-label {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       color: var(--retro-text-muted, #6a7796);
       text-transform: uppercase;
     }
 
     .telemetry-value {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 12px;
       color: var(--retro-text-primary, #e0f8ff);
     }
@@ -393,7 +393,7 @@ export function injectStyles(): void {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
     }
 
@@ -436,7 +436,7 @@ export function injectStyles(): void {
     .impact-gauge-legend {
       display: flex;
       justify-content: space-between;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       color: var(--retro-text-muted, #6d8896);
     }
@@ -464,7 +464,7 @@ export function injectStyles(): void {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       padding: 3px 8px;
       border-radius: 3px;
@@ -498,7 +498,7 @@ export function injectStyles(): void {
       border: 1px solid var(--retro-neon-cyan, #00e5ff);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8), 0 0 8px rgba(0, 229, 255, 0.3);
       border-radius: 4px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       opacity: 0;
       transition: opacity 0.12s ease;
     }
@@ -524,7 +524,7 @@ export function injectStyles(): void {
     }
 
     .inspector-action-pill {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       padding: 2px 6px;
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
@@ -534,7 +534,7 @@ export function injectStyles(): void {
     }
 
     .inspector-desc {
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       line-height: 1.4;
       color: var(--retro-text-secondary, #9ba8c7);
@@ -557,7 +557,7 @@ export function injectStyles(): void {
       justify-content: center;
       gap: 8px;
       padding: 8px 12px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       background: rgba(0, 229, 255, 0.1);
       border: 1px solid var(--retro-neon-cyan);
@@ -585,7 +585,7 @@ export function injectStyles(): void {
       border: 1px solid #ffaa00;
       border-radius: 4px;
       margin-bottom: 12px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       color: #ffaa00;
     }
@@ -596,7 +596,7 @@ export function injectStyles(): void {
       border: none;
       color: var(--retro-text-muted);
       cursor: pointer;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
     }
     .forge-evolving-cancel:hover {
@@ -643,7 +643,7 @@ export function injectStyles(): void {
       position: absolute;
       top: 3px;
       left: 4px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       color: var(--retro-text-muted, #6d8896);
       z-index: 2;
@@ -655,7 +655,7 @@ export function injectStyles(): void {
       bottom: 2px;
       left: 2px;
       right: 2px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       text-align: center;
       white-space: nowrap;
@@ -678,7 +678,7 @@ export function injectStyles(): void {
       padding: 8px 16px;
       border-radius: 4px 4px 0 0;
       cursor: pointer;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 13px;
       font-weight: 600;
       letter-spacing: 0.06em;
@@ -865,7 +865,7 @@ export function injectStyles(): void {
       align-items: center;
       gap: 6px;
       padding: 4px 8px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       background: rgba(0, 0, 0, 0.6);
       border: 1px solid var(--tier-color);
@@ -877,7 +877,7 @@ export function injectStyles(): void {
     }
 
     .forge-card-crest {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       letter-spacing: 1px;
       color: var(--tier-color);
@@ -895,14 +895,14 @@ export function injectStyles(): void {
     }
 
     .forge-card-rarity {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 1px;
     }
 
     .forge-card-archetype {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       padding: 2px 6px;
       border-radius: 2px;
@@ -940,19 +940,19 @@ export function injectStyles(): void {
     }
 
     .forge-card-title {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 15px;
       color: #ffffff;
     }
 
     .forge-card-tagline {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       color: var(--retro-text-muted);
     }
 
     .forge-card-desc {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       line-height: 1.35;
       color: var(--retro-text-secondary, #9ba8c7);
@@ -980,14 +980,14 @@ export function injectStyles(): void {
     }
 
     .telemetry-k {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       color: var(--retro-text-muted);
       text-transform: uppercase;
     }
 
     .telemetry-v {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       color: var(--retro-text-primary);
     }
@@ -1005,7 +1005,7 @@ export function injectStyles(): void {
       border: 1px dashed rgba(0, 229, 255, 0.25);
       padding: 6px 8px;
       border-radius: 3px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       color: var(--retro-neon-cyan);
     }
@@ -1019,7 +1019,7 @@ export function injectStyles(): void {
     }
 
     .forge-stored-indicator {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       color: var(--retro-neon-magenta);
       text-align: center;
@@ -1029,7 +1029,7 @@ export function injectStyles(): void {
     .forge-claim-btn {
       width: 100%;
       padding: 8px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       background: rgba(0, 229, 255, 0.15);
       border: 1px solid var(--retro-neon-cyan);
@@ -1046,7 +1046,7 @@ export function injectStyles(): void {
 
     .forge-vault-picker-hint {
       grid-column: 1 / -1;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 11px;
       color: var(--retro-text-muted);
       text-align: center;
@@ -1068,7 +1068,7 @@ export function injectStyles(): void {
     }
 
     .forge-card-discarded-hint {
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 10px;
       color: var(--retro-text-muted);
       text-align: center;
@@ -1099,7 +1099,7 @@ export function injectStyles(): void {
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       background: var(--retro-panel-bg-opaque, #0a0d18);
       color: var(--retro-text-primary, #e0f8ff);
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 14px;
       box-sizing: border-box;
       outline: none;
@@ -1117,7 +1117,7 @@ export function injectStyles(): void {
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       background: var(--retro-panel-bg-opaque, #0a0d18);
       color: var(--retro-text-primary, #e0f8ff);
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 13px;
       cursor: pointer;
       outline: none;
@@ -1201,7 +1201,7 @@ export function injectStyles(): void {
       position: absolute;
       bottom: 2px;
       right: 2px;
-      font-family: Fixedsys, monospace;
+      font-family: ${FONTS.mono};
       font-size: 8px;
       line-height: 1;
       pointer-events: none;
@@ -1239,7 +1239,7 @@ export function injectStyles(): void {
       top: 2px;
       left: 2px;
       padding: 1px 3px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       line-height: 1;
       background: rgba(0, 0, 0, 0.85);
@@ -1255,7 +1255,7 @@ export function injectStyles(): void {
       top: 2px;
       right: 2px;
       padding: 1px 3px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       font-size: 9px;
       line-height: 1;
       letter-spacing: 0.04em;
@@ -1330,7 +1330,7 @@ export function injectStyles(): void {
 
     .quick-equip-item {
       font-size: 12px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       padding: 4px 8px;
       color: var(--retro-text-primary, #e0f8ff);
       cursor: pointer;
@@ -1349,7 +1349,7 @@ export function injectStyles(): void {
     .vault-btn-reset {
       flex-shrink: 0;
       font-size: 12px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       padding: 10px 12px;
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       border-radius: 4px;
@@ -1497,7 +1497,7 @@ export function injectStyles(): void {
       gap: 10px;
       font-size: 12px;
       color: #9cc;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
     }
 
     .evolution-tree-header-actions {
@@ -1526,7 +1526,7 @@ export function injectStyles(): void {
       border: 1px solid rgba(255, 170, 0, 0.45);
       background: rgba(255, 170, 0, 0.12);
       color: #ffcc66;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
     }
 
     .evolution-tree-preview {
@@ -1560,7 +1560,7 @@ export function injectStyles(): void {
       font-size: 11px;
       color: #7ad;
       padding-top: 10px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
       letter-spacing: 0.04em;
     }
 
@@ -1583,7 +1583,7 @@ export function injectStyles(): void {
       border: 1px solid rgba(0, 229, 255, 0.25);
       background: rgba(0, 0, 0, 0.35);
       color: var(--retro-text-primary, #e0f8ff);
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
     }
 
     .evolution-node-card:hover:not(:disabled) {
@@ -1618,7 +1618,7 @@ export function injectStyles(): void {
       background: rgba(255, 215, 0, 0.08);
       color: #ffd700;
       font-size: 12px;
-      font-family: 'Fixedsys', 'FixedSys', 'Courier New', monospace;
+      font-family: ${FONTS.mono};
     }
 
     .evolution-tree-empty {

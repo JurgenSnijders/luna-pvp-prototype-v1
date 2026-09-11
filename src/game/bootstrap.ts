@@ -25,6 +25,7 @@ import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
 import { markUserZoomOverride } from '../camera/cameraArenaFit';
 import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
 import { handleCastInput, cancelPlayerAiming } from './input';
+import { loadInputSettings, subscribeInputSettings } from './inputSettings';
 import { assignDefaultLoadout, storeForgedSpell } from './loadout';
 import { SpellInventoryManager } from './SpellInventory';
 import { ACTION_SLOT_KEYS } from '../types/cards';
@@ -183,6 +184,13 @@ function init(app: GameApp): void {
     onEmptySlotClick: (slotIndex) => {
       app.spellLibrary.openForSlot(slotIndex);
     },
+    onSlotCastInput: (slotIndex, isDown) => {
+      handleCastInput(app, slotIndex, isDown);
+    },
+  });
+  app.actionBarHUD.setLaptopMode(loadInputSettings().laptopModeEnabled);
+  subscribeInputSettings((settings) => {
+    app.actionBarHUD.setLaptopMode(settings.laptopModeEnabled);
   });
 
   app.draftModal = new DraftModal({
@@ -263,6 +271,11 @@ function init(app: GameApp): void {
     app.camera.pointerOverGame = !isCameraInputBlocked(e.target);
   };
 
+  const isTextInputFocused = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false;
+    return !!target.closest('input, textarea, select');
+  };
+
   document.addEventListener('visibilitychange', () => {
     const settings = loadAudioSettings();
     if (!settings.muteOnBlur) return;
@@ -338,6 +351,11 @@ function init(app: GameApp): void {
     if (e.code === 'KeyQ') handleCastInput(app, 2, true);
     if (e.code === 'KeyE') handleCastInput(app, 3, true);
 
+    if (loadInputSettings().laptopModeEnabled && !isTextInputFocused(e.target)) {
+      if (e.code === 'Digit1') handleCastInput(app, 0, true);
+      if (e.code === 'Digit2') handleCastInput(app, 1, true);
+    }
+
     if (e.key === ' ') {
       e.preventDefault();
       handleCastInput(app, 4, true);
@@ -349,6 +367,10 @@ function init(app: GameApp): void {
 
     if (e.code === 'KeyQ') handleCastInput(app, 2, false);
     if (e.code === 'KeyE') handleCastInput(app, 3, false);
+    if (loadInputSettings().laptopModeEnabled && !isTextInputFocused(e.target)) {
+      if (e.code === 'Digit1') handleCastInput(app, 0, false);
+      if (e.code === 'Digit2') handleCastInput(app, 1, false);
+    }
     if (e.key === ' ') handleCastInput(app, 4, false);
   });
 
@@ -374,6 +396,7 @@ function init(app: GameApp): void {
         aimMouseRafPending = false;
         if (pendingAimMouse) {
           updatePlayerAimFromScreen(app, pendingAimMouse.x, pendingAimMouse.y);
+          app.lastPointerAimMs = performance.now();
         }
       });
     }
