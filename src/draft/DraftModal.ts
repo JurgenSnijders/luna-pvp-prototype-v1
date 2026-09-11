@@ -648,6 +648,8 @@ export class DraftModal {
   private selectedSpellId: string | null = null;
   private treeSpellId: string | null = null;
   private hoveredSpellId: string | null = null;
+  private selectedForgeIndex: number | null = null;
+  private activeTransientSpell: AbilitySchema | null = null;
   private heroScopeAnimId: number | null = null;
   private activePlaybackRecording: PlaybackRecording | null = null;
   private tooltipEl: HTMLElement | null = null;
@@ -883,6 +885,7 @@ export class DraftModal {
     this.cards = [];
     this.forgeVaultPickerActive = false;
     this.vaultSavedCardIndex = null;
+    this.clearForgeTransientState();
     this.clearSynthesisWarning();
     this.open_ = true;
     this.overlay.style.display = 'flex';
@@ -903,6 +906,7 @@ export class DraftModal {
     this.clearSynthesisTimer();
     this.forgeVaultPickerActive = false;
     this.vaultSavedCardIndex = null;
+    this.clearForgeTransientState();
     this.open_ = false;
     this.overlay.style.opacity = '0';
     this.panel.style.transform = 'scale(0.97)';
@@ -1002,12 +1006,23 @@ export class DraftModal {
     this.inspectorPane.style.display = this.activeTab === 'TREE' ? 'none' : '';
   }
 
+  private clearForgeTransientState(): void {
+    this.selectedForgeIndex = null;
+    this.activeTransientSpell = null;
+  }
+
   private setActiveTab(tab: WorkshopTab): void {
     this.stopHeroScopeAnimation();
+    if (tab === 'VAULT') {
+      this.clearForgeTransientState();
+    }
     this.activeTab = tab;
     this.refreshUI();
     if (tab === 'FORGE') {
       this.promptInput.focus();
+    }
+    if (tab === 'VAULT') {
+      this.renderTacticalInspector();
     }
   }
 
@@ -1317,12 +1332,17 @@ export class DraftModal {
     this.renderTacticalInspector();
   }
 
-  private renderTacticalInspector(): void {
+  private renderTacticalInspector(explicitSpell?: AbilitySchema | null): void {
     this.stopHeroScopeAnimation();
     this.inspectorPane.innerHTML = '';
 
-    const activeId = this.hoveredSpellId ?? this.selectedSpellId;
-    const spell = activeId ? (SpellInventoryManager.getSpell(activeId) ?? null) : null;
+    let spell: AbilitySchema | null = explicitSpell ?? this.activeTransientSpell ?? null;
+    if (!spell && this.activeTab === 'VAULT') {
+      const activeId = this.hoveredSpellId ?? this.selectedSpellId;
+      if (activeId) {
+        spell = SpellInventoryManager.getSpell(activeId) ?? null;
+      }
+    }
 
     if (!spell) {
       const empty = document.createElement('div');
@@ -1467,14 +1487,25 @@ export class DraftModal {
 
     const actionsSection = document.createElement('div');
     actionsSection.className = 'inspector-actions-section';
-    const upgradeBtn = document.createElement('button');
-    upgradeBtn.type = 'button';
-    upgradeBtn.className = 'inspector-upgrade-btn';
-    upgradeBtn.innerHTML = '<span>✦</span> UPGRADE / EVOLVE SPELL';
-    upgradeBtn.addEventListener('click', () => {
-      this.openEvolutionTree(spell.id);
-    });
-    actionsSection.appendChild(upgradeBtn);
+    const isForgeTransientPreview =
+      this.forgeVaultPickerActive && this.selectedForgeIndex !== null;
+    if (isForgeTransientPreview) {
+      const forgeHint = document.createElement('div');
+      forgeHint.className = 'inspector-desc';
+      forgeHint.style.textAlign = 'center';
+      forgeHint.style.opacity = '0.7';
+      forgeHint.textContent = 'Save to Vault to equip or evolve';
+      actionsSection.appendChild(forgeHint);
+    } else {
+      const upgradeBtn = document.createElement('button');
+      upgradeBtn.type = 'button';
+      upgradeBtn.className = 'inspector-upgrade-btn';
+      upgradeBtn.innerHTML = '<span>✦</span> UPGRADE / EVOLVE SPELL';
+      upgradeBtn.addEventListener('click', () => {
+        this.openEvolutionTree(spell.id);
+      });
+      actionsSection.appendChild(upgradeBtn);
+    }
 
     panel.appendChild(heroWrap);
     panel.appendChild(header);
@@ -1805,6 +1836,7 @@ export class DraftModal {
     this.clearSynthesisWarning();
     this.forgeVaultPickerActive = false;
     this.vaultSavedCardIndex = null;
+    this.clearForgeTransientState();
     const useStreaming =
       this.mode !== 'PASSIVE_UPGRADES' &&
       getAiSettings().apiKey.trim().length > 0 &&
@@ -1913,13 +1945,18 @@ export class DraftModal {
   }
 
   private async prepareForgeCardsForDisplay(): Promise<void> {
+    let cardIndex = 0;
     for (const card of this.cards) {
-      if (card.type !== 'ACTIVE_ABILITY' || card.abilityPayload) continue;
-      card.abilityPayload = await compileAbilityPayload(
-        card,
-        this.evolutionContext?.baseAbility,
-      );
-      stampDraftCardMetadataOntoAbility(card.abilityPayload, card);
+      if (card.type !== 'ACTIVE_ABILITY') continue;
+      if (!card.abilityPayload) {
+        card.abilityPayload = await compileAbilityPayload(
+          card,
+          this.evolutionContext?.baseAbility,
+        );
+        stampDraftCardMetadataOntoAbility(card.abilityPayload, card);
+      }
+      card.abilityPayload.id = card.abilityPayload.id ?? `forge_preview_${cardIndex}`;
+      cardIndex += 1;
     }
   }
 
@@ -1927,7 +1964,16 @@ export class DraftModal {
     await this.prepareForgeCardsForDisplay();
     this.streamingSlots = null;
     this.forgeVaultPickerActive = true;
+
+    const pickerCards = this.getForgePickerCards();
+    this.selectedForgeIndex = pickerCards.length > 0 ? 0 : null;
+    this.activeTransientSpell = pickerCards[0]?.abilityPayload ?? null;
+
     this.renderForgeVaultPickerCards();
+
+    if (this.activeTransientSpell) {
+      this.renderTacticalInspector(this.activeTransientSpell);
+    }
   }
 
   private getForgePickerCards(): DraftCard[] {
@@ -2447,6 +2493,9 @@ export class DraftModal {
 
     const root = document.createElement('div');
     root.className = `forge-card-redesign tier-${tier.toLowerCase()}`;
+    if (this.selectedForgeIndex === cardIndex) {
+      root.classList.add('is-selected');
+    }
     root.style.setProperty('--card-border-color', rarityColor);
     root.style.setProperty('--card-glow-color', `${rarityColor}44`);
 
@@ -2568,7 +2617,8 @@ export class DraftModal {
       viewBtn.type = 'button';
       viewBtn.className = 'forge-claim-btn';
       viewBtn.textContent = 'VIEW IN VAULT';
-      viewBtn.addEventListener('click', () => {
+      viewBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (ability.id) this.navigateToVaultSpell(ability.id);
       });
 
@@ -2586,13 +2636,43 @@ export class DraftModal {
       saveBtn.type = 'button';
       saveBtn.className = 'forge-claim-btn';
       saveBtn.textContent = 'SAVE TO VAULT';
-      saveBtn.addEventListener('click', () => this.saveCardToVault(card, cardIndex));
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.saveCardToVault(card, cardIndex);
+      });
       footer.appendChild(saveBtn);
     }
 
     if (!anotherSaved) {
       attachForgeCardDrag(glyphFrame, cardIndex);
     }
+
+    root.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.forge-claim-btn')) return;
+      this.selectedForgeIndex = cardIndex;
+      this.activeTransientSpell = card.abilityPayload ?? null;
+      const container = root.parentElement;
+      if (container) {
+        container.querySelectorAll('.forge-card-redesign').forEach((el, i) => {
+          el.classList.toggle('is-selected', i === cardIndex);
+        });
+      }
+      if (card.abilityPayload) {
+        this.renderTacticalInspector(card.abilityPayload);
+      }
+    });
+
+    root.addEventListener('mouseenter', () => {
+      if (this.selectedForgeIndex === null && card.abilityPayload) {
+        this.renderTacticalInspector(card.abilityPayload);
+      }
+    });
+
+    root.addEventListener('mouseleave', () => {
+      if (this.selectedForgeIndex === null) {
+        this.renderTacticalInspector();
+      }
+    });
 
     root.appendChild(header);
     if (perk) root.appendChild(mutationBanner);
@@ -2622,6 +2702,14 @@ export class DraftModal {
       const el = this.buildForgeTelemetryCard(card, cardIndex, abilityCards);
       cardIndex += 1;
       if (el) this.cardsContainer.appendChild(el);
+    }
+
+    if (this.selectedForgeIndex !== null) {
+      const selected = this.getForgePickerCard(this.selectedForgeIndex);
+      this.activeTransientSpell = selected?.abilityPayload ?? null;
+      if (this.activeTransientSpell) {
+        this.renderTacticalInspector(this.activeTransientSpell);
+      }
     }
   }
 

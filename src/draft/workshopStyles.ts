@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v21';
+export const STYLE_ID = 'luna-workshop-styles-v22';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -728,13 +728,30 @@ export function injectStyles(): void {
       padding: 14px;
       gap: 10px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
       position: relative;
+      cursor: pointer;
     }
 
     .forge-card-redesign:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8), 0 0 10px var(--tier-glow, var(--card-glow-color, rgba(0, 229, 255, 0.2)));
+    }
+
+    .forge-card-redesign.is-selected {
+      border-color: #00e5ff !important;
+      box-shadow: 0 0 16px rgba(0, 229, 255, 0.4), inset 0 0 12px rgba(0, 229, 255, 0.15) !important;
+      transform: translateY(-2px);
+    }
+
+    .forge-card-redesign.is-selected.tier-epic {
+      border-color: #bf00ff !important;
+      box-shadow: 0 0 16px rgba(191, 0, 255, 0.45), inset 0 0 12px rgba(191, 0, 255, 0.2) !important;
+    }
+
+    .forge-card-redesign.is-selected.tier-chaotic {
+      border-color: #ffd700 !important;
+      box-shadow: 0 0 18px rgba(255, 215, 0, 0.5), inset 0 0 12px rgba(255, 215, 0, 0.25) !important;
     }
 
     /* COMMON: Industrial Slate */
