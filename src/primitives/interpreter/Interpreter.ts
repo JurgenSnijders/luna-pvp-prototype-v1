@@ -86,12 +86,14 @@ export class Interpreter {
     }
 
     if (schema.trajectory) {
-      const spawnPos =
-        schema.targetingMode === 'GROUND_POINT'
-          ? resolveCastAnchor(castCtx, world, castCtx.origin)
-          : depth === 0
-            ? castCtx.caster.pos.add(heading.scale(castCtx.caster.radius + 12))
-            : castCtx.origin.clone();
+      const spawnAtAnchor =
+        schema.targetingMode === 'GROUND_POINT' &&
+        (schema.trajectory.spawnAltitude ?? 0) > 0;
+      const spawnPos = spawnAtAnchor
+        ? resolveCastAnchor(castCtx, world, castCtx.origin)
+        : depth === 0
+          ? castCtx.caster.pos.add(heading.scale(castCtx.caster.radius + 12))
+          : castCtx.origin.clone();
       const aimAngle = Math.atan2(heading.y, heading.x);
       const triggerMap = buildTriggerMap(
         schema.triggers.filter((t) => t.trigger !== 'ON_CAST'),

@@ -3,6 +3,7 @@ import type { AbilitySchema, PathPoint, TrajectoryConfig } from '../../types/sch
 import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveLiveAimingPaths } from './aimingRollout';
 import {
+  abilityUsesGroundReticle,
   collectGroundImpactFieldRadii,
   resolveRootTrajectory,
   type PredictivePath,
@@ -74,7 +75,7 @@ export function syncAimFromCursorState(
   const dist = Math.hypot(dx, dy);
   const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
 
-  if (state.ability.targetingMode === 'GROUND_POINT') {
+  if (abilityUsesGroundReticle(state.ability)) {
     const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, casterPos);
     state.angle = groundAngle;
     state.target = {
@@ -103,7 +104,7 @@ export function layoutAimingVisual(
   const dist = Math.hypot(dx, dy);
   const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
 
-  if (state.ability.targetingMode === 'GROUND_POINT') {
+  if (abilityUsesGroundReticle(state.ability)) {
     const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, origin);
     return {
       ...state,
@@ -155,7 +156,7 @@ function hasOnCastTeleport(ability: AbilitySchema): boolean {
 
 /** Trajectory/field visual mode from schema alone (ignores input profile). */
 export function resolveTrajectoryVisualMode(ability: AbilitySchema): AimingMode | null {
-  if (ability.targetingMode === 'GROUND_POINT') {
+  if (abilityUsesGroundReticle(ability)) {
     return 'radial';
   }
 
@@ -191,7 +192,7 @@ export function resolveAbilityAimParams(ability: AbilitySchema): {
   const fieldRadii = collectOnCastFieldRadii(ability);
   const width = Math.max(28, (ability.visuals?.size ?? 14) * 2);
 
-  if (ability.targetingMode === 'GROUND_POINT') {
+  if (abilityUsesGroundReticle(ability)) {
     const impactRadii = collectGroundImpactFieldRadii(ability);
     let radialRadius = 60;
     if (fieldRadii.length > 0) {
@@ -481,7 +482,7 @@ export function drawAoERadial(
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
   const radius = state.radialRadius > 0 ? state.radialRadius : state.range;
   const center =
-    state.ability.targetingMode === 'GROUND_POINT'
+    abilityUsesGroundReticle(state.ability)
       ? state.target
       : state.mode === 'radial' && state.radialRadius > 0 && !state.ability.trajectory
         ? state.origin

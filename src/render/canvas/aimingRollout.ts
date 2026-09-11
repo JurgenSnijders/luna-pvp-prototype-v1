@@ -8,6 +8,7 @@ import { Interpreter } from '../../primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../../primitives/interpreter/lifecycle';
 import type { AbilitySchema, TrajectoryType, TriggerNode, ActionPayload } from '../../types/schema';
 import {
+  abilityUsesGroundReticle,
   resolveLiveCastConfig,
   resolveRootTrajectory,
   type PredictivePath,
@@ -248,7 +249,7 @@ export function resolveLiveAimingPaths(
   muzzleOffset = 0,
   startZ = 0,
 ): PredictivePath[] {
-  if (ability.targetingMode === 'GROUND_POINT') return [];
+  if (abilityUsesGroundReticle(ability)) return [];
 
   const config = resolveLiveCastConfig(ability);
   if (!config) return [];

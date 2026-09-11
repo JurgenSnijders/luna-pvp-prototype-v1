@@ -98,7 +98,7 @@ resourceCost: { type: COOLDOWN|HEAT|AMMO|HEALTH_PCT, cost, maxCapacity?, recharg
   HEAT: cost per shot, rechargeRate/sec, lockoutDurationMs on overheat — set cooldownMs 0
   AMMO: cost per shot, maxCapacity magazine, lockoutDurationMs reload time
   HEALTH_PCT: cost is percent of max health
-targetingMode: "DIRECTIONAL" (default for skillshots/beams/fans) | "GROUND_POINT" (cursor-targeted sky drops, fields, mortars, traps)
+targetingMode: "DIRECTIONAL" (default for skillshots/beams/fans AND player-thrown mortars/grenades/lobs) | "GROUND_POINT" (cursor-targeted sky drops, fields, traps — NOT forward mortars)
 maxTargetRange: number (100-1000, default 500 — maximum distance from caster to ground cursor anchor)
 trajectory: { type: LINEAR|RETURN_TO_SOURCE|ORBIT_ANCHOR|HOMING_SLERP|DISCONTINUOUS_BLINK|BALLISTIC_ARC|DRAWN_PATH, speed, maxRange, piercing?, turnAccel?, orbitRadius?, orbitSpeed?, blinkDistance?, lobApex?, spawnAltitude?, fallSpeed?, bounces?, bounceRestitution?, clearanceHeight?, detonateAtZ?, gravityScale?, groundFriction?, pathPoints?, pathSpace?, pathLoop? }
   BALLISTIC_ARC: lobApex 20-300 (forward mortar lob from caster) | spawnAltitude 300-900 + fallSpeed 600-2500 (sky drop from above target; pair with targetingMode GROUND_POINT) | speed: 0 for plumb vertical sky drops, >0 for angled arcs | bounces: 0-5 ground bounces before expiry | bounceRestitution: 0.1-0.8 | clearanceHeight: 0-200 (fly over low obstacles) | detonateAtZ: 10-100 (airburst altitude) | gravityScale/groundFriction optional.

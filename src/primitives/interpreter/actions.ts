@@ -78,10 +78,14 @@ export function executeEmitter(
     const fireDir = Vector2D.fromAngle(theta);
     const muzzle = ctx.sourceEntity ?? ctx.caster;
     const muzzleOffset = muzzle.radius + Math.max(4, vfx.size ?? 8);
-    const isGroundTargeted = ctx.ability?.targetingMode === 'GROUND_POINT';
+    const isSkyDrop = (trajectory.spawnAltitude ?? 0) > 0;
+    const spawnAtAnchor =
+      ctx.ability?.targetingMode === 'GROUND_POINT' &&
+      isSkyDrop &&
+      !(ctx.sourceEntity instanceof Projectile);
+    const isGroundTargeted = spawnAtAnchor;
     const anchor = resolveCastAnchor(ctx, world, ctx.origin);
     const basePos = isGroundTargeted ? anchor : ctx.origin;
-    const isSkyDrop = (trajectory.spawnAltitude ?? 0) > 0;
     const useDiskScatter = isGroundTargeted && isSkyDrop && count > 1;
 
     let spawnPos: Vector2D;

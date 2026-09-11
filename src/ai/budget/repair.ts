@@ -421,6 +421,30 @@ function applyRuleH_Meteor(schema: AbilitySchema, text: string): void {
   }
 }
 
+/** Forward lobs/grenades spawn from the caster; GROUND_POINT is only for sky drops and placements. */
+function applyRule_ForwardThrowableDirectional(schema: AbilitySchema): void {
+  if (schema.targetingMode !== 'GROUND_POINT') return;
+
+  const onCastProjectile = findOnCastProjectile(schema);
+  const traj = schema.trajectory ?? onCastProjectile?.action.projectileTrajectory;
+  if (!traj) return;
+  if ((traj.spawnAltitude ?? 0) > 0) return;
+
+  const hasOnCastPlacement = schema.triggers.some(
+    (node) =>
+      node.trigger === 'ON_CAST' &&
+      node.actions.some(
+        (action) =>
+          action.type === 'SPAWN_FIELD' ||
+          action.type === 'SPAWN_OBSTACLE' ||
+          action.type === 'MUTATE_TERRAIN',
+      ),
+  );
+  if (hasOnCastPlacement) return;
+
+  schema.targetingMode = 'DIRECTIONAL';
+}
+
 function applyRuleI_PersonalField(schema: AbilitySchema, text: string): void {
   if (!isPersonalFieldConcept(text)) return;
 
@@ -1147,6 +1171,7 @@ export function repairAbilitySemantics(
     applyRuleD_ChanneledStream(cloned, text);
     if (repairMode === 'FIRST_GENERATION') {
       applyRuleH_Meteor(cloned, text);
+      applyRule_ForwardThrowableDirectional(cloned);
       applyRuleI_PersonalField(cloned, text);
     }
     ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);

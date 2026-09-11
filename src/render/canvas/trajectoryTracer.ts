@@ -81,6 +81,14 @@ export function resolveRootTrajectory(ability: AbilitySchema): TrajectoryConfig 
   return undefined;
 }
 
+/** True when GROUND_POINT means "drop/place at cursor" rather than a player-thrown projectile. */
+export function abilityUsesGroundReticle(ability: AbilitySchema): boolean {
+  if (ability.targetingMode !== 'GROUND_POINT') return false;
+  const traj = resolveRootTrajectory(ability);
+  if (!traj) return true;
+  return (traj.spawnAltitude ?? 0) > 0;
+}
+
 const GROUND_IMPACT_TRIGGERS = new Set(['ON_GROUND_SLAM', 'ON_EXPIRY', 'ON_HIT']);
 
 export function collectGroundImpactFieldRadii(ability: AbilitySchema): number[] {
