@@ -14,6 +14,7 @@ import {
   getGraphicsSettings,
   getTierLimits,
   seedEffectiveTierForTests,
+  seedEffectiveVfxTierForTests,
 } from '../src/devtools/graphicsSettings';
 import {
   computeImpactIntensity,
@@ -2476,11 +2477,11 @@ function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } 
     }
   }
 
-  seedEffectiveTierForTests('LOW');
+  seedEffectiveVfxTierForTests('LOW');
   const low = getTierLimits();
-  seedEffectiveTierForTests('MEDIUM');
+  seedEffectiveVfxTierForTests('MEDIUM');
   const medium = getTierLimits();
-  seedEffectiveTierForTests('HIGH');
+  seedEffectiveVfxTierForTests('HIGH');
   const high = getTierLimits();
 
   if (low.particleBudget >= medium.particleBudget || medium.particleBudget >= high.particleBudget) {

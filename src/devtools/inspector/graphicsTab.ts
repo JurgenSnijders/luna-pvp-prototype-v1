@@ -1,9 +1,11 @@
 import {
-  applyBalancedPreset,
+  applyQualityPreset,
   applyStylePreset,
   applyTierPreset,
+  applyVfxPreset,
   getEffectiveFeatureFlags,
   getEffectiveTier,
+  getEffectiveVfxTier,
   getEffectiveDprCap,
   getGraphicsSettings,
   getTierLimits,
@@ -11,6 +13,7 @@ import {
   resetStylePresetDefaults,
   saveGraphicsSettings,
   subscribeGraphicsSettings,
+  type FixedQualityTier,
   type GraphicsSettings,
   type QualityTier,
 } from '../graphicsSettings';
@@ -71,6 +74,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const arenaCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
   const lookCheckboxes: Partial<Record<keyof GraphicsSettings, HTMLInputElement>> = {};
   const tierButtons: Partial<Record<QualityTier, HTMLButtonElement>> = {};
+  const vfxTierButtons: Partial<Record<FixedQualityTier, HTMLButtonElement>> = {};
 
   const addToggle = (
     container: HTMLElement,
@@ -105,6 +109,11 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const qualitySection = collapsibleSection(parent, 'Quality', true);
   const qualityBody = qualitySection.body;
 
+  const perfLabel = document.createElement('div');
+  perfLabel.textContent = 'Performance (resolution + post)';
+  perfLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:4px;`;
+  qualityBody.appendChild(perfLabel);
+
   const tierRow = document.createElement('div');
   tierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;';
   const tiers: QualityTier[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'AUTO'];
@@ -126,12 +135,36 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   }
   qualityBody.appendChild(tierRow);
 
+  const vfxLabel = document.createElement('div');
+  vfxLabel.textContent = 'VFX (spells, particles, debris)';
+  vfxLabel.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:4px;`;
+  qualityBody.appendChild(vfxLabel);
+
+  const vfxTierRow = document.createElement('div');
+  vfxTierRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;';
+  const vfxTiers: FixedQualityTier[] = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
+  for (const vfxTier of vfxTiers) {
+    const btn = document.createElement('button');
+    btn.textContent = vfxTier;
+    vfxTierButtons[vfxTier] = btn;
+    btn.onclick = () => {
+      applyVfxPreset(vfxTier);
+      syncControls(getGraphicsSettings());
+      refreshPerf();
+      refreshTierHelper();
+    };
+    vfxTierRow.appendChild(btn);
+  }
+  qualityBody.appendChild(vfxTierRow);
+
   const shortcutRow = document.createElement('div');
   shortcutRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;';
   const shortcuts: { label: string; run: () => void }[] = [
-    { label: 'Fast', run: () => applyTierPreset('LOW') },
-    { label: 'Balanced', run: () => applyBalancedPreset() },
-    { label: 'Quality', run: () => applyTierPreset('HIGH') },
+    { label: 'Fast', run: () => applyQualityPreset('FAST') },
+    { label: 'Competitive', run: () => applyQualityPreset('COMPETITIVE') },
+    { label: 'Balanced', run: () => applyQualityPreset('BALANCED') },
+    { label: 'Quality', run: () => applyQualityPreset('QUALITY') },
+    { label: 'Ultra', run: () => applyQualityPreset('ULTRA') },
   ];
   for (const { label, run } of shortcuts) {
     const btn = document.createElement('button');
@@ -159,14 +192,17 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     const s = getGraphicsSettings();
     const limits = getTierLimits();
     const flags = getEffectiveFeatureFlags();
+    const perfLabel =
+      s.tier === 'AUTO' ? `AUTO (effective ${getEffectiveTier()})` : s.tier;
     if (s.tier === 'AUTO') {
       tierHelper.textContent =
-        `AUTO · effective ${getEffectiveTier()}. Features are gated by effective tier; stored toggles are not rewritten.`;
+        `Perf ${perfLabel} · VFX ${s.vfxTier}. Performance gates CRT/bloom/DPR; VFX gates particles and spell effects.`;
     } else {
-      tierHelper.textContent = `Manual ${s.tier} preset applied to feature toggles, post-effects, and sliders.`;
+      tierHelper.textContent =
+        `Perf ${perfLabel} · VFX ${s.vfxTier}. Performance preset updates post-effects and resolution; VFX preset updates combat budgets.`;
     }
     budgetHint.textContent =
-      `Budget: particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ` +
+      `Perf ${getEffectiveTier()} · VFX ${getEffectiveVfxTier()} · particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ` +
       `bg ${flags.webglBackground ? 'on' : 'off'} · crt ${flags.crtEnabled ? 'on' : 'off'}`;
   };
   refreshTierHelper();
@@ -706,10 +742,14 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   }, 250);
 
   const syncTierButtons = (): void => {
-    const storedTier = getGraphicsSettings().tier;
+    const s = getGraphicsSettings();
     for (const tier of tiers) {
       const btn = tierButtons[tier];
-      if (btn) btn.style.cssText = buttonStyle(storedTier === tier);
+      if (btn) btn.style.cssText = buttonStyle(s.tier === tier);
+    }
+    for (const vfxTier of vfxTiers) {
+      const btn = vfxTierButtons[vfxTier];
+      if (btn) btn.style.cssText = buttonStyle(s.vfxTier === vfxTier);
     }
   };
 

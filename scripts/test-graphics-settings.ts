@@ -1,11 +1,13 @@
 import {
   DEFAULT_GRAPHICS_SETTINGS,
   STORAGE_KEY_GRAPHICS,
+  applyQualityPreset,
   applyTierPreset,
   getEffectiveDprCap,
   getEffectiveFeatureFlags,
   getGraphicsSettings,
   getPostEffectUserEnabled,
+  getTierLimits,
   parseGraphicsSettings,
   saveGraphicsSettings,
   seedEffectiveTierForTests,
@@ -114,6 +116,18 @@ function run(): void {
   if (defaults.activePreset !== DEFAULT_GRAPHICS_SETTINGS.activePreset) {
     failures.push('parseGraphicsSettings(null): expected default activePreset');
   }
+  if (defaults.vfxTier !== DEFAULT_GRAPHICS_SETTINGS.vfxTier) {
+    failures.push(`parseGraphicsSettings(null): expected default vfxTier ${DEFAULT_GRAPHICS_SETTINGS.vfxTier}`);
+  }
+
+  const migratedLow = parseGraphicsSettings({ tier: 'LOW', bloomEnabled: true });
+  if (migratedLow.vfxTier !== 'LOW') {
+    failures.push(`parseGraphicsSettings migration: expected vfxTier LOW from stored tier LOW, got ${migratedLow.vfxTier}`);
+  }
+  const migratedAuto = parseGraphicsSettings({ tier: 'AUTO' });
+  if (migratedAuto.vfxTier !== DEFAULT_GRAPHICS_SETTINGS.vfxTier) {
+    failures.push(`parseGraphicsSettings migration: AUTO should default vfxTier to ${DEFAULT_GRAPHICS_SETTINGS.vfxTier}`);
+  }
 
   const clamped = parseGraphicsSettings({
     bgParallaxVoid: 2,
@@ -221,6 +235,7 @@ function run(): void {
   }
 
   resetGraphicsState();
+  saveGraphicsSettings({ ...getGraphicsSettings(), dynamicDebris: true, vfxTier: 'HIGH' });
   applyTierPreset('LOW');
   const low = getGraphicsSettings();
   if (low.crtEnabled || low.bloomEnabled) {
@@ -234,6 +249,40 @@ function run(): void {
   }
   if (getPostEffectUserEnabled('SCANLINES') || getPostEffectUserEnabled('PHOSPHOR')) {
     failures.push('applyTierPreset(LOW): quality post-effects should be disabled');
+  }
+  if (!low.dynamicDebris) {
+    failures.push('applyTierPreset(LOW): should not force dynamicDebris off (VFX axis is separate)');
+  }
+  if (low.vfxTier !== 'HIGH') {
+    failures.push(`applyTierPreset(LOW): should not change vfxTier, expected HIGH got ${low.vfxTier}`);
+  }
+
+  resetGraphicsState();
+  applyQualityPreset('COMPETITIVE');
+  const competitive = getGraphicsSettings();
+  const competitiveLimits = getTierLimits();
+  if (competitive.crtEnabled || competitive.bloomEnabled) {
+    failures.push('applyQualityPreset(COMPETITIVE): CRT and bloom should be disabled');
+  }
+  if (!competitive.dynamicDebris) {
+    failures.push('applyQualityPreset(COMPETITIVE): dynamicDebris should be enabled');
+  }
+  if (competitive.vfxTier !== 'HIGH') {
+    failures.push(`applyQualityPreset(COMPETITIVE): expected vfxTier HIGH, got ${competitive.vfxTier}`);
+  }
+  if (competitiveLimits.particleBudget !== 16384) {
+    failures.push(`applyQualityPreset(COMPETITIVE): expected particleBudget 16384, got ${competitiveLimits.particleBudget}`);
+  }
+  if (competitiveLimits.maxPrimitives !== 1024) {
+    failures.push(`applyQualityPreset(COMPETITIVE): expected maxPrimitives 1024, got ${competitiveLimits.maxPrimitives}`);
+  }
+  if (!competitiveLimits.groundDecals) {
+    failures.push('applyQualityPreset(COMPETITIVE): groundDecals should be enabled');
+  }
+  const competitiveDpr = getEffectiveDprCap(1920, 1080);
+  const expectedCompetitiveDpr = 1280 / 1920;
+  if (Math.abs(competitiveDpr - expectedCompetitiveDpr) > 0.02) {
+    failures.push(`applyQualityPreset(COMPETITIVE): expected DPR ~${expectedCompetitiveDpr}, got ${competitiveDpr}`);
   }
 
   resetGraphicsState();
@@ -284,6 +333,7 @@ function run(): void {
     manualTierOverride: false,
     webglBackground: true,
     crtEnabled: true,
+    vfxTier: 'HIGH',
   });
   seedEffectiveTierForTests('LOW');
   const lowFlags = getEffectiveFeatureFlags();
@@ -295,6 +345,12 @@ function run(): void {
   }
   if (!getGraphicsSettings().webglBackground || !getGraphicsSettings().crtEnabled) {
     failures.push('effective LOW should not rewrite stored graphics toggles');
+  }
+  if (getGraphicsSettings().vfxTier !== 'HIGH') {
+    failures.push('effective LOW performance should not rewrite stored vfxTier');
+  }
+  if (getTierLimits().particleBudget !== 16384) {
+    failures.push('effective LOW performance with vfxTier HIGH should keep HIGH particle budget');
   }
   const lowDpr = getEffectiveDprCap(1920, 1080);
   const expectedLowDpr = 1280 / 1920;
@@ -346,7 +402,7 @@ function run(): void {
     process.exit(1);
   }
 
-  console.log('test:graphics-settings  OK  31 graphics profile checks passed');
+  console.log('test:graphics-settings  OK  graphics profile and preset checks passed');
 }
 
 run();

@@ -31,8 +31,15 @@ export const STORAGE_KEY_GRAPHICS = 'LUNA_GRAPHICS_SETTINGS';
 
 export type QualityTier = 'LOW' | 'MEDIUM' | 'HIGH' | 'ULTRA' | 'AUTO';
 
+export type FixedQualityTier = Exclude<QualityTier, 'AUTO'>;
+
+export type QualityPresetId = 'FAST' | 'COMPETITIVE' | 'BALANCED' | 'QUALITY' | 'ULTRA';
+
 export interface GraphicsSettings {
+  /** Performance axis: resolution, CRT/bloom, background LOD. */
   tier: QualityTier;
+  /** VFX axis: particles, primitives, debris, ground decals, trail density. */
+  vfxTier: FixedQualityTier;
   webglBackground: boolean;
   floorSubGrid: boolean;
   ambientEmbers: boolean;
@@ -63,6 +70,7 @@ export interface GraphicsSettings {
 
 export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   tier: 'AUTO',
+  vfxTier: 'MEDIUM',
   webglBackground: true,
   floorSubGrid: true,
   ambientEmbers: true,
@@ -167,60 +175,92 @@ export interface EffectiveCrtSettings {
   };
 }
 
-const TIER_LIMITS: Record<Exclude<QualityTier, 'AUTO'>, TierLimits> = {
+interface PerfTierLimits {
+  dprCap: number;
+  bloomPasses: number;
+  bloomResolution: number;
+  refraction: boolean;
+  renderScale: number;
+  maxBackingEdge: number;
+  presentIntervalMs: number;
+}
+
+interface VfxTierLimits {
+  particleBudget: number;
+  trailDensity: number;
+  maxPrimitives: number;
+  groundDecals: boolean;
+}
+
+const PERF_TIER_LIMITS: Record<FixedQualityTier, PerfTierLimits> = {
   LOW: {
-    particleBudget: 1024,
     dprCap: 1.0,
     bloomPasses: 0,
     bloomResolution: 0.25,
     refraction: false,
-    trailDensity: 0.5,
-    maxPrimitives: 64,
-    groundDecals: false,
     renderScale: 0.75,
     maxBackingEdge: 1280,
     presentIntervalMs: 0,
   },
   MEDIUM: {
-    particleBudget: 4096,
     dprCap: 1.0,
     bloomPasses: 1,
     bloomResolution: 0.25,
     refraction: false,
-    trailDensity: 0.8,
-    maxPrimitives: 256,
-    groundDecals: true,
     renderScale: 1,
     maxBackingEdge: 0,
     presentIntervalMs: 0,
   },
   HIGH: {
-    particleBudget: 16384,
     dprCap: 1.5,
     bloomPasses: 2,
     bloomResolution: 0.5,
     refraction: false,
-    trailDensity: 1.0,
-    maxPrimitives: 1024,
-    groundDecals: true,
     renderScale: 1,
     maxBackingEdge: 0,
     presentIntervalMs: 0,
   },
   ULTRA: {
-    particleBudget: 65536,
     dprCap: 999,
     bloomPasses: 2,
     bloomResolution: 0.5,
     refraction: true,
-    trailDensity: 1.4,
-    maxPrimitives: 4096,
-    groundDecals: true,
     renderScale: 1,
     maxBackingEdge: 0,
     presentIntervalMs: 0,
   },
 };
+
+const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
+  LOW: {
+    particleBudget: 1024,
+    trailDensity: 0.5,
+    maxPrimitives: 64,
+    groundDecals: false,
+  },
+  MEDIUM: {
+    particleBudget: 4096,
+    trailDensity: 0.8,
+    maxPrimitives: 256,
+    groundDecals: true,
+  },
+  HIGH: {
+    particleBudget: 16384,
+    trailDensity: 1.0,
+    maxPrimitives: 1024,
+    groundDecals: true,
+  },
+  ULTRA: {
+    particleBudget: 65536,
+    trailDensity: 1.4,
+    maxPrimitives: 4096,
+    groundDecals: true,
+  },
+};
+
+function isFixedQualityTier(value: unknown): value is FixedQualityTier {
+  return value === 'LOW' || value === 'MEDIUM' || value === 'HIGH' || value === 'ULTRA';
+}
 
 let cache: GraphicsSettings | null = null;
 let effectiveTier: Exclude<QualityTier, 'AUTO'> = 'MEDIUM';
@@ -250,14 +290,14 @@ export function getEffectiveFeatureFlags(): EffectiveFeatureFlags {
       arcadeBezel: false,
     };
   }
-  const limits = TIER_LIMITS[tier];
+  const perf = PERF_TIER_LIMITS[tier];
   return {
     webglBackground: s.webglBackground,
     floorSubGrid: s.floorSubGrid,
     ambientEmbers: s.ambientEmbers,
     particleTrails: s.particleTrails,
-    bloomEnabled: s.bloomEnabled && limits.bloomPasses > 0,
-    refractionEnabled: s.refractionEnabled && limits.refraction,
+    bloomEnabled: s.bloomEnabled && perf.bloomPasses > 0,
+    refractionEnabled: s.refractionEnabled && perf.refraction,
     crtEnabled: s.crtEnabled,
     arcadeBezel: s.arcadeBezel,
   };
@@ -279,10 +319,22 @@ export function seedEffectiveTierForTests(
   adaptiveTierInitialized = true;
 }
 
-export function getEffectiveTier(): Exclude<QualityTier, 'AUTO'> {
+export function getEffectiveTier(): FixedQualityTier {
   const s = getGraphicsSettings();
   if (s.tier === 'AUTO') return effectiveTier;
   return s.tier;
+}
+
+export function getEffectiveVfxTier(): FixedQualityTier {
+  return getGraphicsSettings().vfxTier;
+}
+
+/** Test-only: set VFX tier on the in-memory settings without a full preset apply. */
+export function seedEffectiveVfxTierForTests(tier: FixedQualityTier): void {
+  if (!cache) {
+    cache = loadFromStorage();
+  }
+  cache = { ...cache, vfxTier: tier };
 }
 
 /** True when fragment highp is reliable on the probed GPU (not legacy / degraded). */
@@ -300,13 +352,16 @@ export function setAdaptiveEffectiveTier(tier: Exclude<QualityTier, 'AUTO'>): vo
 }
 
 export function getTierLimits(): TierLimits {
-  const tier = getEffectiveTier();
-  const base = TIER_LIMITS[tier];
+  const perfTier = getEffectiveTier();
+  const vfxTier = getEffectiveVfxTier();
+  const perf = PERF_TIER_LIMITS[perfTier];
+  const vfx = VFX_TIER_LIMITS[vfxTier];
   const flags = getEffectiveFeatureFlags();
   return {
-    ...base,
-    refraction: base.refraction && flags.refractionEnabled,
-    bloomPasses: flags.bloomEnabled ? base.bloomPasses : 0,
+    ...perf,
+    ...vfx,
+    refraction: perf.refraction && flags.refractionEnabled,
+    bloomPasses: flags.bloomEnabled ? perf.bloomPasses : 0,
   };
 }
 
@@ -655,13 +710,22 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     webglBackground?: boolean;
     ambientEmbers?: boolean;
     particleTrails?: boolean;
+    vfxTier?: unknown;
   };
   const webglBackground =
     parsed.webglBackground ??
     parsed.lavaHeatWaves ??
     DEFAULT_GRAPHICS_SETTINGS.webglBackground;
+  const storedTier = parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier;
+  const migratedVfxTier =
+    parsed.vfxTier !== undefined && isFixedQualityTier(parsed.vfxTier)
+      ? parsed.vfxTier
+      : storedTier !== 'AUTO' && isFixedQualityTier(storedTier)
+        ? storedTier
+        : DEFAULT_GRAPHICS_SETTINGS.vfxTier;
   return {
-    tier: parsed.tier ?? DEFAULT_GRAPHICS_SETTINGS.tier,
+    tier: storedTier,
+    vfxTier: migratedVfxTier,
     webglBackground,
     floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
     ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
@@ -729,13 +793,7 @@ export function saveGraphicsSettings(settings: GraphicsSettings): void {
 }
 
 export function applyBalancedPreset(): GraphicsSettings {
-  saveGraphicsSettings({
-    ...getGraphicsSettings(),
-    tier: 'AUTO',
-    manualTierOverride: false,
-  });
-  setAdaptiveEffectiveTier('MEDIUM');
-  return getGraphicsSettings();
+  return applyQualityPreset('BALANCED');
 }
 
 export function subscribeGraphicsSettings(listener: () => void): () => void {
@@ -935,8 +993,8 @@ function getTierNumericValues(
   };
 }
 
-export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSettings {
-  const limits = TIER_LIMITS[tier];
+export function applyTierPreset(tier: FixedQualityTier): GraphicsSettings {
+  const limits = PERF_TIER_LIMITS[tier];
   const current = getGraphicsSettings();
   const numeric = getTierNumericValues(tier, current.activePreset);
   let postEffects = applyTierPostEffects(tier, current.postEffects);
@@ -949,8 +1007,6 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
     webglBackground: true,
     floorSubGrid: tier !== 'LOW',
     ambientEmbers: tier !== 'LOW',
-    dynamicDebris: tier !== 'LOW',
-    particleTrails: true,
     bloomEnabled: limits.bloomPasses > 0,
     refractionEnabled: limits.refraction,
     crtEnabled: tier !== 'LOW',
@@ -960,6 +1016,49 @@ export function applyTierPreset(tier: Exclude<QualityTier, 'AUTO'>): GraphicsSet
   };
   saveGraphicsSettings(next);
   return next;
+}
+
+export function applyVfxPreset(vfxTier: FixedQualityTier): GraphicsSettings {
+  const current = getGraphicsSettings();
+  const next: GraphicsSettings = {
+    ...current,
+    vfxTier,
+    dynamicDebris: vfxTier !== 'LOW',
+    particleTrails: true,
+  };
+  saveGraphicsSettings(next);
+  return next;
+}
+
+export function applyQualityPreset(id: QualityPresetId): GraphicsSettings {
+  switch (id) {
+    case 'FAST':
+      applyTierPreset('LOW');
+      applyVfxPreset('LOW');
+      break;
+    case 'COMPETITIVE':
+      applyTierPreset('LOW');
+      applyVfxPreset('HIGH');
+      break;
+    case 'BALANCED':
+      saveGraphicsSettings({
+        ...getGraphicsSettings(),
+        tier: 'AUTO',
+        manualTierOverride: false,
+      });
+      setAdaptiveEffectiveTier('MEDIUM');
+      applyVfxPreset('MEDIUM');
+      break;
+    case 'QUALITY':
+      applyTierPreset('HIGH');
+      applyVfxPreset('HIGH');
+      break;
+    case 'ULTRA':
+      applyTierPreset('ULTRA');
+      applyVfxPreset('ULTRA');
+      break;
+  }
+  return getGraphicsSettings();
 }
 
 export function resetAllGraphicsDefaults(): GraphicsSettings {
