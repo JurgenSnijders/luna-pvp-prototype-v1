@@ -1,4 +1,5 @@
 import type { GameApp } from './GameApp';
+import { abilityUsesGroundReticle } from '../render/canvas/trajectoryTracer';
 import { updatePlayerAimTarget } from './input';
 
 /** Returns true when the event target is inside UI that should not receive game camera input. */
@@ -22,6 +23,14 @@ export function updatePlayerAimFromScreen(
   screenX: number,
   screenY: number,
 ): void {
-  const world = screenToWorldFromApp(app, screenX, screenY);
+  const camWorld = screenToWorldFromApp(app, screenX, screenY);
+  const aiming = app.player.activeAimingState;
+  const world =
+    aiming && !abilityUsesGroundReticle(aiming.ability)
+      ? {
+          x: app.player.pos.x + (camWorld.x - app.camera.pos.x),
+          y: app.player.pos.y + (camWorld.y - app.camera.pos.y),
+        }
+      : camWorld;
   updatePlayerAimTarget(app, world);
 }

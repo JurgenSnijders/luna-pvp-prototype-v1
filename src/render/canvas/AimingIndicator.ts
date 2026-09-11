@@ -549,9 +549,7 @@ export class AimingIndicatorRenderer {
   ): void {
     const now = performance.now();
     if (state.mode === 'directional') {
-      const layoutOrigin = planarOrigin
-        ? resolveAimIndicatorOrigin(planarOrigin, casterZ)
-        : state.origin;
+      const layoutOrigin = planarOrigin ?? state.origin;
       const visual = planarOrigin ? layoutAimingVisual(state, layoutOrigin) : state;
       drawPredictivePaths(ctx, visual, casterZ, planarOrigin);
     } else {

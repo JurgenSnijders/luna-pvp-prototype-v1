@@ -22,7 +22,7 @@ import {
   normalizeScopePower,
 } from '../src/render/gl/impactIntensity';
 import { MAX_ENTITIES, PhysicsWorld } from '../src/engine/PhysicsWorld';
-import { HAZARD_CLEARANCE_Z } from '../src/engine/verticalConstants';
+import { HAZARD_CLEARANCE_Z, Z_TO_SCREEN } from '../src/engine/verticalConstants';
 import { resolveBotGroundAimPoint } from '../src/entities/BotController';
 import { Dummy } from '../src/entities/Dummy';
 import { Obstacle } from '../src/entities/Obstacle';
@@ -1472,9 +1472,10 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
   const ability = VERTICAL_RECIPES.clusterMortar;
   const origin = { x: 0, y: 0 };
   const aimAngle = -Math.PI / 4;
+  const deltaAngle = Math.PI / 4;
 
   // Warm JIT / module paths so "cold" measures uncached physics, not first-load noise.
-  resolveLiveAimingPaths(ability, origin, aimAngle + Math.PI / 90, 28, 0);
+  resolveLiveAimingPaths(ability, origin, aimAngle + deltaAngle, 28, 0);
   clearAimingPathCache();
 
   const t0 = performance.now();
@@ -1484,6 +1485,10 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
   const t1 = performance.now();
   const pathsB = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0);
   const cachedMs = performance.now() - t1;
+
+  const t2 = performance.now();
+  const pathsRotated = resolveLiveAimingPaths(ability, origin, aimAngle + deltaAngle, 28, 0);
+  const crossAngleMs = performance.now() - t2;
 
   if (pathsA.length < 2) {
     return {
@@ -1513,6 +1518,12 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
       reason: `cached rollout took ${cachedMs.toFixed(2)}ms (limit 2ms)`,
     };
   }
+  if (crossAngleMs > 2) {
+    return {
+      pass: false,
+      reason: `cross-angle cached rollout took ${crossAngleMs.toFixed(2)}ms (limit 2ms)`,
+    };
+  }
   if (coldMs > 40) {
     return {
       pass: false,
@@ -1520,9 +1531,28 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
     };
   }
 
+  if (pathsA.length > 0 && pathsRotated.length > 0) {
+    const lastA = pathsA[0].points[pathsA[0].points.length - 1];
+    const lastR = pathsRotated[0].points[pathsRotated[0].points.length - 1];
+    const z = lastA.z ?? 0;
+    const px = lastA.x;
+    const py = lastA.y + z * Z_TO_SCREEN;
+    const c = Math.cos(deltaAngle);
+    const s = Math.sin(deltaAngle);
+    const expectedX = px * c - py * s;
+    const expectedY = px * s + py * c - z * Z_TO_SCREEN;
+    const dist = Math.hypot(lastR.x - expectedX, lastR.y - expectedY);
+    if (dist > 1) {
+      return {
+        pass: false,
+        reason: `rotation geometry mismatch dist=${dist.toFixed(2)}`,
+      };
+    }
+  }
+
   return {
     pass: true,
-    reason: `paths=${pathsA.length} bounce=yes cache=${cachedMs.toFixed(2)}ms cold=${coldMs.toFixed(2)}ms`,
+    reason: `paths=${pathsA.length} bounce=yes cache=${cachedMs.toFixed(2)}ms cross=${crossAngleMs.toFixed(2)}ms cold=${coldMs.toFixed(2)}ms`,
   };
 }
 

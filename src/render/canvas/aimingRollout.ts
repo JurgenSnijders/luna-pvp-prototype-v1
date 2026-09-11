@@ -19,7 +19,6 @@ const AIM_ROLLOUT_DT = 1 / 60;
 const AIM_ROLLOUT_MAX_FRAMES = 90;
 const AIM_ROLLOUT_EARLY_EXIT = 8;
 const AIM_ROLLOUT_HEX_RADIUS = 2000;
-const AIM_ANGLE_QUANTUM = Math.PI / 90;
 const AIM_ROLLOUT_SEED = 0x5c0be3;
 
 const aimingPathCache = new Map<string, PredictivePath[]>();
@@ -48,10 +47,6 @@ function createSeededRandom(seed: number): () => number {
     state = (state * 1664525 + 1013904223) >>> 0;
     return state / 0x100000000;
   };
-}
-
-function quantizeAimAngle(angle: number): number {
-  return Math.round(angle / AIM_ANGLE_QUANTUM) * AIM_ANGLE_QUANTUM;
 }
 
 function abilitySchemaFingerprint(ability: AbilitySchema): string {
@@ -230,15 +225,32 @@ function clonePredictivePaths(paths: PredictivePath[]): PredictivePath[] {
   }));
 }
 
-function translatePredictivePaths(
+/**
+ * Rotate canonical rollout paths (simulated at angle 0) then translate to world origin.
+ * Screen samples bake height into y; recover planar coords before rotating.
+ */
+function transformPredictivePaths(
   paths: PredictivePath[],
+  angle: number,
   dx: number,
   dy: number,
 ): PredictivePath[] {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
   return paths.map((p) => ({
     ...p,
-    points: p.points.map((pt) => ({ ...pt, x: pt.x + dx, y: pt.y + dy })),
-    groundPoints: p.groundPoints?.map((gp) => ({ ...gp, x: gp.x + dx, y: gp.y + dy })),
+    points: p.points.map((pt) => {
+      const z = pt.z ?? 0;
+      const px = pt.x;
+      const py = pt.y + z * Z_TO_SCREEN;
+      const rx = px * cos - py * sin + dx;
+      const ry = px * sin + py * cos + dy;
+      return { ...pt, x: rx, y: ry - z * Z_TO_SCREEN };
+    }),
+    groundPoints: p.groundPoints?.map((gp) => ({
+      x: gp.x * cos - gp.y * sin + dx,
+      y: gp.x * sin + gp.y * cos + dy,
+    })),
   }));
 }
 
@@ -254,17 +266,16 @@ export function resolveLiveAimingPaths(
   const config = resolveLiveCastConfig(ability);
   if (!config) return [];
 
-  const qAngle = quantizeAimAngle(aimAngle);
   const qStartZ = Math.round(startZ);
-  const cacheKey = `${abilitySchemaFingerprint(ability)}|${qAngle.toFixed(4)}|${qStartZ}|${muzzleOffset}`;
+  const cacheKey = `${abilitySchemaFingerprint(ability)}|${qStartZ}|${muzzleOffset}`;
 
   let canonical = aimingPathCache.get(cacheKey);
   if (!canonical) {
-    canonical = runAimingRollout(ability, qAngle, qStartZ, muzzleOffset);
+    canonical = runAimingRollout(ability, 0, qStartZ, muzzleOffset);
     aimingPathCache.set(cacheKey, clonePredictivePaths(canonical));
   }
 
-  return translatePredictivePaths(clonePredictivePaths(canonical), origin.x, origin.y);
+  return transformPredictivePaths(canonical, aimAngle, origin.x, origin.y);
 }
 
 /** Test-only: clear rollout cache between deterministic assertions. */
