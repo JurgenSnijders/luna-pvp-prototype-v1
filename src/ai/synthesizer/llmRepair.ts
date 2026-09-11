@@ -456,6 +456,9 @@ function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
   if (obj.vfx !== null && typeof obj.vfx === 'object') {
     result.vfx = obj.vfx;
   }
+  if (Array.isArray(obj.impactLayers) && obj.impactLayers.length > 0) {
+    result.impactLayers = obj.impactLayers;
+  }
   return result;
 }
 

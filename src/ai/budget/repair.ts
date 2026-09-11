@@ -1171,11 +1171,12 @@ export function repairAbilitySemantics(
     applyRuleD_ChanneledStream(cloned, text);
     if (repairMode === 'FIRST_GENERATION') {
       applyRuleH_Meteor(cloned, text);
-      applyRule_ForwardThrowableDirectional(cloned);
       applyRuleI_PersonalField(cloned, text);
     }
     ensureProjectileTriggerDisplacement(cloned, text, isHeadlessMode);
   }
+
+  applyRule_ForwardThrowableDirectional(cloned);
 
   const result = ensureDisplacementSemantics(cloned, text, isHeadlessMode);
   if (repairMode === 'FIRST_GENERATION') {

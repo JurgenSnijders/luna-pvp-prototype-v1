@@ -26,7 +26,13 @@ import {
   VFX_DRAW_LAYERS,
   VFX_LAYER_KINDS,
 } from '../../types/schema/constants';
-import { TRAJECTORY_TYPES as BUDGET_TRAJECTORY_TYPES } from '../budget/constants';
+import {
+  FIELD_TYPES as BUDGET_FIELD_TYPES,
+  IMPACT_VFX_TYPES as BUDGET_IMPACT_VFX_TYPES,
+  PROJECTILE_STYLES as BUDGET_PROJECTILE_STYLES,
+  TRAJECTORY_TYPES as BUDGET_TRAJECTORY_TYPES,
+  TRAIL_TYPES as BUDGET_TRAIL_TYPES,
+} from '../budget/constants';
 
 function stringEnum(values: ReadonlySet<string> | readonly string[]): { type: 'string'; enum: string[] } {
   const list = values instanceof Set ? [...values] : [...values];
@@ -496,6 +502,28 @@ for (const trajectoryType of BUDGET_TRAJECTORY_TYPES) {
     throw new Error(`TRAJECTORY_TYPES drift: budget missing schema type ${trajectoryType}`);
   }
 }
+
+function assertEnumSetsMatch(
+  label: string,
+  schemaSet: ReadonlySet<string>,
+  budgetSet: ReadonlySet<string>,
+): void {
+  for (const value of schemaSet) {
+    if (!budgetSet.has(value)) {
+      throw new Error(`${label} drift: schema missing budget value ${value}`);
+    }
+  }
+  for (const value of budgetSet) {
+    if (!schemaSet.has(value)) {
+      throw new Error(`${label} drift: budget missing schema value ${value}`);
+    }
+  }
+}
+
+assertEnumSetsMatch('IMPACT_VFX_TYPES', IMPACT_VFX_TYPES, BUDGET_IMPACT_VFX_TYPES);
+assertEnumSetsMatch('TRAIL_TYPES', TRAIL_TYPES, BUDGET_TRAIL_TYPES);
+assertEnumSetsMatch('PROJECTILE_STYLES', PROJECTILE_STYLES, BUDGET_PROJECTILE_STYLES);
+assertEnumSetsMatch('FIELD_TYPES', FIELD_TYPES, BUDGET_FIELD_TYPES);
 
 const triggerNode = {
   type: 'object',

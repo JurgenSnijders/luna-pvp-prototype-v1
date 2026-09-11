@@ -1,6 +1,7 @@
 import { repairAbilitySemantics } from '../src/ai/budget/repair';
 import { sanitizeAbilitySchema } from '../src/ai/budget/sanitize/ability';
-import { FORGE_SYSTEM_PROMPT } from '../src/ai/synthesizer/prompts';
+import { ABILITY_SCHEMA_GRAMMAR, FORGE_SYSTEM_PROMPT } from '../src/ai/synthesizer/prompts';
+import type { SemanticRepairMode } from '../src/ai/budget/repair';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
 import { DEFAULT_STARTER_PRESET_NAMES } from '../src/devtools/presetPacks/core';
 import { PRESETS } from '../src/devtools/Presets';
@@ -551,10 +552,231 @@ function assertForgePromptContainsVerticalGrammar(): boolean {
   return true;
 }
 
+function forgePathSanitize(
+  raw: AbilitySchema,
+  repairMode: SemanticRepairMode = 'FIRST_GENERATION',
+): AbilitySchema {
+  const repaired = repairAbilityPayload(raw) as AbilitySchema;
+  return sanitizeAbilitySchema(repaired, 'SECONDARY', 0, undefined, false, repairMode);
+}
+
+function assertImpactLayersSurviveForgePath(): boolean {
+  const raw: AbilitySchema = {
+    id: 'test_layers_forge',
+    name: 'Layered Impact',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [],
+    visuals: {
+      color: '#ff4400',
+      size: 12,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+      impactLayers: [
+        {
+          kind: 'RING',
+          size: 40,
+          lifetime: 0.4,
+          colorRef: 'PRIMARY',
+          layer: 'CORE',
+        },
+        {
+          kind: 'SPARKS',
+          count: 12,
+          size: 8,
+          lifetime: 0.3,
+          colorRef: 'SECONDARY',
+          layer: 'PRIMARY',
+        },
+      ],
+    },
+  };
+
+  const schema = forgePathSanitize(raw);
+  if (!schema.visuals.impactLayers || schema.visuals.impactLayers.length < 2) {
+    console.log(`${RED}[FAIL]${RESET} impactLayers survive forge path`);
+    console.log(`  ${DIM}layers=${schema.visuals.impactLayers?.length ?? 0}${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} impactLayers survive forge path`);
+  console.log(`  ${DIM}layers=${schema.visuals.impactLayers.length}${RESET}`);
+  return true;
+}
+
+function assertPlayVfxLayersSurviveForgePath(): boolean {
+  const raw: AbilitySchema = {
+    id: 'test_play_vfx_layers',
+    name: 'Apex Puff',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'PLAY_VFX',
+            layers: [
+              {
+                kind: 'FLASH',
+                size: 24,
+                lifetime: 0.25,
+                colorRef: 'PRIMARY',
+                layer: 'CORE',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    visuals: {
+      color: '#00e5ff',
+      size: 10,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+    },
+  };
+
+  const schema = forgePathSanitize(raw);
+  const playVfx = schema.triggers[0]?.actions.find((a) => a.type === 'PLAY_VFX');
+  if (!playVfx || playVfx.type !== 'PLAY_VFX' || !playVfx.layers || playVfx.layers.length < 1) {
+    console.log(`${RED}[FAIL]${RESET} PLAY_VFX.layers survive forge path`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} PLAY_VFX.layers survive forge path`);
+  console.log(`  ${DIM}layers=${playVfx.layers.length}${RESET}`);
+  return true;
+}
+
+function assertForwardLobTargetingRepair(repairMode: SemanticRepairMode): boolean {
+  const raw: AbilitySchema = {
+    id: 'test_forward_lob',
+    name: 'Cluster Mortar',
+    cooldownMs: 2500,
+    recoilKick: 70,
+    targetingMode: 'GROUND_POINT',
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
+              type: 'BALLISTIC_ARC',
+              speed: 320,
+              maxRange: 500,
+              lobApex: 150,
+              bounces: 0,
+            },
+            emitter: { count: 1, spreadDeg: 0, distribution: 'FAN' },
+          },
+        ],
+      },
+    ],
+    visuals: {
+      color: '#ff6622',
+      size: 14,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'PLASMA_BLOOM',
+    },
+  };
+
+  const schema = forgePathSanitize(raw, repairMode);
+  if (schema.targetingMode !== 'DIRECTIONAL') {
+    console.log(
+      `${RED}[FAIL]${RESET} forward lob targeting (${repairMode})`,
+    );
+    console.log(`  ${DIM}targetingMode=${schema.targetingMode ?? 'undefined'}${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} forward lob targeting (${repairMode})`);
+  return true;
+}
+
+function assertSkyDropKeepsGroundPoint(repairMode: SemanticRepairMode): boolean {
+  const raw: AbilitySchema = {
+    id: 'test_sky_drop',
+    name: 'Meteor Strike',
+    cooldownMs: 4000,
+    recoilKick: 0,
+    targetingMode: 'GROUND_POINT',
+    trajectory: {
+      type: 'BALLISTIC_ARC',
+      speed: 0,
+      spawnAltitude: 700,
+      fallSpeed: 1600,
+      maxRange: 500,
+      bounces: 0,
+    },
+    triggers: [
+      {
+        trigger: 'ON_GROUND_SLAM',
+        actions: [
+          {
+            type: 'SPAWN_FIELD',
+            field: {
+              fieldType: 'RADIAL_IMPULSE',
+              radius: 90,
+              strength: 800,
+              durationMs: 300,
+            },
+          },
+        ],
+      },
+    ],
+    visuals: {
+      color: '#ff4400',
+      size: 16,
+      projectileStyle: 'PULSING_ORB',
+      trailType: 'MAGMA_SPARKS',
+      impactVfx: 'MINI_NUKE',
+    },
+  };
+
+  const schema = forgePathSanitize(raw, repairMode);
+  if (schema.targetingMode !== 'GROUND_POINT') {
+    console.log(`${RED}[FAIL]${RESET} sky drop keeps GROUND_POINT (${repairMode})`);
+    console.log(`  ${DIM}targetingMode=${schema.targetingMode ?? 'undefined'}${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} sky drop keeps GROUND_POINT (${repairMode})`);
+  return true;
+}
+
+function assertClusterMortarPromptGrammar(): boolean {
+  const hasDirectionalMortar =
+    ABILITY_SCHEMA_GRAMMAR.includes('Cluster Mortar:') &&
+    ABILITY_SCHEMA_GRAMMAR.includes('targetingMode "DIRECTIONAL"');
+  const hasMirvRecipe = ABILITY_SCHEMA_GRAMMAR.includes(
+    'Cluster/MIRV: ON_EXPIRY -> CAST_CHILD_PAYLOAD',
+  );
+
+  if (!hasDirectionalMortar || hasMirvRecipe) {
+    console.log(`${RED}[FAIL]${RESET} Cluster Mortar prompt grammar`);
+    console.log(
+      `  ${DIM}directional=${hasDirectionalMortar} mirvRecipe=${hasMirvRecipe}${RESET}`,
+    );
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} Cluster Mortar prompt grammar`);
+  console.log(`  ${DIM}DIRECTIONAL mortar recipe, no MIRV CAST_CHILD_PAYLOAD line${RESET}`);
+  return true;
+}
+
 function run(): void {
   console.log('test:fidelity');
   let passed = 0;
-  const totalTests = FIDELITY_SCENARIOS.length + 4;
+  const staticTests = 4 + 7;
+  const totalTests = FIDELITY_SCENARIOS.length + staticTests;
 
   if (runFlatSpawnFieldRepairTest()) {
     passed++;
@@ -569,6 +791,34 @@ function run(): void {
   }
 
   if (assertForgePromptContainsVerticalGrammar()) {
+    passed++;
+  }
+
+  if (assertImpactLayersSurviveForgePath()) {
+    passed++;
+  }
+
+  if (assertPlayVfxLayersSurviveForgePath()) {
+    passed++;
+  }
+
+  if (assertForwardLobTargetingRepair('FIRST_GENERATION')) {
+    passed++;
+  }
+
+  if (assertForwardLobTargetingRepair('EVOLUTION')) {
+    passed++;
+  }
+
+  if (assertSkyDropKeepsGroundPoint('FIRST_GENERATION')) {
+    passed++;
+  }
+
+  if (assertSkyDropKeepsGroundPoint('EVOLUTION')) {
+    passed++;
+  }
+
+  if (assertClusterMortarPromptGrammar()) {
     passed++;
   }
 
