@@ -970,7 +970,20 @@ export function processLifecycleEvents(
       getGraphicsSettings().particleTrails &&
       projectile.pos.distSq(projectile.lastTrailPos) > trailThreshold
     ) {
-      if (visuals?.trailType === 'NEON_RIBBON') {
+      if (visuals?.trailLayers && visuals.trailLayers.length > 0) {
+        const headingRad =
+          projectile.vel.magSq() > 0
+            ? Math.atan2(projectile.vel.y, projectile.vel.x)
+            : projectile.aimAngle;
+        interp.particles?.playVfxLayers(
+          projectile.pos,
+          visuals.trailLayers,
+          visuals.color,
+          secondaryColor(visuals, '#ffffff'),
+          1,
+          headingRad,
+        );
+      } else if (visuals?.trailType === 'NEON_RIBBON') {
         interp.particles?.neonRibbon(projectile.pos, visuals.color);
       } else {
         const color = trailColor(visuals);

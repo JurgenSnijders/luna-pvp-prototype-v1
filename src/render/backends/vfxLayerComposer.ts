@@ -89,6 +89,7 @@ export function playVfxLayers(
   primary: string,
   secondary: string,
   scale = 1,
+  headingRad = 0,
 ): void {
   const maxSpawns = maxVfxLayerSpawns();
   const stack = truncateVfxLayers(layers, maxSpawns);
@@ -110,7 +111,7 @@ export function playVfxLayers(
         const speed = layer.speed ?? 120;
         for (let i = 0; i < count; i++) {
           const t = count === 1 ? 0.5 : i / (count - 1);
-          const angle = -spreadRad / 2 + t * spreadRad;
+          const angle = headingRad - spreadRad / 2 + t * spreadRad;
           sink.spawnStreak(
             pos,
             Vector2D.fromAngle(angle, speed),

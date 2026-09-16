@@ -459,6 +459,9 @@ function repairVisualDescriptor(raw: unknown): Record<string, unknown> {
   if (Array.isArray(obj.impactLayers) && obj.impactLayers.length > 0) {
     result.impactLayers = obj.impactLayers;
   }
+  if (Array.isArray(obj.trailLayers) && obj.trailLayers.length > 0) {
+    result.trailLayers = obj.trailLayers;
+  }
   return result;
 }
 

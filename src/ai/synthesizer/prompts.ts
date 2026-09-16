@@ -114,6 +114,7 @@ projectileStyle: DISC|BEAM|PULSING_ORB|SHURIKEN|CHAOS_LIGHTNING|PRISM|RUNE_SIGIL
 trailType: NONE|SMOKE|ICE_GLOW|MAGMA_SPARKS|NEON_RIBBON|EMBER_SPIRAL|FROST_CRYSTALS|VOID_TENDRIL|PLASMA_ARC|DUST_PUFF
 impactVfx: SPARKS|SHOCKWAVE|ICE_BURST|VORTEX_SWIRL|MINI_NUKE|PLASMA_BLOOM|SHATTER|IMPLOSION|LIGHTNING_FORK|RUNE_FLASH
 impactLayers?: optional stack overriding impactVfx — each layer { kind: RING|FLASH|STREAK|SPARKS, size, lifetime, colorRef: PRIMARY|SECONDARY, layer: CORE|PRIMARY|SECONDARY, count?, speed?, thickness?, spreadDeg? }. Use for unusual looks; presets stay the default.
+trailLayers?: optional stack overriding trailType on projectile motion — same layer shape as impactLayers. Omitted = trailType preset. Layered trail recipe: trailType:"NONE" + trailLayers:[{ kind:"SPARKS", count:4, size:6, lifetime:0.25, colorRef:"PRIMARY", layer:"SECONDARY" }, { kind:"RING", size:10, thickness:1.5, lifetime:0.2, colorRef:"SECONDARY", layer:"PRIMARY" }].
 secondaryColor should contrast with color. glowIntensity tracks power (0.6 subtle, 1.2 strong, 1.8 ultimate).
 
 TARGETING: ActionTarget = TARGET | CASTER | SELF — set explicitly on actions that accept target.

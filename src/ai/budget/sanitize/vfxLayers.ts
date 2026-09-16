@@ -48,7 +48,7 @@ function sanitizeSingleLayer(raw: unknown): VfxLayer | null {
   return layer;
 }
 
-export function sanitizeImpactLayers(raw: unknown): VfxLayer[] | undefined {
+export function sanitizeVfxLayers(raw: unknown): VfxLayer[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   const layers: VfxLayer[] = [];
   for (const entry of raw) {
@@ -60,3 +60,9 @@ export function sanitizeImpactLayers(raw: unknown): VfxLayer[] | undefined {
   const truncated = truncateVfxLayers(layers, maxSpawns);
   return truncated.length > 0 ? truncated : undefined;
 }
+
+/** @deprecated Use sanitizeVfxLayers */
+export const sanitizeImpactLayers = sanitizeVfxLayers;
+
+/** @deprecated Use sanitizeVfxLayers */
+export const sanitizeTrailLayers = sanitizeVfxLayers;

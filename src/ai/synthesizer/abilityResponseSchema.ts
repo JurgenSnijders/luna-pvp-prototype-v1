@@ -183,6 +183,10 @@ const visualDescriptor = {
       type: 'array',
       items: vfxLayer,
     },
+    trailLayers: {
+      type: 'array',
+      items: vfxLayer,
+    },
     vfx: {
       type: 'object',
       properties: {

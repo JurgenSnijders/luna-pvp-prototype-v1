@@ -68,6 +68,17 @@ export class ParticleSystem {
     this.director.burstSparks(pos, count, color);
   }
 
+  playVfxLayers(
+    pos: Vector2D,
+    layers: VfxLayer[],
+    primary: string,
+    secondary: string,
+    scale = 1,
+    headingRad = 0,
+  ): void {
+    this.director.playVfxLayers(pos, layers, primary, secondary, scale, headingRad);
+  }
+
   trail(pos: Vector2D, color: string, trailKind = 'DEFAULT'): void {
     this.director.trail(pos, color, trailKind);
   }

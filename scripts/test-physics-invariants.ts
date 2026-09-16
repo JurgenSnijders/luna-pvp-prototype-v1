@@ -33,7 +33,12 @@ import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { dispatchAction } from '../src/primitives/interpreter/actions';
 import { Interpreter } from '../src/primitives/Interpreter';
-import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
+import {
+  HEADLESS_LIFECYCLE_FX,
+  processLifecycleEvents,
+} from '../src/primitives/interpreter/lifecycle';
+import { ParticleSystem } from '../src/render/ParticleSystem';
+import { RecordingBackend } from '../src/render/backends/RecordingBackend';
 import {
   buildArcLengthTable,
   resolvePathWorldPoints,
@@ -1509,6 +1514,129 @@ function assertPlayVfxZeroBudgetAndLayers(): { pass: boolean; reason: string } {
   return {
     pass: true,
     reason: `score=${baseScore} layers=${visuals.impactLayers.length}`,
+  };
+}
+
+/** Layered trails — trailLayers survive sanitize; score unchanged; headless tick emits particles. */
+function assertLayeredTrailsSanitizeAndTick(): { pass: boolean; reason: string } {
+  const base: AbilitySchema = {
+    id: 'test_trail_layers_base',
+    name: 'Trail Base',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [],
+    visuals: {
+      color: '#00e5ff',
+      size: 8,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+    },
+  };
+  const withLayers: AbilitySchema = {
+    ...base,
+    visuals: {
+      ...base.visuals!,
+      trailLayers: [
+        {
+          kind: 'SPARKS',
+          count: 4,
+          size: 6,
+          lifetime: 0.25,
+          colorRef: 'PRIMARY',
+          layer: 'SECONDARY',
+        },
+        {
+          kind: 'RING',
+          size: 10,
+          thickness: 1.5,
+          lifetime: 0.2,
+          colorRef: 'SECONDARY',
+          layer: 'PRIMARY',
+        },
+      ],
+    },
+  };
+
+  const baseScore = scoreAbilitySchema(base);
+  const withScore = scoreAbilitySchema(withLayers);
+  if (baseScore !== withScore) {
+    return {
+      pass: false,
+      reason: `trailLayers changed score ${baseScore} -> ${withScore}`,
+    };
+  }
+
+  const sanitized = sanitizeVisuals(withLayers.visuals);
+  if (!sanitized.trailLayers || sanitized.trailLayers.length < 2) {
+    return { pass: false, reason: 'trailLayers stripped by sanitize' };
+  }
+
+  if (!getGraphicsSettings().particleTrails) {
+    return { pass: false, reason: 'particleTrails disabled in graphics settings' };
+  }
+
+  const recordingBackend = new RecordingBackend();
+  const particles = ParticleSystem.fromBackend(recordingBackend);
+  const interp = new Interpreter();
+  interp.setParticleSystem(particles);
+
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const traj = { type: 'LINEAR' as const, speed: 200 };
+  const layered = new Projectile(
+    new Vector2D(0, 0),
+    traj,
+    'trail_caster',
+    0,
+    new Map(),
+    0,
+    structuredClone(sanitized),
+  );
+  layered.lastTrailPos = new Vector2D(-200, 0);
+  world.addProjectile(layered);
+  processLifecycleEvents(interp, world, 1 / 60, HEADLESS_LIFECYCLE_FX);
+
+  const layeredCount = recordingBackend.getLiveParticleCount();
+  if (layeredCount === 0) {
+    return { pass: false, reason: 'trailLayers emitted no particles on trail tick' };
+  }
+
+  const controlBackend = new RecordingBackend();
+  const controlParticles = ParticleSystem.fromBackend(controlBackend);
+  const controlInterp = new Interpreter();
+  controlInterp.setParticleSystem(controlParticles);
+  const controlWorld = new PhysicsWorld(Vector2D.zero(), 800);
+  const control = new Projectile(
+    new Vector2D(0, 0),
+    traj,
+    'trail_control',
+    0,
+    new Map(),
+    0,
+    {
+      color: '#00e5ff',
+      size: 8,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+    },
+  );
+  control.lastTrailPos = new Vector2D(-200, 0);
+  controlWorld.addProjectile(control);
+  processLifecycleEvents(controlInterp, controlWorld, 1 / 60, HEADLESS_LIFECYCLE_FX);
+
+  const controlCount = controlBackend.getLiveParticleCount();
+  if (controlCount !== 0) {
+    return {
+      pass: false,
+      reason: `NONE trail without layers spawned ${controlCount} particles`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `score=${baseScore} layers=${sanitized.trailLayers.length} tick=${layeredCount}`,
   };
 }
 
@@ -3130,6 +3258,12 @@ function run(): void {
   console.log(`  ${DIM}${playVfx.reason}${RESET}`);
   if (playVfx.pass) passed++;
 
+  const layeredTrails = assertLayeredTrailsSanitizeAndTick();
+  const layeredTrailsTag = layeredTrails.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${layeredTrailsTag} Layered trails`);
+  console.log(`  ${DIM}${layeredTrails.reason}${RESET}`);
+  if (layeredTrails.pass) passed++;
+
   const derivedIntensity = assertDerivedImpactIntensity();
   const derivedIntensityTag = derivedIntensity.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -3204,7 +3338,7 @@ function run(): void {
   console.log(`  ${DIM}${motionNoRandom.reason}${RESET}`);
   if (motionNoRandom.pass) passed++;
 
-  const totalCases = suite.length + 36;
+  const totalCases = suite.length + 37;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -606,6 +606,53 @@ function assertImpactLayersSurviveForgePath(): boolean {
   return true;
 }
 
+function assertTrailLayersSurviveForgePath(): boolean {
+  const raw: AbilitySchema = {
+    id: 'test_trail_layers_forge',
+    name: 'Layered Trail',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 400 },
+    triggers: [],
+    visuals: {
+      color: '#00e5ff',
+      size: 8,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SPARKS',
+      trailLayers: [
+        {
+          kind: 'SPARKS',
+          count: 4,
+          size: 6,
+          lifetime: 0.25,
+          colorRef: 'PRIMARY',
+          layer: 'SECONDARY',
+        },
+        {
+          kind: 'RING',
+          size: 10,
+          thickness: 1.5,
+          lifetime: 0.2,
+          colorRef: 'SECONDARY',
+          layer: 'PRIMARY',
+        },
+      ],
+    },
+  };
+
+  const schema = forgePathSanitize(raw);
+  if (!schema.visuals.trailLayers || schema.visuals.trailLayers.length < 2) {
+    console.log(`${RED}[FAIL]${RESET} trailLayers survive forge path`);
+    console.log(`  ${DIM}layers=${schema.visuals.trailLayers?.length ?? 0}${RESET}`);
+    return false;
+  }
+
+  console.log(`${GREEN}[PASS]${RESET} trailLayers survive forge path`);
+  console.log(`  ${DIM}layers=${schema.visuals.trailLayers.length}${RESET}`);
+  return true;
+}
+
 function assertPlayVfxLayersSurviveForgePath(): boolean {
   const raw: AbilitySchema = {
     id: 'test_play_vfx_layers',
@@ -775,7 +822,7 @@ function assertClusterMortarPromptGrammar(): boolean {
 function run(): void {
   console.log('test:fidelity');
   let passed = 0;
-  const staticTests = 4 + 7;
+  const staticTests = 4 + 8;
   const totalTests = FIDELITY_SCENARIOS.length + staticTests;
 
   if (runFlatSpawnFieldRepairTest()) {
@@ -795,6 +842,10 @@ function run(): void {
   }
 
   if (assertImpactLayersSurviveForgePath()) {
+    passed++;
+  }
+
+  if (assertTrailLayersSurviveForgePath()) {
     passed++;
   }
 

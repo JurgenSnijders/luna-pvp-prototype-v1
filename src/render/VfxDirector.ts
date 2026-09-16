@@ -2,6 +2,7 @@ import type { CameraView } from '../camera/Camera2D';
 import type { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../types/schema';
 import type { ParticleBackend, SpawnPriority } from './backends/ParticleBackend';
+import { playVfxLayers as composeVfxLayers } from './backends/vfxLayerComposer';
 
 const DEV = typeof import.meta !== 'undefined' && (import.meta as { env?: { DEV?: boolean } }).env?.DEV;
 
@@ -94,6 +95,35 @@ export class VfxDirector {
     layers?: VfxLayer[],
   ): void {
     this.backend.triggerImpactBurst(pos, color, secondaryColor, vfxType, scale, layers);
+  }
+
+  playVfxLayers(
+    pos: Vector2D,
+    layers: VfxLayer[],
+    primary: string,
+    secondary: string,
+    scale = 1,
+    headingRad = 0,
+  ): void {
+    if (!this.checkOverdraw(pos.x, pos.y, 6, SpawnMaterial.TRAIL)) return;
+    composeVfxLayers(
+      {
+        spawnRing: (p, radius, thickness, color, alpha, life, priority) =>
+          this.backend.spawnRing(p, radius, thickness, color, alpha, life, priority),
+        spawnFlash: (p, size, color, alpha, life, priority) =>
+          this.backend.spawnFlash(p, size, color, alpha, life, priority),
+        spawnStreak: (p, vel, length, color, alpha, life, priority) =>
+          this.backend.spawnStreak(p, vel, length, color, alpha, life, priority),
+        burstSparks: (p, count, color, priority) =>
+          this.backend.burstSparks(p, count, color, priority),
+      },
+      pos,
+      layers,
+      primary,
+      secondary,
+      scale,
+      headingRad,
+    );
   }
 
   trail(pos: Vector2D, color: string, trailKind: string): void {

@@ -1,7 +1,7 @@
 import type { ImpactVfx, ProjectileStyle, TrailType, VisualDescriptor } from '../../../types/schema';
 import { IMPACT_VFX_TYPES, PROJECTILE_STYLES, TRAIL_TYPES } from '../constants';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
-import { sanitizeImpactLayers } from './vfxLayers';
+import { sanitizeImpactLayers, sanitizeVfxLayers } from './vfxLayers';
 
 export function sanitizeVisuals(raw: unknown): VisualDescriptor {
   const obj = isObject(raw) ? raw : {};
@@ -55,6 +55,9 @@ export function sanitizeVisuals(raw: unknown): VisualDescriptor {
 
   const impactLayers = sanitizeImpactLayers(obj.impactLayers);
   if (impactLayers) descriptor.impactLayers = impactLayers;
+
+  const trailLayers = sanitizeVfxLayers(obj.trailLayers);
+  if (trailLayers) descriptor.trailLayers = trailLayers;
 
   return descriptor;
 }

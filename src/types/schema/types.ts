@@ -308,6 +308,8 @@ export interface VisualDescriptor {
   trailType: TrailType;
   impactVfx: ImpactVfx;
   impactLayers?: VfxLayer[];
+  /** Optional stack overriding trailType on projectile motion ticks. */
+  trailLayers?: VfxLayer[];
   vfx?: VfxParams;
 }
 

@@ -92,7 +92,7 @@ export function validateVfxLayer(value: unknown): VfxLayer | null {
   return layer;
 }
 
-export function validateImpactLayers(value: unknown): VfxLayer[] | null {
+export function validateVfxLayers(value: unknown): VfxLayer[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   const layers: VfxLayer[] = [];
   for (const entry of value) {
@@ -102,6 +102,9 @@ export function validateImpactLayers(value: unknown): VfxLayer[] | null {
   }
   return layers.length > 0 ? layers : null;
 }
+
+/** @deprecated Use validateVfxLayers */
+export const validateImpactLayers = validateVfxLayers;
 
 export function validateVisualDescriptor(value: unknown): VisualDescriptor | null {
   if (!isObject(value)) return null;
@@ -132,9 +135,15 @@ export function validateVisualDescriptor(value: unknown): VisualDescriptor | nul
   }
 
   if (value.impactLayers !== undefined) {
-    const impactLayers = validateImpactLayers(value.impactLayers);
+    const impactLayers = validateVfxLayers(value.impactLayers);
     if (!impactLayers) return null;
     descriptor.impactLayers = impactLayers;
+  }
+
+  if (value.trailLayers !== undefined) {
+    const trailLayers = validateVfxLayers(value.trailLayers);
+    if (!trailLayers) return null;
+    descriptor.trailLayers = trailLayers;
   }
 
   return descriptor;

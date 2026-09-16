@@ -26,6 +26,7 @@ Source docs:
 - [x] **RC-3: do not collapse the whole tree** — `bestEffort` validation salvages valid leaves; LINEAR spawn floor only when no trajectory/ON_CAST spawn; balance uses salvage before `fallback_linear`.
 - [x] **Editable spell graph** — Inspector Graph tab edits `AbilityGraphModel` (add/remove/reorder triggers and actions, common fields); Apply via sanitize + strict validate.
 - [x] **Directional parry** — `REFLECT_PROJECTILES` accepts optional `arcDeg` / `arcFacing` / `arcOffsetDeg` (same wedge as fields); shared `arcWedge` helper.
+- [x] **Layered trails** — optional `trailLayers` on `VisualDescriptor` overrides `trailType` on projectile motion ticks; reuses `VfxLayer` primitives and budget cap.
 
 ---
 
@@ -38,11 +39,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Next
 
 ### Authoring / melee / VFX
-
-- [ ] **6. Layered trails**
-  From [04 §3](04-upgrade-design.md). `impactLayers` shipped in Phase 7. Optional `trailLayers` beside `trailType`, same primitives and particle-budget cap. (Solid + dashed aiming lines are one projectile, two projections — not this.)
-
-
 
 ### Product / later
 
