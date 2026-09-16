@@ -3,6 +3,7 @@ import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../../types/cards';
 import {
   ACTION_TARGETS,
   ACTION_TYPES,
+  FIELD_ARC_FACINGS,
   FIELD_TYPES,
   IMPULSE_DIRECTION_MODES,
   SPELL_ARCHETYPES,
@@ -551,6 +552,32 @@ function buildPropertyPanel(
     });
     numberRow(parent, 'Duration (ms)', 100, 5000, 50, () => leaf.field.durationMs, (v) => {
       leaf.field.durationMs = v;
+      refresh();
+    });
+  } else if (leaf?.type === 'REFLECT_PROJECTILES') {
+    numberRow(parent, 'Radius', 10, 500, 5, () => leaf.radius ?? 150, (v) => {
+      leaf.radius = v;
+      refresh();
+    });
+    numberRow(parent, 'Arc (deg)', 0, 360, 5, () => leaf.arcDeg ?? 360, (v) => {
+      if (v >= 360) delete leaf.arcDeg;
+      else leaf.arcDeg = v;
+      refresh();
+    });
+    selectRow(
+      parent,
+      'Arc facing',
+      [{ value: '', label: '(default)' }, ...enumOptions(FIELD_ARC_FACINGS)],
+      () => leaf.arcFacing ?? '',
+      (v) => {
+        if (v) leaf.arcFacing = v as typeof leaf.arcFacing;
+        else delete leaf.arcFacing;
+        refresh();
+      },
+    );
+    numberRow(parent, 'Arc offset (deg)', -360, 360, 5, () => leaf.arcOffsetDeg ?? 0, (v) => {
+      if (v === 0) delete leaf.arcOffsetDeg;
+      else leaf.arcOffsetDeg = v;
       refresh();
     });
   } else if (leaf?.type === 'TELEPORT') {

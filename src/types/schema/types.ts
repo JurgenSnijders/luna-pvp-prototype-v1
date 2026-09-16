@@ -401,6 +401,10 @@ export interface ReflectProjectilesAction {
   type: 'REFLECT_PROJECTILES';
   target?: ActionTarget;
   radius?: number;
+  /** Arc width in degrees. Omitted or 360 = full circle (current behavior). */
+  arcDeg?: number;
+  arcFacing?: FieldArcFacing;
+  arcOffsetDeg?: number;
 }
 
 export interface ObstacleConfig {

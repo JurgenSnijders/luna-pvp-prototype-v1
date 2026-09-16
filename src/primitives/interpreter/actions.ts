@@ -23,6 +23,7 @@ import type { Interpreter } from './Interpreter';
 import { hasBallisticParams, initBallisticKinematics } from '../Trajectories';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
 import { buildTriggerMap, resolveCastAnchor, safeNormalize, secondaryColor } from './helpers';
+import { entityFacingAngle, isPointInArcWedge, resolveArcFacingRad } from '../arcWedge';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
 
 function getArchetypeTuning(ctx: TriggerContext) {
@@ -381,11 +382,17 @@ export function dispatchAction(
 
       const radius = action.radius ?? 150;
       const radiusSq = radius * radius;
+      const castHeadingRad = Math.atan2(ctx.heading.y, ctx.heading.x);
+      const facingRad = resolveArcFacingRad(action.arcFacing ?? 'CAST_HEADING', action.arcOffsetDeg ?? 0, {
+        entityFacingRad: entityFacingAngle(t),
+        castHeadingRad,
+      });
       let reflected = 0;
       for (const proj of world.projectiles) {
         if (proj.isDead) continue;
         if (proj.sourceEntityId === ctx.caster.id) continue;
         if (proj.pos.distSq(t.pos) > radiusSq) continue;
+        if (!isPointInArcWedge(t.pos, proj.pos, action.arcDeg, facingRad)) continue;
         reflectProjectile(proj, ctx.caster.id);
         reflected++;
       }

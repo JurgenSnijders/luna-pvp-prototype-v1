@@ -25,6 +25,7 @@ Source docs:
 - [x] **Vocabulary guards** — sanitizer trigger whitelist uses `TRIGGER_TYPES`; `SANITIZED_ACTION_TYPES` / `VALIDATED_ACTION_TYPES` module-load coverage; `filterValidActions` drops unknown action types.
 - [x] **RC-3: do not collapse the whole tree** — `bestEffort` validation salvages valid leaves; LINEAR spawn floor only when no trajectory/ON_CAST spawn; balance uses salvage before `fallback_linear`.
 - [x] **Editable spell graph** — Inspector Graph tab edits `AbilityGraphModel` (add/remove/reorder triggers and actions, common fields); Apply via sanitize + strict validate.
+- [x] **Directional parry** — `REFLECT_PROJECTILES` accepts optional `arcDeg` / `arcFacing` / `arcOffsetDeg` (same wedge as fields); shared `arcWedge` helper.
 
 ---
 
@@ -38,10 +39,7 @@ Tick these as they land. Suggested order is the numbering.
 
 ### Authoring / melee / VFX
 
-- [ ] **5. Directional parry**  
-  From [05 Q11](05-open-questions.md). `REFLECT_PROJECTILES` is still `{ target?, radius? }`. Give it the same `arcDeg` / facing as fields.
-
-- [ ] **6. Layered trails**  
+- [ ] **6. Layered trails**
   From [04 §3](04-upgrade-design.md). `impactLayers` shipped in Phase 7. Optional `trailLayers` beside `trailType`, same primitives and particle-budget cap. (Solid + dashed aiming lines are one projectile, two projections — not this.)
 
 

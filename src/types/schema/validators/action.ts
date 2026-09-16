@@ -1,4 +1,5 @@
-import { ACTION_TYPES, IMPACT_VFX_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
+import { ACTION_TYPES, FIELD_ARC_FACING_SET, IMPACT_VFX_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
+import type { FieldArcFacing } from '../types';
 import type {
   ActionPayload,
   ApplyImpulseAction,
@@ -266,6 +267,24 @@ export function validateActionPayload(
           return validationFail(issues, `${path}.radius`, 'invalid radius');
         }
         action.radius = value.radius;
+      }
+      if (value.arcDeg !== undefined) {
+        if (!isNumber(value.arcDeg)) {
+          return validationFail(issues, `${path}.arcDeg`, 'invalid arcDeg');
+        }
+        action.arcDeg = clamp(value.arcDeg, 0, 360);
+      }
+      if (value.arcFacing !== undefined) {
+        if (!isString(value.arcFacing) || !FIELD_ARC_FACING_SET.has(value.arcFacing)) {
+          return validationFail(issues, `${path}.arcFacing`, 'invalid arcFacing');
+        }
+        action.arcFacing = value.arcFacing as FieldArcFacing;
+      }
+      if (value.arcOffsetDeg !== undefined) {
+        if (!isNumber(value.arcOffsetDeg)) {
+          return validationFail(issues, `${path}.arcOffsetDeg`, 'invalid arcOffsetDeg');
+        }
+        action.arcOffsetDeg = clamp(value.arcOffsetDeg, -360, 360);
       }
       return action;
     }

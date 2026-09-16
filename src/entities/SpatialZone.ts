@@ -1,18 +1,8 @@
 import type { FieldConfig, FieldAffectsFilter, SpellArchetype } from '../types/schema';
 import { HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { Vector2D } from '../math/Vector2D';
+import { entityFacingAngle, resolveArcFacingRad } from '../primitives/arcWedge';
 import { Entity, generateEntityId } from './Entity';
-
-function entityFacingAngle(entity: Entity): number {
-  const withFacing = entity as Entity & { facingAngle?: number };
-  if (typeof withFacing.facingAngle === 'number' && Number.isFinite(withFacing.facingAngle)) {
-    return withFacing.facingAngle;
-  }
-  if (entity.vel.magSq() > 0.01) {
-    return Math.atan2(entity.vel.y, entity.vel.x);
-  }
-  return 0;
-}
 
 export class SpatialZone extends Entity {
   config: FieldConfig;
@@ -59,19 +49,13 @@ export class SpatialZone extends Entity {
 
   /** World-space facing angle (radians) for the arc bisector. */
   getArcFacingRad(): number {
-    const offset = ((this.config.arcOffsetDeg ?? 0) * Math.PI) / 180;
-    switch (this.config.arcFacing ?? 'CAST_HEADING') {
-      case 'CASTER_FACING': {
-        const parent = this.parentRef;
-        const facing = parent ? entityFacingAngle(parent) : Math.atan2(this.castHeading.y, this.castHeading.x);
-        return facing + offset;
-      }
-      case 'FIXED':
-        return offset;
-      case 'CAST_HEADING':
-      default:
-        return Math.atan2(this.castHeading.y, this.castHeading.x) + offset;
-    }
+    const parent = this.parentRef;
+    const castHeadingRad = Math.atan2(this.castHeading.y, this.castHeading.x);
+    const entityFacingRad = parent ? entityFacingAngle(parent) : castHeadingRad;
+    return resolveArcFacingRad(this.config.arcFacing ?? 'CAST_HEADING', this.config.arcOffsetDeg ?? 0, {
+      entityFacingRad,
+      castHeadingRad,
+    });
   }
 
   /** True when the field uses a partial arc (not a full circle). */

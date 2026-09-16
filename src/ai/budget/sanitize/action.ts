@@ -329,6 +329,21 @@ export function sanitizeAction(
       if (raw.radius !== undefined) {
         action.radius = clamp(ensureFiniteNumber(raw.radius, 150), 1, 2000);
       }
+      if (raw.arcDeg !== undefined) {
+        action.arcDeg = clamp(ensureFiniteNumber(raw.arcDeg, 360), 0, 360);
+      }
+      if (
+        typeof raw.arcFacing === 'string' &&
+        FIELD_ARC_FACING_SET.has(raw.arcFacing.toUpperCase())
+      ) {
+        action.arcFacing = raw.arcFacing.toUpperCase() as
+          | 'CASTER_FACING'
+          | 'CAST_HEADING'
+          | 'FIXED';
+      }
+      if (raw.arcOffsetDeg !== undefined) {
+        action.arcOffsetDeg = clamp(ensureFiniteNumber(raw.arcOffsetDeg, 0), -360, 360);
+      }
       return action;
     }
 

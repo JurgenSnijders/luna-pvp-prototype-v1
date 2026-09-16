@@ -31,6 +31,7 @@ import { Projectile } from '../src/entities/Projectile';
 import { SpatialZone } from '../src/entities/SpatialZone';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
+import { dispatchAction } from '../src/primitives/interpreter/actions';
 import { Interpreter } from '../src/primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../src/primitives/interpreter/lifecycle';
 import {
@@ -1255,6 +1256,50 @@ function assertAngularHitRegions(): { pass: boolean; reason: string } {
     pass: true,
     reason: `arc front=${arc.frontAccel.toFixed(0)} behind=${arc.behindAccel.toFixed(0)}; full behind=${full.behindAccel.toFixed(0)}`,
   };
+}
+
+/** Directional parry — 90° CASTER_FACING reflects front projectile only. */
+function assertDirectionalParry(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const caster = new Player(new Vector2D(0, 0));
+  caster.facingAngle = 0;
+  caster.id = 'parry_caster';
+  world.addPlayer(caster);
+
+  const enemyId = 'parry_enemy';
+  const traj = { type: 'LINEAR' as const, speed: 200 };
+  const front = new Projectile(new Vector2D(60, 0), traj, enemyId, Math.PI, new Map());
+  const behind = new Projectile(new Vector2D(-60, 0), traj, enemyId, 0, new Map());
+  world.addProjectile(front);
+  world.addProjectile(behind);
+
+  const interp = new Interpreter();
+  dispatchAction(
+    interp,
+    {
+      type: 'REFLECT_PROJECTILES',
+      target: 'CASTER',
+      radius: 150,
+      arcDeg: 90,
+      arcFacing: 'CASTER_FACING',
+    },
+    {
+      origin: caster.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster,
+      depth: 0,
+    },
+    world,
+  );
+
+  if (front.sourceEntityId !== caster.id) {
+    return { pass: false, reason: `front projectile not reflected (owner=${front.sourceEntityId})` };
+  }
+  if (behind.sourceEntityId === caster.id) {
+    return { pass: false, reason: 'rear projectile reflected unexpectedly' };
+  }
+  return { pass: true, reason: '90° CASTER_FACING parry reflected front only' };
 }
 
 function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {
@@ -3099,6 +3144,12 @@ function run(): void {
   console.log(`  ${DIM}${angularHit.reason}${RESET}`);
   if (angularHit.pass) passed++;
 
+  const directionalParry = assertDirectionalParry();
+  const directionalParryTag = directionalParry.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${directionalParryTag} Directional parry`);
+  console.log(`  ${DIM}${directionalParry.reason}${RESET}`);
+  if (directionalParry.pass) passed++;
+
   const sixTierEvolution = assertSixTierEvolution();
   const sixTierEvolutionTag = sixTierEvolution.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -3153,7 +3204,7 @@ function run(): void {
   console.log(`  ${DIM}${motionNoRandom.reason}${RESET}`);
   if (motionNoRandom.pass) passed++;
 
-  const totalCases = suite.length + 35;
+  const totalCases = suite.length + 36;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

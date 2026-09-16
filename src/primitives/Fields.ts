@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import { isPointInArcWedge } from './arcWedge';
 import { getInstabilityScale, type PhysicsWorld } from '../engine/PhysicsWorld';
 import { bandsOverlap } from '../engine/elevation';
 import { HAZARD_CLEARANCE_Z, MAX_ABS_VZ } from '../engine/verticalConstants';
@@ -105,16 +106,8 @@ export function applyField(
   const dist = entity.pos.dist(zone.pos);
   if (dist > zone.config.radius + entity.radius) return;
 
-  const arcDeg = zone.config.arcDeg;
-  if (arcDeg !== undefined && arcDeg < 360) {
-    if (arcDeg <= 0) return;
-    const radial = entity.pos.sub(zone.pos);
-    if (radial.magSq() > 1e-6) {
-      const facing = Vector2D.fromAngle(zone.getArcFacingRad());
-      const dir = radial.normalize();
-      const cosHalf = Math.cos((arcDeg * Math.PI) / 360);
-      if (facing.dot(dir) < cosHalf - 1e-6) return;
-    }
+  if (!isPointInArcWedge(zone.pos, entity.pos, zone.config.arcDeg, zone.getArcFacingRad())) {
+    return;
   }
 
   const falloff = Math.max(0, 1 - dist / zone.config.radius);
