@@ -264,7 +264,7 @@ export function sanitizeAction(
       if (typeof raw.inheritInstability === 'boolean') {
         action.inheritInstability = raw.inheritInstability;
       }
-      action.maxRecursionDepth = clamp(ensureFiniteNumber(raw.maxRecursionDepth, 1), 1, 3);
+      action.maxRecursionDepth = clamp(ensureFiniteNumber(raw.maxRecursionDepth, 1), 1, MAX_DEPTH);
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;
       return action;

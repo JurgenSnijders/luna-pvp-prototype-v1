@@ -354,4 +354,4 @@ this file stays self-contained.
 
 | Date | Question | Decision | Rationale |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-09-16 | Q4 — What happens when a spell exceeds a ceiling? | Raise caps (`MAX_DEPTH` 4, `MAX_ENTITIES` 512); keep saturation chips and runtime safety clamp; do not refuse evolution upgrades. | Headless profiling showed headroom under 512; chips stay honest while the world-level clamp remains a safety net when two legal spells fill the arena. |

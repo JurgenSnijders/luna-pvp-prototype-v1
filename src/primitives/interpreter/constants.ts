@@ -1,7 +1,7 @@
 import { Vector2D } from '../../math/Vector2D';
 import type { EmitterConfig, SpellArchetype, VisualDescriptor } from '../../types/schema';
 
-export const MAX_DEPTH = 3;
+export const MAX_DEPTH = 4;
 
 export interface ArchetypeTuning {
   impactInstabilityScale: number;

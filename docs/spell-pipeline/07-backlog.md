@@ -27,6 +27,7 @@ Source docs:
 - [x] **Editable spell graph** — Inspector Graph tab edits `AbilityGraphModel` (add/remove/reorder triggers and actions, common fields); Apply via sanitize + strict validate.
 - [x] **Directional parry** — `REFLECT_PROJECTILES` accepts optional `arcDeg` / `arcFacing` / `arcOffsetDeg` (same wedge as fields); shared `arcWedge` helper.
 - [x] **Layered trails** — optional `trailLayers` on `VisualDescriptor` overrides `trailType` on projectile motion ticks; reuses `VfxLayer` primitives and budget cap.
+- [x] **Ceiling policy** — `MAX_DEPTH` unified at 4, `MAX_ENTITIES` raised to 512; saturation chips and runtime safety clamp kept; evolution upgrades not refused.
 
 ---
 
@@ -41,9 +42,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Authoring / melee / VFX
 
 ### Product / later
-
-- [ ] **7. Ceiling policy**  
-  Saturation chips exist. Ceilings unchanged: `MAX_DEPTH = 3` (duplicated in interpreter + budget constants), `MAX_ENTITIES = 256`. Silent clamp still happens. Choose: refuse upgrades that cannot fit, or raise caps after profiling.
 
 - [ ] **8. Timing phases on summons**  
   From [05 Q9](05-open-questions.md). Windup / active / recovery live on `Player`; bots go through `requestCast`. Actors / summons do not.

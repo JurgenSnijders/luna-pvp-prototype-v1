@@ -33,7 +33,7 @@ import { bandsOverlap } from './elevation';
 
 const obstacleEntityScratch: Entity[] = [];
 
-export const MAX_ENTITIES = 256;
+export const MAX_ENTITIES = 512;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
 export const LAVA_DAMAGE_PER_SEC = 24;
 

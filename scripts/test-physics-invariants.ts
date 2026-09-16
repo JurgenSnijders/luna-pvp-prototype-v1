@@ -1,7 +1,7 @@
 import { balanceAbilitySchema, clampSchemaValues, sanitizeAbilitySchema } from '../src/ai/BudgetEngine';
 import { getStatCatalogEntry } from '../src/ai/budget/modifiers';
 import { analyzeSaturation } from '../src/ai/budget/saturation';
-import { MAX_EVOLVED_RECOIL } from '../src/ai/budget/constants';
+import { MAX_DEPTH, MAX_EVOLVED_RECOIL } from '../src/ai/budget/constants';
 import { resolveEvolutionTree } from '../src/game/EvolutionStore';
 import type { EvolutionNode, EvolutionTree } from '../src/types/evolution';
 import { scoreAbilitySchema } from '../src/ai/budget/score';
@@ -2922,6 +2922,151 @@ function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
   };
 }
 
+function stepHeadlessWorld(
+  world: PhysicsWorld,
+  interpreter: Interpreter,
+  dt: number,
+): void {
+  interpreter.updateTrajectories(world, dt);
+  world.updateSpatialZones(dt);
+  applySpatialFields(world, dt);
+  world.step(dt);
+  interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+}
+
+function measurePeakEntityCount(
+  world: PhysicsWorld,
+  interpreter: Interpreter,
+  ticks: number,
+  dt: number,
+): number {
+  let peak = world.getEntityCount();
+  for (let i = 0; i < ticks; i++) {
+    stepHeadlessWorld(world, interpreter, dt);
+    peak = Math.max(peak, world.getEntityCount());
+  }
+  return peak;
+}
+
+function buildTwelveByTwelveNest(): AbilitySchema {
+  return {
+    id: 'test_twelve_by_twelve_nest',
+    name: 'Twelve By Twelve Nest',
+    archetype: 'CHAOS',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: { type: 'LINEAR', speed: 300, maxRange: 800 },
+            emitter: { count: 12, spreadDeg: 360, distribution: 'RADIAL' },
+            triggers: [
+              {
+                trigger: 'ON_HIT',
+                actions: [
+                  {
+                    type: 'SPAWN_PROJECTILE',
+                    projectileTrajectory: { type: 'LINEAR', speed: 300, maxRange: 400 },
+                    emitter: { count: 12, spreadDeg: 360, distribution: 'RADIAL' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function assertCeilingHeadroom(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const ticks = 60;
+  const entityStorm = structuredClone(PRESETS['Entity Storm']);
+  const clusterMortar = structuredClone(PRESETS['Cluster Mortar']);
+
+  const dualWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  dualWorld.setViewportBounds(2000, 2000);
+  const casterRadius = dualWorld.getCombatantRadius();
+  const casterA = new Player(new Vector2D(-120, 0));
+  const casterB = new Player(new Vector2D(120, 0));
+  const target = new Dummy(new Vector2D(casterRadius + 1 + 200, 0));
+  casterA.tags.add('kinematic');
+  casterB.tags.add('kinematic');
+  dualWorld.addPlayer(casterA);
+  dualWorld.addPlayer(casterB);
+  dualWorld.addDummy(target);
+
+  const dualInterpreter = new Interpreter();
+  dualInterpreter.executeAbility(
+    entityStorm,
+    {
+      origin: casterA.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster: casterA,
+      depth: 0,
+    },
+    dualWorld,
+  );
+  dualInterpreter.executeAbility(
+    clusterMortar,
+    {
+      origin: casterB.pos.clone(),
+      heading: new Vector2D(1, 0),
+      aimPoint: new Vector2D(500, 0),
+      caster: casterB,
+      depth: 0,
+      ability: clusterMortar,
+    },
+    dualWorld,
+  );
+  const dualPeak = measurePeakEntityCount(dualWorld, dualInterpreter, ticks, dt);
+  if (dualPeak >= MAX_ENTITIES) {
+    return {
+      pass: false,
+      reason: `Entity Storm + Cluster Mortar peak ${dualPeak} >= MAX_ENTITIES (${MAX_ENTITIES})`,
+    };
+  }
+
+  const nestWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  nestWorld.setViewportBounds(2000, 2000);
+  const nestCaster = new Player(new Vector2D(casterRadius + 1, 0));
+  nestCaster.tags.add('kinematic');
+  const nestTarget = new Dummy(new Vector2D(casterRadius + 1 + 180, 0));
+  nestWorld.addPlayer(nestCaster);
+  nestWorld.addDummy(nestTarget);
+
+  const nestInterpreter = new Interpreter();
+  const nestAbility = buildTwelveByTwelveNest();
+  nestInterpreter.executeAbility(
+    nestAbility,
+    {
+      origin: nestCaster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster: nestCaster,
+      depth: 0,
+    },
+    nestWorld,
+  );
+  const nestPeak = measurePeakEntityCount(nestWorld, nestInterpreter, ticks, dt);
+  if (nestPeak >= MAX_ENTITIES) {
+    return {
+      pass: false,
+      reason: `12x12 nested SPAWN_PROJECTILE peak ${nestPeak} >= MAX_ENTITIES (${MAX_ENTITIES})`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason:
+      `dualPeak=${dualPeak} nestPeak=${nestPeak} cap=${MAX_ENTITIES} MAX_DEPTH=${MAX_DEPTH}`,
+  };
+}
+
 function assertSixTierEvolution(): { pass: boolean; reason: string } {
   const base = structuredClone(VERTICAL_RECIPES.clusterMortar) as AbilitySchema;
   base.id = 'test_cluster_mortar_evolution';
@@ -3338,7 +3483,13 @@ function run(): void {
   console.log(`  ${DIM}${motionNoRandom.reason}${RESET}`);
   if (motionNoRandom.pass) passed++;
 
-  const totalCases = suite.length + 37;
+  const ceilingHeadroom = assertCeilingHeadroom();
+  const ceilingHeadroomTag = ceilingHeadroom.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${ceilingHeadroomTag} Ceiling headroom`);
+  console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
+  if (ceilingHeadroom.pass) passed++;
+
+  const totalCases = suite.length + 38;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

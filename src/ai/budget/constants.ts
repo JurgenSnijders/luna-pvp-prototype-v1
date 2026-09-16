@@ -1,5 +1,6 @@
 import type { SkillCategory } from '../../types/cards';
 import type { TrajectoryType } from '../../types/schema';
+import { MAX_DEPTH } from '../../primitives/interpreter/constants';
 
 export const CATEGORY_BUDGETS: Record<
   SkillCategory,
@@ -22,7 +23,7 @@ export const TRAJECTORY_WEIGHTS: Record<TrajectoryType, number> = {
   DRAWN_PATH: 2.2,
 };
 
-export const MAX_DEPTH = 3;
+export { MAX_DEPTH };
 export const MODIFY_STAT_COST = 5.0;
 
 export const MAX_EVOLUTION_TIER = 6;
