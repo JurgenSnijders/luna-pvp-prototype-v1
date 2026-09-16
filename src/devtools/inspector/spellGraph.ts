@@ -1,3 +1,4 @@
+import { sanitizeAction } from '../../ai/BudgetEngine';
 import type {
   AbilitySchema,
   ActionPayload,
@@ -8,6 +9,7 @@ import type {
   SpawnProjectileAction,
   TrajectoryConfig,
   TriggerNode,
+  TriggerType,
 } from '../../types/schema';
 
 export interface TriggerGraphModel {
@@ -164,6 +166,147 @@ export function abilityGraphFromSchema(schema: AbilitySchema): AbilityGraphModel
   return parseAbility(schema);
 }
 
+export function createEmptyAbilityGraph(
+  schema?: Partial<Pick<AbilityGraphModel, 'id' | 'name' | 'cooldownMs' | 'recoilKick'>>,
+): AbilityGraphModel {
+  return {
+    id: schema?.id ?? 'edited_ability',
+    name: schema?.name ?? 'Edited Ability',
+    cooldownMs: schema?.cooldownMs ?? 800,
+    recoilKick: schema?.recoilKick ?? 50,
+    triggers: [],
+  };
+}
+
+export function createDefaultTrigger(trigger: TriggerType = 'ON_HIT'): TriggerGraphModel {
+  return { trigger, actions: [] };
+}
+
+export function createDefaultActionGraph(type: ActionPayload['type']): ActionGraphModel {
+  const sanitized = sanitizeAction({ type });
+  if (!sanitized) {
+    return { kind: 'action', action: { type: 'APPLY_IMPULSE', baseForce: 400 } };
+  }
+  return parseAction(sanitized);
+}
+
+export function replaceActionGraphType(
+  model: ActionGraphModel,
+  newType: ActionPayload['type'],
+): ActionGraphModel {
+  const fresh = createDefaultActionGraph(newType);
+  if (model.kind === 'projectile' && fresh.kind === 'projectile') {
+    fresh.triggers = model.triggers;
+  } else if (model.kind === 'actor' && fresh.kind === 'actor') {
+    fresh.triggers = model.triggers;
+  }
+  return fresh;
+}
+
+/** Path segment for locating trigger/action containers in the graph tree. */
+export type GraphPathSegment =
+  | { seg: 'root' }
+  | { seg: 'trigger'; index: number }
+  | { seg: 'action'; index: number }
+  | { seg: 'host' }
+  | { seg: 'children' };
+
+export type GraphNodeTarget =
+  | { kind: 'ability' }
+  | { kind: 'trigger'; path: GraphPathSegment[]; index: number }
+  | { kind: 'action'; path: GraphPathSegment[]; triggerIndex: number; index: number };
+
+export function resolveTriggerList(
+  model: AbilityGraphModel,
+  path: GraphPathSegment[],
+): TriggerGraphModel[] | null {
+  if (path.length === 0 || (path.length === 1 && path[0].seg === 'root')) {
+    return model.triggers;
+  }
+
+  let triggers = model.triggers;
+  let i = path[0].seg === 'root' ? 1 : 0;
+
+  while (i < path.length) {
+    const seg = path[i];
+    if (seg.seg !== 'trigger') return null;
+    const node = triggers[seg.index];
+    if (!node) return null;
+    i++;
+
+    if (i >= path.length) return triggers;
+
+    const next = path[i];
+    if (next.seg === 'action') {
+      const action = node.actions[next.index];
+      if (!action) return null;
+      i++;
+      if (i < path.length && path[i].seg === 'host') {
+        if (action.kind !== 'projectile' && action.kind !== 'actor') return null;
+        triggers = action.triggers;
+        i++;
+        continue;
+      }
+      return null;
+    }
+
+    if (next.seg === 'children') {
+      if (!node.children) node.children = [];
+      triggers = node.children;
+      i++;
+      continue;
+    }
+
+    return null;
+  }
+
+  return triggers;
+}
+
+export function resolveTriggerNode(
+  model: AbilityGraphModel,
+  path: GraphPathSegment[],
+  index: number,
+): TriggerGraphModel | null {
+  const list = resolveTriggerList(model, path);
+  return list?.[index] ?? null;
+}
+
+export function resolveActionNode(
+  model: AbilityGraphModel,
+  path: GraphPathSegment[],
+  triggerIndex: number,
+  actionIndex: number,
+): ActionGraphModel | null {
+  const trigger = resolveTriggerNode(model, path, triggerIndex);
+  return trigger?.actions[actionIndex] ?? null;
+}
+
+export function graphPathKey(path: GraphPathSegment[]): string {
+  return path
+    .map((seg) => {
+      switch (seg.seg) {
+        case 'root':
+          return 'r';
+        case 'host':
+          return 'h';
+        case 'children':
+          return 'c';
+        case 'trigger':
+          return `t${seg.index}`;
+        case 'action':
+          return `a${seg.index}`;
+        default:
+          return '';
+      }
+    })
+    .join('/');
+}
+
+export function formatActionGraph(model: ActionGraphModel): { label: string; detail?: string } {
+  return formatAction(model);
+}
+
 function rebuildTriggers(models: TriggerGraphModel[]): TriggerNode[] {
   return models.map(rebuildTrigger);
 }
@@ -305,7 +448,7 @@ function formatTriggerMeta(node: TriggerGraphModel): string | undefined {
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
-function formatAction(model: ActionGraphModel): { label: string; detail?: string } {
+export function formatAction(model: ActionGraphModel): { label: string; detail?: string } {
   if (model.kind === 'projectile') {
     const traj = model.action.projectileTrajectory;
     const emitter = model.action.emitter;

@@ -10,6 +10,8 @@ import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
 import {
   abilityGraphFromSchema,
   buildSpellGraphDisplay,
+  createDefaultActionGraph,
+  createDefaultTrigger,
   schemaFromAbilityGraph,
 } from '../src/devtools/inspector/spellGraph';
 
@@ -653,6 +655,125 @@ function canonicalJson(value: unknown): string {
     .join(',')}}`;
 }
 
+function runSalvageAssertions(): string[] {
+  const failures: string[] = [];
+
+  const partialSalvage = sanitizeAbilitySchema({
+    id: 'test_rc3_salvage',
+    name: 'RC3 Salvage',
+    cooldownMs: 800,
+    recoilKick: 50,
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [{ type: 'APPLY_IMPULSE', baseForce: 600, target: 'TARGET' }],
+      },
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+            triggers: [
+              {
+                trigger: 'ON_HIT',
+                actions: [{ type: 'APPLY_IMPULSE' }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  if (!hasOnHitImpulse(partialSalvage)) {
+    failures.push('RC3 salvage: expected root ON_HIT APPLY_IMPULSE to survive invalid nested branch');
+  }
+  if (partialSalvage.triggers.length === 0) {
+    failures.push('RC3 salvage: triggers must not collapse to empty array');
+  }
+
+  const invalidOnly = sanitizeAbilitySchema({
+    id: 'test_rc3_invalid_only',
+    name: 'Invalid Only',
+    cooldownMs: 800,
+    recoilKick: 50,
+    triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE' }] }],
+  });
+  if (!invalidOnly.trajectory || invalidOnly.trajectory.type !== 'LINEAR') {
+    failures.push('RC3 salvage: invalid-only schema should receive LINEAR spawn floor');
+  }
+
+  const empty = sanitizeAbilitySchema({});
+  if (empty.id !== 'sanitized_ability') {
+    failures.push('RC3 salvage: empty input should keep default id');
+  }
+  if (!empty.trajectory || empty.trajectory.type !== 'LINEAR') {
+    failures.push('RC3 salvage: empty input should receive LINEAR spawn floor');
+  }
+  if (!empty.visuals) {
+    failures.push('RC3 salvage: empty input should receive default visuals');
+  }
+
+  return failures;
+}
+
+function runGraphMutationAssertions(): string[] {
+  const failures: string[] = [];
+
+  const impulseGraph = abilityGraphFromSchema(structuredClone(PRESETS['Kinetic Railgun']));
+  impulseGraph.triggers.push(createDefaultTrigger('ON_HIT'));
+  const onHitTrigger = impulseGraph.triggers[impulseGraph.triggers.length - 1];
+  onHitTrigger.actions.push(createDefaultActionGraph('APPLY_IMPULSE'));
+  const impulseLeaf = onHitTrigger.actions[onHitTrigger.actions.length - 1];
+  if (impulseLeaf.kind === 'action' && impulseLeaf.action.type === 'APPLY_IMPULSE') {
+    impulseLeaf.action.baseForce = 700;
+  }
+
+  const impulseSchema = schemaFromAbilityGraph(impulseGraph);
+  const impulseSanitized = sanitizeAbilitySchema(impulseSchema, 'SECONDARY');
+  const impulseValidated = validateAbilitySchema(impulseSanitized);
+  if (!impulseValidated) {
+    failures.push('graph mutation: ON_HIT APPLY_IMPULSE failed strict validate after sanitize');
+  } else if (!hasOnHitImpulse(impulseValidated)) {
+    failures.push('graph mutation: expected ON_HIT APPLY_IMPULSE to survive apply pipeline');
+  } else if (impulseValidated.triggers.length === 0) {
+    failures.push('graph mutation: triggers must not be empty after impulse add');
+  }
+
+  const nestedGraph = abilityGraphFromSchema(structuredClone(PRESETS['Cluster Mortar']));
+  let spawnAction: ReturnType<typeof createDefaultActionGraph> | undefined;
+  for (const trigger of nestedGraph.triggers) {
+    spawnAction = trigger.actions.find((a) => a.kind === 'projectile');
+    if (spawnAction) break;
+  }
+  if (!spawnAction || spawnAction.kind !== 'projectile') {
+    failures.push('graph mutation: Cluster Mortar missing SPAWN_PROJECTILE host');
+  } else {
+    spawnAction.triggers.push(createDefaultTrigger('ON_BOUNCE'));
+    const nestedSchema = schemaFromAbilityGraph(nestedGraph);
+    const nestedRoundTrip = schemaFromAbilityGraph(abilityGraphFromSchema(nestedSchema));
+    const hasNestedBounce = JSON.stringify(nestedRoundTrip).includes('ON_BOUNCE');
+    if (!hasNestedBounce) {
+      failures.push('graph mutation: nested ON_BOUNCE under projectile host lost on round-trip');
+    }
+  }
+
+  const typeChangeGraph = abilityGraphFromSchema(structuredClone(PRESETS['Kinetic Railgun']));
+  if (typeChangeGraph.triggers.length > 0) {
+    const siblingCount = typeChangeGraph.triggers[0].actions.length;
+    typeChangeGraph.triggers[0].trigger = 'ON_EXPIRY';
+    const rebuilt = schemaFromAbilityGraph(typeChangeGraph);
+    const expiry = rebuilt.triggers.find((t) => t.trigger === 'ON_EXPIRY');
+    if (!expiry) {
+      failures.push('graph mutation: trigger type change to ON_EXPIRY missing after rebuild');
+    } else if (expiry.actions.length !== siblingCount) {
+      failures.push('graph mutation: trigger type change should preserve sibling actions');
+    }
+  }
+
+  return failures;
+}
+
 function runSpellGraphRoundTripAssertions(): string[] {
   const failures: string[] = [];
 
@@ -688,6 +809,8 @@ function run(): void {
     ...runHitExpiryDedupeAssertions(),
     ...runPresetContractAssertions(),
     ...runSpellGraphRoundTripAssertions(),
+    ...runGraphMutationAssertions(),
+    ...runSalvageAssertions(),
   ];
 
   for (const [name, preset] of Object.entries(PRESETS)) {

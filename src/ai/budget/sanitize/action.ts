@@ -3,7 +3,7 @@ import type { ActionPayload, ImpactVfx, SpellArchetype, TriggerNode } from '../.
 import { SPELL_ARCHETYPE_SET } from '../../../types/schema';
 import { MAX_ABS_VZ, HAZARD_CLEARANCE_Z } from '../../../engine/verticalConstants';
 import { FIELD_TYPES, IMPACT_VFX_TYPES, MAX_DEPTH } from '../constants';
-import { FIELD_ARC_FACING_SET } from '../../../types/schema/constants';
+import { ACTION_TYPES, FIELD_ARC_FACING_SET } from '../../../types/schema/constants';
 import {
   clamp,
   ensureFiniteNumber,
@@ -25,6 +25,36 @@ import { sanitizeTriggerNode } from './trigger';
 import { sanitizeTrajectory } from './trajectory';
 import { sanitizeImpactLayers } from './vfxLayers';
 import { sanitizeVisuals } from './visuals';
+
+/** Explicit switch cases in sanitizeAction — must cover every ACTION_TYPES member. */
+export const SANITIZED_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'ADD_INSTABILITY',
+  'APPLY_IMPULSE',
+  'SPAWN_FIELD',
+  'SPAWN_PROJECTILE',
+  'SPAWN_CONSTRAINT',
+  'CAST_CHILD_PAYLOAD',
+  'MODIFY_STAT',
+  'TELEPORT',
+  'APPLY_STASIS',
+  'RELEASE_STASIS',
+  'REFLECT_PROJECTILES',
+  'SPAWN_OBSTACLE',
+  'MUTATE_TERRAIN',
+  'MORPH_ENTITY',
+  'SPAWN_ACTOR',
+  'APPLY_STEALTH',
+  'APPLY_STATUS',
+  'LAUNCH_VERTICAL',
+  'SET_GRAVITY_SCALE',
+  'PLAY_VFX',
+]);
+
+for (const actionType of ACTION_TYPES) {
+  if (!SANITIZED_ACTION_TYPES.has(actionType)) {
+    throw new Error(`sanitizeAction missing case for ACTION_TYPES member: ${actionType}`);
+  }
+}
 
 export function sanitizeAction(
   raw: unknown,

@@ -48,11 +48,42 @@ import { validateTriggerNode } from './trigger';
 import { validateTrajectoryConfig } from './trajectory';
 import { validateImpactLayers, validateVisualDescriptor } from './visuals';
 
+/** Explicit switch cases in validateActionPayload — must cover every ACTION_TYPES member. */
+export const VALIDATED_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'ADD_INSTABILITY',
+  'APPLY_IMPULSE',
+  'SPAWN_FIELD',
+  'SPAWN_PROJECTILE',
+  'SPAWN_CONSTRAINT',
+  'CAST_CHILD_PAYLOAD',
+  'MODIFY_STAT',
+  'TELEPORT',
+  'APPLY_STASIS',
+  'RELEASE_STASIS',
+  'REFLECT_PROJECTILES',
+  'SPAWN_OBSTACLE',
+  'MUTATE_TERRAIN',
+  'MORPH_ENTITY',
+  'SPAWN_ACTOR',
+  'APPLY_STEALTH',
+  'APPLY_STATUS',
+  'LAUNCH_VERTICAL',
+  'SET_GRAVITY_SCALE',
+  'PLAY_VFX',
+]);
+
+for (const actionType of ACTION_TYPES) {
+  if (!VALIDATED_ACTION_TYPES.has(actionType)) {
+    throw new Error(`validateActionPayload missing case for ACTION_TYPES member: ${actionType}`);
+  }
+}
+
 export function validateActionPayload(
   value: unknown,
   depth = 0,
   issues?: ValidationIssue[],
   path = 'action',
+  bestEffort = false,
 ): ActionPayload | null {
   if (!isObject(value) || !isString(value.type)) {
     return validationFail(issues, path, 'expected action object with type');
@@ -117,8 +148,11 @@ export function validateActionPayload(
         const triggers: TriggerNode[] = [];
         for (let i = 0; i < value.triggers.length; i++) {
           const triggerPath = `${path}.triggers[${i}]`;
-          const node = validateTriggerNode(value.triggers[i], depth, issues, triggerPath);
-          if (!node) return null;
+          const node = validateTriggerNode(value.triggers[i], depth, issues, triggerPath, bestEffort);
+          if (!node) {
+            if (bestEffort) continue;
+            return null;
+          }
           triggers.push(node);
         }
         action.triggers = triggers;
@@ -182,7 +216,7 @@ export function validateActionPayload(
       if (depth >= MAX_VALIDATION_DEPTH) {
         return validationFail(issues, path, 'max validation depth exceeded');
       }
-      const payload = validateAbilitySchema(value.payload, depth + 1, issues);
+      const payload = validateAbilitySchema(value.payload, depth + 1, issues, bestEffort);
       if (!payload) return null;
       const action: CastChildPayloadAction = { type: 'CAST_CHILD_PAYLOAD', payload };
       if (typeof value.inheritVelocity === 'boolean') {
@@ -264,7 +298,7 @@ export function validateActionPayload(
     }
 
     case 'SPAWN_ACTOR': {
-      const actor = validateActorConfig(value.actor, depth, issues, `${path}.actor`);
+      const actor = validateActorConfig(value.actor, depth, issues, `${path}.actor`, bestEffort);
       if (!actor) return null;
       const action: SpawnActorAction = { type: 'SPAWN_ACTOR', actor };
       const target = parseActionTarget(value.target);

@@ -389,7 +389,7 @@ function filterValidActions(actions: unknown[]): unknown[] {
     .filter((action) => {
       if (action === null || typeof action !== 'object') return false;
       const type = (action as Record<string, unknown>).type;
-      return typeof type === 'string' && type.length > 0;
+      return typeof type === 'string' && ACTION_TYPES.has(type);
     });
 }
 

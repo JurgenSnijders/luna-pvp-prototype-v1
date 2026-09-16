@@ -108,7 +108,10 @@ export function balanceAbilitySchema(
   }
 
   const validated = validateAbilitySchema(clamped);
-  return validated ?? minimalFallbackSchema();
+  if (validated) return validated;
+
+  const salvaged = validateAbilitySchema(clamped, 0, undefined, true);
+  return salvaged ?? minimalFallbackSchema();
 }
 
 export function balancePassiveModifiers(

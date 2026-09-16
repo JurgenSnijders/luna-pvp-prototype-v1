@@ -22,6 +22,9 @@ Source docs:
 - [x] **Aiming overlay + live** `ON_AIR_APEX` (`e2b619f`, 2026-09-16) — homing-only far beacon that cannot fake `ON_HIT`; overlay origin is `caster.pos`; death/ground samples; `world.step` no longer drops apex events. Inventory playback dummy stays hittable.
 - [x] **Cluster prompt is a single recipe** — `ON_AIR_APEX` + `SPAWN_PROJECTILE` only. The old `Cluster/MIRV` / `ON_EXPIRY` + `CAST_CHILD_PAYLOAD` line is gone; `test:fidelity` asserts it stays gone.
 - [x] **Motion modifiers** — optional `motion` on `TrajectoryConfig` (wobble, jitter, drift, spiral, `speedCurve`); seeded `motionSeed` post-pass in `updateTrajectory`; schema/sanitize/score/prompt coverage; determinism invariants.
+- [x] **Vocabulary guards** — sanitizer trigger whitelist uses `TRIGGER_TYPES`; `SANITIZED_ACTION_TYPES` / `VALIDATED_ACTION_TYPES` module-load coverage; `filterValidActions` drops unknown action types.
+- [x] **RC-3: do not collapse the whole tree** — `bestEffort` validation salvages valid leaves; LINEAR spawn floor only when no trajectory/ON_CAST spawn; balance uses salvage before `fallback_linear`.
+- [x] **Editable spell graph** — Inspector Graph tab edits `AbilityGraphModel` (add/remove/reorder triggers and actions, common fields); Apply via sanitize + strict validate.
 
 ---
 
@@ -33,18 +36,7 @@ Tick these as they land. Suggested order is the numbering.
 
 ### Next
 
-- [ ] **2. Vocabulary guards**  
-  From [04 §6](04-upgrade-design.md). Action-branch and trajectory/field/visual enum sync guards already exist in `abilityResponseSchema.ts`. Still missing: sanitizer trigger whitelist still a **local set** (not `TRIGGER_TYPES`); unknown actions `default: return null`. Cheap guards first; deriving schema + prompts from one constants file is later.
-
-- [ ] **3. RC-3: do not collapse the whole tree**  
-  From `[02-pipeline-audit.md](02-pipeline-audit.md)`. `sanitizeAbilitySchema` still replaces a failed validation with a dummy `LINEAR` shot and empty `triggers`. Never given a numbered phase.
-
-
-
 ### Authoring / melee / VFX
-
-- [ ] **4. Editable spell graph**  
-  From [04 §5](04-upgrade-design.md). Inspector Graph tab is read-only. Round-trip helpers (`abilityGraphFromSchema` / `schemaFromAbilityGraph`) already exist.
 
 - [ ] **5. Directional parry**  
   From [05 Q11](05-open-questions.md). `REFLECT_PROJECTILES` is still `{ target?, radius? }`. Give it the same `arcDeg` / facing as fields.

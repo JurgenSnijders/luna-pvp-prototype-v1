@@ -17,6 +17,34 @@ import { hasOnCastEffect, promoteRootEmitter, sanitizeTriggerNode } from './trig
 import { sanitizeTrajectory } from './trajectory';
 import { sanitizeVisuals } from './visuals';
 
+const LINEAR_SPAWN_FLOOR = { type: 'LINEAR' as const, speed: 400, maxRange: 500 };
+
+function applyPlayableFloor(schema: AbilitySchema): void {
+  if (!schema.trajectory && !hasOnCastEffect(schema.triggers)) {
+    schema.trajectory = { ...LINEAR_SPAWN_FLOOR };
+  }
+}
+
+function finalizeValidatedSchema(
+  schema: AbilitySchema,
+  description?: string,
+  isHeadlessMode = false,
+  repairMode: SemanticRepairMode = 'EVOLUTION',
+): AbilitySchema {
+  applyPlayableFloor(schema);
+
+  const repairText =
+    description ??
+    [schema.tagline, schema.description].filter(Boolean).join(' ');
+  const repaired = repairAbilitySemantics(schema, repairText, isHeadlessMode, repairMode);
+
+  const strictRepaired = validateAbilitySchema(repaired);
+  if (strictRepaired) return strictRepaired;
+
+  const salvagedRepaired = validateAbilitySchema(repaired, 0, undefined, true);
+  return salvagedRepaired ?? repaired;
+}
+
 export function sanitizeAbilitySchema(
   raw: unknown,
   _category: SkillCategory = 'SECONDARY',
@@ -99,29 +127,36 @@ export function sanitizeAbilitySchema(
   }
 
   const issues: ValidationIssue[] = [];
-  const validated = validateAbilitySchema(schema, 0, issues);
+  let validated = validateAbilitySchema(schema, 0, issues);
   if (!validated) {
     const hadActor = JSON.stringify(raw).includes('"SPAWN_ACTOR"');
-    console.warn('[Sanitizer] Validation failed. Collapsing to LINEAR fallback.', {
+    console.warn('[Sanitizer] Validation failed. Dropped invalid leaves.', {
       id,
       name,
       hadActor,
       issues,
     });
-    return {
-      id,
-      name,
-      cooldownMs,
-      recoilKick,
-      trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
-      triggers: [],
-      visuals: sanitizeVisuals(undefined),
-    };
+    validated = validateAbilitySchema(schema, 0, issues, true);
+    if (!validated) {
+      validated = {
+        id,
+        name,
+        cooldownMs,
+        recoilKick,
+        triggers: schema.triggers,
+        visuals: schema.visuals,
+        ...(schema.trajectory ? { trajectory: schema.trajectory } : {}),
+        ...(schema.metadata ? { metadata: schema.metadata } : {}),
+        ...(schema.inputProfile ? { inputProfile: schema.inputProfile } : {}),
+        ...(schema.resourceCost ? { resourceCost: schema.resourceCost } : {}),
+        ...(schema.archetype ? { archetype: schema.archetype } : {}),
+        ...(schema.tagline ? { tagline: schema.tagline } : {}),
+        ...(schema.description ? { description: schema.description } : {}),
+        ...(schema.targetingMode ? { targetingMode: schema.targetingMode } : {}),
+        ...(schema.maxTargetRange !== undefined ? { maxTargetRange: schema.maxTargetRange } : {}),
+      };
+    }
   }
 
-  const repairText =
-    description ??
-    [validated.tagline, validated.description].filter(Boolean).join(' ');
-  const repaired = repairAbilitySemantics(validated, repairText, isHeadlessMode, repairMode);
-  return validateAbilitySchema(repaired) ?? repaired;
+  return finalizeValidatedSchema(validated, description, isHeadlessMode, repairMode);
 }

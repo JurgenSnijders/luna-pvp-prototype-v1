@@ -98,6 +98,7 @@ export function validateActorConfig(
   depth = 0,
   issues?: ValidationIssue[],
   path = 'actor',
+  bestEffort = false,
 ): ActorConfig | null {
   if (!isObject(value)) return validationFail(issues, path, 'expected object');
   const actorArchetypeCandidate = value.actorArchetype ?? value.archetype;
@@ -161,8 +162,11 @@ export function validateActorConfig(
     const triggers: TriggerNode[] = [];
     for (let i = 0; i < value.triggers.length; i++) {
       const triggerPath = `${path}.triggers[${i}]`;
-      const node = validateTriggerNode(value.triggers[i], depth, issues, triggerPath);
-      if (!node) return null;
+      const node = validateTriggerNode(value.triggers[i], depth, issues, triggerPath, bestEffort);
+      if (!node) {
+        if (bestEffort) continue;
+        return null;
+      }
       triggers.push(node);
     }
     if (triggers.length > 0) config.triggers = triggers;

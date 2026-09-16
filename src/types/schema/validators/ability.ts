@@ -26,6 +26,7 @@ export function validateAbilitySchema(
   json: unknown,
   depth = 0,
   issues?: ValidationIssue[],
+  bestEffort = false,
 ): AbilitySchema | null {
   const rootPath = depth === 0 ? 'root' : 'payload';
   if (!isObject(json)) return validationFail(issues, rootPath, 'expected object');
@@ -42,8 +43,11 @@ export function validateAbilitySchema(
   const triggers: TriggerNode[] = [];
   for (let i = 0; i < json.triggers.length; i++) {
     const triggerPath = `${rootPath}.triggers[${i}]`;
-    const validated = validateTriggerNode(json.triggers[i], depth, issues, triggerPath);
-    if (!validated) return null;
+    const validated = validateTriggerNode(json.triggers[i], depth, issues, triggerPath, bestEffort);
+    if (!validated) {
+      if (bestEffort) continue;
+      return null;
+    }
     triggers.push(validated);
   }
 
@@ -57,14 +61,20 @@ export function validateAbilitySchema(
 
   if (json.trajectory !== undefined) {
     const trajectory = validateTrajectoryConfig(json.trajectory);
-    if (!trajectory) return validationFail(issues, `${rootPath}.trajectory`, 'invalid trajectory');
-    schema.trajectory = trajectory;
+    if (!trajectory) {
+      if (!bestEffort) return validationFail(issues, `${rootPath}.trajectory`, 'invalid trajectory');
+    } else {
+      schema.trajectory = trajectory;
+    }
   }
 
   if (json.visuals !== undefined) {
     const visuals = validateVisualDescriptor(json.visuals);
-    if (!visuals) return validationFail(issues, `${rootPath}.visuals`, 'invalid visuals');
-    schema.visuals = visuals;
+    if (!visuals) {
+      if (!bestEffort) return validationFail(issues, `${rootPath}.visuals`, 'invalid visuals');
+    } else {
+      schema.visuals = visuals;
+    }
   }
 
   if (json.metadata !== undefined) {
@@ -74,14 +84,20 @@ export function validateAbilitySchema(
 
   if (json.inputProfile !== undefined) {
     const inputProfile = validateInputProfile(json.inputProfile);
-    if (!inputProfile) return validationFail(issues, `${rootPath}.inputProfile`, 'invalid inputProfile');
-    schema.inputProfile = inputProfile;
+    if (!inputProfile) {
+      if (!bestEffort) return validationFail(issues, `${rootPath}.inputProfile`, 'invalid inputProfile');
+    } else {
+      schema.inputProfile = inputProfile;
+    }
   }
 
   if (json.resourceCost !== undefined) {
     const resourceCost = validateResourceCost(json.resourceCost);
-    if (!resourceCost) return validationFail(issues, `${rootPath}.resourceCost`, 'invalid resourceCost');
-    schema.resourceCost = resourceCost;
+    if (!resourceCost) {
+      if (!bestEffort) return validationFail(issues, `${rootPath}.resourceCost`, 'invalid resourceCost');
+    } else {
+      schema.resourceCost = resourceCost;
+    }
   }
 
   if (json.archetype !== undefined) {

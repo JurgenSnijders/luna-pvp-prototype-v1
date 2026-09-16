@@ -9,6 +9,7 @@ export function validateTriggerNode(
   depth = 0,
   issues?: ValidationIssue[],
   path = 'trigger',
+  bestEffort = false,
 ): TriggerNode | null {
   if (!isObject(value)) return validationFail(issues, path, 'expected object');
   if (!isString(value.trigger) || !TRIGGER_TYPES.has(value.trigger)) {
@@ -21,8 +22,11 @@ export function validateTriggerNode(
   const actions: ActionPayload[] = [];
   for (let i = 0; i < value.actions.length; i++) {
     const actionPath = `${path}.actions[${i}]`;
-    const validated = validateActionPayload(value.actions[i], depth, issues, actionPath);
-    if (!validated) return null;
+    const validated = validateActionPayload(value.actions[i], depth, issues, actionPath, bestEffort);
+    if (!validated) {
+      if (bestEffort) continue;
+      return null;
+    }
     actions.push(validated);
   }
 
@@ -92,8 +96,11 @@ export function validateTriggerNode(
     const ifFalseActions: ActionPayload[] = [];
     for (let i = 0; i < value.ifFalseActions.length; i++) {
       const actionPath = `${path}.ifFalseActions[${i}]`;
-      const validated = validateActionPayload(value.ifFalseActions[i], depth, issues, actionPath);
-      if (!validated) return null;
+      const validated = validateActionPayload(value.ifFalseActions[i], depth, issues, actionPath, bestEffort);
+      if (!validated) {
+        if (bestEffort) continue;
+        return null;
+      }
       ifFalseActions.push(validated);
     }
     if (ifFalseActions.length > 0) node.ifFalseActions = ifFalseActions;
@@ -106,8 +113,11 @@ export function validateTriggerNode(
     const children: TriggerNode[] = [];
     for (let i = 0; i < value.children.length; i++) {
       const childPath = `${path}.children[${i}]`;
-      const validated = validateTriggerNode(value.children[i], depth, issues, childPath);
-      if (!validated) return null;
+      const validated = validateTriggerNode(value.children[i], depth, issues, childPath, bestEffort);
+      if (!validated) {
+        if (bestEffort) continue;
+        return null;
+      }
       children.push(validated);
     }
     node.children = children;

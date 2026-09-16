@@ -1,10 +1,28 @@
 import type { SkillCategory } from '../../../types/cards';
 import type { AbilitySchema, ActionPayload, ConditionNode, EmitterConfig, TriggerNode } from '../../../types/schema';
+import { TRIGGER_TYPES } from '../../../types/schema/constants';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
 import { sanitizeAction } from './action';
 import { sanitizeConditionNode } from './condition';
 import { sanitizeEmitter } from './emitter';
 import { sanitizeVisuals } from './visuals';
+
+const TRIGGER_ALIASES: Record<string, string> = {
+  ON_IMPACT: 'ON_HIT',
+  ON_COLLISION: 'ON_HIT',
+  ON_CONTACT: 'ON_HIT',
+  ON_DESTROY: 'ON_EXPIRY',
+  ON_DEATH: 'ON_EXPIRY',
+  ON_SPAWN: 'ON_CAST',
+  ON_DETONATE: 'ON_RECAST',
+  ON_WALL_HIT: 'ON_HIT_WALL',
+};
+
+for (const target of Object.values(TRIGGER_ALIASES)) {
+  if (!TRIGGER_TYPES.has(target)) {
+    throw new Error(`sanitizeTriggerNode alias target not in TRIGGER_TYPES: ${target}`);
+  }
+}
 
 export function sanitizeTriggerNode(
   raw: unknown,
@@ -18,34 +36,9 @@ export function sanitizeTriggerNode(
     trigger = raw.on.toUpperCase();
   }
 
-  const triggerAliases: Record<string, string> = {
-    ON_IMPACT: 'ON_HIT',
-    ON_COLLISION: 'ON_HIT',
-    ON_CONTACT: 'ON_HIT',
-    ON_DESTROY: 'ON_EXPIRY',
-    ON_DEATH: 'ON_EXPIRY',
-    ON_SPAWN: 'ON_CAST',
-    ON_DETONATE: 'ON_RECAST',
-    ON_WALL_HIT: 'ON_HIT_WALL',
-  };
-  trigger = triggerAliases[trigger] ?? trigger;
+  trigger = TRIGGER_ALIASES[trigger] ?? trigger;
 
-  const validTriggers = new Set([
-    'ON_CAST',
-    'ON_TICK',
-    'ON_HIT',
-    'ON_EXPIRY',
-    'ON_RETURN',
-    'ON_HAZARD_CONTACT',
-    'ON_RECAST',
-    'ON_HIT_WALL',
-    'ON_DISTANCE_TRAVELED',
-    'ON_BOUNCE',
-    'ON_AIR_APEX',
-    'ON_GROUND_SLAM',
-    'ON_RAM',
-  ]);
-  if (!validTriggers.has(trigger)) return null;
+  if (!TRIGGER_TYPES.has(trigger)) return null;
 
   let actionsRaw: unknown[] = [];
   if (Array.isArray(raw.actions)) {
