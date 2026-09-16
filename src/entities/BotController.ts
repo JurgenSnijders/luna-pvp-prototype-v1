@@ -99,6 +99,8 @@ export function resolveBotGroundAimPoint(
 export class BotController {
   enabled = true;
   difficulty = 1.0;
+  /** When true, skip locomotion and mobility escapes; still aim and cast. */
+  stationary = false;
 
   private globalCastTimer = 0;
   private currentFacingAngle: number;
@@ -120,9 +122,78 @@ export class BotController {
       this.globalCastTimer = Math.max(0, this.globalCastTimer - dt);
     }
 
-    const diff = this.difficulty;
     const toTarget = target.pos.sub(this.bot.pos);
     const dist = toTarget.mag();
+
+    if (this.stationary) {
+      this.bot.inputMove = Vector2D.zero();
+    } else {
+      this.applyLocomotion(toTarget, dist, world, arena);
+    }
+
+    const projSpeed = this.bot.getAbility(0)?.trajectory?.speed ?? 400;
+    const tFlight = dist / projSpeed;
+    const intercept = target.pos.add(target.vel.scale(tFlight));
+    const aimAngle = Math.atan2(
+      intercept.y - this.bot.pos.y,
+      intercept.x - this.bot.pos.x,
+    );
+
+    this.currentFacingAngle = rotateTowards(
+      this.currentFacingAngle,
+      aimAngle,
+      TURN_RATE_RAD_PER_SEC * dt,
+    );
+    this.bot.facingAngle = this.currentFacingAngle;
+    this.bot.aimTarget = this.bot.pos.add(
+      Vector2D.fromAngle(this.currentFacingAngle, AIM_PROJECTION_DIST),
+    );
+
+    this.bot.tickCastPhases(dt, (slotIndex, overrides, isChannelTick) => {
+      this.dispatchBotCast(slotIndex, interpreter, world, intercept, overrides, isChannelTick);
+    });
+
+    const outsideHex = !isInsideHex(
+      this.bot.pos,
+      world.hexCenter,
+      arena.currentRadius,
+    );
+
+    if (this.globalCastTimer <= 0) {
+      if (
+        !this.stationary &&
+        (this.bot.instabilityPct > 80 ||
+          this.bot.tags.has('in_lava') ||
+          outsideHex) &&
+        this.bot.isSlotReady(MOBILITY_SLOT)
+      ) {
+        if (this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world, intercept)) {
+          this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
+        }
+      } else if (
+        angleDiff(this.currentFacingAngle, aimAngle) <
+        (AIM_TOLERANCE_DEG * Math.PI) / 180
+      ) {
+        const slots = [...OFFENSIVE_SLOTS].sort(() => Math.random() - 0.5);
+        for (const slotIndex of slots) {
+          if (this.bot.isSlotReady(slotIndex)) {
+            if (this.tryCastSlot(this.bot, slotIndex, interpreter, world, intercept)) {
+              this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private applyLocomotion(
+    toTarget: Vector2D,
+    dist: number,
+    world: PhysicsWorld,
+    arena: ArenaShrink,
+  ): void {
+    const diff = this.difficulty;
 
     let pursuit = Vector2D.zero();
     if (dist > PURSUE_DIST) {
@@ -174,60 +245,6 @@ export class BotController {
       );
     } else {
       this.bot.inputMove = Vector2D.zero();
-    }
-
-    const projSpeed = this.bot.getAbility(0)?.trajectory?.speed ?? 400;
-    const tFlight = dist / projSpeed;
-    const intercept = target.pos.add(target.vel.scale(tFlight));
-    const aimAngle = Math.atan2(
-      intercept.y - this.bot.pos.y,
-      intercept.x - this.bot.pos.x,
-    );
-
-    this.currentFacingAngle = rotateTowards(
-      this.currentFacingAngle,
-      aimAngle,
-      TURN_RATE_RAD_PER_SEC * dt,
-    );
-    this.bot.facingAngle = this.currentFacingAngle;
-    this.bot.aimTarget = this.bot.pos.add(
-      Vector2D.fromAngle(this.currentFacingAngle, AIM_PROJECTION_DIST),
-    );
-
-    this.bot.tickCastPhases(dt, (slotIndex, overrides, isChannelTick) => {
-      this.dispatchBotCast(slotIndex, interpreter, world, intercept, overrides, isChannelTick);
-    });
-
-    const outsideHex = !isInsideHex(
-      this.bot.pos,
-      world.hexCenter,
-      arena.currentRadius,
-    );
-
-    if (this.globalCastTimer <= 0) {
-      if (
-        (this.bot.instabilityPct > 80 ||
-          this.bot.tags.has('in_lava') ||
-          outsideHex) &&
-        this.bot.isSlotReady(MOBILITY_SLOT)
-      ) {
-        if (this.tryCastSlot(this.bot, MOBILITY_SLOT, interpreter, world, intercept)) {
-          this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
-        }
-      } else if (
-        angleDiff(this.currentFacingAngle, aimAngle) <
-        (AIM_TOLERANCE_DEG * Math.PI) / 180
-      ) {
-        const slots = [...OFFENSIVE_SLOTS].sort(() => Math.random() - 0.5);
-        for (const slotIndex of slots) {
-          if (this.bot.isSlotReady(slotIndex)) {
-            if (this.tryCastSlot(this.bot, slotIndex, interpreter, world, intercept)) {
-              this.globalCastTimer = GCD_MIN_SEC + Math.random() * GCD_RANDOM_SEC;
-              break;
-            }
-          }
-        }
-      }
     }
   }
 

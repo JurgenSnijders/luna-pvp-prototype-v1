@@ -28,6 +28,21 @@ export function assignDefaultLoadout(target: Player): void {
   });
 }
 
+export function clearLoadout(target: Player): void {
+  for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
+    target.setAbility(i, null);
+  }
+}
+
+export function assignSoloLoadout(
+  target: Player,
+  ability: AbilitySchema,
+  slotIndex = 0,
+): void {
+  clearLoadout(target);
+  target.setAbility(slotIndex, structuredClone(ability));
+}
+
 export function storeForgedSpell(app: GameApp, ability: AbilitySchema): AbilitySchema {
   const stored = SpellInventoryManager.addSpell(ability, true);
   app.spellLibrary.addSpell(stored);

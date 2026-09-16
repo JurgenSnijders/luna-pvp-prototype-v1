@@ -185,6 +185,41 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
     ],
   },
 
+  'Directional Parry': {
+    id: 'test_directional_parry',
+    name: 'Directional Parry',
+    archetype: 'KINETIC',
+    cooldownMs: 800,
+    recoilKick: 0,
+    inputProfile: {
+      mode: 'INSTANT',
+      windupMs: 120,
+      activeMs: 80,
+      recoveryMs: 300,
+    },
+    visuals: {
+      color: '#00e5ff',
+      size: 10,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'REFLECT_PROJECTILES',
+            target: 'CASTER',
+            radius: 120,
+            arcDeg: 90,
+            arcFacing: 'CASTER_FACING',
+          },
+        ],
+      },
+    ],
+  },
+
   'Triple Tap Combo': {
     id: 'test_triple_tap_combo',
     name: 'Triple Tap Combo',

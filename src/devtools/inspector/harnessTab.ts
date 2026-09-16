@@ -7,10 +7,15 @@ import {
   type AiSettings,
 } from '../../ai/Synthesizer';
 import { Dummy } from '../../entities/Dummy';
+import { assignDefaultLoadout, assignSoloLoadout, clearLoadout } from '../../game/loadout';
+import { SpellInventoryManager } from '../../game/SpellInventory';
 import { isInsideHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
+import { ACTION_SLOT_KEYS } from '../../types/cards';
+import type { AbilitySchema } from '../../types/schema';
+import { PRESETS, PRESET_GROUPS } from '../Presets';
 import type { InspectorContext } from '../InspectorUI';
-import { FONTS } from '../../ui/tokens';
+import { FONTS, RETRO_COLORS } from '../../ui/tokens';
 import { buttonStyle, inputStyle, sectionDivider, sectionHeader } from './domHelpers';
 
 export function randomHexPosition(ctx: InspectorContext): Vector2D {
@@ -24,6 +29,127 @@ export function randomHexPosition(ctx: InspectorContext): Vector2D {
     }
   }
   return world.hexCenter.clone();
+}
+
+function buildBotLoadoutSection(parent: HTMLElement, ctx: InspectorContext): void {
+  const bot = ctx.bot;
+  if (!bot) return;
+
+  const section = document.createElement('div');
+  section.style.cssText = sectionDivider();
+  section.appendChild(sectionHeader('Bot Loadout'));
+
+  const slotLabels = document.createElement('div');
+  slotLabels.style.cssText = `font-size:${FONTS.size.sm};color:${RETRO_COLORS.textMuted};margin-bottom:8px;line-height:1.5;`;
+
+  const refreshSlotLabels = (): void => {
+    slotLabels.innerHTML = '';
+    for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
+      const key = ACTION_SLOT_KEYS[i];
+      const ability = bot.getAbility(i);
+      const line = document.createElement('div');
+      line.textContent = `${key}: ${ability?.name ?? 'Empty'}`;
+      slotLabels.appendChild(line);
+    }
+  };
+
+  refreshSlotLabels();
+  section.appendChild(slotLabels);
+
+  const select = document.createElement('select');
+  select.style.cssText = inputStyle() + 'margin-bottom:8px;';
+  for (const group of PRESET_GROUPS) {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = group.label;
+    for (const name of group.presetNames) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      optgroup.appendChild(opt);
+    }
+    select.appendChild(optgroup);
+  }
+
+  const inventorySpells = SpellInventoryManager.getCustomSpells();
+  if (inventorySpells.length > 0) {
+    const inventoryGroup = document.createElement('optgroup');
+    inventoryGroup.label = 'Inventory';
+    for (const spell of inventorySpells) {
+      const opt = document.createElement('option');
+      opt.value = `inv:${spell.id}`;
+      opt.textContent = spell.name;
+      inventoryGroup.appendChild(opt);
+    }
+    select.appendChild(inventoryGroup);
+  }
+
+  section.appendChild(select);
+
+  const resolveSelectedAbility = (): AbilitySchema | null => {
+    const value = select.value;
+    if (value.startsWith('inv:')) {
+      const spellId = value.slice(4);
+      const spell = SpellInventoryManager.getSpell(spellId);
+      return spell ? structuredClone(spell) : null;
+    }
+    const preset = PRESETS[value];
+    return preset ? structuredClone(preset) : null;
+  };
+
+  const loadBtnRow = document.createElement('div');
+  loadBtnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;';
+
+  for (let i = 0; i < ACTION_SLOT_KEYS.length; i++) {
+    const key = ACTION_SLOT_KEYS[i];
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = `Load to ${key}`;
+    loadBtn.style.cssText = buttonStyle(false) + 'flex:1;min-width:70px;';
+    loadBtn.onclick = () => {
+      const ability = resolveSelectedAbility();
+      if (!ability) return;
+      bot.setAbility(i, ability);
+      refreshSlotLabels();
+    };
+    loadBtnRow.appendChild(loadBtn);
+  }
+
+  section.appendChild(loadBtnRow);
+
+  const soloBtn = document.createElement('button');
+  soloBtn.textContent = 'Solo to LMB';
+  soloBtn.style.cssText = buttonStyle(true) + 'width:100%;margin-bottom:6px;';
+  soloBtn.onclick = () => {
+    const ability = resolveSelectedAbility();
+    if (!ability) return;
+    assignSoloLoadout(bot, ability, 0);
+    refreshSlotLabels();
+  };
+  section.appendChild(soloBtn);
+
+  const utilityRow = document.createElement('div');
+  utilityRow.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = 'Clear all';
+  clearBtn.style.cssText = buttonStyle(false) + 'flex:1;';
+  clearBtn.onclick = () => {
+    clearLoadout(bot);
+    refreshSlotLabels();
+  };
+
+  const restoreBtn = document.createElement('button');
+  restoreBtn.textContent = 'Restore starter';
+  restoreBtn.style.cssText = buttonStyle(false) + 'flex:1;';
+  restoreBtn.onclick = () => {
+    assignDefaultLoadout(bot);
+    refreshSlotLabels();
+  };
+
+  utilityRow.appendChild(clearBtn);
+  utilityRow.appendChild(restoreBtn);
+  section.appendChild(utilityRow);
+
+  parent.appendChild(section);
 }
 
 export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): void {
@@ -200,9 +326,26 @@ export function buildHarnessTab(parent: HTMLElement, ctx: InspectorContext): voi
       aiToggleRow.appendChild(checkbox);
       aiToggleRow.appendChild(document.createTextNode('Bot AI Enabled'));
       matchSection.appendChild(aiToggleRow);
+
+      const stationaryRow = document.createElement('label');
+      stationaryRow.style.cssText =
+        `display:flex;align-items:center;gap:8px;cursor:pointer;font-size:${FONTS.size.body};margin-top:6px;`;
+      const stationaryCheckbox = document.createElement('input');
+      stationaryCheckbox.type = 'checkbox';
+      stationaryCheckbox.checked = ctx.botController.stationary;
+      stationaryCheckbox.onchange = () => {
+        ctx.botController!.stationary = stationaryCheckbox.checked;
+        if (stationaryCheckbox.checked && ctx.bot) {
+          ctx.bot.inputMove = Vector2D.zero();
+        }
+      };
+      stationaryRow.appendChild(stationaryCheckbox);
+      stationaryRow.appendChild(document.createTextNode('Stay Stationary'));
+      matchSection.appendChild(stationaryRow);
     }
 
     parent.appendChild(matchSection);
+    buildBotLoadoutSection(parent, ctx);
     syncModeButtons();
   }
 
