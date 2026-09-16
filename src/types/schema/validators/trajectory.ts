@@ -1,5 +1,10 @@
 import { PATH_SPACE_SET, TRAJECTORY_TYPES } from '../constants';
-import type { PathPoint, TrajectoryConfig, TrajectoryType } from '../types';
+import type {
+  PathPoint,
+  TrajectoryConfig,
+  TrajectoryMotion,
+  TrajectoryType,
+} from '../types';
 import { clamp, isNumber, isObject, isString } from './helpers';
 
 const PATH_COORD_MIN = -2000;
@@ -29,6 +34,57 @@ function clampOptional(
 ): number | null {
   if (!isNumber(value)) return null;
   return clamp(value, min, max);
+}
+
+function validateMotion(value: unknown): TrajectoryMotion | null {
+  if (!isObject(value)) return null;
+  const motion: TrajectoryMotion = {};
+
+  if (value.wobble !== undefined) {
+    if (!isObject(value.wobble)) return null;
+    const amp = clampOptional(value.wobble.amplitudeDeg, 0, 45);
+    const freq = clampOptional(value.wobble.frequencyHz, 0.5, 8);
+    if (amp === null || freq === null) return null;
+    const wobble: TrajectoryMotion['wobble'] = { amplitudeDeg: amp, frequencyHz: freq };
+    if (value.wobble.decay !== undefined) {
+      const decay = clampOptional(value.wobble.decay, 0, 4);
+      if (decay === null) return null;
+      wobble.decay = decay;
+    }
+    motion.wobble = wobble;
+  }
+
+  if (value.jitter !== undefined) {
+    if (!isObject(value.jitter)) return null;
+    const mag = clampOptional(value.jitter.magnitude, 0, 80);
+    if (mag === null) return null;
+    motion.jitter = { magnitude: mag };
+  }
+
+  if (value.drift !== undefined) {
+    if (!isObject(value.drift)) return null;
+    const lateralAccel = clampOptional(value.drift.lateralAccel, 0, 800);
+    if (lateralAccel === null) return null;
+    motion.drift = { lateralAccel };
+  }
+
+  if (value.spiral !== undefined) {
+    if (!isObject(value.spiral)) return null;
+    const radius = clampOptional(value.spiral.radius, 0, 80);
+    const freq = clampOptional(value.spiral.frequencyHz, 0.5, 8);
+    if (radius === null || freq === null) return null;
+    motion.spiral = { radius, frequencyHz: freq };
+  }
+
+  if (value.speedCurve !== undefined) {
+    if (!isObject(value.speedCurve)) return null;
+    const startScale = clampOptional(value.speedCurve.startScale, 0.15, 1);
+    const rampMs = clampOptional(value.speedCurve.rampMs, 80, 1500);
+    if (startScale === null || rampMs === null) return null;
+    motion.speedCurve = { startScale, rampMs };
+  }
+
+  return Object.keys(motion).length > 0 ? motion : null;
 }
 
 export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | null {
@@ -126,6 +182,12 @@ export function validateTrajectoryConfig(value: unknown): TrajectoryConfig | nul
 
   if (config.type === 'DRAWN_PATH') {
     if (!config.pathPoints) return null;
+  }
+
+  if (value.motion !== undefined) {
+    const motion = validateMotion(value.motion);
+    if (!motion) return null;
+    config.motion = motion;
   }
 
   const isSkyDrop = (config.spawnAltitude ?? 0) > 0;

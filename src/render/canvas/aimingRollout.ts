@@ -187,6 +187,8 @@ function runAimingRollout(
 ): PredictivePath[] {
   const world = new PhysicsWorld(Vector2D.zero(), AIM_ROLLOUT_HEX_RADIUS);
   const caster = new Player(Vector2D.zero(), ['player', 'combatant', 'kinematic']);
+  // Stable id so motionSeed (and jitter) is identical across rollout runs and cache keys.
+  caster.id = 'aim_rollout_caster';
   caster.z = startZ;
   caster.prevZ = startZ;
   world.addPlayer(caster);

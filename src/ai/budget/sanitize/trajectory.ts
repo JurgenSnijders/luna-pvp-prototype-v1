@@ -1,4 +1,9 @@
-import type { PathPoint, TrajectoryConfig, TrajectoryType } from '../../../types/schema';
+import type {
+  PathPoint,
+  TrajectoryConfig,
+  TrajectoryMotion,
+  TrajectoryType,
+} from '../../../types/schema';
 import { TRAJECTORY_TYPES } from '../constants';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
 
@@ -17,6 +22,49 @@ function sanitizePathPoints(raw: unknown, maxPoints = 24): PathPoint[] | undefin
     if (points.length >= maxPoints) break;
   }
   return points.length >= 2 ? points : undefined;
+}
+
+function sanitizeMotion(raw: unknown): TrajectoryMotion | undefined {
+  if (!isObject(raw)) return undefined;
+  const motion: TrajectoryMotion = {};
+
+  if (isObject(raw.wobble)) {
+    motion.wobble = {
+      amplitudeDeg: clamp(ensureFiniteNumber(raw.wobble.amplitudeDeg, 8), 0, 45),
+      frequencyHz: clamp(ensureFiniteNumber(raw.wobble.frequencyHz, 2), 0.5, 8),
+      ...(raw.wobble.decay !== undefined
+        ? { decay: clamp(ensureFiniteNumber(raw.wobble.decay, 0), 0, 4) }
+        : {}),
+    };
+  }
+
+  if (isObject(raw.jitter)) {
+    motion.jitter = {
+      magnitude: clamp(ensureFiniteNumber(raw.jitter.magnitude, 12), 0, 80),
+    };
+  }
+
+  if (isObject(raw.drift)) {
+    motion.drift = {
+      lateralAccel: clamp(ensureFiniteNumber(raw.drift.lateralAccel, 120), 0, 800),
+    };
+  }
+
+  if (isObject(raw.spiral)) {
+    motion.spiral = {
+      radius: clamp(ensureFiniteNumber(raw.spiral.radius, 16), 0, 80),
+      frequencyHz: clamp(ensureFiniteNumber(raw.spiral.frequencyHz, 2), 0.5, 8),
+    };
+  }
+
+  if (isObject(raw.speedCurve)) {
+    motion.speedCurve = {
+      startScale: clamp(ensureFiniteNumber(raw.speedCurve.startScale, 0.4), 0.15, 1),
+      rampMs: clamp(ensureFiniteNumber(raw.speedCurve.rampMs, 600), 80, 1500),
+    };
+  }
+
+  return Object.keys(motion).length > 0 ? motion : undefined;
 }
 
 export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
@@ -105,6 +153,11 @@ export function sanitizeTrajectory(raw: unknown): TrajectoryConfig {
     if (obj.pathLoop === true) {
       config.pathLoop = true;
     }
+  }
+
+  const motion = sanitizeMotion(obj.motion);
+  if (motion) {
+    config.motion = motion;
   }
 
   return config;

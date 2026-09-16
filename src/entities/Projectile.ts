@@ -1,4 +1,5 @@
 import { Vector2D } from '../math/Vector2D';
+import { computeMotionSeed } from '../primitives/motionModifiers';
 import type { TrajectoryConfig, TriggerNode, VisualDescriptor, SpellArchetype } from '../types/schema';
 import { Entity, generateEntityId } from './Entity';
 
@@ -45,6 +46,9 @@ export class Projectile extends Entity {
   pathCumulative: number[] | null = null;
   pathTotalLength = 0;
 
+  /** Seeded at spawn for deterministic motion noise (overlay vs live must match). */
+  motionSeed = 0;
+
   constructor(
     pos: Vector2D,
     config: TrajectoryConfig,
@@ -55,6 +59,7 @@ export class Projectile extends Entity {
     visuals: VisualDescriptor | null = null,
     abilityName = '',
     spellArchetype?: SpellArchetype,
+    emitterIndex = 0,
   ) {
     super(generateEntityId('projectile'), pos, {
       mass: 0.1,
@@ -78,6 +83,14 @@ export class Projectile extends Entity {
     this.aimAngle = aimAngle;
     this.depth = depth;
     this.visuals = visuals;
+    this.motionSeed = computeMotionSeed(
+      sourceEntityId,
+      aimAngle,
+      pos.x,
+      pos.y,
+      depth,
+      emitterIndex,
+    );
 
     this.isReturning = false;
     this.onReturnTriggered = false;

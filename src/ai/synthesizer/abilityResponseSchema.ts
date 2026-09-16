@@ -76,6 +76,52 @@ const trajectoryConfig = {
     },
     pathSpace: stringEnum(PATH_SPACES),
     pathLoop: { type: 'boolean' },
+    motion: {
+      type: 'object',
+      properties: {
+        wobble: {
+          type: 'object',
+          required: ['amplitudeDeg', 'frequencyHz'],
+          properties: {
+            amplitudeDeg: { type: 'number' },
+            frequencyHz: { type: 'number' },
+            decay: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+        jitter: {
+          type: 'object',
+          required: ['magnitude'],
+          properties: { magnitude: { type: 'number' } },
+          additionalProperties: false,
+        },
+        drift: {
+          type: 'object',
+          required: ['lateralAccel'],
+          properties: { lateralAccel: { type: 'number' } },
+          additionalProperties: false,
+        },
+        spiral: {
+          type: 'object',
+          required: ['radius', 'frequencyHz'],
+          properties: {
+            radius: { type: 'number' },
+            frequencyHz: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+        speedCurve: {
+          type: 'object',
+          required: ['startScale', 'rampMs'],
+          properties: {
+            startScale: { type: 'number' },
+            rampMs: { type: 'number' },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 };

@@ -480,6 +480,40 @@ function repairPathPoints(raw: unknown): Array<{ x: number; y: number }> | undef
   return points.length >= 2 ? points : undefined;
 }
 
+function repairMotionBlock(motion: unknown): unknown | undefined {
+  if (motion === null || typeof motion !== 'object') return undefined;
+  const m = { ...(motion as Record<string, unknown>) };
+  stripNullFields(m);
+
+  if (m.wobble !== null && typeof m.wobble === 'object') {
+    const w = { ...(m.wobble as Record<string, unknown>) };
+    coerceNumericFields(w, ['amplitudeDeg', 'frequencyHz', 'decay']);
+    m.wobble = w;
+  }
+  if (m.jitter !== null && typeof m.jitter === 'object') {
+    const j = { ...(m.jitter as Record<string, unknown>) };
+    coerceNumericFields(j, ['magnitude']);
+    m.jitter = j;
+  }
+  if (m.drift !== null && typeof m.drift === 'object') {
+    const d = { ...(m.drift as Record<string, unknown>) };
+    coerceNumericFields(d, ['lateralAccel']);
+    m.drift = d;
+  }
+  if (m.spiral !== null && typeof m.spiral === 'object') {
+    const s = { ...(m.spiral as Record<string, unknown>) };
+    coerceNumericFields(s, ['radius', 'frequencyHz']);
+    m.spiral = s;
+  }
+  if (m.speedCurve !== null && typeof m.speedCurve === 'object') {
+    const c = { ...(m.speedCurve as Record<string, unknown>) };
+    coerceNumericFields(c, ['startScale', 'rampMs']);
+    m.speedCurve = c;
+  }
+
+  return Object.keys(m).length > 0 ? m : undefined;
+}
+
 function repairTrajectoryConfig(traj: unknown): unknown {
   if (traj === null || typeof traj !== 'object') {
     return { type: 'LINEAR', speed: 400, maxRange: 500 };
@@ -536,6 +570,14 @@ function repairTrajectoryConfig(traj: unknown): unknown {
     t.type = 'DRAWN_PATH';
   } else if (typeof t.type !== 'string' || !TRAJECTORY_TYPES.has(t.type)) {
     t.type = 'LINEAR';
+  }
+  if (t.motion !== undefined) {
+    const repairedMotion = repairMotionBlock(t.motion);
+    if (repairedMotion) {
+      t.motion = repairedMotion;
+    } else {
+      delete t.motion;
+    }
   }
   return t;
 }

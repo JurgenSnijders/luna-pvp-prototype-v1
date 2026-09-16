@@ -2,10 +2,22 @@ import type {
   AbilitySchema,
   ActionPayload,
   TrajectoryConfig,
+  TrajectoryMotion,
   TriggerNode,
 } from '../../types/schema';
 import { MAX_DEPTH, MODIFY_STAT_COST, TRAJECTORY_WEIGHTS } from './constants';
 import { clamp } from './helpers';
+
+function getMotionWeight(motion?: TrajectoryMotion): number {
+  if (!motion) return 1;
+  let weight = 1;
+  if (motion.wobble) weight *= 1 + motion.wobble.amplitudeDeg / 90;
+  if (motion.jitter) weight *= 1 + motion.jitter.magnitude / 200;
+  if (motion.drift) weight *= 1 + motion.drift.lateralAccel / 1600;
+  if (motion.spiral) weight *= 1 + motion.spiral.radius / 160;
+  if (motion.speedCurve) weight *= 1 + (1 - motion.speedCurve.startScale) * 0.5;
+  return weight;
+}
 
 function getTrajectoryWeight(traj?: TrajectoryConfig): number {
   if (!traj) return 1.0;
@@ -16,6 +28,7 @@ function getTrajectoryWeight(traj?: TrajectoryConfig): number {
   if (pointCount > 0) {
     weight *= 1 + pointCount * 0.04;
   }
+  weight *= getMotionWeight(traj.motion);
   return weight;
 }
 

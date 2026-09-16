@@ -218,6 +218,38 @@ export interface VfxParams {
   distortion?: number;
 }
 
+export interface MotionWobble {
+  amplitudeDeg: number;
+  frequencyHz: number;
+  decay?: number;
+}
+
+export interface MotionJitter {
+  magnitude: number;
+}
+
+export interface MotionDrift {
+  lateralAccel: number;
+}
+
+export interface MotionSpiral {
+  radius: number;
+  frequencyHz: number;
+}
+
+export interface MotionSpeedCurve {
+  startScale: number;
+  rampMs: number;
+}
+
+export interface TrajectoryMotion {
+  wobble?: MotionWobble;
+  jitter?: MotionJitter;
+  drift?: MotionDrift;
+  spiral?: MotionSpiral;
+  speedCurve?: MotionSpeedCurve;
+}
+
 export interface TrajectoryConfig {
   type: TrajectoryType;
   speed?: number;
@@ -239,6 +271,7 @@ export interface TrajectoryConfig {
   pathPoints?: PathPoint[];
   pathSpace?: PathSpace;
   pathLoop?: boolean;
+  motion?: TrajectoryMotion;
 }
 
 export interface FieldConfig {

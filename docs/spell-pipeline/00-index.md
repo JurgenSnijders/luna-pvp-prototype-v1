@@ -12,14 +12,14 @@
 
 ---
 
-## ▶ Here to implement? Go to [`06-execution-plan.md`](06-execution-plan.md)
+## ▶ Here to implement?
 
-That file is the runbook: numbered phases, each with the Cursor mode to use, the model tier,
-the exact files to touch, the acceptance gate, and the conditions that justify stopping to ask.
-Every design question that would otherwise block you is **already decided** there.
+- Remaining work after the runbook: [`07-backlog.md`](07-backlog.md) (living checklist).
+- Numbered phases 0–13: [`06-execution-plan.md`](06-execution-plan.md) — **done**. That file is
+  the historical runbook. New slices come from `07`, planned separately.
 
 Docs 01–05 are reference material. You do not need to read them all before starting — each
-phase names the specific sections it depends on.
+open backlog item names the section it depends on.
 
 ---
 
@@ -45,11 +45,12 @@ Evolution Tree feature that depends on it.
 | [`03-repair-rules-matrix.md`](03-repair-rules-matrix.md) | Rule-by-rule classification of semantic repair | Facts |
 | [`04-upgrade-design.md`](04-upgrade-design.md) | Proposed architecture changes | **Proposals** |
 | [`05-open-questions.md`](05-open-questions.md) | Design questions + rejected options | Decisions |
-| [`06-execution-plan.md`](06-execution-plan.md) | **Phase-by-phase implementation runbook** | **Execute** |
+| [`06-execution-plan.md`](06-execution-plan.md) | Phase-by-phase implementation runbook (0–13 **done**) | **Execute** (historical) |
+| [`07-backlog.md`](07-backlog.md) | Living checklist of remaining work | **Track** |
 
 **The facts/proposals split is deliberate.** Docs 01–03 describe the codebase as it is and
 should only change when the code changes. Doc 04 describes what we think we should build.
-Doc 06 is what to actually do, in order.
+Doc 06 is what was executed. Doc 07 is what remains — tick boxes there when a slice ships.
 
 Note that `06` **overrides** `05` for execution purposes: its "Pre-decided decisions" table
 settles every open question so implementation never blocks on one. `05` remains the record of
@@ -121,7 +122,15 @@ pasted version flies flat, RC-1 is confirmed.
 
 ## Using this set with an LLM
 
-### To implement
+### To implement remaining work
+
+Open a new chat and say:
+
+> Execute item N from `docs/spell-pipeline/07-backlog.md`. Tick the box in that file when the slice ships.
+
+Numbered phases 0–13 are finished. Do not re-run `06` unless you are reading history.
+
+### To implement a historical phase (0–13)
 
 Open a new chat and say:
 

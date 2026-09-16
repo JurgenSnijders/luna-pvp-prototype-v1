@@ -627,3 +627,5 @@ Update as phases complete. Keep it in this file so it travels with the repo.
 - [x] Phase 11 — Timing phases
 - [x] Phase 12 — Node graph
 - [x] Phase 13 — Drawn trajectories
+
+Remaining work after this runbook: [`07-backlog.md`](07-backlog.md).

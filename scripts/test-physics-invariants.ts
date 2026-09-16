@@ -1670,6 +1670,206 @@ function assertOnHitChildrenExcludedFromOverlay(): { pass: boolean; reason: stri
   return { pass: true, reason: 'single parent path only' };
 }
 
+const MOTION_JITTER_ABILITY: AbilitySchema = {
+  id: 'test_motion_jitter',
+  name: 'Jitter Test',
+  cooldownMs: 1000,
+  recoilKick: 0,
+  visuals: DEFAULT_VISUALS,
+  trajectory: {
+    type: 'LINEAR',
+    speed: 400,
+    maxRange: 600,
+    motion: { jitter: { magnitude: 24 } },
+  },
+  triggers: [],
+};
+
+function runMotionCastPositions(
+  ability: AbilitySchema,
+  ticks: number,
+): { x: number; y: number }[] {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  const caster = new Player(Vector2D.zero());
+  caster.id = 'motion_det_caster';
+  world.addPlayer(caster);
+  const interp = new Interpreter();
+  interp.executeAbility(
+    ability,
+    {
+      origin: caster.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster,
+      depth: 0,
+      ability,
+    },
+    world,
+  );
+  const positions: { x: number; y: number }[] = [];
+  for (let i = 0; i < ticks; i++) {
+    interp.updateTrajectories(world, dt);
+    world.step(dt);
+    interp.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+    const p = world.projectiles.find((proj) => !proj.isDead);
+    if (p) positions.push({ x: p.pos.x, y: p.pos.y });
+  }
+  return positions;
+}
+
+/** Motion jitter — two identical headless casts produce identical positions. */
+function assertMotionJitterDeterminism(): { pass: boolean; reason: string } {
+  const a = runMotionCastPositions(MOTION_JITTER_ABILITY, 45);
+  const b = runMotionCastPositions(MOTION_JITTER_ABILITY, 45);
+  if (a.length === 0 || b.length === 0) {
+    return { pass: false, reason: 'no projectile positions recorded' };
+  }
+  const serializedA = JSON.stringify(a);
+  const serializedB = JSON.stringify(b);
+  if (serializedA !== serializedB) {
+    return { pass: false, reason: 'identical casts produced different positions' };
+  }
+  return { pass: true, reason: `${a.length} frames matched` };
+}
+
+/** Motion jitter — aiming rollout is deterministic (cold + cache). */
+function assertMotionJitterAimingDeterminism(): { pass: boolean; reason: string } {
+  clearAimingPathCache();
+  const coldA = resolveLiveAimingPaths(MOTION_JITTER_ABILITY, { x: 0, y: 0 }, 0, 28, 0);
+  clearAimingPathCache();
+  const coldB = resolveLiveAimingPaths(MOTION_JITTER_ABILITY, { x: 0, y: 0 }, 0, 28, 0);
+  const serializedColdA = serializePredictivePaths(coldA);
+  const serializedColdB = serializePredictivePaths(coldB);
+  if (serializedColdA !== serializedColdB) {
+    return { pass: false, reason: 'two cold aiming rollouts differ' };
+  }
+
+  clearAimingPathCache();
+  const first = resolveLiveAimingPaths(MOTION_JITTER_ABILITY, { x: 0, y: 0 }, 0, 28, 0);
+  const cached = resolveLiveAimingPaths(MOTION_JITTER_ABILITY, { x: 0, y: 0 }, 0, 28, 0);
+  if (serializePredictivePaths(first) !== serializePredictivePaths(cached)) {
+    return { pass: false, reason: 'cached aiming rollout differs from first generation' };
+  }
+
+  return { pass: true, reason: 'cold and cached rollouts match' };
+}
+
+/** Motion wobble — LINEAR projectile deviates laterally from the aim ray. */
+function assertMotionWobbleLateralOffset(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  const proj = new Projectile(
+    Vector2D.zero(),
+    {
+      type: 'LINEAR',
+      speed: 300,
+      maxRange: 600,
+      motion: { wobble: { amplitudeDeg: 20, frequencyHz: 2, decay: 0 } },
+    },
+    'caster_wobble',
+    0,
+  );
+  world.addProjectile(proj);
+
+  let peakLateral = 0;
+  for (let i = 0; i < 90; i++) {
+    proj.lifetimeMs += dt * 1000;
+    updateTrajectory(proj, dt, world);
+    peakLateral = Math.max(peakLateral, Math.abs(proj.pos.y));
+    if (proj.isDead) break;
+  }
+
+  if (peakLateral <= 0.5) {
+    return {
+      pass: false,
+      reason: `peak lateral offset ${peakLateral.toFixed(2)}px (expected > 0)`,
+    };
+  }
+  return { pass: true, reason: `peak lateral=${peakLateral.toFixed(1)}px` };
+}
+
+/** Motion speedCurve — early speed is lower than later speed. */
+function assertMotionSpeedCurveRamp(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  const proj = new Projectile(
+    Vector2D.zero(),
+    {
+      type: 'LINEAR',
+      speed: 400,
+      maxRange: 800,
+      motion: { speedCurve: { startScale: 0.3, rampMs: 600 } },
+    },
+    'caster_speed',
+    0,
+  );
+  world.addProjectile(proj);
+
+  let earlySpeed = 0;
+  let lateSpeed = 0;
+  for (let i = 0; i < 60; i++) {
+    proj.lifetimeMs += dt * 1000;
+    updateTrajectory(proj, dt, world);
+    const mag = proj.vel.mag();
+    if (i === 1) earlySpeed = mag;
+    if (i === 45) lateSpeed = mag;
+    if (proj.isDead) break;
+  }
+
+  if (earlySpeed <= 0 || lateSpeed <= 0) {
+    return { pass: false, reason: 'could not sample early/late speeds' };
+  }
+  if (earlySpeed >= lateSpeed) {
+    return {
+      pass: false,
+      reason: `early speed ${earlySpeed.toFixed(0)} >= late ${lateSpeed.toFixed(0)}`,
+    };
+  }
+  return {
+    pass: true,
+    reason: `early=${earlySpeed.toFixed(0)} late=${lateSpeed.toFixed(0)}`,
+  };
+}
+
+/** Motion jitter must not call Math.random during updateTrajectory. */
+function assertMotionJitterNoMathRandom(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  const proj = new Projectile(
+    Vector2D.zero(),
+    {
+      type: 'LINEAR',
+      speed: 400,
+      maxRange: 600,
+      motion: { jitter: { magnitude: 30 } },
+    },
+    'caster_rand',
+    0,
+  );
+  world.addProjectile(proj);
+
+  const origRandom = Math.random;
+  let randomCalls = 0;
+  Math.random = () => {
+    randomCalls++;
+    return 0.5;
+  };
+  try {
+    for (let i = 0; i < 30; i++) {
+      proj.lifetimeMs += dt * 1000;
+      updateTrajectory(proj, dt, world);
+    }
+  } finally {
+    Math.random = origRandom;
+  }
+
+  if (randomCalls > 0) {
+    return { pass: false, reason: `Math.random called ${randomCalls} times` };
+  }
+  return { pass: true, reason: 'no Math.random during jitter motion' };
+}
+
 /** Live combat loop must dispatch ON_AIR_APEX (not only the aiming rollout workaround). */
 function assertLiveClusterMortarApexDispatches(): { pass: boolean; reason: string } {
   const dt = 1 / 60;
@@ -2923,7 +3123,37 @@ function run(): void {
   console.log(`  ${DIM}${drawnPathFollowing.reason}${RESET}`);
   if (drawnPathFollowing.pass) passed++;
 
-  const totalCases = suite.length + 30;
+  const motionJitterDet = assertMotionJitterDeterminism();
+  const motionJitterDetTag = motionJitterDet.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${motionJitterDetTag} Motion jitter determinism (live)`);
+  console.log(`  ${DIM}${motionJitterDet.reason}${RESET}`);
+  if (motionJitterDet.pass) passed++;
+
+  const motionJitterAim = assertMotionJitterAimingDeterminism();
+  const motionJitterAimTag = motionJitterAim.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${motionJitterAimTag} Motion jitter determinism (aiming)`);
+  console.log(`  ${DIM}${motionJitterAim.reason}${RESET}`);
+  if (motionJitterAim.pass) passed++;
+
+  const motionWobble = assertMotionWobbleLateralOffset();
+  const motionWobbleTag = motionWobble.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${motionWobbleTag} Motion wobble lateral offset`);
+  console.log(`  ${DIM}${motionWobble.reason}${RESET}`);
+  if (motionWobble.pass) passed++;
+
+  const motionSpeedCurve = assertMotionSpeedCurveRamp();
+  const motionSpeedCurveTag = motionSpeedCurve.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${motionSpeedCurveTag} Motion speedCurve ramp`);
+  console.log(`  ${DIM}${motionSpeedCurve.reason}${RESET}`);
+  if (motionSpeedCurve.pass) passed++;
+
+  const motionNoRandom = assertMotionJitterNoMathRandom();
+  const motionNoRandomTag = motionNoRandom.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${motionNoRandomTag} Motion jitter avoids Math.random`);
+  console.log(`  ${DIM}${motionNoRandom.reason}${RESET}`);
+  if (motionNoRandom.pass) passed++;
+
+  const totalCases = suite.length + 35;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -114,6 +114,7 @@ export function executeEmitter(
       vfx,
       '',
       ctx.ability?.archetype,
+      i,
     );
 
     if (inherit > 0 && ctx.sourceEntity) {

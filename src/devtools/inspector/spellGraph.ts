@@ -262,6 +262,14 @@ function formatTrajectory(trajectory: TrajectoryConfig): string {
   if (trajectory.pathPoints !== undefined) parts.push(`points=${trajectory.pathPoints.length}`);
   if (trajectory.pathSpace !== undefined) parts.push(`pathSpace=${trajectory.pathSpace}`);
   if (trajectory.pathLoop) parts.push('loop');
+  if (trajectory.motion) {
+    const motionKeys = Object.keys(trajectory.motion).filter(
+      (key) => trajectory.motion![key as keyof typeof trajectory.motion] !== undefined,
+    );
+    if (motionKeys.length > 0) {
+      parts.push(`motion:${motionKeys.join('+')}`);
+    }
+  }
   return parts.join(' · ');
 }
 

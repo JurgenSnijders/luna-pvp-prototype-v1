@@ -9,6 +9,7 @@ import {
   resolvePathWorldPoints,
   samplePathAtDistance,
 } from './drawnPath';
+import { applyMotionModifiers } from './motionModifiers';
 
 const RETURN_CONTACT_RADIUS = 24;
 const BLINK_INTERVAL_MS = 150;
@@ -103,6 +104,7 @@ export function updateTrajectory(
   const speed = config.speed ?? 400;
   const maxRange = config.maxRange ?? 600;
   const turnAccel = config.turnAccel ?? 800;
+  const distBeforeSwitch = proj.distanceTraveled;
 
   switch (config.type) {
     case 'LINEAR':
@@ -127,6 +129,8 @@ export function updateTrajectory(
       updateDrawnPath(proj, dt, speed, maxRange);
       break;
   }
+
+  applyMotionModifiers(proj, dt, distBeforeSwitch);
 
   // Apex is orthogonal to planar type: any projectile with vertical motion can fire ON_AIR_APEX.
   maybeEmitApex(proj, world);
