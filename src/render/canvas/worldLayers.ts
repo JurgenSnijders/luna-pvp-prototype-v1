@@ -213,6 +213,61 @@ export function drawZones(
     if (zone.isDead) continue;
     drawZoneHologram(ctx, zone, now);
   }
+  drawParryShieldOverlays(ctx, world, now);
+}
+
+function drawParryShieldHologram(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  color: string,
+  facingRad: number,
+  arcDeg: number | undefined,
+  now: number,
+): void {
+  const rgb = parseRgbaColor(color);
+  const wedge = arcDeg !== undefined && arcDeg < 360;
+  const half = (((arcDeg ?? 360) * Math.PI) / 180) / 2;
+  const startAngle = wedge ? facingRad - half : 0;
+  const endAngle = wedge ? facingRad + half : Math.PI * 2;
+  const rot = now * 0.5;
+
+  drawHologramFill(ctx, x, y, radius, rgb, startAngle, endAngle, wedge);
+  drawInnerReticle(ctx, x, y, radius, rot, rgb, startAngle, endAngle, wedge);
+  drawOuterPerimeter(
+    ctx,
+    x,
+    y,
+    radius,
+    now,
+    rgb,
+    'FRICTION_OVERRIDE',
+    startAngle,
+    endAngle,
+    wedge,
+  );
+}
+
+export function drawParryShieldOverlays(
+  ctx: CanvasRenderingContext2D,
+  world: PhysicsWorld,
+  now: number,
+): void {
+  for (const overlay of world.parryShieldOverlays) {
+    if (overlay.remainingMs <= 0) continue;
+    const facing = world.getParryShieldFacingRad(overlay);
+    drawParryShieldHologram(
+      ctx,
+      overlay.pos.x,
+      overlay.pos.y,
+      overlay.radius,
+      overlay.color,
+      facing,
+      overlay.arcDeg,
+      now,
+    );
+  }
 }
 
 export function drawTerrainPatches(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {

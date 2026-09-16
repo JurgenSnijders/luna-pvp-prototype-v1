@@ -1304,7 +1304,24 @@ function assertDirectionalParry(): { pass: boolean; reason: string } {
   if (behind.sourceEntityId === caster.id) {
     return { pass: false, reason: 'rear projectile reflected unexpectedly' };
   }
-  return { pass: true, reason: '90° CASTER_FACING parry reflected front only' };
+
+  const awayFromCaster = front.pos.sub(caster.pos).normalize();
+  const outbound = front.vel.normalize();
+  if (awayFromCaster.dot(outbound) <= 0) {
+    return {
+      pass: false,
+      reason: `front projectile not reversed (vel=${front.vel.x.toFixed(0)},${front.vel.y.toFixed(0)} aim=${front.aimAngle.toFixed(2)})`,
+    };
+  }
+  const expectedAim = Math.atan2(front.vel.y, front.vel.x);
+  if (Math.abs(front.aimAngle - expectedAim) > 0.01) {
+    return {
+      pass: false,
+      reason: `aimAngle not synced to vel (aim=${front.aimAngle.toFixed(2)} velAim=${expectedAim.toFixed(2)})`,
+    };
+  }
+
+  return { pass: true, reason: '90° CASTER_FACING parry reflected front only with reversed heading' };
 }
 
 function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {

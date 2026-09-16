@@ -9,7 +9,13 @@ import { Projectile } from '../entities/Projectile';
 import { SpatialZone } from '../entities/SpatialZone';
 import { Summon } from '../entities/Summon';
 import { isAlliedTo, isOwnerSummonPair } from './allegiance';
-import type { SpellArchetype, TerrainMutationConfig, TerrainType } from '../types/schema';
+import type {
+  FieldArcFacing,
+  SpellArchetype,
+  TerrainMutationConfig,
+  TerrainType,
+} from '../types/schema';
+import { entityFacingAngle, resolveArcFacingRad } from '../primitives/arcWedge';
 import type { ObstacleShape } from '../types/schema';
 import {
   DEBUG_VECTOR_COLORS,
@@ -109,6 +115,19 @@ export interface GroundImpactEvent {
   archetype?: SpellArchetype;
 }
 
+/** Short-lived arc wedge shown when REFLECT_PROJECTILES fires (visual only, no physics). */
+export interface ParryShieldOverlay {
+  followEntityId: string;
+  pos: Vector2D;
+  radius: number;
+  arcDeg?: number;
+  arcFacing: FieldArcFacing;
+  arcOffsetDeg: number;
+  castHeadingRad: number;
+  color: string;
+  remainingMs: number;
+}
+
 export class PhysicsWorld {
   players: Player[] = [];
   dummies: Dummy[] = [];
@@ -143,6 +162,7 @@ export class PhysicsWorld {
   pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
+  parryShieldOverlays: ParryShieldOverlay[] = [];
 
   /** Pair keys that already emitted ON_RAM for the current continuous contact. */
   private ramContactPairs = new Set<string>();
@@ -556,8 +576,63 @@ export class PhysicsWorld {
     this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
+    this.parryShieldOverlays = [];
     this.lavaDamageAccumulator.clear();
     this.ramContactPairs.clear();
+  }
+
+  spawnParryShieldOverlay(config: {
+    followEntityId: string;
+    radius: number;
+    arcDeg?: number;
+    arcFacing?: FieldArcFacing;
+    arcOffsetDeg?: number;
+    castHeadingRad: number;
+    color: string;
+    durationMs?: number;
+  }): void {
+    const follow = this.getEntityById(config.followEntityId);
+    this.parryShieldOverlays.push({
+      followEntityId: config.followEntityId,
+      pos: follow?.pos.clone() ?? Vector2D.zero(),
+      radius: config.radius,
+      arcDeg: config.arcDeg,
+      arcFacing: config.arcFacing ?? 'CAST_HEADING',
+      arcOffsetDeg: config.arcOffsetDeg ?? 0,
+      castHeadingRad: config.castHeadingRad,
+      color: config.color,
+      remainingMs: config.durationMs ?? 250,
+    });
+  }
+
+  getParryShieldFacingRad(overlay: ParryShieldOverlay): number {
+    const follow = this.getEntityById(overlay.followEntityId);
+    const entityFacingRad = follow ? entityFacingAngle(follow) : overlay.castHeadingRad;
+    return resolveArcFacingRad(overlay.arcFacing, overlay.arcOffsetDeg, {
+      entityFacingRad,
+      castHeadingRad: overlay.castHeadingRad,
+    });
+  }
+
+  isParryShieldPartialArc(overlay: ParryShieldOverlay): boolean {
+    const arc = overlay.arcDeg;
+    return arc !== undefined && arc < 360;
+  }
+
+  private updateParryShieldOverlays(dt: number): void {
+    const dtMs = dt * 1000;
+    let write = 0;
+    for (let i = 0; i < this.parryShieldOverlays.length; i++) {
+      const overlay = this.parryShieldOverlays[i];
+      overlay.remainingMs -= dtMs;
+      if (overlay.remainingMs <= 0) continue;
+      const follow = this.getEntityById(overlay.followEntityId);
+      if (follow && !follow.isDead) {
+        overlay.pos.copyFrom(follow.pos);
+      }
+      this.parryShieldOverlays[write++] = overlay;
+    }
+    this.parryShieldOverlays.length = write;
   }
 
   emitCombatVisualEvent(event: CombatVisualEvent): void {
@@ -605,6 +680,7 @@ export class PhysicsWorld {
    * `step()` so attached fields (e.g. a moving gravity well) apply forces from their
    * current-frame position rather than lagging a frame behind their parent. */
   updateSpatialZones(dt: number): void {
+    this.updateParryShieldOverlays(dt);
     for (const zone of this.zones) {
       if (zone.isDead) continue;
       zone.update(dt);

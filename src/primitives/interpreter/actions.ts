@@ -375,29 +375,49 @@ export function dispatchAction(
       const t = resolveActionTarget(action.target ?? 'SELF', ctx);
       if (!t) break;
 
+      const radius = action.radius ?? 150;
+      const castHeadingRad = Math.atan2(ctx.heading.y, ctx.heading.x);
+      const shieldColor = secondaryColor(interp.activeCastVisuals, '#88ccff');
+      world.spawnParryShieldOverlay({
+        followEntityId: t.id,
+        radius,
+        arcDeg: action.arcDeg,
+        arcFacing: action.arcFacing,
+        arcOffsetDeg: action.arcOffsetDeg,
+        castHeadingRad,
+        color: shieldColor,
+      });
+
+      const parryCtx = { parryCenter: t.pos, parryRadius: t.radius };
+
+      const emitDeflected = (proj: Projectile): void => {
+        world.emitCombatVisualEvent({
+          type: 'STATUS_APPLIED',
+          pos: { x: proj.pos.x, y: proj.pos.y },
+          label: 'DEFLECTED',
+          archetype: ctx.ability?.archetype,
+          targetId: t.id,
+        });
+      };
+
       if (t instanceof Projectile) {
-        reflectProjectile(t, ctx.caster.id);
+        reflectProjectile(t, ctx.caster.id, parryCtx);
+        emitDeflected(t);
         break;
       }
 
-      const radius = action.radius ?? 150;
       const radiusSq = radius * radius;
-      const castHeadingRad = Math.atan2(ctx.heading.y, ctx.heading.x);
       const facingRad = resolveArcFacingRad(action.arcFacing ?? 'CAST_HEADING', action.arcOffsetDeg ?? 0, {
         entityFacingRad: entityFacingAngle(t),
         castHeadingRad,
       });
-      let reflected = 0;
       for (const proj of world.projectiles) {
         if (proj.isDead) continue;
         if (proj.sourceEntityId === ctx.caster.id) continue;
         if (proj.pos.distSq(t.pos) > radiusSq) continue;
         if (!isPointInArcWedge(t.pos, proj.pos, action.arcDeg, facingRad)) continue;
-        reflectProjectile(proj, ctx.caster.id);
-        reflected++;
-      }
-      if (reflected > 0) {
-        interp.particles?.expandingRing(t.pos, radius, secondaryColor(interp.activeCastVisuals, '#88ccff'));
+        reflectProjectile(proj, ctx.caster.id, parryCtx);
+        emitDeflected(proj);
       }
       break;
     }
@@ -527,11 +547,52 @@ export function dispatchAction(
   }
 }
 
-export function reflectProjectile(projectile: Projectile, newOwnerId: string): void {
+export interface ReflectParryContext {
+  parryCenter: Vector2D;
+  parryRadius: number;
+}
+
+export function reflectProjectile(
+  projectile: Projectile,
+  newOwnerId: string,
+  parry?: ReflectParryContext,
+): void {
+  const originalType = projectile.config.type;
+  const speed = projectile.config.speed ?? 400;
+
   projectile.vel = projectile.vel.scale(-1);
+  if (projectile.vel.magSq() > 1e-6) {
+    projectile.aimAngle = Math.atan2(projectile.vel.y, projectile.vel.x);
+  } else {
+    projectile.aimAngle += Math.PI;
+    projectile.vel = Vector2D.fromAngle(projectile.aimAngle, speed);
+  }
+
+  if (originalType === 'DRAWN_PATH' || originalType === 'ORBIT_ANCHOR') {
+    projectile.config = { ...projectile.config, type: 'LINEAR' };
+    projectile.pathWorldPoints = null;
+    projectile.pathCumulative = null;
+    projectile.pathTotalLength = 0;
+  }
+
+  if (originalType === 'RETURN_TO_SOURCE' && projectile.isReturning) {
+    projectile.isReturning = false;
+  }
+
   projectile.sourceEntityId = newOwnerId;
   projectile.isDead = false;
   projectile.expiryReason = null;
+
+  if (parry) {
+    const away =
+      projectile.vel.magSq() > 0
+        ? projectile.vel.normalize()
+        : projectile.pos.sub(parry.parryCenter).normalize();
+    const minSep = parry.parryRadius + projectile.radius + 2;
+    if (projectile.pos.distSq(parry.parryCenter) < minSep * minSep) {
+      projectile.pos = parry.parryCenter.add(away.scale(minSep));
+    }
+  }
 }
 
 export function applyModifyStat(
