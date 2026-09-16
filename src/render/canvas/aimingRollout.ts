@@ -1,12 +1,14 @@
 import { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Dummy } from '../../entities/Dummy';
+import type { Projectile } from '../../entities/Projectile';
 import { Player } from '../../entities/Player';
 import { Vector2D } from '../../math/Vector2D';
 import { applyField } from '../../primitives/Fields';
 import { Interpreter } from '../../primitives/Interpreter';
 import { HEADLESS_LIFECYCLE_FX } from '../../primitives/interpreter/lifecycle';
 import type { AbilitySchema, TrajectoryType, TriggerNode, ActionPayload } from '../../types/schema';
+import { walkActions } from '../../types/schema';
 import {
   abilityUsesGroundReticle,
   resolveLiveCastConfig,
@@ -63,6 +65,30 @@ function abilitySchemaFingerprint(ability: AbilitySchema): string {
   return `${ability.id ?? ability.name}|${traj}|path:${pathPoints}|${triggers}|spawns:${spawnCount}`;
 }
 
+function abilityNeedsHomingBeacon(ability: AbilitySchema): boolean {
+  if (ability.trajectory?.type === 'HOMING_SLERP') return true;
+  let needs = false;
+  walkActions(ability, (v) => {
+    if (
+      v.action.type === 'SPAWN_PROJECTILE' &&
+      v.action.projectileTrajectory?.type === 'HOMING_SLERP'
+    ) {
+      needs = true;
+    }
+  });
+  return needs;
+}
+
+function resolveAbilityMaxRange(ability: AbilitySchema): number {
+  let max = ability.trajectory?.maxRange ?? 480;
+  walkActions(ability, (v) => {
+    if (v.action.type === 'SPAWN_PROJECTILE') {
+      max = Math.max(max, v.action.projectileTrajectory?.maxRange ?? 0);
+    }
+  });
+  return max;
+}
+
 function applyRolloutFields(world: PhysicsWorld, dt: number): void {
   const combatants = world.getCombatants();
   for (const entity of combatants) {
@@ -85,6 +111,40 @@ interface PathBuilder {
   apexIndex: number;
   lastBounceCount: number;
   impactIndex?: number;
+  deathRecorded?: boolean;
+}
+
+function appendProjectileSample(
+  builder: PathBuilder,
+  proj: Projectile,
+  options?: { markGroundImpact?: boolean },
+): void {
+  const screenY = proj.pos.y - proj.z * Z_TO_SCREEN;
+  const sample: TrajectorySample = {
+    x: proj.pos.x,
+    y: screenY,
+    z: proj.z,
+  };
+
+  if (proj.bounceCount > builder.lastBounceCount) {
+    sample.isImpact = true;
+    builder.lastBounceCount = proj.bounceCount;
+    builder.impactIndex = builder.points.length;
+  }
+
+  if (options?.markGroundImpact) {
+    sample.isImpact = true;
+    builder.impactIndex = builder.points.length;
+  }
+
+  builder.groundPoints.push({ x: proj.pos.x, y: proj.pos.y });
+
+  if (proj.z > builder.maxZ) {
+    builder.maxZ = proj.z;
+    builder.apexIndex = builder.points.length;
+  }
+
+  builder.points.push(sample);
 }
 
 function finalizePathBuilder(builder: PathBuilder): PredictivePath | null {
@@ -105,11 +165,25 @@ function finalizePathBuilder(builder: PathBuilder): PredictivePath | null {
   };
 }
 
+function recordExpiredProjectiles(
+  world: PhysicsWorld,
+  builders: Map<string, PathBuilder>,
+): void {
+  for (const proj of world.pendingExpirations) {
+    const builder = builders.get(proj.id);
+    if (!builder || builder.deathRecorded) continue;
+    appendProjectileSample(builder, proj, {
+      markGroundImpact: proj.expiryReason === 'ground',
+    });
+    builder.deathRecorded = true;
+  }
+}
+
 function runAimingRollout(
   ability: AbilitySchema,
   aimAngle: number,
   startZ: number,
-  muzzleOffset: number,
+  _muzzleOffset: number,
 ): PredictivePath[] {
   const world = new PhysicsWorld(Vector2D.zero(), AIM_ROLLOUT_HEX_RADIUS);
   const caster = new Player(Vector2D.zero(), ['player', 'combatant', 'kinematic']);
@@ -117,14 +191,17 @@ function runAimingRollout(
   caster.prevZ = startZ;
   world.addPlayer(caster);
 
-  const trajectory = resolveRootTrajectory(ability);
-  const maxRange = trajectory?.maxRange ?? ability.trajectory?.maxRange ?? 480;
   const heading = Vector2D.fromAngle(aimAngle);
-  const muzzleOrigin = heading.scale(muzzleOffset);
-  const targetPos = heading.scale(maxRange * 0.7);
-  const dummy = new Dummy(targetPos);
-  dummy.tags.add('kinematic');
-  world.addDummy(dummy);
+  const maxRange = resolveAbilityMaxRange(ability);
+  const beaconDist = Math.max(maxRange * 2.5, 800);
+  const aimPoint = heading.scale(beaconDist);
+
+  if (abilityNeedsHomingBeacon(ability)) {
+    const beacon = new Dummy(aimPoint);
+    beacon.tags.add('kinematic');
+    beacon.tags.add('aiming_beacon');
+    world.addDummy(beacon);
+  }
 
   const interp = new Interpreter();
   const nativeRandom = Math.random;
@@ -133,9 +210,9 @@ function runAimingRollout(
     interp.executeAbility(
       ability,
       {
-        origin: muzzleOrigin,
+        origin: caster.pos.clone(),
         heading,
-        aimPoint: targetPos.clone(),
+        aimPoint: aimPoint.clone(),
         caster,
         depth: 0,
         ability,
@@ -151,12 +228,11 @@ function runAimingRollout(
 
   for (let frame = 0; frame < AIM_ROLLOUT_MAX_FRAMES; frame++) {
     interp.updateTrajectories(world, AIM_ROLLOUT_DT);
-    // Apex/bounce queues are populated during trajectory update but cleared at step start.
-    interp.processLifecycleEvents(world, AIM_ROLLOUT_DT, HEADLESS_LIFECYCLE_FX);
     world.updateSpatialZones(AIM_ROLLOUT_DT);
     applyRolloutFields(world, AIM_ROLLOUT_DT);
     world.step(AIM_ROLLOUT_DT);
     interp.processLifecycleEvents(world, AIM_ROLLOUT_DT, HEADLESS_LIFECYCLE_FX);
+    recordExpiredProjectiles(world, builders);
 
     let anyLive = false;
     for (const proj of world.projectiles) {
@@ -175,27 +251,7 @@ function runAimingRollout(
         builders.set(proj.id, builder);
       }
 
-      const screenY = proj.pos.y - proj.z * Z_TO_SCREEN;
-      const sample: TrajectorySample = {
-        x: proj.pos.x,
-        y: screenY,
-        z: proj.z,
-      };
-
-      if (proj.bounceCount > builder.lastBounceCount) {
-        sample.isImpact = true;
-        builder.lastBounceCount = proj.bounceCount;
-        builder.impactIndex = builder.points.length;
-      }
-
-      builder.groundPoints.push({ x: proj.pos.x, y: proj.pos.y });
-
-      if (proj.z > builder.maxZ) {
-        builder.maxZ = proj.z;
-        builder.apexIndex = builder.points.length;
-      }
-
-      builder.points.push(sample);
+      appendProjectileSample(builder, proj);
     }
 
     if (world.zones.some((z) => !z.isDead)) anyLive = true;

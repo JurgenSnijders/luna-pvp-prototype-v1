@@ -340,6 +340,7 @@ function drawBallisticArcMarkers(
   color: string,
 ): void {
   if (path.groundPoints && path.groundPoints.length >= 2) {
+    // Dashed = planar ground track; solid stroke above = height-baked arc (one projectile).
     ctx.save();
     ctx.strokeStyle = hexToRgba(color, 0.25);
     ctx.lineWidth = 1.5;

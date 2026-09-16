@@ -1556,6 +1556,165 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
   };
 }
 
+function planarPathEndDistance(path: {
+  groundPoints?: { x: number; y: number }[];
+  points: { x: number; y: number }[];
+}): number {
+  const gp = path.groundPoints;
+  if (gp && gp.length > 0) {
+    const last = gp[gp.length - 1];
+    return Math.hypot(last.x, last.y);
+  }
+  const last = path.points[path.points.length - 1];
+  return Math.hypot(last.x, last.y);
+}
+
+/** Aiming overlay — center FAN ray must not be truncated by a phantom dummy hit. */
+function assertAimingFanEqualLengths(): { pass: boolean; reason: string } {
+  clearAimingPathCache();
+  const fanAbility: AbilitySchema = {
+    id: 'test_aiming_fan',
+    name: 'Fan Salvo',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
+              type: 'BALLISTIC_ARC',
+              speed: 400,
+              maxRange: 500,
+              lobApex: 80,
+              bounces: 0,
+            },
+            emitter: { count: 5, spreadDeg: 45, distribution: 'FAN' },
+          },
+        ],
+      },
+    ],
+  };
+
+  const paths = resolveLiveAimingPaths(fanAbility, { x: 0, y: 0 }, 0, 28, 0);
+  if (paths.length !== 5) {
+    return { pass: false, reason: `expected 5 paths, got ${paths.length}` };
+  }
+
+  const ends = paths.map(planarPathEndDistance);
+  const maxEnd = Math.max(...ends);
+  const minEnd = Math.min(...ends);
+  if (maxEnd <= 0) {
+    return { pass: false, reason: 'fan paths have zero length' };
+  }
+  const spread = (maxEnd - minEnd) / maxEnd;
+  if (spread > 0.1) {
+    return {
+      pass: false,
+      reason: `fan end spread ${(spread * 100).toFixed(1)}% (min=${minEnd.toFixed(0)} max=${maxEnd.toFixed(0)})`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `5 paths within ${(spread * 100).toFixed(1)}% planar length`,
+  };
+}
+
+/** ON_HIT cluster children must not appear in empty-arena aiming overlay. */
+function assertOnHitChildrenExcludedFromOverlay(): { pass: boolean; reason: string } {
+  clearAimingPathCache();
+  const pyricLike: AbilitySchema = {
+    id: 'test_pyric_overlay',
+    name: 'Pyric Overlay',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    trajectory: {
+      type: 'BALLISTIC_ARC',
+      speed: 320,
+      maxRange: 450,
+      lobApex: 140,
+      bounces: 0,
+    },
+    triggers: [
+      {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
+              type: 'BALLISTIC_ARC',
+              speed: 240,
+              maxRange: 200,
+              lobApex: 80,
+              bounces: 2,
+            },
+            emitter: { count: 6, spreadDeg: 360, distribution: 'FAN' },
+          },
+        ],
+      },
+    ],
+  };
+
+  const paths = resolveLiveAimingPaths(pyricLike, { x: 0, y: 0 }, 0, 28, 0);
+  if (paths.length !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 parent path, got ${paths.length} (ON_HIT children must not preview)`,
+    };
+  }
+
+  return { pass: true, reason: 'single parent path only' };
+}
+
+/** Live combat loop must dispatch ON_AIR_APEX (not only the aiming rollout workaround). */
+function assertLiveClusterMortarApexDispatches(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  const caster = new Player(Vector2D.zero());
+  world.addPlayer(caster);
+  const interp = new Interpreter();
+  const ability = VERTICAL_RECIPES.clusterMortar;
+
+  interp.executeAbility(
+    ability,
+    {
+      origin: caster.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster,
+      depth: 0,
+      ability,
+    },
+    world,
+  );
+
+  let peakLive = world.projectiles.filter((p) => !p.isDead).length;
+  for (let i = 0; i < 120; i++) {
+    interp.updateTrajectories(world, dt);
+    world.updateSpatialZones(dt);
+    applySpatialFields(world, dt);
+    world.step(dt);
+    interp.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+    peakLive = Math.max(
+      peakLive,
+      world.projectiles.filter((p) => !p.isDead).length,
+    );
+  }
+
+  if (peakLive < 3) {
+    return {
+      pass: false,
+      reason: `peak live projectile count ${peakLive}, expected >= 3 (ON_AIR_APEX children)`,
+    };
+  }
+
+  return { pass: true, reason: `peak live projectiles=${peakLive}` };
+}
+
 function assertOnRamDispatchesOnce(): { pass: boolean; reason: string } {
   const dt = 1 / 60;
   const world = new PhysicsWorld(Vector2D.zero(), 800);
@@ -2702,6 +2861,24 @@ function run(): void {
   console.log(`  ${DIM}${clusterMortarAiming.reason}${RESET}`);
   if (clusterMortarAiming.pass) passed++;
 
+  const aimingFanEqual = assertAimingFanEqualLengths();
+  const aimingFanEqualTag = aimingFanEqual.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${aimingFanEqualTag} Aiming fan equal lengths`);
+  console.log(`  ${DIM}${aimingFanEqual.reason}${RESET}`);
+  if (aimingFanEqual.pass) passed++;
+
+  const onHitOverlay = assertOnHitChildrenExcludedFromOverlay();
+  const onHitOverlayTag = onHitOverlay.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${onHitOverlayTag} ON_HIT children excluded from overlay`);
+  console.log(`  ${DIM}${onHitOverlay.reason}${RESET}`);
+  if (onHitOverlay.pass) passed++;
+
+  const liveApex = assertLiveClusterMortarApexDispatches();
+  const liveApexTag = liveApex.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${liveApexTag} Live cluster mortar apex`);
+  console.log(`  ${DIM}${liveApex.reason}${RESET}`);
+  if (liveApex.pass) passed++;
+
   const playVfx = assertPlayVfxZeroBudgetAndLayers();
   const playVfxTag = playVfx.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
   console.log(`${playVfxTag} PLAY_VFX zero budget + impactLayers`);
@@ -2746,7 +2923,7 @@ function run(): void {
   console.log(`  ${DIM}${drawnPathFollowing.reason}${RESET}`);
   if (drawnPathFollowing.pass) passed++;
 
-  const totalCases = suite.length + 27;
+  const totalCases = suite.length + 30;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -618,7 +618,7 @@ export class PhysicsWorld {
     this.pendingWallImpacts = [];
     this.pendingBounceEvents = [];
     this.pendingRamEvents = [];
-    this.pendingApexEvents = [];
+    // pendingApexEvents is filled in updateTrajectories before step(); do not clear here.
     this.pendingGroundImpacts = [];
     this.pendingObstacleDestructions = [];
 
@@ -1283,6 +1283,7 @@ export class PhysicsWorld {
       for (const target of combatants) {
         if (isAlliedTo(projectile.sourceEntityId, target)) continue;
         if (target.isStealthed()) continue;
+        if (target.tags.has('aiming_beacon')) continue;
 
         const minDist = projectile.radius + target.effectiveRadius;
         const minDistSq = minDist * minDist;
