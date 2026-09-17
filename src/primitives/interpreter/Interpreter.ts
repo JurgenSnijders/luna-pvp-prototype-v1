@@ -8,6 +8,7 @@ import type { TriggerContext, ExecutionOverrides } from '../../types/triggerCont
 import { vecTelemetry } from '../../types/telemetry';
 import { DEFAULT_VISUALS, MAX_DEPTH } from './constants';
 import { buildTriggerMap, resolveCastAnchor, safeNormalize } from './helpers';
+import { tickLiveParryShields as tickLiveParryShieldsImpl } from './actions';
 import {
   dispatchRecast as dispatchRecastImpl,
   processLifecycleEvents as processLifecycleEventsImpl,
@@ -138,5 +139,9 @@ export class Interpreter {
 
   updateTrajectories(world: PhysicsWorld, dt: number): void {
     updateTrajectoriesImpl(this, world, dt);
+  }
+
+  tickLiveParryShields(world: PhysicsWorld): void {
+    tickLiveParryShieldsImpl(this, world);
   }
 }

@@ -193,8 +193,8 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
     recoilKick: 0,
     inputProfile: {
       mode: 'INSTANT',
-      windupMs: 120,
-      activeMs: 80,
+      windupMs: 60,
+      activeMs: 350,
       recoveryMs: 300,
     },
     visuals: {
@@ -211,9 +211,10 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
           {
             type: 'REFLECT_PROJECTILES',
             target: 'CASTER',
-            radius: 120,
-            arcDeg: 90,
+            radius: 180,
+            arcDeg: 120,
             arcFacing: 'CASTER_FACING',
+            durationMs: 350,
           },
         ],
       },

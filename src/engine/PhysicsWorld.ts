@@ -115,7 +115,7 @@ export interface GroundImpactEvent {
   archetype?: SpellArchetype;
 }
 
-/** Short-lived arc wedge shown when REFLECT_PROJECTILES fires (visual only, no physics). */
+/** Short-lived arc wedge shown when REFLECT_PROJECTILES fires. Live overlays re-scan each tick. */
 export interface ParryShieldOverlay {
   followEntityId: string;
   pos: Vector2D;
@@ -126,6 +126,11 @@ export interface ParryShieldOverlay {
   castHeadingRad: number;
   color: string;
   remainingMs: number;
+  /** When true, re-scans for projectiles each tick until expiry. */
+  live: boolean;
+  casterId: string;
+  spellArchetype?: SpellArchetype;
+  parryRadius: number;
 }
 
 export class PhysicsWorld {
@@ -590,8 +595,13 @@ export class PhysicsWorld {
     castHeadingRad: number;
     color: string;
     durationMs?: number;
+    live?: boolean;
+    casterId?: string;
+    spellArchetype?: SpellArchetype;
+    parryRadius?: number;
   }): void {
     const follow = this.getEntityById(config.followEntityId);
+    const live = config.live ?? false;
     this.parryShieldOverlays.push({
       followEntityId: config.followEntityId,
       pos: follow?.pos.clone() ?? Vector2D.zero(),
@@ -602,6 +612,10 @@ export class PhysicsWorld {
       castHeadingRad: config.castHeadingRad,
       color: config.color,
       remainingMs: config.durationMs ?? 250,
+      live,
+      casterId: config.casterId ?? config.followEntityId,
+      spellArchetype: config.spellArchetype,
+      parryRadius: config.parryRadius ?? follow?.radius ?? 20,
     });
   }
 

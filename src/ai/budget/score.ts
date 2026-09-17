@@ -70,8 +70,10 @@ function scoreAction(action: ActionPayload, depth: number): number {
       return (action.durationMs / 1000) * 6;
     case 'RELEASE_STASIS':
       return 2;
-    case 'REFLECT_PROJECTILES':
-      return 8 * ((action.radius ?? 150) / 150);
+    case 'REFLECT_PROJECTILES': {
+      const durationFactor = Math.max(1, (action.durationMs ?? 0) / 250);
+      return 8 * ((action.radius ?? 150) / 150) * durationFactor;
+    }
     case 'SPAWN_OBSTACLE': {
       const o = action.obstacle;
       const area = (o.width * o.height) / 10000;

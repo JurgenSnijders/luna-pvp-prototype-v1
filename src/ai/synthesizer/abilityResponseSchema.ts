@@ -407,6 +407,7 @@ const actionBranches = [
       arcDeg: { type: 'number' },
       arcFacing: stringEnum(FIELD_ARC_FACINGS),
       arcOffsetDeg: { type: 'number' },
+      durationMs: { type: 'number' },
     },
     additionalProperties: false,
   },

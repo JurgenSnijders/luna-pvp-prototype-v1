@@ -68,6 +68,7 @@ export function runSimulationStep(app: GameApp, dt: number): void {
 
   app.interpreter.updateTrajectories(app.world, dt);
   app.world.updateSpatialZones(dt);
+  app.interpreter.tickLiveParryShields(app.world);
   applySpatialFields(app, dt);
   app.world.step(dt);
   app.interpreter.processLifecycleEvents(app.world, dt);

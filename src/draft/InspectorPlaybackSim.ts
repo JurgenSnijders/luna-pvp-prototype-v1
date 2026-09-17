@@ -374,6 +374,7 @@ function runSandboxSimulation(spell: AbilitySchema): {
     interp.updateTrajectories(world, SIM_DT);
     interp.processLifecycleEvents(world, SIM_DT, HEADLESS_LIFECYCLE_FX);
     world.updateSpatialZones(SIM_DT);
+    interp.tickLiveParryShields(world);
     applySandboxFields(world, SIM_DT);
     world.step(SIM_DT);
     interp.processLifecycleEvents(world, SIM_DT, HEADLESS_LIFECYCLE_FX);

@@ -12,6 +12,8 @@ import { Summon } from '../../entities/Summon';
 import type {
   ActionPayload,
   EmitterConfig,
+  FieldArcFacing,
+  SpellArchetype,
   TrajectoryConfig,
   TriggerNode,
   VisualDescriptor,
@@ -378,6 +380,9 @@ export function dispatchAction(
       const radius = action.radius ?? 150;
       const castHeadingRad = Math.atan2(ctx.heading.y, ctx.heading.x);
       const shieldColor = secondaryColor(interp.activeCastVisuals, '#88ccff');
+      const durationMs = action.durationMs ?? 0;
+      const live = durationMs > 0;
+
       world.spawnParryShieldOverlay({
         followEntityId: t.id,
         radius,
@@ -386,9 +391,12 @@ export function dispatchAction(
         arcOffsetDeg: action.arcOffsetDeg,
         castHeadingRad,
         color: shieldColor,
+        durationMs: live ? durationMs : 250,
+        live,
+        casterId: ctx.caster.id,
+        spellArchetype: ctx.ability?.archetype,
+        parryRadius: t.radius,
       });
-
-      const parryCtx = { parryCenter: t.pos, parryRadius: t.radius };
 
       const emitDeflected = (proj: Projectile): void => {
         world.emitCombatVisualEvent({
@@ -401,24 +409,20 @@ export function dispatchAction(
       };
 
       if (t instanceof Projectile) {
-        reflectProjectile(t, ctx.caster.id, parryCtx);
+        reflectProjectile(t, ctx.caster.id, { parryCenter: t.pos, parryRadius: t.radius });
         emitDeflected(t);
         break;
       }
 
-      const radiusSq = radius * radius;
-      const facingRad = resolveArcFacingRad(action.arcFacing ?? 'CAST_HEADING', action.arcOffsetDeg ?? 0, {
-        entityFacingRad: entityFacingAngle(t),
+      scanReflectProjectilesInWedge(world, t, ctx.caster.id, {
+        radius,
+        arcDeg: action.arcDeg,
+        arcFacing: action.arcFacing,
+        arcOffsetDeg: action.arcOffsetDeg,
         castHeadingRad,
+        spellArchetype: ctx.ability?.archetype,
+        targetId: t.id,
       });
-      for (const proj of world.projectiles) {
-        if (proj.isDead) continue;
-        if (proj.sourceEntityId === ctx.caster.id) continue;
-        if (proj.pos.distSq(t.pos) > radiusSq) continue;
-        if (!isPointInArcWedge(t.pos, proj.pos, action.arcDeg, facingRad)) continue;
-        reflectProjectile(proj, ctx.caster.id, parryCtx);
-        emitDeflected(proj);
-      }
       break;
     }
     case 'SPAWN_OBSTACLE': {
@@ -544,6 +548,68 @@ export function dispatchAction(
       world.addSummon(summon);
       break;
     }
+  }
+}
+
+export interface ReflectWedgeOptions {
+  radius: number;
+  arcDeg?: number;
+  arcFacing?: FieldArcFacing;
+  arcOffsetDeg?: number;
+  castHeadingRad: number;
+  spellArchetype?: SpellArchetype;
+  targetId: string;
+}
+
+export function scanReflectProjectilesInWedge(
+  world: PhysicsWorld,
+  center: Entity,
+  casterId: string,
+  options: ReflectWedgeOptions,
+): number {
+  const radiusSq = options.radius * options.radius;
+  const facingRad = resolveArcFacingRad(
+    options.arcFacing ?? 'CAST_HEADING',
+    options.arcOffsetDeg ?? 0,
+    {
+      entityFacingRad: entityFacingAngle(center),
+      castHeadingRad: options.castHeadingRad,
+    },
+  );
+  const parryCtx = { parryCenter: center.pos, parryRadius: center.radius };
+  let reflected = 0;
+  for (const proj of world.projectiles) {
+    if (proj.isDead) continue;
+    if (proj.sourceEntityId === casterId) continue;
+    if (proj.pos.distSq(center.pos) > radiusSq) continue;
+    if (!isPointInArcWedge(center.pos, proj.pos, options.arcDeg, facingRad)) continue;
+    reflectProjectile(proj, casterId, parryCtx);
+    world.emitCombatVisualEvent({
+      type: 'STATUS_APPLIED',
+      pos: { x: proj.pos.x, y: proj.pos.y },
+      label: 'DEFLECTED',
+      archetype: options.spellArchetype,
+      targetId: options.targetId,
+    });
+    reflected++;
+  }
+  return reflected;
+}
+
+export function tickLiveParryShields(_interp: Interpreter, world: PhysicsWorld): void {
+  for (const overlay of world.parryShieldOverlays) {
+    if (!overlay.live || overlay.remainingMs <= 0) continue;
+    const follow = world.getEntityById(overlay.followEntityId);
+    if (!follow || follow.isDead) continue;
+    scanReflectProjectilesInWedge(world, follow, overlay.casterId, {
+      radius: overlay.radius,
+      arcDeg: overlay.arcDeg,
+      arcFacing: overlay.arcFacing,
+      arcOffsetDeg: overlay.arcOffsetDeg,
+      castHeadingRad: overlay.castHeadingRad,
+      spellArchetype: overlay.spellArchetype,
+      targetId: overlay.followEntityId,
+    });
   }
 }
 

@@ -286,6 +286,12 @@ export function validateActionPayload(
         }
         action.arcOffsetDeg = clamp(value.arcOffsetDeg, -360, 360);
       }
+      if (value.durationMs !== undefined) {
+        if (!isNumber(value.durationMs) || value.durationMs < 0) {
+          return validationFail(issues, `${path}.durationMs`, 'invalid durationMs');
+        }
+        action.durationMs = clamp(value.durationMs, 0, 10000);
+      }
       return action;
     }
 

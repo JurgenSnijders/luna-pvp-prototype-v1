@@ -580,6 +580,11 @@ function buildPropertyPanel(
       else leaf.arcOffsetDeg = v;
       refresh();
     });
+    numberRow(parent, 'Duration (ms)', 0, 5000, 50, () => leaf.durationMs ?? 0, (v) => {
+      if (v === 0) delete leaf.durationMs;
+      else leaf.durationMs = v;
+      refresh();
+    });
   } else if (leaf?.type === 'TELEPORT') {
     numberRow(parent, 'Distance', 0, 1000, 10, () => leaf.distance, (v) => {
       leaf.distance = v;

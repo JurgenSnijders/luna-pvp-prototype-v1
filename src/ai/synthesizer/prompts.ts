@@ -161,8 +161,8 @@ MODIFY_STAT { stat: mass|linearDrag|moveSpeed|instabilityPct|health, value, mode
 TELEPORT { distance, target?, direction? }
 APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
 RELEASE_STASIS { target? }
-REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACING"|"CAST_HEADING"|"FIXED", arcOffsetDeg?: number }
-  arcDeg/arcFacing/arcOffsetDeg: optional wedge (same as SPAWN_FIELD). Omitted or arcDeg:360 = full circle. Directional parry recipe: arcDeg:90 + arcFacing:"CASTER_FACING" + radius:80-150 — reflects hostile projectiles in front of the caster only.
+REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACING"|"CAST_HEADING"|"FIXED", arcOffsetDeg?: number, durationMs?: number }
+  arcDeg/arcFacing/arcOffsetDeg: optional wedge (same as SPAWN_FIELD). Omitted or arcDeg:360 = full circle. durationMs: catch window in ms; omitted or 0 = one-shot snapshot on ON_CAST only. Directional parry recipe: arcDeg:120 + arcFacing:"CASTER_FACING" + radius:160-180 + durationMs:300-400 — reflects hostile projectiles in front of the caster while the shield is up.
 SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
 MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
@@ -221,7 +221,7 @@ Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
 Greatsword Cleave: inputProfile:{ mode:"INSTANT", windupMs:250, activeMs:150, recoveryMs:400, moveScale:{ windup:0.5, recovery:0.6 } } + ON_CAST SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:90, strength:650, durationMs:200, attachToSource:true, arcDeg:90, arcFacing:"CASTER_FACING" } } + ON_RAM -> APPLY_IMPULSE { baseForce:500, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
-Directional Parry: inputProfile:{ mode:"INSTANT", windupMs:120, activeMs:80, recoveryMs:300 } + ON_CAST REFLECT_PROJECTILES { target:"CASTER", radius:120, arcDeg:90, arcFacing:"CASTER_FACING" }
+Directional Parry: inputProfile:{ mode:"INSTANT", windupMs:60, activeMs:350, recoveryMs:300 } + ON_CAST REFLECT_PROJECTILES { target:"CASTER", radius:180, arcDeg:120, arcFacing:"CASTER_FACING", durationMs:350 }
 Serpent Lash: trajectory DRAWN_PATH { speed:420, maxRange:520, pathSpace:"CASTER_RELATIVE", pathPoints:[{x:0,y:0},{x:80,y:-40},{x:160,y:40},{x:240,y:-20},{x:320,y:0}] } + ON_HIT APPLY_IMPULSE { baseForce:550, target:"TARGET", directionMode:"ALONG_TRAJECTORY" } — S-curve skillshot that bends around cover.
 Struggling Missile: trajectory LINEAR { speed:180-260, maxRange:450-600, motion:{ speedCurve:{ startScale:0.25-0.45, rampMs:500-900 }, wobble:{ amplitudeDeg:6-18, frequencyHz:1.5-3, decay:0.5-1.5 } } } + ON_HIT APPLY_IMPULSE — slow, wobbly rocket that accelerates mid-flight.
 Charged Shot: inputProfile:{ mode:"CHARGE_AND_RELEASE", minChargeMs:200, maxChargeMs:1200 } + trajectory LINEAR + ON_HIT APPLY_IMPULSE

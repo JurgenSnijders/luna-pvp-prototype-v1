@@ -344,6 +344,9 @@ export function sanitizeAction(
       if (raw.arcOffsetDeg !== undefined) {
         action.arcOffsetDeg = clamp(ensureFiniteNumber(raw.arcOffsetDeg, 0), -360, 360);
       }
+      if (raw.durationMs !== undefined) {
+        action.durationMs = clamp(ensureFiniteNumber(raw.durationMs, 0), 0, 10000);
+      }
       return action;
     }
 

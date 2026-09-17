@@ -1324,6 +1324,76 @@ function assertDirectionalParry(): { pass: boolean; reason: string } {
   return { pass: true, reason: '90° CASTER_FACING parry reflected front only with reversed heading' };
 }
 
+/** Parry durationMs — live window catches late arrivals; snapshot does not. */
+function assertParryDurationWindow(): { pass: boolean; reason: string } {
+  const DT = 1 / 60;
+  const enemyId = 'parry_delay_enemy';
+  const radius = 150;
+  const reflectAction = {
+    type: 'REFLECT_PROJECTILES' as const,
+    target: 'CASTER' as const,
+    radius,
+    arcDeg: 90,
+    arcFacing: 'CASTER_FACING' as const,
+  };
+
+  const makeSetup = () => {
+    const world = new PhysicsWorld(Vector2D.zero(), 800);
+    const caster = new Player(new Vector2D(0, 0));
+    caster.facingAngle = 0;
+    caster.id = 'parry_duration_caster';
+    world.addPlayer(caster);
+    const traj = { type: 'LINEAR' as const, speed: 200 };
+    const proj = new Projectile(new Vector2D(200, 0), traj, enemyId, Math.PI, new Map());
+    world.addProjectile(proj);
+    const interp = new Interpreter();
+    const ctx = {
+      origin: caster.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster,
+      depth: 0,
+    };
+    return { world, caster, proj, interp, ctx };
+  };
+
+  const advanceParry = (
+    world: PhysicsWorld,
+    interp: Interpreter,
+    proj: Projectile,
+    caster: Player,
+    frames: number,
+  ): boolean => {
+    for (let i = 0; i < frames; i++) {
+      interp.updateTrajectories(world, DT);
+      world.updateSpatialZones(DT);
+      interp.tickLiveParryShields(world);
+      if (proj.sourceEntityId === caster.id) return true;
+    }
+    return proj.sourceEntityId === caster.id;
+  };
+
+  const live = makeSetup();
+  dispatchAction(live.interp, { ...reflectAction, durationMs: 350 }, live.ctx, live.world);
+  if (live.proj.sourceEntityId === live.caster.id) {
+    return { pass: false, reason: 'live parry reflected before projectile entered wedge' };
+  }
+  if (!advanceParry(live.world, live.interp, live.proj, live.caster, 40)) {
+    return { pass: false, reason: 'live parry did not reflect projectile that entered wedge later' };
+  }
+
+  const snapshot = makeSetup();
+  dispatchAction(snapshot.interp, reflectAction, snapshot.ctx, snapshot.world);
+  if (snapshot.proj.sourceEntityId === snapshot.caster.id) {
+    return { pass: false, reason: 'snapshot parry reflected projectile outside wedge on dispatch' };
+  }
+  if (advanceParry(snapshot.world, snapshot.interp, snapshot.proj, snapshot.caster, 40)) {
+    return { pass: false, reason: 'snapshot parry reflected after dispatch without durationMs' };
+  }
+
+  return { pass: true, reason: 'durationMs window catches late arrivals; snapshot stays one-shot' };
+}
+
 function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {
   seedEffectiveTierForTests('LOW');
   const runtime = {
@@ -3446,6 +3516,12 @@ function run(): void {
   console.log(`  ${DIM}${directionalParry.reason}${RESET}`);
   if (directionalParry.pass) passed++;
 
+  const parryDuration = assertParryDurationWindow();
+  const parryDurationTag = parryDuration.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${parryDurationTag} Parry duration window`);
+  console.log(`  ${DIM}${parryDuration.reason}${RESET}`);
+  if (parryDuration.pass) passed++;
+
   const sixTierEvolution = assertSixTierEvolution();
   const sixTierEvolutionTag = sixTierEvolution.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -3506,7 +3582,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 38;
+  const totalCases = suite.length + 39;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

@@ -407,6 +407,8 @@ export interface ReflectProjectilesAction {
   arcDeg?: number;
   arcFacing?: FieldArcFacing;
   arcOffsetDeg?: number;
+  /** Catch window in ms. Omitted or 0 = one-shot snapshot on ON_CAST only. */
+  durationMs?: number;
 }
 
 export interface ObstacleConfig {
