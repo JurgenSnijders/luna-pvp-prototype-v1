@@ -347,6 +347,9 @@ export function sanitizeAction(
       if (raw.durationMs !== undefined) {
         action.durationMs = clamp(ensureFiniteNumber(raw.durationMs, 0), 0, 10000);
       }
+      if (raw.whileHeld !== undefined) {
+        action.whileHeld = Boolean(raw.whileHeld);
+      }
       return action;
     }
 

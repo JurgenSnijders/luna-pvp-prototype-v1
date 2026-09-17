@@ -188,6 +188,148 @@ function actorHasMassAttractorTick(schema: AbilitySchema): boolean {
   return found;
 }
 
+function onCastActions(schema: AbilitySchema): ActionPayload[] {
+  return schema.triggers.find((t) => t.trigger === 'ON_CAST')?.actions ?? [];
+}
+
+function runShieldRepairAssertions(): string[] {
+  const failures: string[] = [];
+
+  const aegisMashup: AbilitySchema = {
+    id: 'aegis_parry_wall',
+    name: 'Aegis Parry Wall',
+    tagline: 'Parry and riposte',
+    description: 'Deploy a forward energy barrier that knocks enemies back.',
+    cooldownMs: 1200,
+    recoilKick: 0,
+    inputProfile: { mode: 'INSTANT', windupMs: 60, activeMs: 400, recoveryMs: 300 },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'REFLECT_PROJECTILES',
+            target: 'CASTER',
+            radius: 180,
+            arcDeg: 120,
+            arcFacing: 'CASTER_FACING',
+            durationMs: 400,
+          },
+          {
+            type: 'SPAWN_FIELD',
+            field: {
+              fieldType: 'RADIAL_IMPULSE',
+              radius: 90,
+              strength: 650,
+              durationMs: 200,
+              attachToSource: true,
+            },
+          },
+          {
+            type: 'SPAWN_OBSTACLE',
+            obstacle: {
+              shape: 'BOX',
+              width: 80,
+              height: 24,
+              durationMs: 5000,
+              isDestructible: true,
+              maxHealth: 150,
+            },
+            target: 'CASTER',
+          },
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: {
+              actorArchetype: 'TURRET',
+              health: 100,
+              durationMs: 7000,
+              anchored: true,
+              triggers: [
+                {
+                  trigger: 'ON_TICK',
+                  tickIntervalMs: 100,
+                  actions: [
+                    {
+                      type: 'SPAWN_PROJECTILE',
+                      projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+                      triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'APPLY_IMPULSE', baseForce: 300 }] }],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const aegisFlavor =
+    'Parry and riposte. Deploy a forward energy barrier that knocks enemies back.';
+  const aegisRepaired = repairAbilitySemantics(aegisMashup, aegisFlavor, true);
+  const aegisOnCast = onCastActions(aegisRepaired);
+  const aegisReflect = aegisOnCast.filter((a) => a.type === 'REFLECT_PROJECTILES');
+  if (aegisReflect.length !== 1) {
+    failures.push(`aegis mashup: expected exactly one REFLECT_PROJECTILES, got ${aegisReflect.length}`);
+  } else if (aegisReflect[0].whileHeld) {
+    failures.push('aegis mashup: tap parry must not set whileHeld');
+  } else if (!aegisReflect[0].durationMs || aegisReflect[0].durationMs < 300) {
+    failures.push('aegis mashup: expected tap-parry durationMs');
+  }
+  if (aegisOnCast.some((a) => a.type === 'SPAWN_OBSTACLE' || a.type === 'SPAWN_ACTOR')) {
+    failures.push('aegis mashup: must strip obstacle and actor from ON_CAST');
+  }
+  if (aegisOnCast.some((a) => a.type === 'SPAWN_FIELD' && a.field.fieldType === 'RADIAL_IMPULSE')) {
+    failures.push('aegis mashup: must strip knockback field from ON_CAST');
+  }
+
+  const holdGuardEmpty: AbilitySchema = {
+    id: 'hold_guard_empty',
+    name: 'Bulwark',
+    cooldownMs: 800,
+    recoilKick: 0,
+    triggers: [{ trigger: 'ON_CAST', actions: [] }],
+  };
+  const holdRepaired = repairAbilitySemantics(
+    holdGuardEmpty,
+    'Hold shield to block incoming projectiles',
+    true,
+  );
+  const holdReflect = onCastActions(holdRepaired).find((a) => a.type === 'REFLECT_PROJECTILES');
+  if (!holdReflect || holdReflect.type !== 'REFLECT_PROJECTILES' || !holdReflect.whileHeld) {
+    failures.push('hold guard inject: expected ON_CAST REFLECT_PROJECTILES with whileHeld:true');
+  }
+
+  const barricadeRepaired = repairAbilitySemantics(
+    structuredClone(holdGuardEmpty),
+    'Deploys a solid barricade to absorb incoming enemy fire.',
+    true,
+  );
+  const barricadeOnCast = onCastActions(barricadeRepaired);
+  if (!barricadeOnCast.some((a) => a.type === 'SPAWN_OBSTACLE')) {
+    failures.push('force barricade: expected ON_CAST SPAWN_OBSTACLE after repair');
+  }
+  if (barricadeOnCast.some((a) => a.type === 'SPAWN_ACTOR')) {
+    failures.push('force barricade: must not receive turret SPAWN_ACTOR from deploy verb alone');
+  }
+
+  const iceWallRepaired = repairAbilitySemantics(
+    structuredClone(holdGuardEmpty),
+    'Summon a frost wall barrier in front of the caster',
+    true,
+  );
+  const iceOnCast = onCastActions(iceWallRepaired);
+  if (!iceOnCast.some((a) => a.type === 'SPAWN_OBSTACLE')) {
+    failures.push('ice wall: expected ON_CAST SPAWN_OBSTACLE after repair');
+  }
+  if (iceOnCast.some((a) => a.type === 'REFLECT_PROJECTILES')) {
+    failures.push('ice wall: must not inject REFLECT_PROJECTILES');
+  }
+
+  return failures;
+}
+
 function runDeployableRepairAssertions(): string[] {
   const failures: string[] = [];
 
@@ -805,6 +947,7 @@ function run(): void {
   const failures: string[] = [
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
+    ...runShieldRepairAssertions(),
     ...runDeployableRepairAssertions(),
     ...runHitExpiryDedupeAssertions(),
     ...runPresetContractAssertions(),

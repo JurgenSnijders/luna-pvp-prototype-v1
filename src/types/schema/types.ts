@@ -409,6 +409,8 @@ export interface ReflectProjectilesAction {
   arcOffsetDeg?: number;
   /** Catch window in ms. Omitted or 0 = one-shot snapshot on ON_CAST only. */
   durationMs?: number;
+  /** When true, wedge stays live while the casting slot button is held (drops on release). */
+  whileHeld?: boolean;
 }
 
 export interface ObstacleConfig {

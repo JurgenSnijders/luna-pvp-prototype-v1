@@ -22,5 +22,7 @@ export interface TriggerContext {
   depth: number;
   chargeRatio?: number;
   comboStep?: number;
+  /** Slot index when cast originated from player input (hold-to-guard binding). */
+  slotIndex?: number;
   ability?: Partial<AbilitySchema>;
 }

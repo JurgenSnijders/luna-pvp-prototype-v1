@@ -1,4 +1,5 @@
 import { KINETIC_RECIPES } from '../../../devtools/Presets';
+import { INPUT_PROFILE_PRESETS } from '../../../devtools/presetPacks/inputProfiles';
 import type {
   CardRarity,
   DraftCard,
@@ -8,6 +9,24 @@ import type {
 import { getCategoryLabel } from '../../../types/cards';
 import type { AbilitySchema } from '../../../types/schema';
 import { makeActiveCard, makePassiveCard } from '../cards';
+
+const GUARDIAN_ORBIT_RECIPE: AbilitySchema = {
+  id: 'guardian_orbit',
+  name: 'Guardian Orbit',
+  cooldownMs: 1000,
+  recoilKick: 20,
+  trajectory: { type: 'ORBIT_ANCHOR', orbitRadius: 55, orbitSpeed: 5, maxRange: 800 },
+  visuals: {
+    color: '#cc88ff',
+    size: 10,
+    projectileStyle: 'SHURIKEN',
+    trailType: 'SMOKE',
+    impactVfx: 'SPARKS',
+  },
+  triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 20 }] }],
+};
+
+const ORBIT_FORGE_KEYWORDS = /\b(orbit|orbiting|circling|revolving|satellite|shuriken|blade)\b/;
 
 export function resolveKineticRecipe(prompt: string): AbilitySchema | null {
   const desc = prompt.toLowerCase();
@@ -21,8 +40,20 @@ export function resolveKineticRecipe(prompt: string): AbilitySchema | null {
   if (/\b(freeze|stasis|stop)\b/.test(desc)) {
     return structuredClone(KINETIC_RECIPES.stasisTrap);
   }
+  if (/\b(parry|deflect|riposte)\b/.test(desc)) {
+    return structuredClone(INPUT_PROFILE_PRESETS['Directional Parry']);
+  }
+  if (/\b(guard|hold[- ]?shield|block[- ]?shield)\b/.test(desc)) {
+    return structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+  }
+  if (/\bshield\b/.test(desc) && !ORBIT_FORGE_KEYWORDS.test(desc)) {
+    return structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+  }
   if (/\b(wall|barrier|block)\b/.test(desc)) {
     return structuredClone(KINETIC_RECIPES.iceWall);
+  }
+  if (ORBIT_FORGE_KEYWORDS.test(desc)) {
+    return structuredClone(GUARDIAN_ORBIT_RECIPE);
   }
   if (/\b(execute|coupe|finisher)\b/.test(desc)) {
     return structuredClone(KINETIC_RECIPES.execute);
@@ -224,27 +255,48 @@ export function generateOfflineDraft(
       { stat: 'MOVE_SPEED', op: 'MULTIPLY', value: 1.2 },
       { stat: 'ACCELERATION', op: 'MULTIPLY', value: 1.15 },
     ];
-  } else if (/\b(shield|orbit|shuriken|blade)\b/.test(p)) {
-    commonSchema = {
-      id: 'off_shield_orbit',
-      name: 'Guardian Orbit',
-      cooldownMs: 1000,
-      recoilKick: 20,
-      trajectory: { type: 'ORBIT_ANCHOR', orbitRadius: 55, orbitSpeed: 5, maxRange: 800 },
-      visuals: { color: '#cc88ff', size: 10, projectileStyle: 'SHURIKEN', trailType: 'SMOKE', impactVfx: 'SPARKS' },
-      triggers: [{ trigger: 'ON_HIT', actions: [{ type: 'ADD_INSTABILITY', amount: 20 }] }],
-    };
-    rareSchema = {
-      id: 'off_repulse',
-      name: 'Repulsion Field',
-      cooldownMs: 1100,
-      recoilKick: 50,
-      visuals: { color: '#ff8844', size: 12, projectileStyle: 'PULSING_ORB', trailType: 'NONE', impactVfx: 'SHOCKWAVE' },
-      triggers: [{
-        trigger: 'ON_CAST',
-        actions: [{ type: 'SPAWN_FIELD', field: { fieldType: 'RADIAL_IMPULSE', radius: 80, strength: 700, durationMs: 500 } }],
-      }],
-    };
+  } else if (/\b(parry|deflect|riposte)\b/.test(p)) {
+    commonSchema = structuredClone(INPUT_PROFILE_PRESETS['Directional Parry']);
+    commonSchema.id = 'off_parry_common';
+    rareSchema = structuredClone(INPUT_PROFILE_PRESETS['Directional Parry']);
+    rareSchema.id = 'off_parry_rare';
+    rareSchema.name = 'Steel Riposte';
+    rareSchema.cooldownMs = 650;
+    passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.15 }];
+  } else if (/\b(guard|hold[- ]?shield|block[- ]?shield)\b/.test(p)) {
+    commonSchema = structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+    commonSchema.id = 'off_guard_common';
+    rareSchema = structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+    rareSchema.id = 'off_guard_rare';
+    rareSchema.name = 'Bulwark';
+    rareSchema.cooldownMs = 650;
+    passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.2 }];
+  } else if (/\bshield\b/.test(p) && !ORBIT_FORGE_KEYWORDS.test(p)) {
+    commonSchema = structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+    commonSchema.id = 'off_shield_guard_common';
+    rareSchema = structuredClone(INPUT_PROFILE_PRESETS['Hold Guard']);
+    rareSchema.id = 'off_shield_guard_rare';
+    rareSchema.name = 'Aegis Hold';
+    rareSchema.cooldownMs = 700;
+    passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.18 }];
+  } else if (/\b(wall|barrier|block)\b/.test(p)) {
+    commonSchema = structuredClone(KINETIC_RECIPES.iceWall);
+    commonSchema.id = 'off_wall_common';
+    rareSchema = structuredClone(KINETIC_RECIPES.iceWall);
+    rareSchema.id = 'off_wall_rare';
+    rareSchema.name = 'Force Barricade';
+    rareSchema.cooldownMs = 1200;
+    passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.1 }];
+  } else if (ORBIT_FORGE_KEYWORDS.test(p)) {
+    commonSchema = structuredClone(GUARDIAN_ORBIT_RECIPE);
+    commonSchema.id = 'off_shield_orbit';
+    rareSchema = structuredClone(GUARDIAN_ORBIT_RECIPE);
+    rareSchema.id = 'off_orbit_rare';
+    rareSchema.name = 'Twin Orbit';
+    rareSchema.cooldownMs = 900;
+    if (rareSchema.trajectory) {
+      rareSchema.trajectory.orbitRadius = 70;
+    }
     passiveMods = [{ stat: 'KNOCKBACK_RESISTANCE', op: 'ADD', value: 0.2 }];
   } else {
     commonSchema = {

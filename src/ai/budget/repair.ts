@@ -34,6 +34,19 @@ const PERSONAL_UTILITY_KEYWORDS =
 const PERSONAL_FIELD_KEYWORDS =
   /\b(only for me|personal|self|caster only|for me|my own)\b/i;
 const LAUNCH_PAD_KEYWORDS = /\b(jump pad|launch pad|launching pad|leap pad|escape pad)\b/i;
+const PARRY_KEYWORDS = /\b(parry|deflect|riposte)\b/;
+const HOLD_GUARD_KEYWORDS =
+  /\b(guard|hold[- ]?shield|block[- ]?shield|block projectiles)\b/;
+
+type ShieldReflectKind = 'hold-guard' | 'parry';
+
+function resolveShieldReflectKind(text: string): ShieldReflectKind | null {
+  if (isOrbitConcept(text)) return null;
+  if (PARRY_KEYWORDS.test(text)) return 'parry';
+  if (HOLD_GUARD_KEYWORDS.test(text)) return 'hold-guard';
+  if (/\bshield\b/.test(text)) return 'hold-guard';
+  return null;
+}
 
 function isMeteorConcept(text: string): boolean {
   return METEOR_KEYWORDS.test(text);
@@ -125,7 +138,11 @@ function schemaHasVerticalDisplacement(schema: AbilitySchema): boolean {
 }
 
 function isDeployableConcept(text: string, schema?: AbilitySchema): boolean {
-  if (/\b(deploy|deployable|turret)\b/.test(text)) return true;
+  if (resolveShieldReflectKind(text) || isOrbitConcept(text)) return false;
+
+  if (/\b(turret)\b/.test(text)) return true;
+
+  if (/\bdeployable\b/.test(text) && /\b(trap|mine|turret)\b/.test(text)) return true;
 
   if (/\b(sentry|pylon|totem)\b/.test(text)) {
     if (schema && hasOrbitAnchorProjectileOnCast(schema)) return false;
@@ -372,11 +389,93 @@ function ensureOnCastNode(schema: AbilitySchema): TriggerNode {
   return onCast;
 }
 
+function findOnCastReflect(
+  schema: AbilitySchema,
+): Extract<ActionPayload, { type: 'REFLECT_PROJECTILES' }> | null {
+  for (const node of schema.triggers) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions) {
+      if (action.type === 'REFLECT_PROJECTILES') return action;
+    }
+  }
+  return null;
+}
+
+function stripOnCastShieldCompetitors(schema: AbilitySchema): void {
+  const onCast = schema.triggers.find((t) => t.trigger === 'ON_CAST');
+  if (!onCast) return;
+  onCast.actions = onCast.actions.filter((action) => {
+    if (action.type === 'REFLECT_PROJECTILES') return true;
+    if (action.type === 'SPAWN_OBSTACLE' || action.type === 'SPAWN_ACTOR') return false;
+    if (action.type === 'APPLY_IMPULSE') return false;
+    if (
+      action.type === 'SPAWN_FIELD' &&
+      action.field.fieldType === 'RADIAL_IMPULSE'
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function applyRuleJ_ShieldReflect(
+  schema: AbilitySchema,
+  text: string,
+  repairMode: SemanticRepairMode,
+): void {
+  const kind = resolveShieldReflectKind(text);
+  if (!kind) return;
+
+  const onCast = ensureOnCastNode(schema);
+  let reflect = onCast.actions.find((a) => a.type === 'REFLECT_PROJECTILES');
+  if (!reflect) {
+    reflect = {
+      type: 'REFLECT_PROJECTILES',
+      target: 'CASTER',
+      radius: 180,
+      arcDeg: 120,
+      arcFacing: 'CASTER_FACING',
+    };
+    onCast.actions.unshift(reflect);
+  }
+
+  reflect.target = reflect.target ?? 'CASTER';
+  reflect.radius = reflect.radius ?? 180;
+  reflect.arcDeg = reflect.arcDeg ?? 120;
+  reflect.arcFacing = reflect.arcFacing ?? 'CASTER_FACING';
+
+  if (kind === 'hold-guard') {
+    reflect.whileHeld = true;
+    if (reflect.durationMs !== undefined && reflect.durationMs <= 0) {
+      delete reflect.durationMs;
+    }
+    schema.inputProfile = { mode: 'INSTANT' };
+  } else {
+    delete reflect.whileHeld;
+    if (reflect.durationMs === undefined || reflect.durationMs <= 0) {
+      reflect.durationMs = 350;
+    }
+    const existing = schema.inputProfile;
+    schema.inputProfile = {
+      mode: 'INSTANT',
+      windupMs: existing?.windupMs ?? 60,
+      activeMs: existing?.activeMs ?? 350,
+      recoveryMs: existing?.recoveryMs ?? 300,
+    };
+  }
+
+  if (repairMode === 'FIRST_GENERATION') {
+    delete schema.trajectory;
+    stripOnCastShieldCompetitors(schema);
+  }
+}
+
 function applyRuleF_Obstacle(
   schema: AbilitySchema,
   text: string,
   repairMode: SemanticRepairMode,
 ): void {
+  if (resolveShieldReflectKind(text) || isOrbitConcept(text)) return;
   if (!isObstacleConcept(text)) return;
 
   const onCast = ensureOnCastNode(schema);
@@ -963,7 +1062,9 @@ function ensureDisplacementSemantics(
     isPureSpatialUtility(schema) ||
     isStasisOnlyOnHit(schema) ||
     hasLifecycleFieldDisplacement(schema) ||
-    isObstacleConcept(text)
+    isObstacleConcept(text) ||
+    resolveShieldReflectKind(text) !== null ||
+    findOnCastReflect(schema) !== null
   ) {
     return schema;
   }
@@ -1158,6 +1259,7 @@ export function repairAbilitySemantics(
   cloned.triggers = repairTriggersSemantics(cloned.triggers, text, isHeadlessMode, repairMode);
 
   if (text) {
+    applyRuleJ_ShieldReflect(cloned, text, repairMode);
     applyRuleF_Obstacle(cloned, text, repairMode);
     applyRuleG_Deployable(cloned, text, repairMode);
     if (repairMode === 'FIRST_GENERATION') {

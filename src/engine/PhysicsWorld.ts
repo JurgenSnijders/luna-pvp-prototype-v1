@@ -131,6 +131,11 @@ export interface ParryShieldOverlay {
   casterId: string;
   spellArchetype?: SpellArchetype;
   parryRadius: number;
+  /** Hold-to-guard: wedge persists while the casting slot button is down. */
+  whileHeld?: boolean;
+  slotIndex?: number;
+  /** Max hold ms when whileHeld; omitted = no cap (release-only). */
+  holdCapMs?: number;
 }
 
 export class PhysicsWorld {
@@ -599,9 +604,13 @@ export class PhysicsWorld {
     casterId?: string;
     spellArchetype?: SpellArchetype;
     parryRadius?: number;
+    whileHeld?: boolean;
+    slotIndex?: number;
+    holdCapMs?: number;
   }): void {
     const follow = this.getEntityById(config.followEntityId);
     const live = config.live ?? false;
+    const holdCapMs = config.holdCapMs;
     this.parryShieldOverlays.push({
       followEntityId: config.followEntityId,
       pos: follow?.pos.clone() ?? Vector2D.zero(),
@@ -611,12 +620,31 @@ export class PhysicsWorld {
       arcOffsetDeg: config.arcOffsetDeg ?? 0,
       castHeadingRad: config.castHeadingRad,
       color: config.color,
-      remainingMs: config.durationMs ?? 250,
+      remainingMs: holdCapMs ?? config.durationMs ?? 250,
       live,
       casterId: config.casterId ?? config.followEntityId,
       spellArchetype: config.spellArchetype,
       parryRadius: config.parryRadius ?? follow?.radius ?? 20,
+      whileHeld: config.whileHeld,
+      slotIndex: config.slotIndex,
+      holdCapMs,
     });
+  }
+
+  removeWhileHeldParryShields(casterId: string, slotIndex: number): void {
+    let write = 0;
+    for (let i = 0; i < this.parryShieldOverlays.length; i++) {
+      const overlay = this.parryShieldOverlays[i];
+      if (
+        overlay.whileHeld &&
+        overlay.casterId === casterId &&
+        overlay.slotIndex === slotIndex
+      ) {
+        continue;
+      }
+      this.parryShieldOverlays[write++] = overlay;
+    }
+    this.parryShieldOverlays.length = write;
   }
 
   getParryShieldFacingRad(overlay: ParryShieldOverlay): number {
@@ -638,8 +666,24 @@ export class PhysicsWorld {
     let write = 0;
     for (let i = 0; i < this.parryShieldOverlays.length; i++) {
       const overlay = this.parryShieldOverlays[i];
-      overlay.remainingMs -= dtMs;
-      if (overlay.remainingMs <= 0) continue;
+
+      if (overlay.whileHeld) {
+        const player = this.players.find((p) => p.id === overlay.casterId);
+        const slotHeld =
+          player !== undefined &&
+          overlay.slotIndex !== undefined &&
+          player.isSlotInputHeld(overlay.slotIndex);
+        if (!slotHeld) continue;
+
+        if (overlay.holdCapMs !== undefined) {
+          overlay.remainingMs -= dtMs;
+          if (overlay.remainingMs <= 0) continue;
+        }
+      } else {
+        overlay.remainingMs -= dtMs;
+        if (overlay.remainingMs <= 0) continue;
+      }
+
       const follow = this.getEntityById(overlay.followEntityId);
       if (follow && !follow.isDead) {
         overlay.pos.copyFrom(follow.pos);

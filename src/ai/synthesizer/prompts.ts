@@ -161,8 +161,10 @@ MODIFY_STAT { stat: mass|linearDrag|moveSpeed|instabilityPct|health, value, mode
 TELEPORT { distance, target?, direction? }
 APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
 RELEASE_STASIS { target? }
-REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACING"|"CAST_HEADING"|"FIXED", arcOffsetDeg?: number, durationMs?: number }
-  arcDeg/arcFacing/arcOffsetDeg: optional wedge (same as SPAWN_FIELD). Omitted or arcDeg:360 = full circle. durationMs: catch window in ms; omitted or 0 = one-shot snapshot on ON_CAST only. Directional parry recipe: arcDeg:120 + arcFacing:"CASTER_FACING" + radius:160-180 + durationMs:300-400 — reflects hostile projectiles in front of the caster while the shield is up.
+REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACING"|"CAST_HEADING"|"FIXED", arcOffsetDeg?: number, durationMs?: number, whileHeld?: boolean }
+  arcDeg/arcFacing/arcOffsetDeg: optional wedge (same as SPAWN_FIELD). Omitted or arcDeg:360 = full circle. durationMs: tap-parry catch window in ms (omitted or 0 = one-shot snapshot on ON_CAST only); with whileHeld:true = optional max-hold cap in ms. whileHeld: true = wedge stays up while the player holds the cast button (drops on release). NEVER use CHARGE_AND_RELEASE or CHANNELED for hold shields.
+  Directional parry (tap/timed): inputProfile INSTANT + durationMs:300-400 + arcDeg:120 + arcFacing:"CASTER_FACING" + radius:160-180.
+  Hold guard (sustained block): inputProfile INSTANT + whileHeld:true + arcDeg:120 + arcFacing:"CASTER_FACING" + radius:160-180 + optional durationMs:2000-3000 as max-hold cap. Orbiting shields = ORBIT_ANCHOR; solid barriers = SPAWN_OBSTACLE — not REFLECT_PROJECTILES.
 SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
 MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
@@ -172,7 +174,7 @@ LAUNCH_VERTICAL { verticalImpulse?, targetApex?, target? } — launch target upw
 SET_GRAVITY_SCALE { scale: 0-8, durationMs?, target? } — override gravity multiplier; durationMs restores default when expired.
 PLAY_VFX { vfx?, layers?, scale?, target? } — zero-cost visual burst at a trigger moment (apex puff, bounce scuff, windup telegraph). layers overrides vfx preset when present. No physics.
 
-SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE/SPAWN_ACTOR). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
+SPAWN PATH (required): root trajectory OR ON_CAST spawn (SPAWN_PROJECTILE/SPAWN_FIELD/TELEPORT/SPAWN_OBSTACLE/SPAWN_ACTOR/REFLECT_PROJECTILES). Do NOT put the only projectile solely on ON_HIT without a root trajectory.
 
 DEPLOYABLES: An entity that persists and acts autonomously. Use actorArchetype (TURRET|DECOY) on the actor object — NOT the spell-level archetype field (FROST, VOID, etc.).
 Two shapes:
@@ -221,7 +223,8 @@ Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }
 Ice Wall: ON_CAST -> SPAWN_OBSTACLE { shape:"BOX", isDestructible:true, target:"CASTER", width:80, height:24, durationMs:5000 }
 Execute: ON_HIT conditions:[{ query:"STAT_THRESHOLD", stat:"health", comparison:"LT", value:30 }] -> APPLY_IMPULSE { baseForce:1200, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
 Greatsword Cleave: inputProfile:{ mode:"INSTANT", windupMs:250, activeMs:150, recoveryMs:400, moveScale:{ windup:0.5, recovery:0.6 } } + ON_CAST SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:90, strength:650, durationMs:200, attachToSource:true, arcDeg:90, arcFacing:"CASTER_FACING" } } + ON_RAM -> APPLY_IMPULSE { baseForce:500, target:"TARGET", directionMode:"AWAY_FROM_ORIGIN" }
-Directional Parry: inputProfile:{ mode:"INSTANT", windupMs:60, activeMs:350, recoveryMs:300 } + ON_CAST REFLECT_PROJECTILES { target:"CASTER", radius:180, arcDeg:120, arcFacing:"CASTER_FACING", durationMs:350 }
+Directional Parry: inputProfile:{ mode:"INSTANT", windupMs:60, activeMs:350, recoveryMs:300 } + ON_CAST REFLECT_PROJECTILES { target:"CASTER", radius:180, arcDeg:120, arcFacing:"CASTER_FACING", durationMs:350 } — do NOT combine with Ice Wall, turret, or cleave RADIAL_IMPULSE.
+Hold Guard: inputProfile:{ mode:"INSTANT" } + ON_CAST REFLECT_PROJECTILES { target:"CASTER", radius:180, arcDeg:120, arcFacing:"CASTER_FACING", whileHeld:true, durationMs:2500 } — do NOT combine with Ice Wall, turret, or cleave RADIAL_IMPULSE.
 Serpent Lash: trajectory DRAWN_PATH { speed:420, maxRange:520, pathSpace:"CASTER_RELATIVE", pathPoints:[{x:0,y:0},{x:80,y:-40},{x:160,y:40},{x:240,y:-20},{x:320,y:0}] } + ON_HIT APPLY_IMPULSE { baseForce:550, target:"TARGET", directionMode:"ALONG_TRAJECTORY" } — S-curve skillshot that bends around cover.
 Struggling Missile: trajectory LINEAR { speed:180-260, maxRange:450-600, motion:{ speedCurve:{ startScale:0.25-0.45, rampMs:500-900 }, wobble:{ amplitudeDeg:6-18, frequencyHz:1.5-3, decay:0.5-1.5 } } } + ON_HIT APPLY_IMPULSE — slow, wobbly rocket that accelerates mid-flight.
 Charged Shot: inputProfile:{ mode:"CHARGE_AND_RELEASE", minChargeMs:200, maxChargeMs:1200 } + trajectory LINEAR + ON_HIT APPLY_IMPULSE
@@ -250,12 +253,13 @@ SEMANTIC FIDELITY RULES (The compiled physics MUST match the concept description
 - SWEEP / ARC / SALVO: If description mentions sweep, arc, salvo, or scatter, you MUST use SPAWN_PROJECTILE with an emitter (count: 3-5, spreadDeg: 30-60, distribution: "FAN").
 - LINGERING / FIRE: If description mentions lingering, sticky fire, or pools, you MUST spawn a persistent SPAWN_FIELD or MUTATE_TERRAIN.
 - FLAMETHROWER / STREAM: If description mentions flamethrower, stream, or continuous fire, you MUST use inputProfile: { mode: "CHANNELED", channelIntervalMs: 100 } and resourceCost: { type: "HEAT" }.
-- DEPLOY / TURRET / SENTRY / TRAP / MINE / PYLON / TOTEM: You MUST use SPAWN_ACTOR with actorArchetype (TURRET or DECOY) and a populated actor.triggers array. If the concept says deploy, place, or drop, you MUST omit the root trajectory. NEVER satisfy a deployable concept with a bare projectile. NEVER put spell archetype (FROST, VOID) in actorArchetype.
+- PARRY / SHIELD / WALL / ORBIT (pick exactly ONE — never stack): Tap parry/deflect/riposte → ON_CAST REFLECT_PROJECTILES with durationMs:300-400, no whileHeld. Hold guard/held shield/block projectiles/bare shield (not orbiting) → REFLECT_PROJECTILES with whileHeld:true, inputProfile INSTANT only. Solid wall/barrier/barricade/bunker → SPAWN_OBSTACLE only (never REFLECT). Orbiting/circling/revolving/satellite shields → ORBIT_ANCHOR trajectory only (never REFLECT). Never combine parry/guard with obstacle, turret, or knockback field on the same ON_CAST.
+- DEPLOY / TURRET / SENTRY / TRAP / MINE / PYLON / TOTEM: You MUST use SPAWN_ACTOR with actorArchetype (TURRET or DECOY) and a populated actor.triggers array only when the concept names a turret, sentry, trap, mine, pylon, or totem. "Deploy a wall/barrier/shield" is SPAWN_OBSTACLE or REFLECT — NOT SPAWN_ACTOR. If the concept places a deployable actor, you MUST omit the root trajectory. NEVER satisfy a deployable concept with a bare projectile. NEVER put spell archetype (FROST, VOID) in actorArchetype.
 - METEOR / SHOWER / SKY DROP: You MUST use targetingMode "GROUND_POINT", trajectory.type "BALLISTIC_ARC", speed 0, spawnAltitude 600-800, fallSpeed 1400-1800. Multi-drop barrages MUST use ON_CAST SPAWN_PROJECTILE with emitter count 3-5 and distribution RADIAL — NEVER type LINEAR with spawnAltitude.
 - MORTAR / GRENADE / LOB / ARTILLERY: You MUST use targetingMode "DIRECTIONAL" (default), trajectory.type "BALLISTIC_ARC" with lobApex 20-300 and speed > 0. NEVER use targetingMode "GROUND_POINT" or spawnAltitude for forward-thrown shells — those are sky drops only.
 - SELF / ALLY FILTERING: "only for me", "personal", or "caster only" → affects: "CASTER_ONLY" on SPAWN_FIELD; direct self-buffs use target: "CASTER" on actions. Neutral geysers that launch everyone use affects: "ALL". Default field affects is ENEMIES — enemies only.
 
-Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy.`;
+Match visuals to concept. The ultimate goal is displacing enemies into lava. While constraints and stasis are great, ensure damaging spells culminate in an APPLY_IMPULSE or strong MASS_ATTRACTOR/RADIAL_IMPULSE to physically move the enemy — EXCEPT pure parry, hold-guard shield, or solid ice-wall/barrier concepts (those are complete without knockback).`;
 
 // Phase 2 (lazy compilation): single-ability physics compiler for metadata-only cards.
 export const COMPILER_SYSTEM_PROMPT = `You are a kinetic physics compiler for a 2D top-down arena game.

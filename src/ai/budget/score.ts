@@ -71,7 +71,10 @@ function scoreAction(action: ActionPayload, depth: number): number {
     case 'RELEASE_STASIS':
       return 2;
     case 'REFLECT_PROJECTILES': {
-      const durationFactor = Math.max(1, (action.durationMs ?? 0) / 250);
+      const effectiveDurationMs = action.whileHeld
+        ? Math.max(2000, action.durationMs ?? 2000)
+        : (action.durationMs ?? 0);
+      const durationFactor = Math.max(1, effectiveDurationMs / 250);
       return 8 * ((action.radius ?? 150) / 150) * durationFactor;
     }
     case 'SPAWN_OBSTACLE': {

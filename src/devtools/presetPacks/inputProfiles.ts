@@ -185,6 +185,38 @@ export const INPUT_PROFILE_PRESETS: Record<string, AbilitySchema> = {
     ],
   },
 
+  'Hold Guard': {
+    id: 'test_hold_guard',
+    name: 'Hold Guard',
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    inputProfile: { mode: 'INSTANT' },
+    visuals: {
+      color: '#66ddff',
+      size: 10,
+      projectileStyle: 'DISC',
+      trailType: 'NONE',
+      impactVfx: 'SHOCKWAVE',
+    },
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'REFLECT_PROJECTILES',
+            target: 'CASTER',
+            radius: 180,
+            arcDeg: 120,
+            arcFacing: 'CASTER_FACING',
+            whileHeld: true,
+            durationMs: 2500,
+          },
+        ],
+      },
+    ],
+  },
+
   'Directional Parry': {
     id: 'test_directional_parry',
     name: 'Directional Parry',

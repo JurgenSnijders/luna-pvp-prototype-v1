@@ -16,7 +16,7 @@ import {
 } from '../../types/schema';
 import type { InspectorContext } from '../InspectorUI';
 import { FONTS, RETRO_COLORS } from '../../ui/tokens';
-import { buttonStyle, inputStyle, numberRow, selectRow } from './domHelpers';
+import { buttonStyle, inputStyle, numberRow, selectRow, toggleRow } from './domHelpers';
 import {
   abilityGraphFromSchema,
   createDefaultActionGraph,
@@ -580,11 +580,24 @@ function buildPropertyPanel(
       else leaf.arcOffsetDeg = v;
       refresh();
     });
-    numberRow(parent, 'Duration (ms)', 0, 5000, 50, () => leaf.durationMs ?? 0, (v) => {
-      if (v === 0) delete leaf.durationMs;
-      else leaf.durationMs = v;
+    toggleRow(parent, 'Hold while pressed', () => leaf.whileHeld ?? false, (v) => {
+      if (v) leaf.whileHeld = true;
+      else delete leaf.whileHeld;
       refresh();
     });
+    numberRow(
+      parent,
+      leaf.whileHeld ? 'Max hold (ms)' : 'Duration (ms)',
+      0,
+      5000,
+      50,
+      () => leaf.durationMs ?? 0,
+      (v) => {
+        if (v === 0) delete leaf.durationMs;
+        else leaf.durationMs = v;
+        refresh();
+      },
+    );
   } else if (leaf?.type === 'TELEPORT') {
     numberRow(parent, 'Distance', 0, 1000, 10, () => leaf.distance, (v) => {
       leaf.distance = v;

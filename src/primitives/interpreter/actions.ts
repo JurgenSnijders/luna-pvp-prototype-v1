@@ -381,7 +381,38 @@ export function dispatchAction(
       const castHeadingRad = Math.atan2(ctx.heading.y, ctx.heading.x);
       const shieldColor = secondaryColor(interp.activeCastVisuals, '#88ccff');
       const durationMs = action.durationMs ?? 0;
-      const live = durationMs > 0;
+      const whileHeld = action.whileHeld ?? false;
+      const slotIndex = ctx.slotIndex;
+      const playerCaster = ctx.caster instanceof Player ? ctx.caster : null;
+      const slotHeld =
+        whileHeld &&
+        playerCaster !== null &&
+        slotIndex !== undefined &&
+        playerCaster.isSlotInputHeld(slotIndex);
+
+      let live = false;
+      let overlayWhileHeld = false;
+      let overlaySlotIndex: number | undefined;
+      let overlayDurationMs = 250;
+      let holdCapMs: number | undefined;
+
+      if (whileHeld && slotHeld) {
+        live = true;
+        overlayWhileHeld = true;
+        overlaySlotIndex = slotIndex;
+        if (durationMs > 0) {
+          holdCapMs = durationMs;
+          overlayDurationMs = durationMs;
+        }
+        world.removeWhileHeldParryShields(ctx.caster.id, slotIndex!);
+      } else if (whileHeld) {
+        const fallbackMs = durationMs > 0 ? durationMs : 350;
+        live = true;
+        overlayDurationMs = fallbackMs;
+      } else {
+        live = durationMs > 0;
+        overlayDurationMs = live ? durationMs : 250;
+      }
 
       world.spawnParryShieldOverlay({
         followEntityId: t.id,
@@ -391,11 +422,14 @@ export function dispatchAction(
         arcOffsetDeg: action.arcOffsetDeg,
         castHeadingRad,
         color: shieldColor,
-        durationMs: live ? durationMs : 250,
+        durationMs: overlayDurationMs,
         live,
         casterId: ctx.caster.id,
         spellArchetype: ctx.ability?.archetype,
         parryRadius: t.radius,
+        whileHeld: overlayWhileHeld,
+        slotIndex: overlaySlotIndex,
+        holdCapMs,
       });
 
       const emitDeflected = (proj: Projectile): void => {

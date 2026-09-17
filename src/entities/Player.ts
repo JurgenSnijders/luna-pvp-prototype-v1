@@ -333,6 +333,11 @@ export class Player extends Entity {
     this.activeAimingState = null;
   }
 
+  isSlotInputHeld(slotIndex: number): boolean {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
+    return this.slotInputs[slotIndex].isHeld;
+  }
+
   isSlotReady(slotIndex: number): boolean {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return false;
     if (this.activeCastPhase) return false;

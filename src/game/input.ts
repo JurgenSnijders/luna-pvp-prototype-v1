@@ -49,6 +49,7 @@ export function executePlayerCast(
       depth: 0,
       chargeRatio: overrides.chargeRatio,
       comboStep: overrides.comboStep,
+      slotIndex,
     },
     app.world,
     overrides,

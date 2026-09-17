@@ -1394,6 +1394,129 @@ function assertParryDurationWindow(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'durationMs window catches late arrivals; snapshot stays one-shot' };
 }
 
+/** Hold-to-guard — wedge reflects while held and drops on release. */
+function assertHoldToGuardShield(): { pass: boolean; reason: string } {
+  const DT = 1 / 60;
+  const enemyId = 'hold_guard_enemy';
+  const radius = 180;
+
+  const holdGuardAbility: AbilitySchema = {
+    id: 'test_hold_guard_inv',
+    name: 'Hold Guard',
+    archetype: 'KINETIC',
+    cooldownMs: 0,
+    recoilKick: 0,
+    inputProfile: { mode: 'INSTANT' },
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'REFLECT_PROJECTILES',
+            target: 'CASTER',
+            radius,
+            arcDeg: 120,
+            arcFacing: 'CASTER_FACING',
+            whileHeld: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const player = new Player(new Vector2D(0, 0));
+  player.facingAngle = 0;
+  player.aimTarget = new Vector2D(500, 0);
+  player.id = 'hold_guard_caster';
+  player.globalCooldownTimerMs = 0;
+  player.setAbility(0, holdGuardAbility);
+  player.cooldownTimersMs[0] = 0;
+  world.addPlayer(player);
+  const interp = new Interpreter();
+
+  const onCast = (slotIndex: number) => {
+    const ability = player.getAbility(slotIndex);
+    if (!ability) return;
+    const aimDir = player.aimTarget.sub(player.pos);
+    if (aimDir.magSq() < 0.01) return;
+    interp.executeAbility(
+      ability,
+      {
+        origin: player.pos.clone(),
+        heading: aimDir.normalize(),
+        aimPoint: player.aimTarget.clone(),
+        caster: player,
+        depth: 0,
+        slotIndex,
+      },
+      world,
+    );
+    player.triggerSlotCooldown(slotIndex, false);
+  };
+
+  player.setSlotInput(0, true, onCast);
+
+  if (world.parryShieldOverlays.length === 0) {
+    return { pass: false, reason: 'hold guard did not spawn while-held overlay' };
+  }
+  if (!world.parryShieldOverlays[0].whileHeld) {
+    return { pass: false, reason: 'overlay missing whileHeld flag' };
+  }
+
+  const traj = { type: 'LINEAR' as const, speed: 200 };
+  const proj1 = new Projectile(new Vector2D(200, 0), traj, enemyId, Math.PI, new Map());
+  world.addProjectile(proj1);
+
+  const advanceHoldGuard = (frames: number): boolean => {
+    for (let i = 0; i < frames; i++) {
+      interp.updateTrajectories(world, DT);
+      world.updateSpatialZones(DT);
+      interp.tickLiveParryShields(world);
+      world.step(DT);
+    }
+    return false;
+  };
+
+  let reflectedWhileHeld = false;
+  for (let i = 0; i < 60; i++) {
+    interp.updateTrajectories(world, DT);
+    world.updateSpatialZones(DT);
+    interp.tickLiveParryShields(world);
+    if (proj1.sourceEntityId === player.id) {
+      reflectedWhileHeld = true;
+      break;
+    }
+    world.step(DT);
+  }
+  if (!reflectedWhileHeld) {
+    return { pass: false, reason: 'hold guard did not reflect projectile while button held' };
+  }
+
+  player.setSlotInput(0, false, onCast);
+  advanceHoldGuard(1);
+
+  if (world.parryShieldOverlays.some((o) => o.whileHeld)) {
+    return { pass: false, reason: 'while-held overlay still active after release' };
+  }
+
+  const proj2 = new Projectile(new Vector2D(200, 0), traj, enemyId, Math.PI, new Map());
+  world.addProjectile(proj2);
+
+  for (let i = 0; i < 60; i++) {
+    interp.updateTrajectories(world, DT);
+    world.updateSpatialZones(DT);
+    interp.tickLiveParryShields(world);
+    if (proj2.sourceEntityId === player.id) {
+      return { pass: false, reason: 'hold guard reflected projectile after button release' };
+    }
+    world.step(DT);
+  }
+
+  return { pass: true, reason: 'while-held wedge reflects on hold and drops on release' };
+}
+
 function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {
   seedEffectiveTierForTests('LOW');
   const runtime = {
@@ -3522,6 +3645,12 @@ function run(): void {
   console.log(`  ${DIM}${parryDuration.reason}${RESET}`);
   if (parryDuration.pass) passed++;
 
+  const holdGuard = assertHoldToGuardShield();
+  const holdGuardTag = holdGuard.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${holdGuardTag} Hold-to-guard shield`);
+  console.log(`  ${DIM}${holdGuard.reason}${RESET}`);
+  if (holdGuard.pass) passed++;
+
   const sixTierEvolution = assertSixTierEvolution();
   const sixTierEvolutionTag = sixTierEvolution.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -3582,7 +3711,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 39;
+  const totalCases = suite.length + 40;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

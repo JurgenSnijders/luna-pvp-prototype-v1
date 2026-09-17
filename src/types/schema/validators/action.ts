@@ -292,6 +292,12 @@ export function validateActionPayload(
         }
         action.durationMs = clamp(value.durationMs, 0, 10000);
       }
+      if (value.whileHeld !== undefined) {
+        if (typeof value.whileHeld !== 'boolean') {
+          return validationFail(issues, `${path}.whileHeld`, 'invalid whileHeld');
+        }
+        action.whileHeld = value.whileHeld;
+      }
       return action;
     }
 

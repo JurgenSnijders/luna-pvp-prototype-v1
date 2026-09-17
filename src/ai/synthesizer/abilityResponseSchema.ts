@@ -408,6 +408,7 @@ const actionBranches = [
       arcFacing: stringEnum(FIELD_ARC_FACINGS),
       arcOffsetDeg: { type: 'number' },
       durationMs: { type: 'number' },
+      whileHeld: { type: 'boolean' },
     },
     additionalProperties: false,
   },

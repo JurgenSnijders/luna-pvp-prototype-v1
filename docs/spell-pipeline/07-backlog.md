@@ -28,6 +28,7 @@ Source docs:
 - [x] **Directional parry** — `REFLECT_PROJECTILES` accepts optional `arcDeg` / `arcFacing` / `arcOffsetDeg` (same wedge as fields); shared `arcWedge` helper; reflect syncs `aimAngle` so LINEAR shots reverse; arc shield hologram on cast; `DEFLECTED` FCT on catch; optional `durationMs` live catch window; looser Directional Parry preset.
 - [x] **Layered trails** — optional `trailLayers` on `VisualDescriptor` overrides `trailType` on projectile motion ticks; reuses `VfxLayer` primitives and budget cap.
 - [x] **Ceiling policy** — `MAX_DEPTH` unified at 4, `MAX_ENTITIES` raised to 512; saturation chips and runtime safety clamp kept; evolution upgrades not refused.
+- [x] **Hold-to-guard shield** — `REFLECT_PROJECTILES.whileHeld` binds live wedge to slot `isHeld` (drops on release); optional `durationMs` is max-hold cap only; separate **Hold Guard** preset from tap **Directional Parry**; `slotIndex` threaded through player casts.
 
 ---
 
@@ -42,9 +43,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Authoring / melee / VFX
 
 ### Product / later
-
-- [ ] **Hold-to-guard shield**  
-  Separate spell from tap-parry: when the player asks for a shield, hold the input to keep a wedge active while the button is down (not `REFLECT_PROJECTILES` `durationMs` on release).
 
 - [ ] **8. Timing phases on summons**  
   From [05 Q9](05-open-questions.md). Windup / active / recovery live on `Player`; bots go through `requestCast`. Actors / summons do not.
