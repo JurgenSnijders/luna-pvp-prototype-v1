@@ -64,6 +64,12 @@ export class SpatialZone extends Entity {
     return arc !== undefined && arc < 360;
   }
 
+  getLifeRatio(): number | null {
+    const total = this.config.durationMs;
+    if (total <= 0) return null;
+    return Math.max(0, Math.min(1, this.remainingDurationMs / total));
+  }
+
   override update(dt: number): void {
     if (this.parentRef) {
       if (this.parentRef.isDead) {

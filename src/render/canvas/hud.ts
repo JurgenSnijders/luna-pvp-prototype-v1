@@ -9,6 +9,7 @@ import { Entity } from '../../entities/Entity';
 import { Summon } from '../../entities/Summon';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
+import { drawHorizontalTimerBar } from './worldLayers';
 import { lerpPos, lerpZ } from './helpers';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { canvasFont } from '../../ui/tokens';
@@ -35,35 +36,6 @@ export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
 
 function getInstabilityBarCap(): number {
   return Math.max(1, Entity.maxInstability);
-}
-
-function drawDepletionBar(
-  ctx: CanvasRenderingContext2D,
-  barX: number,
-  barY: number,
-  barWidth: number,
-  barHeight: number,
-  ratio: number,
-  fillColor: string,
-  nowMs: number,
-  urgent = false,
-): void {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(barX, barY, barWidth, barHeight);
-
-  const clamped = Math.max(0, Math.min(1, ratio));
-  const fillWidth = (barWidth - 2) * clamped;
-  if (fillWidth <= 0) return;
-
-  const alpha = urgent && Math.sin(nowMs * 0.02) <= 0 ? 0.4 : 0.9;
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = fillColor;
-  ctx.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2);
-  ctx.globalAlpha = 1;
-}
-
-function urgentLifetimeColor(nowMs: number): string {
-  return Math.sin(nowMs * 0.025) > 0 ? '#ff3366' : '#ffaa00';
 }
 
 function drawStatusDurationBars(
@@ -157,37 +129,36 @@ export function drawOverheadHUD(
         parryShieldShowsStamina(overlay),
     );
     if (channelOverlay) {
-      const channelRatio = parryShieldStaminaRatio(channelOverlay);
-      const channelUrgent = channelOverlay.remainingMs < 400;
-      drawDepletionBar(
+      drawHorizontalTimerBar({
         ctx,
-        barX,
-        subBarY,
-        barWidth,
-        OVERHEAD_CHANNEL_BAR_HEIGHT,
-        channelRatio,
-        channelOverlay.color || '#00e5ff',
+        centerX: physicsPos.x,
+        topY: subBarY,
+        width: barWidth,
+        height: OVERHEAD_CHANNEL_BAR_HEIGHT,
+        ratio: parryShieldStaminaRatio(channelOverlay),
+        color: channelOverlay.color || '#00e5ff',
+        remainingMs: channelOverlay.remainingMs,
         nowMs,
-        channelUrgent,
-      );
+      });
       subBarY += OVERHEAD_CHANNEL_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
     }
 
     if (entity instanceof Summon) {
-      const lifeRatio = entity.getRemainingLifeRatio();
-      const lifeUrgent = lifeRatio <= 0.2;
-      drawDepletionBar(
-        ctx,
-        barX,
-        subBarY,
-        barWidth,
-        OVERHEAD_LIFETIME_BAR_HEIGHT,
-        lifeRatio,
-        lifeUrgent ? urgentLifetimeColor(nowMs) : '#00e5ff',
-        nowMs,
-        lifeUrgent,
-      );
-      subBarY += OVERHEAD_LIFETIME_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+      const lifeRatio = entity.getLifeRatio();
+      if (lifeRatio !== null) {
+        drawHorizontalTimerBar({
+          ctx,
+          centerX: physicsPos.x,
+          topY: subBarY,
+          width: barWidth,
+          height: OVERHEAD_LIFETIME_BAR_HEIGHT,
+          ratio: lifeRatio,
+          color: '#00e5ff',
+          remainingMs: entity.remainingDurationMs,
+          nowMs,
+        });
+        subBarY += OVERHEAD_LIFETIME_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+      }
     }
 
     const instabBarY = subBarY;

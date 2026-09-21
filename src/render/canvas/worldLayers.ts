@@ -6,6 +6,61 @@ import type { FieldType } from '../../types/schema';
 import { FIELD_COLORS, healthBarColor } from './colors';
 import type { CanvasRenderCtx } from './renderCtx';
 
+export interface TimerBarOptions {
+  ctx: CanvasRenderingContext2D;
+  centerX: number;
+  topY: number;
+  width: number;
+  height?: number;
+  ratio: number;
+  color?: string;
+  urgencyThreshold?: number;
+  remainingMs?: number;
+  nowMs?: number;
+}
+
+export function drawHorizontalTimerBar({
+  ctx,
+  centerX,
+  topY,
+  width,
+  height = 2.5,
+  ratio,
+  color = '#00e5ff',
+  urgencyThreshold = 0.2,
+  remainingMs,
+  nowMs = performance.now(),
+}: TimerBarOptions): void {
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  const leftX = centerX - width / 2;
+
+  ctx.fillStyle = 'rgba(4, 6, 12, 0.85)';
+  ctx.fillRect(leftX - 1, topY - 1, width + 2, height + 2);
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(leftX - 1, topY - 1, width + 2, height + 2);
+
+  if (clampedRatio <= 0) return;
+
+  const isUrgent =
+    clampedRatio <= urgencyThreshold ||
+    (remainingMs !== undefined && remainingMs < 400);
+  let barColor = color;
+  let alpha = 0.95;
+
+  if (isUrgent) {
+    const pulse = Math.sin(nowMs * 0.03) > 0;
+    barColor = pulse ? '#ff3366' : '#ffaa00';
+    alpha = pulse ? 1.0 : 0.6;
+  }
+
+  ctx.fillStyle = barColor;
+  ctx.globalAlpha = alpha;
+  ctx.fillRect(leftX, topY, width * clampedRatio, height);
+  ctx.globalAlpha = 1.0;
+}
+
 function parseRgbaColor(color: string): { r: number; g: number; b: number } {
   const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (match) {
@@ -210,10 +265,28 @@ export function drawZones(
   _state: CanvasRenderCtx,
   world: PhysicsWorld,
 ): void {
-  const now = performance.now() * 0.001;
+  const nowMs = performance.now();
+  const now = nowMs * 0.001;
   for (const zone of world.zones) {
     if (zone.isDead) continue;
     drawZoneHologram(ctx, zone, now);
+    const lifeRatio = zone.getLifeRatio();
+    if (lifeRatio !== null) {
+      const radius = zone.config.radius;
+      const accent = fieldAccentRgb(zone.config.fieldType);
+      const barW = Math.min(60, Math.max(28, radius * 0.8));
+      drawHorizontalTimerBar({
+        ctx,
+        centerX: zone.pos.x,
+        topY: zone.pos.y - radius - 8,
+        width: barW,
+        height: 2,
+        ratio: lifeRatio,
+        color: `rgb(${accent.r}, ${accent.g}, ${accent.b})`,
+        remainingMs: zone.remainingDurationMs,
+        nowMs,
+      });
+    }
   }
   drawParryShieldOverlays(ctx, world, now);
 }
@@ -333,81 +406,50 @@ function getObstacleTopY(obstacle: Obstacle): number {
   return pos.y - config.height / 2;
 }
 
-function drawObstacleDepletionBar(
-  ctx: CanvasRenderingContext2D,
-  barX: number,
-  barY: number,
-  barWidth: number,
-  barHeight: number,
-  ratio: number,
-  fillColor: string,
-  nowMs: number,
-  urgent = false,
-): void {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-  ctx.fillRect(barX, barY, barWidth, barHeight);
-
-  const clamped = Math.max(0, Math.min(1, ratio));
-  const fillWidth = barWidth * clamped;
-  if (fillWidth <= 0) return;
-
-  const alpha = urgent && Math.sin(nowMs * 0.025) <= 0 ? 0.4 : 0.9;
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = fillColor;
-  ctx.fillRect(barX, barY, fillWidth, barHeight);
-  ctx.globalAlpha = 1;
-}
-
 function drawObstacleOverheadBars(
   ctx: CanvasRenderingContext2D,
   obstacle: Obstacle,
   nowMs: number,
 ): void {
-  const lifeRatio = obstacle.getRemainingLifeRatio();
-  const topY = getObstacleTopY(obstacle);
-  const barW = Math.max(28, obstacle.getCollisionRadius() * 1.8);
-  const barX = obstacle.pos.x - barW / 2;
+  const lifeRatio = obstacle.getLifeRatio();
+  const obstacleTop = getObstacleTopY(obstacle);
+  const barW = Math.max(32, obstacle.getCollisionRadius() * 1.2);
   const healthBarH = 3;
-  const lifetimeBarH = 2;
+  const lifetimeBarH = 2.5;
   const gap = 2;
+  let stackY = obstacleTop - 8;
 
-  let barY = topY - gap;
-
-  if (obstacle.config.isDestructible) {
-    barY -= healthBarH;
-    const maxHealth = obstacle.config.maxHealth ?? 100;
-    const healthRatio = Math.max(0, obstacle.health / maxHealth);
-    drawObstacleDepletionBar(
+  if (lifeRatio !== null) {
+    stackY -= lifetimeBarH;
+    drawHorizontalTimerBar({
       ctx,
-      barX,
-      barY,
-      barW,
-      healthBarH,
-      healthRatio,
-      healthBarColor(healthRatio),
+      centerX: obstacle.pos.x,
+      topY: stackY,
+      width: barW,
+      height: lifetimeBarH,
+      ratio: lifeRatio,
+      color: '#ffaa00',
+      remainingMs: obstacle.remainingDurationMs,
       nowMs,
-    );
-    barY -= gap;
+    });
   }
 
-  barY -= lifetimeBarH;
-  const lifeUrgent = lifeRatio <= 0.2;
-  const lifeColor = lifeUrgent
-    ? Math.sin(nowMs * 0.025) > 0
-      ? '#ff3366'
-      : '#ffaa00'
-    : '#00e5ff';
-  drawObstacleDepletionBar(
-    ctx,
-    barX,
-    barY,
-    barW,
-    lifetimeBarH,
-    lifeRatio,
-    lifeColor,
-    nowMs,
-    lifeUrgent,
-  );
+  if (obstacle.config.isDestructible) {
+    stackY -= gap + healthBarH;
+    const maxHealth = obstacle.config.maxHealth ?? 100;
+    const healthRatio = Math.max(0, obstacle.health / maxHealth);
+    drawHorizontalTimerBar({
+      ctx,
+      centerX: obstacle.pos.x,
+      topY: stackY,
+      width: barW,
+      height: healthBarH,
+      ratio: healthRatio,
+      color: healthBarColor(healthRatio),
+      urgencyThreshold: 0,
+      nowMs,
+    });
+  }
 }
 
 function drawDestructibleMine(
