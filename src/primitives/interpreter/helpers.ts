@@ -27,6 +27,27 @@ export function resolveCastAnchor(
   return clampToHex(clampedTarget, world.hexCenter, world.hexRadius);
 }
 
+/** Aim-confirmed placement anchor; does not require GROUND_POINT targeting mode. */
+export function resolvePlacedDeployAnchor(
+  ctx: TriggerContext,
+  world: PhysicsWorld,
+  fallbackOrigin: Vector2D,
+): Vector2D {
+  if (!ctx.aimPoint) return fallbackOrigin.clone();
+
+  const maxRange = ctx.ability?.maxTargetRange ?? 500;
+  const casterPos = ctx.caster.pos;
+  const delta = ctx.aimPoint.sub(casterPos);
+  const dist = delta.mag();
+
+  const clampedTarget =
+    dist > maxRange
+      ? casterPos.add(delta.scale(maxRange / (dist || 1)))
+      : ctx.aimPoint.clone();
+
+  return clampToHex(clampedTarget, world.hexCenter, world.hexRadius);
+}
+
 export function getActionPriority(type: ActionPayload['type']): number {
   if (type === 'ADD_INSTABILITY' || type === 'MODIFY_STAT' || type === 'APPLY_STASIS' || type === 'APPLY_STATUS') return 1;
   if (type === 'SPAWN_CONSTRAINT' || type === 'MUTATE_TERRAIN' || type === 'SPAWN_OBSTACLE') return 2;

@@ -25,7 +25,13 @@ import { CombatLogger } from '../../telemetry/CombatLogger';
 import type { Interpreter } from './Interpreter';
 import { hasBallisticParams, initBallisticKinematics } from '../Trajectories';
 import { DEFAULT_EMITTER, DEFAULT_VISUALS, MAX_DEPTH, ARCHETYPE_TUNING } from './constants';
-import { buildTriggerMap, resolveCastAnchor, safeNormalize, secondaryColor } from './helpers';
+import {
+  buildTriggerMap,
+  resolveCastAnchor,
+  resolvePlacedDeployAnchor,
+  safeNormalize,
+  secondaryColor,
+} from './helpers';
 import { entityFacingAngle, isPointInArcWedge, resolveArcFacingRad } from '../arcWedge';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
 
@@ -242,12 +248,24 @@ export function dispatchAction(
           spawnPos = parent.pos.add(offset);
         }
       } else {
-        spawnPos = resolveCastAnchor(ctx, world, ctx.origin);
+        spawnPos = ctx.aimPoint
+          ? resolvePlacedDeployAnchor(ctx, world, ctx.origin)
+          : resolveCastAnchor(ctx, world, ctx.origin);
       }
       const archetype = ctx.ability?.archetype ?? 'KINETIC';
       const zone = new SpatialZone(spawnPos, field, ctx.caster.id, archetype);
-      zone.castHeading =
+      const defaultHeading =
         ctx.heading.magSq() > 0.01 ? ctx.heading.normalize() : Vector2D.fromAngle(0);
+      zone.castHeading = defaultHeading;
+      if (!parent) {
+        const arcFacing = field.arcFacing ?? 'CAST_HEADING';
+        if (arcFacing === 'CAST_HEADING') {
+          const disp = spawnPos.sub(ctx.caster.pos);
+          if (disp.magSq() > 0.01) {
+            zone.castHeading = disp.normalize();
+          }
+        }
+      }
       if (parent) {
         zone.parentRef = parent;
         zone.offset = offset;
@@ -474,7 +492,9 @@ export function dispatchAction(
     case 'SPAWN_OBSTACLE': {
       const t = resolveActionTarget(action.target, ctx);
       let pos: Vector2D;
-      if (ctx.ability?.targetingMode === 'GROUND_POINT') {
+      if (ctx.aimPoint) {
+        pos = resolvePlacedDeployAnchor(ctx, world, (t ?? ctx.caster).pos);
+      } else if (ctx.ability?.targetingMode === 'GROUND_POINT') {
         pos = resolveCastAnchor(ctx, world, ctx.origin);
       } else {
         pos = (t ?? ctx.caster).pos.clone();
@@ -582,11 +602,16 @@ export function dispatchAction(
     }
     case 'SPAWN_ACTOR': {
       const t = resolveActionTarget(action.target, ctx);
-      let pos = t ? t.pos.clone() : ctx.origin.clone();
-      if (ctx.heading.magSq() > 0.01) {
-        const actorRadius = action.actor.radius ?? 15;
-        const hostRadius = t?.radius ?? ctx.caster.radius;
-        pos = pos.add(ctx.heading.normalize().scale(hostRadius + actorRadius + 4));
+      let pos: Vector2D;
+      if (ctx.aimPoint) {
+        pos = resolvePlacedDeployAnchor(ctx, world, t ? t.pos : ctx.origin);
+      } else {
+        pos = t ? t.pos.clone() : ctx.origin.clone();
+        if (ctx.heading.magSq() > 0.01) {
+          const actorRadius = action.actor.radius ?? 15;
+          const hostRadius = t?.radius ?? ctx.caster.radius;
+          pos = pos.add(ctx.heading.normalize().scale(hostRadius + actorRadius + 4));
+        }
       }
       const summon = new Summon(pos, action.actor, ctx.caster.id, {
         depth: ctx.depth,
@@ -594,6 +619,13 @@ export function dispatchAction(
         abilityName: ctx.ability?.name,
         visuals: action.actor.visuals ?? ctx.ability?.visuals ?? null,
       });
+      if (action.actor.actorArchetype === 'TURRET') {
+        const disp = pos.sub(ctx.caster.pos);
+        const facing = disp.magSq() > 0.01 ? disp : ctx.heading;
+        if (facing.magSq() > 0.01) {
+          summon.facingAngle = Math.atan2(facing.y, facing.x);
+        }
+      }
       world.addSummon(summon);
       break;
     }

@@ -5,12 +5,14 @@ import {
 } from '../../math/ballisticSolver';
 import { Vector2D } from '../../math/Vector2D';
 import type { AbilitySchema, PathPoint, TrajectoryConfig } from '../../types/schema';
+import { resolveArcFacingRad } from '../../primitives/arcWedge';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveLiveAimingPaths } from './aimingRollout';
 import {
   abilityUsesGroundReticle,
   collectGroundImpactFieldRadii,
   deployableTangentAngle,
+  isPlacedDeployableAimTarget,
   resolveDeployableInfo,
   resolveRootTrajectory,
   type DeployableTargetInfo,
@@ -83,7 +85,7 @@ export function syncAimFromCursorState(
   const dist = Math.hypot(dx, dy);
   const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
 
-  if (abilityUsesGroundReticle(state.ability)) {
+  if (abilityUsesGroundReticle(state.ability) || isPlacedDeployableAimTarget(state.ability)) {
     const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, casterPos);
     state.angle = groundAngle;
     state.target = {
@@ -112,7 +114,7 @@ export function layoutAimingVisual(
   const dist = Math.hypot(dx, dy);
   const angle = dist > 0.01 ? Math.atan2(dy, dx) : state.angle;
 
-  if (abilityUsesGroundReticle(state.ability)) {
+  if (abilityUsesGroundReticle(state.ability) || isPlacedDeployableAimTarget(state.ability)) {
     const { angle: groundAngle, clampedDist } = clampGroundPointTarget(state, origin);
     return {
       ...state,
@@ -181,6 +183,8 @@ export function resolveTrajectoryVisualMode(ability: AbilitySchema): AimingMode 
   const fieldRadii = collectOnCastFieldRadii(ability);
   if (fieldRadii.length > 0) return 'radial';
 
+  if (isPlacedDeployableAimTarget(ability)) return 'radial';
+
   return null;
 }
 
@@ -209,6 +213,26 @@ export function resolveAbilityAimParams(ability: AbilitySchema): {
       radialRadius = Math.max(...impactRadii);
     } else {
       radialRadius = (ability.visuals?.size ?? 14) * 3.5;
+    }
+    return {
+      trajectory,
+      range: ability.maxTargetRange ?? 500,
+      width,
+      radialRadius,
+    };
+  }
+
+  if (isPlacedDeployableAimTarget(ability)) {
+    const info = resolveDeployableInfo(ability);
+    let radialRadius = 60;
+    if (info) {
+      if (info.shape === 'BOX') {
+        radialRadius = Math.max(info.width, info.height) / 2;
+      } else if (info.radius > 0) {
+        radialRadius = info.radius;
+      } else {
+        radialRadius = (ability.visuals?.size ?? 14) * 3.5;
+      }
     }
     return {
       trajectory,
@@ -523,25 +547,93 @@ function drawRectCornerBrackets(
   drawCorner(-hw, hh, 1, -1);
 }
 
+function resolveGhostFacingRad(
+  info: DeployableTargetInfo,
+  dx: number,
+  dy: number,
+  fallbackAngle: number,
+): number {
+  const distSq = dx * dx + dy * dy;
+  const aimAngle = distSq > 0.01 ? Math.atan2(dy, dx) : fallbackAngle;
+
+  if (info.shape === 'WEDGE_FIELD') {
+    return resolveArcFacingRad(info.arcFacing ?? 'CAST_HEADING', info.arcOffsetDeg ?? 0, {
+      entityFacingRad: fallbackAngle,
+      castHeadingRad: aimAngle,
+    });
+  }
+
+  switch (info.orientationMode) {
+    case 'TANGENT':
+      return distSq > 0.01 ? deployableTangentAngle(dx, dy) : fallbackAngle + Math.PI / 2;
+    case 'RADIAL_OUTWARD':
+      return aimAngle;
+    case 'FIXED':
+    default:
+      return ((info.arcOffsetDeg ?? 0) * Math.PI) / 180;
+  }
+}
+
+function drawOmniCircleGhost(
+  ctx: CanvasRenderingContext2D,
+  radius: number,
+  color: string,
+  isDestructible: boolean,
+): void {
+  ctx.strokeStyle = hexToRgba(color, 0.85);
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = hexToRgba(color, 0.12);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = hexToRgba(color, 0.55);
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.35, 0);
+  ctx.lineTo(radius * 0.35, 0);
+  ctx.moveTo(0, -radius * 0.35);
+  ctx.lineTo(0, radius * 0.35);
+  ctx.stroke();
+
+  if (isDestructible) {
+    const pip = Math.max(3, radius * 0.12);
+    const pipR = radius * 0.72;
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i + Math.PI / 4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * pipR, Math.sin(a) * pipR, pip, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
 function drawDeployableGhost(
   ctx: CanvasRenderingContext2D,
   info: DeployableTargetInfo,
   center: { x: number; y: number },
   origin: { x: number; y: number },
   color: string,
+  fallbackAngle = 0,
 ): void {
   const dx = center.x - origin.x;
   const dy = center.y - origin.y;
-  const aimAngle = Math.atan2(dy, dx);
-  const tangentAngle = deployableTangentAngle(dx, dy);
+  const rotation = resolveGhostFacingRad(info, dx, dy, fallbackAngle);
 
   ctx.save();
   ctx.translate(center.x, center.y);
+  ctx.rotate(rotation);
 
   if (info.shape === 'BOX') {
     const halfW = info.width / 2;
     const halfH = info.height / 2;
-    ctx.rotate(tangentAngle);
     ctx.fillStyle = hexToRgba(color, 0.12);
     ctx.fillRect(-halfW, -halfH, info.width, info.height);
     ctx.strokeStyle = hexToRgba(color, 0.85);
@@ -568,23 +660,91 @@ function drawDeployableGhost(
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(aimAngle) * barrelLen, Math.sin(aimAngle) * barrelLen);
+    ctx.lineTo(barrelLen, 0);
     ctx.stroke();
-  } else {
+    ctx.strokeStyle = hexToRgba(color, 0.45);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(barrelLen, 0);
+    ctx.lineTo(barrelLen + half * 1.4, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else if (info.shape === 'WEDGE_FIELD') {
+    const halfArc = (((info.arcDeg ?? 90) * Math.PI) / 180) / 2;
+    ctx.fillStyle = hexToRgba(color, 0.12);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, info.radius, -halfArc, halfArc);
+    ctx.closePath();
+    ctx.fill();
     ctx.strokeStyle = hexToRgba(color, 0.85);
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.arc(0, 0, info.radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = hexToRgba(color, 0.12);
-    ctx.beginPath();
-    ctx.arc(0, 0, info.radius, 0, Math.PI * 2);
-    ctx.fill();
+
+    const tickLen = info.radius * 0.12;
+    for (const edgeAngle of [-halfArc, 0, halfArc]) {
+      ctx.strokeStyle = hexToRgba(color, 0.7);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(edgeAngle) * (info.radius - tickLen), Math.sin(edgeAngle) * (info.radius - tickLen));
+      ctx.lineTo(Math.cos(edgeAngle) * (info.radius + tickLen * 0.5), Math.sin(edgeAngle) * (info.radius + tickLen * 0.5));
+      ctx.stroke();
+    }
+  } else {
+    drawOmniCircleGhost(
+      ctx,
+      info.radius,
+      color,
+      info.isDestructible === true || info.shape === 'DECOY',
+    );
   }
 
   ctx.restore();
+}
+
+function resolveTerminalLandingPoint(
+  state: AimingState,
+  planarOrigin?: { x: number; y: number },
+  startZ = 0,
+): { x: number; y: number } | null {
+  const muzzleOffset =
+    state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
+  const origin = planarOrigin ?? state.origin;
+  const rootTrajectory = resolveRootTrajectory(state.ability);
+  let aimGroundRange: number | undefined;
+  if (rootTrajectory && shouldApplyCursorBallisticSolver(rootTrajectory, state.ability)) {
+    const heading = Vector2D.fromAngle(state.angle);
+    aimGroundRange = resolveCursorGroundRange(
+      Vector2D.create(origin.x, origin.y),
+      Vector2D.create(state.target.x, state.target.y),
+      heading,
+      muzzleOffset,
+      rootTrajectory.maxRange ?? 500,
+    );
+  }
+  const paths = resolveLiveAimingPaths(
+    state.ability,
+    origin,
+    state.angle,
+    muzzleOffset,
+    startZ,
+    aimGroundRange,
+  );
+  if (paths.length === 0) return state.target;
+
+  const lastPath = paths[paths.length - 1];
+  if (lastPath.groundPoints && lastPath.groundPoints.length > 0) {
+    const gp = lastPath.groundPoints[lastPath.groundPoints.length - 1];
+    return { x: gp.x, y: gp.y };
+  }
+  if (lastPath.points.length > 0) {
+    const p = lastPath.points[lastPath.points.length - 1];
+    return { x: p.x, y: p.y };
+  }
+  return state.target;
 }
 
 export function drawAoERadial(
@@ -595,9 +755,10 @@ export function drawAoERadial(
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
   const deployableInfo = resolveDeployableInfo(state.ability);
+  const placedDeployable = isPlacedDeployableAimTarget(state.ability);
   const radius = state.radialRadius > 0 ? state.radialRadius : state.range;
   const center =
-    abilityUsesGroundReticle(state.ability)
+    abilityUsesGroundReticle(state.ability) || placedDeployable
       ? state.target
       : state.mode === 'radial' && state.radialRadius > 0 && !state.ability.trajectory
         ? state.origin
@@ -618,7 +779,7 @@ export function drawAoERadial(
   }
 
   if (deployableInfo) {
-    drawDeployableGhost(ctx, deployableInfo, center, state.origin, color);
+    drawDeployableGhost(ctx, deployableInfo, center, state.origin, color, state.angle);
     return;
   }
 
@@ -672,6 +833,22 @@ export class AimingIndicatorRenderer {
       const layoutOrigin = planarOrigin ?? state.origin;
       const visual = planarOrigin ? layoutAimingVisual(state, layoutOrigin) : state;
       drawPredictivePaths(ctx, visual, casterZ, planarOrigin);
+      const deployableInfo = resolveDeployableInfo(visual.ability);
+      if (deployableInfo) {
+        const landing = resolveTerminalLandingPoint(visual, planarOrigin, casterZ);
+        if (landing) {
+          const archetype = visual.ability.archetype ?? 'KINETIC';
+          const color = getArchetypeColor(archetype, visual.ability.visuals?.color);
+          drawDeployableGhost(
+            ctx,
+            deployableInfo,
+            landing,
+            visual.origin,
+            color,
+            visual.angle,
+          );
+        }
+      }
     } else {
       const visual = planarOrigin ? layoutAimingVisual(state, planarOrigin) : state;
       drawAoERadial(ctx, visual, now);

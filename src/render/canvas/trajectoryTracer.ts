@@ -4,6 +4,7 @@ import type {
   AbilitySchema,
   ActionPayload,
   EmitterConfig,
+  FieldArcFacing,
   TrajectoryConfig,
   TrajectoryType,
   TriggerNode,
@@ -89,13 +90,22 @@ export function abilityUsesGroundReticle(ability: AbilitySchema): boolean {
   return (traj.spawnAltitude ?? 0) > 0;
 }
 
+export type DeployableOrientationMode = 'TANGENT' | 'RADIAL_OUTWARD' | 'FIXED';
+
 export interface DeployableTargetInfo {
-  kind: 'OBSTACLE' | 'ACTOR';
-  shape: 'BOX' | 'CIRCLE' | 'TURRET' | 'DECOY';
+  kind: 'OBSTACLE' | 'ACTOR' | 'FIELD';
+  shape: 'BOX' | 'CIRCLE' | 'TURRET' | 'DECOY' | 'WEDGE_FIELD' | 'OMNI_FIELD';
   width: number;
   height: number;
   radius: number;
+  arcDeg?: number;
+  arcFacing?: FieldArcFacing;
+  arcOffsetDeg?: number;
   color: string;
+  orientationMode: DeployableOrientationMode;
+  isThrown: boolean;
+  isDestructible?: boolean;
+  attachToSource?: boolean;
 }
 
 /** Tangent angle so a box wall's wide face is perpendicular to caster→target (shield orientation). */
@@ -106,7 +116,7 @@ export function deployableTangentAngle(dx: number, dy: number): number {
 function deployableFromAction(
   action: ActionPayload,
   ability: AbilitySchema,
-): DeployableTargetInfo | null {
+): Omit<DeployableTargetInfo, 'isThrown'> | null {
   const color = ability.visuals?.color ?? '#aa8844';
 
   if (action.type === 'SPAWN_OBSTACLE') {
@@ -119,6 +129,8 @@ function deployableFromAction(
         height: obs.height ?? 24,
         radius: 0,
         color,
+        orientationMode: 'TANGENT',
+        isDestructible: obs.isDestructible === true,
       };
     }
     if (obs.shape === 'CIRCLE') {
@@ -130,6 +142,8 @@ function deployableFromAction(
         height: obs.height ?? w,
         radius: w / 2,
         color,
+        orientationMode: 'FIXED',
+        isDestructible: obs.isDestructible === true,
       };
     }
     return null;
@@ -146,10 +160,11 @@ function deployableFromAction(
         height: r * 2,
         radius: r,
         color,
+        orientationMode: 'RADIAL_OUTWARD',
       };
     }
     if (actor.actorArchetype === 'DECOY') {
-      const r = actor.radius ?? 18;
+      const r = actor.radius ?? 15;
       return {
         kind: 'ACTOR',
         shape: 'DECOY',
@@ -157,37 +172,97 @@ function deployableFromAction(
         height: 0,
         radius: r,
         color,
+        orientationMode: 'FIXED',
       };
     }
   }
 
+  if (action.type === 'SPAWN_FIELD') {
+    const field = action.field;
+    const radius = field.radius ?? 60;
+    const arcDeg = field.arcDeg;
+    const arcFacing = field.arcFacing ?? 'CAST_HEADING';
+    const arcOffsetDeg = field.arcOffsetDeg ?? 0;
+
+    if (arcDeg !== undefined && arcDeg < 360) {
+      return {
+        kind: 'FIELD',
+        shape: 'WEDGE_FIELD',
+        width: 0,
+        height: 0,
+        radius,
+        arcDeg,
+        arcFacing,
+        arcOffsetDeg,
+        color,
+        orientationMode: arcFacing === 'FIXED' ? 'FIXED' : 'RADIAL_OUTWARD',
+        attachToSource: field.attachToSource === true,
+      };
+    }
+
+    return {
+      kind: 'FIELD',
+      shape: 'OMNI_FIELD',
+      width: 0,
+      height: 0,
+      radius,
+      color,
+      orientationMode: 'FIXED',
+      attachToSource: field.attachToSource === true,
+    };
+  }
+
   return null;
+}
+
+type DeployableTrigger = 'ON_CAST' | 'ON_EXPIRY' | 'ON_HIT' | 'ON_GROUND_SLAM';
+
+function shouldSkipOnCastOrbitAura(
+  ability: AbilitySchema,
+  action: ActionPayload,
+): boolean {
+  if (action.type !== 'SPAWN_FIELD') return false;
+  if (!action.field.attachToSource) return false;
+  return resolveRootTrajectory(ability) !== undefined;
 }
 
 function findDeployableOnTrigger(
   ability: AbilitySchema,
-  trigger: 'ON_CAST' | 'ON_EXPIRY',
+  trigger: DeployableTrigger,
+  isThrown: boolean,
 ): DeployableTargetInfo | null {
   for (const node of ability.triggers ?? []) {
     if (node.trigger !== trigger) continue;
     for (const action of node.actions ?? []) {
+      if (trigger === 'ON_CAST' && shouldSkipOnCastOrbitAura(ability, action)) {
+        continue;
+      }
       const info = deployableFromAction(action, ability);
-      if (info) return info;
+      if (info) return { ...info, isThrown };
     }
   }
   return null;
 }
 
-/** Footprint metadata for ground deployables (walls, turrets, decoys). Null for pure fields / ballistics. */
+/** Footprint metadata for deployables at aim/landing points. Null when no terminal payload exists. */
 export function resolveDeployableInfo(ability: AbilitySchema): DeployableTargetInfo | null {
-  const onCast = findDeployableOnTrigger(ability, 'ON_CAST');
+  const onCast = findDeployableOnTrigger(ability, 'ON_CAST', false);
   if (onCast) return onCast;
 
-  const hasTrajectory = resolveRootTrajectory(ability) !== undefined;
-  const hasOnCastProjectile = findOnCastProjectileConfig(ability) !== null;
-  if (hasTrajectory || hasOnCastProjectile) return null;
+  for (const trigger of ['ON_EXPIRY', 'ON_HIT', 'ON_GROUND_SLAM'] as const) {
+    const found = findDeployableOnTrigger(ability, trigger, true);
+    if (found) return found;
+  }
 
-  return findDeployableOnTrigger(ability, 'ON_EXPIRY');
+  return null;
+}
+
+/** Placed (non-thrown) deployables that open a radial footprint ghost before cast. */
+export function isPlacedDeployableAimTarget(ability: AbilitySchema): boolean {
+  const info = resolveDeployableInfo(ability);
+  if (!info || info.isThrown) return false;
+  if (info.attachToSource) return false;
+  return true;
 }
 
 const GROUND_IMPACT_TRIGGERS = new Set(['ON_GROUND_SLAM', 'ON_EXPIRY', 'ON_HIT']);
