@@ -191,9 +191,6 @@ interface ForgeCardSlot {
   isSealed: boolean;
   card: DraftCard | null;
   handlersBound: boolean;
-  glyphCanvas: HTMLCanvasElement | null;
-  playbackRecording: PlaybackRecording | null;
-  glyphArchetypeColor: string;
 }
 
 export function stampDraftCardMetadataOntoAbility(
@@ -284,8 +281,6 @@ export function resolveSuperchargedMetricKey(
 
 const SCOPE_WIDTH = 240;
 const SCOPE_HEIGHT = 120;
-const FORGE_GLYPH_WIDTH = 160;
-const FORGE_GLYPH_HEIGHT = 88;
 
 export interface ScopeHudData {
   channels: string;
@@ -676,7 +671,6 @@ export class DraftModal {
   }> | null = null;
 
   private activeForgeCardSlots: ForgeCardSlot[] | null = null;
-  private cardLoopAnimId: number | null = null;
   private forgePipSignature: string | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
@@ -947,7 +941,6 @@ export class DraftModal {
 
   close(): void {
     this.stopHeroScopeAnimation();
-    this.stopForgeCardPlaybackLoop();
     this.destroyCombatTooltip();
     this.invalidatePrefetch();
     this.clearSynthesisTimer();
@@ -1060,9 +1053,6 @@ export class DraftModal {
 
   private setActiveTab(tab: WorkshopTab): void {
     this.stopHeroScopeAnimation();
-    if (this.activeTab === 'FORGE' && tab !== 'FORGE') {
-      this.stopForgeCardPlaybackLoop(false);
-    }
     if (tab === 'VAULT') {
       this.clearForgeTransientState();
     }
@@ -1070,7 +1060,6 @@ export class DraftModal {
     this.refreshUI();
     if (tab === 'FORGE') {
       this.promptInput.focus();
-      this.restartForgeCardPlaybackLoopIfNeeded();
     }
     if (tab === 'VAULT') {
       this.renderTacticalInspector();
@@ -2232,134 +2221,12 @@ export class DraftModal {
     }
   }
 
-  private stopForgeCardPlaybackLoop(clearRecordings = true): void {
-    if (this.cardLoopAnimId !== null) {
-      cancelAnimationFrame(this.cardLoopAnimId);
-      this.cardLoopAnimId = null;
-    }
-    if (clearRecordings) {
-      for (const slot of this.activeForgeCardSlots ?? []) {
-        slot.playbackRecording = null;
-        slot.glyphCanvas = null;
-      }
-    }
-  }
-
-  private restartForgeCardPlaybackLoopIfNeeded(): void {
-    const hasRecording = this.activeForgeCardSlots?.some((slot) => slot.playbackRecording);
-    if (hasRecording && this.cardLoopAnimId === null) {
-      this.startForgeCardPlaybackLoop();
-    }
-  }
-
-  private startForgeCardPlaybackLoop(): void {
-    if (this.cardLoopAnimId !== null) return;
-
-    const animate = (timestamp: number): void => {
-      if (!this.panel.isConnected) {
-        this.stopForgeCardPlaybackLoop();
-        return;
-      }
-
-      for (const slot of this.activeForgeCardSlots ?? []) {
-        if (!slot.isSealed || !slot.playbackRecording || !slot.glyphCanvas) continue;
-
-        const recording = slot.playbackRecording;
-        const canvas = slot.glyphCanvas;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) continue;
-
-        const totalFrames = recording.frames.length;
-        const frameIndex =
-          totalFrames > 0 ? Math.floor(timestamp / (1000 / 60)) % totalFrames : 0;
-        const frame = recording.frames[frameIndex];
-        const color = slot.glyphArchetypeColor;
-
-        ctx.clearRect(0, 0, recording.canvasWidth, recording.canvasHeight);
-        this.drawScopeBackground(
-          ctx,
-          recording.canvasWidth,
-          recording.canvasHeight,
-          timestamp,
-          color,
-          recording.originCanvasPos,
-        );
-
-        if (!frame || totalFrames === 0) {
-          this.drawScopeEmptyCrosshair(ctx, recording.canvasWidth, recording.canvasHeight);
-          continue;
-        }
-
-        this.drawScopeCasterHub(ctx, recording.originCanvasPos, color);
-        this.drawScopeTargetReticle(ctx, recording.targetCanvasPos, color);
-
-        for (const zone of frame.zones) {
-          this.drawScopeZone(ctx, zone.x, zone.y, zone.radius, zone.color, timestamp);
-        }
-
-        for (const proj of frame.projectiles) {
-          drawScopeProjectile(
-            ctx,
-            proj.x,
-            proj.y,
-            proj.radius,
-            proj.heading,
-            proj.style,
-            proj.color,
-            timestamp,
-            proj.z,
-          );
-        }
-
-        for (const particle of frame.particles) {
-          ctx.save();
-          ctx.globalAlpha = particle.alpha;
-          ctx.fillStyle = particle.color;
-          ctx.beginPath();
-          ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-
-        for (const impact of frame.impacts) {
-          this.drawScopeImpact(ctx, impact.x, impact.y, impact.radius, impact.color, impact.age);
-        }
-      }
-
-      this.cardLoopAnimId = requestAnimationFrame(animate);
-    };
-
-    this.cardLoopAnimId = requestAnimationFrame(animate);
-  }
-
-  private mountForgeGlyphPlayback(slot: ForgeCardSlot, ability: AbilitySchema): void {
+  private mountForgeStaticGlyph(slot: ForgeCardSlot, ability: AbilitySchema): void {
     slot.glyphFrameEl.classList.remove('is-streaming');
     slot.glyphFrameEl.innerHTML = '';
-
-    const cardCanvas = document.createElement('canvas');
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    cardCanvas.width = FORGE_GLYPH_WIDTH * dpr;
-    cardCanvas.height = FORGE_GLYPH_HEIGHT * dpr;
-    cardCanvas.style.width = '100%';
-    cardCanvas.style.height = '100%';
-    cardCanvas.className = 'forge-glyph-canvas';
-    slot.glyphFrameEl.appendChild(cardCanvas);
-
-    const ctx = cardCanvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-    }
-
-    const archetype = ability.archetype ?? 'KINETIC';
-    slot.glyphCanvas = cardCanvas;
-    slot.glyphArchetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
-    slot.playbackRecording = recordSpellPlayback(
-      ability,
-      FORGE_GLYPH_WIDTH,
-      FORGE_GLYPH_HEIGHT,
-      10,
-    );
-    this.startForgeCardPlaybackLoop();
+    const iconCanvas = generateSpellIcon(ability, 64);
+    iconCanvas.className = 'forge-card-glyph-icon';
+    slot.glyphFrameEl.appendChild(iconCanvas);
   }
 
   private clearForgeWinnerPips(): void {
@@ -2879,9 +2746,6 @@ export class DraftModal {
       isSealed: false,
       card: null,
       handlersBound: false,
-      glyphCanvas: null,
-      playbackRecording: null,
-      glyphArchetypeColor: '#00e5ff',
     };
   }
 
@@ -3035,6 +2899,29 @@ export class DraftModal {
     this.renderForgeVaultPickerCards();
   }
 
+  private hoverForgeCard(cardIndex: number): void {
+    const slot = this.activeForgeCardSlots?.[cardIndex];
+    const ability = slot?.card?.abilityPayload;
+    if (!ability) return;
+    this.renderTacticalInspector(ability);
+  }
+
+  private restoreForgeInspectorPreview(): void {
+    if (this.selectedForgeIndex !== null) {
+      const slotAbility =
+        this.activeForgeCardSlots?.[this.selectedForgeIndex]?.card?.abilityPayload ?? null;
+      const pickerAbility = this.getForgePickerCard(this.selectedForgeIndex)?.abilityPayload ?? null;
+      const ability = slotAbility ?? pickerAbility;
+      if (ability) {
+        this.renderTacticalInspector(ability);
+        return;
+      }
+    }
+    if (this.activeTransientSpell) {
+      this.renderTacticalInspector(this.activeTransientSpell);
+    }
+  }
+
   private bindForgeCardInteraction(slot: ForgeCardSlot): void {
     if (slot.handlersBound) return;
     slot.handlersBound = true;
@@ -3048,7 +2935,16 @@ export class DraftModal {
 
     slot.cardEl.addEventListener('mouseenter', () => {
       if (!slot.isSealed) return;
-      this.previewForgeCard(cardIndex);
+      this.hoverForgeCard(cardIndex);
+    });
+
+    slot.cardEl.addEventListener('mouseleave', (e) => {
+      if (!slot.isSealed) return;
+      const related = e.relatedTarget;
+      if (related instanceof Element && related.closest('.forge-card-redesign')) {
+        return;
+      }
+      this.restoreForgeInspectorPreview();
     });
   }
 
@@ -3104,7 +3000,7 @@ export class DraftModal {
       slot.mutationSlotEl.appendChild(mutationBanner);
     }
 
-    this.mountForgeGlyphPlayback(slot, ability);
+    this.mountForgeStaticGlyph(slot, ability);
 
     slot.cardEl.classList.add('just-sealed');
     window.setTimeout(() => slot.cardEl.classList.remove('just-sealed'), 400);
@@ -3181,7 +3077,6 @@ export class DraftModal {
   }
 
   private mountForgeStreamingCards(): void {
-    this.stopForgeCardPlaybackLoop();
     this.forgePipSignature = null;
     this.cardsContainer.innerHTML = '';
     this.streamingSlots = null;
@@ -3249,7 +3144,6 @@ export class DraftModal {
   }
 
   private renderForgeVaultPickerCards(): void {
-    this.stopForgeCardPlaybackLoop();
     this.forgePipSignature = null;
     this.activeForgeCardSlots = [];
     this.cardsContainer.innerHTML = '';

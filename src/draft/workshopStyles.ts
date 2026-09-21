@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v24';
+export const STYLE_ID = 'luna-workshop-styles-v25';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -954,20 +954,36 @@ export function injectStyles(): void {
       height: 96px;
       min-height: 96px;
       display: flex;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
       padding: 10px;
-      background: rgba(4, 8, 16, 0.6);
+      background: radial-gradient(
+        ellipse at center,
+        rgba(16, 24, 44, 0.7) 0%,
+        rgba(4, 6, 12, 0.9) 100%
+      );
       border: 1px solid var(--retro-border-subtle);
       border-radius: 4px;
       overflow: hidden;
+      box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.6);
       flex-shrink: 0;
     }
 
-    .forge-glyph-canvas {
+    .forge-card-glyph-icon {
       display: block;
-      width: 100%;
-      height: 100%;
+      width: 64px;
+      height: 64px;
+      filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.25));
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+
+    .forge-card-redesign:hover .forge-card-glyph-icon {
+      transform: scale(1.06);
+      filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.45));
+    }
+
+    .forge-card-redesign.tier-epic:hover .forge-card-glyph-icon {
+      filter: drop-shadow(0 0 12px rgba(191, 0, 255, 0.45));
     }
 
     .forge-card-glyph-frame.is-streaming::after {
