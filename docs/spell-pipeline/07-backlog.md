@@ -34,6 +34,7 @@ Source docs:
 - [x] **Land-on-cursor ballistic solver** — fix `lobApex`, solve `speed` from clamped cursor range for forward `BALLISTIC_ARC` mortars; live cast + aiming overlay share solved speed; fan outer rays use center-aim speed.
 - [x] **`ON_SLAM` catch-all surface trigger** — hex wall, obstacle, and ground high-speed hits dispatch `ON_SLAM` without arming; `ON_HIT_WALL` and `ON_GROUND_SLAM` unchanged.
 - [x] **Max legal VFX-stack particle invariant** — `test:invariants` asserts a maximal `impactLayers` stack on LOW stays under `particleBudget` via sanitize + `playVfxLayers` spawn caps.
+- [x] **12-point combat playtest** (2026-09-22) — headless confirmation via `test:invariants` (54/54) and `test:fidelity` (32/32); no live exceptions filed.
 
 ---
 
@@ -47,7 +48,7 @@ Tick these as they land. Suggested order is the numbering.
 
 #### Verification
 
-- [ ] **12-point combat playtest** — confirmation pass only. The checks below already have invariant or fidelity coverage in the shipped list. File a new backlog item only for a check that fails. Do not open an implementation slice up front.
+- [x] **12-point combat playtest** — confirmation pass only. The checks below already have invariant or fidelity coverage in the shipped list. File a new backlog item only for a check that fails. Do not open an implementation slice up front.
   1. Cluster mortar apex split at `v_z = 0`; bomblets match inspector reach.
   2. `HOMING_SLERP` with `lobApex` keeps apex triggers and bounce momentum.
   3. Cursor-solved mortar fans: outer pellets share center-aim landing range.
