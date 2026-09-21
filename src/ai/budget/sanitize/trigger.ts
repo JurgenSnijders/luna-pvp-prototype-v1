@@ -76,6 +76,9 @@ export function sanitizeTriggerNode(
   if (raw.minRamSpeed !== undefined) {
     node.minRamSpeed = clamp(ensureFiniteNumber(raw.minRamSpeed, 0), 0, 4000);
   }
+  if (raw.minSlamSpeed !== undefined) {
+    node.minSlamSpeed = clamp(ensureFiniteNumber(raw.minSlamSpeed, 0), 0, 4000);
+  }
   if (raw.bounceIndex !== undefined) {
     node.bounceIndex = clamp(Math.floor(ensureFiniteNumber(raw.bounceIndex, 1)), 1, 6);
   }

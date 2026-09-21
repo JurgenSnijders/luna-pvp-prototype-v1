@@ -58,7 +58,8 @@ export type TriggerType =
   | 'ON_BOUNCE'
   | 'ON_AIR_APEX'
   | 'ON_GROUND_SLAM'
-  | 'ON_RAM';
+  | 'ON_RAM'
+  | 'ON_SLAM';
 
 export type ConstraintType = 'SPRING_TETHER' | 'DISTANCE_ROD' | 'SURFACE_PIN';
 
@@ -512,6 +513,8 @@ export interface TriggerNode {
   bounceIndex?: number;
   /** On ON_RAM: skip this node when closing speed is below the threshold. */
   minRamSpeed?: number;
+  /** On ON_SLAM: skip this node when impact speed is below the threshold. */
+  minSlamSpeed?: number;
   conditions?: ConditionNode[];
   actions: ActionPayload[];
   ifFalseActions?: ActionPayload[];

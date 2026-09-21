@@ -115,6 +115,14 @@ export interface GroundImpactEvent {
   archetype?: SpellArchetype;
 }
 
+export interface PendingSlamEvent {
+  entity: Entity;
+  surface: 'WALL' | 'OBSTACLE' | 'GROUND';
+  impactSpeed: number;
+  normal: Vector2D;
+  pos: Vector2D;
+}
+
 /** Short-lived arc wedge shown when REFLECT_PROJECTILES fires. Live overlays re-scan each tick. */
 export interface ParryShieldOverlay {
   followEntityId: string;
@@ -183,6 +191,7 @@ export class PhysicsWorld {
   }> = [];
   pendingApexEvents: Projectile[] = [];
   pendingGroundImpacts: GroundImpactEvent[] = [];
+  pendingSlamEvents: PendingSlamEvent[] = [];
   pendingObstacleDestructions: PendingObstacleDestruction[] = [];
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
@@ -190,6 +199,8 @@ export class PhysicsWorld {
 
   /** Pair keys that already emitted ON_RAM for the current continuous contact. */
   private ramContactPairs = new Set<string>();
+  /** Pair keys that already emitted ON_SLAM for the current continuous contact. */
+  private slamContactPairs = new Set<string>();
 
   private readonly maxCombatVisualEvents = 128;
   private lavaDamageAccumulator = new Map<string, number>();
@@ -522,6 +533,33 @@ export class PhysicsWorld {
     return slamInstability;
   }
 
+  private queueSlamEvent(
+    entity: Entity,
+    surface: PendingSlamEvent['surface'],
+    impactSpeed: number,
+    normal: Vector2D,
+    pos: Vector2D,
+    contactKey?: string,
+  ): void {
+    if (contactKey) {
+      if (this.slamContactPairs.has(contactKey)) return;
+      this.slamContactPairs.add(contactKey);
+    }
+    this.pendingSlamEvents.push({
+      entity,
+      surface,
+      impactSpeed,
+      normal: normal.clone(),
+      pos: pos.clone(),
+    });
+  }
+
+  private queueGroundSlamEvent(entity: Entity, impactSpeed: number, pos: Vector2D): void {
+    const normal =
+      entity.vel.magSq() > 0.01 ? entity.vel.normalize() : Vector2D.fromAngle(0);
+    this.queueSlamEvent(entity, 'GROUND', impactSpeed, normal, pos);
+  }
+
   private recordSlamCollision(
     entity: Entity,
     surfaceType: 'OBSTACLE' | 'HEX_BOUNDARY' | 'VIEWPORT',
@@ -597,12 +635,14 @@ export class PhysicsWorld {
     this.pendingRamEvents = [];
     this.pendingApexEvents = [];
     this.pendingGroundImpacts = [];
+    this.pendingSlamEvents = [];
     this.pendingObstacleDestructions = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
     this.parryShieldOverlays = [];
     this.lavaDamageAccumulator.clear();
     this.ramContactPairs.clear();
+    this.slamContactPairs.clear();
   }
 
   spawnParryShieldOverlay(config: {
@@ -790,6 +830,7 @@ export class PhysicsWorld {
     this.pendingRamEvents = [];
     // pendingApexEvents is filled in updateTrajectories before step(); do not clear here.
     this.pendingGroundImpacts = [];
+    this.pendingSlamEvents = [];
     this.pendingObstacleDestructions = [];
 
     this.updateObstaclesAndPatches(dt);
@@ -917,6 +958,7 @@ export class PhysicsWorld {
                 ? e.spellArchetype
                 : e.groundSlamArmed?.ability.archetype,
           });
+          this.queueGroundSlamEvent(e, impactSpeed, e.pos);
         }
 
         e.z = 0;
@@ -992,6 +1034,7 @@ export class PhysicsWorld {
                   ? e.spellArchetype
                   : e.groundSlamArmed?.ability.archetype,
           });
+          this.queueGroundSlamEvent(e, impactSpeed, e.pos);
         }
 
         e.z = 0;
@@ -1193,7 +1236,11 @@ export class PhysicsWorld {
   private clampEntityToHex(entity: Entity): void {
     if (entity.isIntangible()) return;
     if (entity.z > LIP_HEIGHT) return;
-    if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) return;
+    const hexContactKey = `${entity.id}|HEX`;
+    if (isInsideHex(entity.pos, this.hexCenter, this.hexRadius)) {
+      this.slamContactPairs.delete(hexContactKey);
+      return;
+    }
 
     const normal = getClosestEdgeNormal(entity.pos, this.hexCenter, this.hexRadius);
     const vImpact = entity.vel.dot(normal.scale(-1));
@@ -1215,6 +1262,7 @@ export class PhysicsWorld {
         );
       }
       this.pendingWallImpacts.push(entity.pos.clone());
+      this.queueSlamEvent(entity, 'WALL', vImpact, normal, entity.pos, hexContactKey);
     }
   }
 
@@ -1348,8 +1396,12 @@ export class PhysicsWorld {
       if (obstacle.isDead) continue;
 
       for (const entity of obstacleEntityScratch) {
+        const obstacleContactKey = `${entity.id}|OBSTACLE:${obstacle.id}`;
         const penetration = this.getObstaclePenetration(entity, obstacle);
-        if (!penetration) continue;
+        if (!penetration) {
+          this.slamContactPairs.delete(obstacleContactKey);
+          continue;
+        }
 
         if (entity instanceof Projectile) {
           if (entity.obstacleGraceFrames > 0) {
@@ -1361,9 +1413,19 @@ export class PhysicsWorld {
           if (projElev - entity.radius > wallHeight) {
             continue;
           }
+          const impactSpeed = entity.vel.mag();
           entity.isDead = true;
           entity.expiryReason = 'wall';
           this.pendingWallImpacts.push(entity.pos.clone());
+          if (impactSpeed > SLAM_SPEED_THRESHOLD) {
+            this.queueSlamEvent(
+              entity,
+              'OBSTACLE',
+              impactSpeed,
+              penetration.normal,
+              entity.pos,
+            );
+          }
           if (obstacle.config.isDestructible) {
             obstacle.takeDamage(OBSTACLE_PROJECTILE_DAMAGE);
           }
@@ -1389,6 +1451,14 @@ export class PhysicsWorld {
             penetration.normal,
             velBefore,
             instabDelta,
+          );
+          this.queueSlamEvent(
+            entity,
+            'OBSTACLE',
+            vImpact,
+            penetration.normal,
+            entity.pos,
+            obstacleContactKey,
           );
         }
       }

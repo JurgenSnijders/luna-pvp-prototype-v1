@@ -592,6 +592,7 @@ const triggerNode = {
     minBounceSpeed: { type: 'number' },
     bounceIndex: { type: 'number' },
     minRamSpeed: { type: 'number' },
+    minSlamSpeed: { type: 'number' },
     conditions: { type: 'array', items: conditionNode },
     actions: { type: 'array', items: { $ref: '#/$defs/ActionPayload' } },
     ifFalseActions: { type: 'array', items: { $ref: '#/$defs/ActionPayload' } },

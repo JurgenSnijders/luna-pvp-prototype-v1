@@ -31,6 +31,7 @@ Source docs:
 - [x] **Hold-to-guard shield** — `REFLECT_PROJECTILES.whileHeld` binds live wedge to slot `isHeld` (drops on release); optional `durationMs` is max-hold cap only; separate **Hold Guard** preset from tap **Directional Parry**; `slotIndex` threaded through player casts.
 - [x] **Timing phases on summons** — `CastPhaseState` on `Entity`; optional `ActorConfig.inputProfile` telegraphs ON_TICK / turret fire; Player slot machine unchanged.
 - [x] **Land-on-cursor ballistic solver** — fix `lobApex`, solve `speed` from clamped cursor range for forward `BALLISTIC_ARC` mortars; live cast + aiming overlay share solved speed; fan outer rays use center-aim speed.
+- [x] **`ON_SLAM` catch-all surface trigger** — hex wall, obstacle, and ground high-speed hits dispatch `ON_SLAM` without arming; `ON_HIT_WALL` and `ON_GROUND_SLAM` unchanged.
 
 ---
 
@@ -45,9 +46,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Authoring / melee / VFX
 
 ### Product / later
-
-- [ ] **10.** `ON_SLAM` **as its own trigger** (optional)  
-  Wall = `ON_HIT_WALL`; ground = `ON_GROUND_SLAM`. Dedicated obstacle-slam was never added.
 
 - [ ] **11. Max legal VFX-stack particle invariant**  
   [04 §3](04-upgrade-design.md) asked for a LOW-tier `particleBudget` assertion on a maximal layer stack. Not in the physics suite (only intensity / budget monotonicity).

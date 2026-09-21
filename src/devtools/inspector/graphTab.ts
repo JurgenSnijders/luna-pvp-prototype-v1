@@ -108,6 +108,7 @@ function formatTriggerMeta(node: TriggerGraphModel): string | undefined {
   if (node.minBounceSpeed !== undefined) parts.push(`minBounceSpeed=${node.minBounceSpeed}`);
   if (node.bounceIndex !== undefined) parts.push(`bounceIndex=${node.bounceIndex}`);
   if (node.minRamSpeed !== undefined) parts.push(`minRamSpeed=${node.minRamSpeed}`);
+  if (node.minSlamSpeed !== undefined) parts.push(`minSlamSpeed=${node.minSlamSpeed}`);
   if (node.tickIntervalMs !== undefined) parts.push(`tick=${node.tickIntervalMs}ms`);
   if (node.triggerDistance !== undefined) parts.push(`dist=${node.triggerDistance}`);
   if (node.fireOnHitDeath === false) parts.push('skipOnHitDeath');
@@ -433,6 +434,12 @@ function buildPropertyPanel(
     if (trigger.trigger === 'ON_RAM') {
       numberRow(parent, 'Min ram speed', 0, 2000, 10, () => trigger.minRamSpeed ?? 0, (v) => {
         trigger.minRamSpeed = v;
+        refresh();
+      });
+    }
+    if (trigger.trigger === 'ON_SLAM') {
+      numberRow(parent, 'Min slam speed', 0, 2000, 10, () => trigger.minSlamSpeed ?? 0, (v) => {
+        trigger.minSlamSpeed = v;
         refresh();
       });
     }

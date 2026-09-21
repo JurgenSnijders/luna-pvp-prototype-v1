@@ -2590,6 +2590,225 @@ function assertOnRamDispatchesOnce(): { pass: boolean; reason: string } {
   };
 }
 
+function makeSlamSpawnObstacleAbility(id: string, name: string): AbilitySchema {
+  return {
+    id,
+    name,
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: { ...DEFAULT_VISUALS, color: '#ffaa44' },
+    triggers: [
+      {
+        trigger: 'ON_SLAM',
+        actions: [
+          {
+            type: 'SPAWN_OBSTACLE',
+            obstacle: {
+              shape: 'CIRCLE',
+              width: 24,
+              height: 24,
+              durationMs: 2000,
+              isDestructible: true,
+            },
+            target: 'CASTER',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function assertOnSlamObstacleDispatchesOnce(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(4000, 4000);
+
+  const slamAbility = makeSlamSpawnObstacleAbility('bench_on_slam_obstacle', 'Pillar Slam');
+  const caster = new Player(new Vector2D(15, 0));
+  caster.setAbility(0, slamAbility);
+  caster.vel = new Vector2D(800, 0);
+  caster.prevPos = caster.pos.sub(caster.vel.scale(dt));
+  world.addPlayer(caster);
+  world.addObstacle(
+    new Obstacle(new Vector2D(55, 0), {
+      shape: 'BOX',
+      width: 40,
+      height: 40,
+      durationMs: 5000,
+      isDestructible: false,
+    }),
+  );
+
+  const interpreter = new Interpreter();
+  let queuedSlamEvents = 0;
+  for (let i = 0; i < 60; i++) {
+    world.step(dt);
+    queuedSlamEvents += world.pendingSlamEvents.length;
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+  }
+
+  const spawned = world.obstacles.filter(
+    (o) => !o.isDead && o.config.isDestructible,
+  ).length;
+  if (queuedSlamEvents < 1) {
+    return {
+      pass: false,
+      reason: `expected >=1 pendingSlamEvent on obstacle hit, got ${queuedSlamEvents}`,
+    };
+  }
+  if (spawned !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 destructible spawned obstacle from ON_SLAM, got ${spawned}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `obstacle slam events=${queuedSlamEvents} spawned=${spawned}`,
+  };
+}
+
+function assertOnSlamHexWallDispatchesOnce(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 100);
+  world.setViewportBounds(4000, 4000);
+
+  const slamAbility = makeSlamSpawnObstacleAbility('bench_on_slam_hex', 'Wall Charge');
+  const caster = new Player(new Vector2D(115, 0));
+  caster.setAbility(0, slamAbility);
+  caster.vel = new Vector2D(-750, 0);
+  caster.prevPos = caster.pos.sub(caster.vel.scale(dt));
+  world.addPlayer(caster);
+
+  const interpreter = new Interpreter();
+  let queuedSlamEvents = 0;
+  for (let i = 0; i < 45; i++) {
+    world.step(dt);
+    queuedSlamEvents += world.pendingSlamEvents.length;
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+  }
+
+  const spawned = world.obstacles.filter(
+    (o) => !o.isDead && o.config.isDestructible,
+  ).length;
+  if (queuedSlamEvents < 1) {
+    return {
+      pass: false,
+      reason: `expected >=1 pendingSlamEvent on hex wall, got ${queuedSlamEvents}`,
+    };
+  }
+  if (spawned !== 1) {
+    return {
+      pass: false,
+      reason: `expected 1 destructible spawned obstacle from hex ON_SLAM, got ${spawned}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `hex slam events=${queuedSlamEvents} spawned=${spawned}`,
+  };
+}
+
+function assertOnSlamGroundCatchAll(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  world.setViewportBounds(2000, 2000);
+
+  const slamAbility = makeSlamSpawnObstacleAbility('bench_on_slam_ground', 'Ground Slam Kit');
+  const diveAbility: AbilitySchema = {
+    id: 'bench_on_ground_slam_armed',
+    name: 'Dive Only',
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_GROUND_SLAM',
+        actions: [
+          {
+            type: 'SPAWN_OBSTACLE',
+            obstacle: {
+              shape: 'CIRCLE',
+              width: 24,
+              height: 24,
+              durationMs: 2000,
+              isDestructible: true,
+            },
+            target: 'CASTER',
+          },
+        ],
+      },
+    ],
+  };
+
+  const slamPlayer = new Player(new Vector2D(0, 0));
+  slamPlayer.setAbility(0, slamAbility);
+  slamPlayer.z = 160;
+  slamPlayer.vz = -520;
+  slamPlayer.gravityScale = 1;
+  world.addPlayer(slamPlayer);
+
+  const divePlayer = new Player(new Vector2D(80, 0));
+  divePlayer.setAbility(0, diveAbility);
+  divePlayer.z = 160;
+  divePlayer.vz = -520;
+  divePlayer.gravityScale = 1;
+  world.addPlayer(divePlayer);
+
+  const interpreter = new Interpreter();
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+  }
+
+  const slamSpawned = world.obstacles.filter(
+    (o) => !o.isDead && o.pos.dist(slamPlayer.pos) < 80,
+  ).length;
+  const diveUnarmedSpawned = world.obstacles.filter(
+    (o) => !o.isDead && o.pos.dist(divePlayer.pos) < 80,
+  ).length;
+
+  if (slamSpawned < 1) {
+    return {
+      pass: false,
+      reason: `unarmed ON_SLAM should spawn on ground impact (got ${slamSpawned})`,
+    };
+  }
+  if (diveUnarmedSpawned > 0) {
+    return {
+      pass: false,
+      reason: 'ON_GROUND_SLAM fired without groundSlamArmed',
+    };
+  }
+
+  divePlayer.z = 160;
+  divePlayer.vz = -520;
+  divePlayer.groundSlamArmed = { ability: diveAbility, depth: 0 };
+  for (let i = 0; i < 120; i++) {
+    world.step(dt);
+    interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+  }
+
+  const diveArmedSpawned = world.obstacles.filter(
+    (o) => !o.isDead && o.pos.dist(divePlayer.pos) < 80,
+  ).length;
+  if (diveArmedSpawned < 1) {
+    return {
+      pass: false,
+      reason: `armed ON_GROUND_SLAM should spawn after LAUNCH_VERTICAL arm (got ${diveArmedSpawned})`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `ON_SLAM unarmed=${slamSpawned} ON_GROUND_SLAM armed=${diveArmedSpawned}`,
+  };
+}
+
 function assertBotGroundAimPoint(): { pass: boolean; reason: string } {
   const groundAbility: AbilitySchema = {
     id: 'bot_ground_test',
@@ -3939,6 +4158,24 @@ function run(): void {
   console.log(`  ${DIM}${onRam.reason}${RESET}`);
   if (onRam.pass) passed++;
 
+  const onSlamObstacle = assertOnSlamObstacleDispatchesOnce();
+  const onSlamObstacleTag = onSlamObstacle.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${onSlamObstacleTag} ON_SLAM obstacle once`);
+  console.log(`  ${DIM}${onSlamObstacle.reason}${RESET}`);
+  if (onSlamObstacle.pass) passed++;
+
+  const onSlamHex = assertOnSlamHexWallDispatchesOnce();
+  const onSlamHexTag = onSlamHex.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${onSlamHexTag} ON_SLAM hex wall once`);
+  console.log(`  ${DIM}${onSlamHex.reason}${RESET}`);
+  if (onSlamHex.pass) passed++;
+
+  const onSlamGround = assertOnSlamGroundCatchAll();
+  const onSlamGroundTag = onSlamGround.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${onSlamGroundTag} ON_SLAM ground catch-all`);
+  console.log(`  ${DIM}${onSlamGround.reason}${RESET}`);
+  if (onSlamGround.pass) passed++;
+
   const clusterMortarAiming = assertClusterMortarAimingRollout();
   const clusterMortarAimingTag = clusterMortarAiming.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -4093,7 +4330,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 43;
+  const totalCases = suite.length + 46;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

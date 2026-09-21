@@ -70,6 +70,13 @@ export function validateTriggerNode(
     node.minRamSpeed = value.minRamSpeed;
   }
 
+  if (value.minSlamSpeed !== undefined) {
+    if (!isNumber(value.minSlamSpeed) || value.minSlamSpeed < 0) {
+      return validationFail(issues, `${path}.minSlamSpeed`, 'invalid minSlamSpeed');
+    }
+    node.minSlamSpeed = value.minSlamSpeed;
+  }
+
   if (value.bounceIndex !== undefined) {
     if (!isNumber(value.bounceIndex) || value.bounceIndex < 1 || !Number.isInteger(value.bounceIndex)) {
       return validationFail(issues, `${path}.bounceIndex`, 'invalid bounceIndex');

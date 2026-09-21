@@ -122,12 +122,13 @@ IMPULSE VECTORS: ImpulseDirectionMode = AWAY_FROM_ORIGIN | TOWARDS_CASTER | TOWA
 APPLY_IMPULSE: { baseForce, target?, directionMode?, direction? }
 Always set target + directionMode on APPLY_IMPULSE. Put APPLY_IMPULSE on ON_HIT (needs a live TARGET) — do not copy the same impulse onto ON_EXPIRY.
 
-TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT | ON_BOUNCE | ON_AIR_APEX | ON_GROUND_SLAM | ON_RAM (projectile-only vertical triggers require root trajectory or SPAWN_PROJECTILE)
+TRIGGERS: ON_CAST | ON_TICK | ON_HIT | ON_EXPIRY | ON_RETURN | ON_RECAST | ON_HIT_WALL | ON_DISTANCE_TRAVELED | ON_HAZARD_CONTACT | ON_BOUNCE | ON_AIR_APEX | ON_GROUND_SLAM | ON_RAM | ON_SLAM (projectile-only vertical triggers require root trajectory or SPAWN_PROJECTILE)
   ON_BOUNCE: fires when a BALLISTIC_ARC projectile bounces off the ground (bounceIndex available).
   ON_AIR_APEX: fires once when a ballistic projectile reaches its peak altitude (ideal for cluster splits).
   ON_GROUND_SLAM: fires when a combatant or projectile impacts the ground at high vertical speed (|vz| >= 300). Arm caster with ON_GROUND_SLAM triggers before LAUNCH_VERTICAL.
   ON_RAM: fires on the rammer when a combatant/summon body-checks another above ramming speed (optional minRamSpeed). No arming — any equipped spell with ON_RAM can fire.
-TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, minBounceSpeed?, bounceIndex?, minRamSpeed?, conditions?, actions[], ifFalseActions?, children? }
+  ON_SLAM: catch-all high-speed surface hit (hex wall, obstacle, or ground). No arming. Use for wall charges and pillar slams; keep ON_GROUND_SLAM for dive/meteor recipes and ON_HIT_WALL for projectile wall death.
+TriggerNode: { trigger, tickIntervalMs?, triggerDistance?, fireOnHitDeath?, minBounceSpeed?, bounceIndex?, minRamSpeed?, minSlamSpeed?, conditions?, actions[], ifFalseActions?, children? }
   triggerDistance: required on ON_DISTANCE_TRAVELED (distance in world units before firing)
   fireOnHitDeath: optional boolean on ON_EXPIRY. DEFAULT TRUE. When a projectile dies from an enemy hit, ON_HIT fires first, then ON_EXPIRY also fires unless fireOnHitDeath is false. This is projectile-death-from-hit, NOT "when the target dies".
 HIT vs EXPIRY (do not double-detonate):
@@ -217,6 +218,7 @@ Meteor Shower (Multi-Drop): targetingMode "GROUND_POINT", maxTargetRange:600, ON
 Meteor Slam (Self Dive): targetingMode "DIRECTIONAL" (NOT GROUND_POINT) + ON_CAST LAUNCH_VERTICAL { targetApex:150-250, target:"CASTER" } + ON_GROUND_SLAM -> SPAWN_FIELD RADIAL_IMPULSE or APPLY_IMPULSE radial knockback — player leaps and slams where they land.
 Anti-Air Flak: trajectory BALLISTIC_ARC or LINEAR/HOMING_SLERP + ON_HIT conditions:[{ query:"ELEVATION", comparison:"GT", value:15-40 }] -> LAUNCH_VERTICAL { verticalImpulse:400-600 } + amplified APPLY_IMPULSE; branch with LTE for grounded targets
 Shoulder Charge: no trajectory needed; ON_RAM -> ADD_INSTABILITY { amount:20-40, target:"TARGET" } or SPAWN_FIELD RADIAL_IMPULSE at contact — fires when the caster body-rams an enemy above ramming speed
+Pillar Slam / Wall Charge: no trajectory needed; ON_SLAM -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:70-100, strength:500-800, durationMs:200 } } — fires when the caster slams a hex wall, obstacle, or the ground at high speed (no arming)
 Thermal Geyser (Neutral): targetingMode "GROUND_POINT" + ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60-100, strength:150-400, durationMs:4000-8000, verticalForce:2200-2800, affects:"ALL", zBase:0, zHeight:20-80 } } — launches everyone over hazard pools
 Personal Jump Pad: targetingMode "GROUND_POINT" + ON_CAST -> SPAWN_FIELD { field:{ fieldType:"RADIAL_IMPULSE", radius:60-100, strength:150-400, durationMs:4000-8000, verticalForce:2500, affects:"CASTER_ONLY", zBase:0, zHeight:20-80 } } — only the caster launches; enemies walk through unaffected
 Stasis Trap: ON_HIT -> APPLY_STASIS { durationMs:3000, target:"TARGET" }

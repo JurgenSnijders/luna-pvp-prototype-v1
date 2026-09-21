@@ -826,6 +826,70 @@ export function processLifecycleEvents(
   }
   world.pendingRamEvents = [];
 
+  for (const event of world.pendingSlamEvents) {
+    if (event.entity.isDead && !(event.entity instanceof Projectile)) continue;
+
+    const slamColor =
+      event.surface === 'GROUND'
+        ? resolveImpactColor(
+            event.entity instanceof Projectile
+              ? event.entity.spellArchetype
+              : event.entity instanceof Summon
+                ? event.entity.spellArchetype
+                : undefined,
+          )
+        : '#ffaa44';
+    const sparkCount = Math.max(3, Math.min(10, Math.round(event.impactSpeed / 80)));
+    interp.particles?.burstSparks(event.pos, sparkCount, slamColor);
+
+    const dispatchSlamNodes = (nodes: TriggerNode[], ability?: AbilitySchema): void => {
+      if (nodes.length === 0) return;
+      const ctx: TriggerContext = {
+        origin: event.pos.clone(),
+        heading: event.normal.clone(),
+        caster: event.entity,
+        sourceEntity: event.entity,
+        depth: 1,
+        ability: ability
+          ? { archetype: ability.archetype, name: ability.name }
+          : undefined,
+      };
+      for (const node of nodes) {
+        if (node.minSlamSpeed !== undefined && event.impactSpeed < node.minSlamSpeed) {
+          continue;
+        }
+        if (event.entity instanceof Projectile && event.surface === 'GROUND') {
+          const blastRadius = resolveSlamBlastRadius(event.entity);
+          const targets = queryCombatantsInRadius(
+            world,
+            event.pos,
+            blastRadius,
+            ctx.caster.id,
+          );
+          dispatchSlamTriggerNode(interp, node, ctx, world, targets);
+        } else {
+          dispatchTriggerNode(interp, node, ctx, world);
+        }
+      }
+    };
+
+    if (event.entity instanceof Player) {
+      for (let slot = 0; slot < 5; slot++) {
+        const ability = event.entity.getAbility(slot);
+        if (!ability) continue;
+        dispatchSlamNodes(
+          ability.triggers.filter((t) => t.trigger === 'ON_SLAM'),
+          ability,
+        );
+      }
+    } else if (event.entity instanceof Summon) {
+      dispatchSlamNodes(event.entity.getTriggers('ON_SLAM'));
+    } else if (event.entity instanceof Projectile) {
+      dispatchSlamNodes(event.entity.getTriggers('ON_SLAM'));
+    }
+  }
+  world.pendingSlamEvents = [];
+
   for (const impact of world.pendingGroundImpacts) {
     const intensity = Math.min(2.5, impact.vz / GROUND_SLAM_VZ);
     const color = resolveImpactColor(impact.archetype);

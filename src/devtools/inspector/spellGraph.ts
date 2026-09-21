@@ -20,6 +20,7 @@ export interface TriggerGraphModel {
   minBounceSpeed?: number;
   bounceIndex?: number;
   minRamSpeed?: number;
+  minSlamSpeed?: number;
   conditions?: ConditionNode[];
   actions: ActionGraphModel[];
   ifFalseActions?: ActionGraphModel[];
@@ -99,6 +100,7 @@ function parseTrigger(node: TriggerNode): TriggerGraphModel {
     minBounceSpeed: node.minBounceSpeed,
     bounceIndex: node.bounceIndex,
     minRamSpeed: node.minRamSpeed,
+    minSlamSpeed: node.minSlamSpeed,
     conditions: node.conditions ? structuredClone(node.conditions) : undefined,
     actions: node.actions.map(parseAction),
     ifFalseActions: node.ifFalseActions?.map(parseAction),
@@ -323,6 +325,7 @@ function rebuildTrigger(model: TriggerGraphModel): TriggerNode {
   if (model.minBounceSpeed !== undefined) node.minBounceSpeed = model.minBounceSpeed;
   if (model.bounceIndex !== undefined) node.bounceIndex = model.bounceIndex;
   if (model.minRamSpeed !== undefined) node.minRamSpeed = model.minRamSpeed;
+  if (model.minSlamSpeed !== undefined) node.minSlamSpeed = model.minSlamSpeed;
   if (model.conditions) node.conditions = structuredClone(model.conditions);
   if (model.ifFalseActions) {
     node.ifFalseActions = model.ifFalseActions.map(rebuildAction);
@@ -442,6 +445,7 @@ function formatTriggerMeta(node: TriggerGraphModel): string | undefined {
   if (node.minBounceSpeed !== undefined) parts.push(`minBounceSpeed=${node.minBounceSpeed}`);
   if (node.bounceIndex !== undefined) parts.push(`bounceIndex=${node.bounceIndex}`);
   if (node.minRamSpeed !== undefined) parts.push(`minRamSpeed=${node.minRamSpeed}`);
+  if (node.minSlamSpeed !== undefined) parts.push(`minSlamSpeed=${node.minSlamSpeed}`);
   if (node.tickIntervalMs !== undefined) parts.push(`tick=${node.tickIntervalMs}ms`);
   if (node.triggerDistance !== undefined) parts.push(`dist=${node.triggerDistance}`);
   if (node.fireOnHitDeath === false) parts.push('skipOnHitDeath');
