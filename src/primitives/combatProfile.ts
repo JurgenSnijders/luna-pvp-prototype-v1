@@ -22,12 +22,35 @@ export type DisplacementDirectionTag =
 
 type DirectionFamily = 'PUSH' | 'PULL' | 'LATERAL' | 'ALONG' | 'CUSTOM';
 
+export const ARENA_PHYSICS_CONSTANTS = {
+  STANDARD_TARGET_MASS: 50,
+  STANDARD_ARENA_RADIUS: 500,
+  FORCE_TO_DISTANCE_FACTOR: 0.28,
+} as const;
+
+export type RingOutTier =
+  | 'LETHAL_FINISHER'
+  | 'HEAVY_SHOVE'
+  | 'TACTICAL_REPOSITION'
+  | 'MICRO_INTERRUPT'
+  | 'NONE';
+
+export interface KineticLethalityProfile {
+  baseTravelPx: number;
+  maxTravelPx: number;
+  arenaReachPct: number;
+  tier: RingOutTier;
+  label: string;
+  summary: string;
+}
+
 export interface DisplacementProfile {
   peakForce: number;
   directions: readonly string[];
   primaryTag: DisplacementDirectionTag;
   hasAttractor: boolean;
   hasRadial: boolean;
+  lethality: KineticLethalityProfile;
 }
 
 export type ResourceProfileType = 'COOLDOWN' | 'HEAT' | 'AMMO' | 'HEALTH_PCT';
@@ -227,6 +250,63 @@ function derivePrimaryTag(families: Set<DirectionFamily>): DisplacementDirection
   return only;
 }
 
+export function computeKineticLethality(
+  peakForce: number,
+  primaryTag: DisplacementDirectionTag,
+): KineticLethalityProfile {
+  if (peakForce <= 0 || primaryTag === 'NONE') {
+    return {
+      baseTravelPx: 0,
+      maxTravelPx: 0,
+      arenaReachPct: 0,
+      tier: 'NONE',
+      label: 'NO DISPLACEMENT',
+      summary: '0px',
+    };
+  }
+
+  const baseTravelPx = Math.round(
+    peakForce * ARENA_PHYSICS_CONSTANTS.FORCE_TO_DISTANCE_FACTOR,
+  );
+  const maxTravelPx = Math.round(baseTravelPx * 2.0);
+  const arenaReachPct = Math.min(
+    100,
+    Math.round(
+      (maxTravelPx / ARENA_PHYSICS_CONSTANTS.STANDARD_ARENA_RADIUS) * 100,
+    ),
+  );
+
+  let tier: RingOutTier = 'MICRO_INTERRUPT';
+  let label = 'MICRO-INTERRUPT';
+
+  if (maxTravelPx >= 400) {
+    tier = 'LETHAL_FINISHER';
+    label = primaryTag === 'PULL' ? 'LETHAL VORTEX' : 'LETHAL FINISHER';
+  } else if (maxTravelPx >= 220) {
+    tier = 'HEAVY_SHOVE';
+    label = primaryTag === 'PULL' ? 'HEAVY DRAG' : 'HEAVY SHOVE';
+  } else if (maxTravelPx >= 100) {
+    tier = 'TACTICAL_REPOSITION';
+    label = 'TACTICAL PEEL';
+  }
+
+  const summary = `~${baseTravelPx}–${maxTravelPx}px (${arenaReachPct}% Arena)`;
+  return { baseTravelPx, maxTravelPx, arenaReachPct, tier, label, summary };
+}
+
+export function ringOutTierBadgeClass(tier: RingOutTier): string {
+  switch (tier) {
+    case 'LETHAL_FINISHER':
+      return 'tier-lethal';
+    case 'HEAVY_SHOVE':
+      return 'tier-shove';
+    case 'TACTICAL_REPOSITION':
+      return 'tier-reposition';
+    default:
+      return 'tier-micro';
+  }
+}
+
 function buildResourceProfile(ability: AbilitySchema): ResourceProfile {
   const rc = ability.resourceCost;
   if (!rc) {
@@ -414,6 +494,8 @@ export function computeSpellCombatProfile(ability: AbilitySchema): SpellCombatPr
   );
 
   const directions = [...directionSet].sort();
+  const roundedPeakForce = Math.round(peakForce);
+  const primaryTag = derivePrimaryTag(familySet);
 
   return {
     abilityId: ability.id,
@@ -422,11 +504,12 @@ export function computeSpellCombatProfile(ability: AbilitySchema): SpellCombatPr
     cooldownMs: ability.cooldownMs,
     recoilKick: ability.recoilKick ?? 0,
     displacement: {
-      peakForce: Math.round(peakForce),
+      peakForce: roundedPeakForce,
       directions,
-      primaryTag: derivePrimaryTag(familySet),
+      primaryTag,
       hasAttractor,
       hasRadial,
+      lethality: computeKineticLethality(roundedPeakForce, primaryTag),
     },
     instabilityYield,
     instabilityAppliesToSelf,

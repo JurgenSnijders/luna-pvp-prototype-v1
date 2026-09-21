@@ -38,7 +38,9 @@ import {
   formatCombatStatDiff,
   formatProfileCadence,
   polarityCssClass,
+  ringOutTierBadgeClass,
   type CombatProfileDiff,
+  type KineticLethalityProfile,
   type MechanicDiffChip,
   type MetricDelta,
   type SpellCombatProfile,
@@ -636,10 +638,31 @@ export function extractSpellTelemetry(ability: AbilitySchema): SpellTelemetry {
 function formatInspectorPeakForce(profile: SpellCombatProfile): string {
   const force = profile.displacement.peakForce;
   const tag = profile.displacement.primaryTag;
+  const maxTravelPx = profile.displacement.lethality.maxTravelPx;
   if (tag === 'NONE' || tag === 'MIXED' || force === 0) {
     return `${force} Force`;
   }
-  return `${force} [${tag}]`;
+  return `${force} [${tag}] (~${maxTravelPx}px)`;
+}
+
+function appendLethalityToRepulseCell(
+  cellEl: HTMLElement,
+  lethality: KineticLethalityProfile,
+): void {
+  const subtext = document.createElement('div');
+  subtext.className = 'displacement-distance-subtext';
+  subtext.textContent = lethality.summary;
+
+  const badgeWrap = document.createElement('div');
+  badgeWrap.style.marginTop = '4px';
+
+  const badge = document.createElement('span');
+  badge.className = `lethality-badge ${ringOutTierBadgeClass(lethality.tier)}`;
+  badge.textContent = lethality.label;
+
+  badgeWrap.appendChild(badge);
+  cellEl.appendChild(subtext);
+  cellEl.appendChild(badgeWrap);
 }
 
 function formatInspectorInstability(profile: SpellCombatProfile): string {
@@ -1494,6 +1517,7 @@ export class DraftModal {
     const rarity = resolveSpellRarity(spell);
     const tier = rarity.toLowerCase();
     const telemetry = extractSpellTelemetry(spell);
+    const combatProfile = computeSpellCombatProfile(spell);
     const profile = calculateCombatProfile(telemetry);
     const evolutionDiff = resolveSpellEvolutionDiff(spell);
 
@@ -1573,7 +1597,7 @@ export class DraftModal {
     const inspectorBaseline = this.resolveInspectorBaseline(spell);
     const telemetryBlock = inspectorBaseline
       ? this.buildInspectorComparisonDrawer(spell, inspectorBaseline)
-      : this.buildInspectorTelemetryGrid(telemetry);
+      : this.buildInspectorTelemetryGrid(telemetry, combatProfile);
 
     const profileCard = this.buildImpactProfileCard(profile);
 
@@ -2614,7 +2638,10 @@ export class DraftModal {
     };
   }
 
-  private buildInspectorTelemetryGrid(telemetry: SpellTelemetry): HTMLElement {
+  private buildInspectorTelemetryGrid(
+    telemetry: SpellTelemetry,
+    combatProfile: SpellCombatProfile,
+  ): HTMLElement {
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'inspector-telemetry-grid';
 
@@ -2628,9 +2655,11 @@ export class DraftModal {
     const repulseVal = document.createElement('span');
     repulseVal.className = 'telemetry-value val-repulse';
     repulseVal.textContent = `${telemetry.repulseForce} Force`;
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
-    );
+    const repulseCell = this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal);
+    if (combatProfile.displacement.peakForce > 0) {
+      appendLethalityToRepulseCell(repulseCell, combatProfile.displacement.lethality);
+    }
+    telemetryGrid.appendChild(repulseCell);
 
     const instabilityVal = document.createElement('span');
     instabilityVal.className = 'telemetry-value val-instability';
@@ -3136,9 +3165,14 @@ export class DraftModal {
     if (!ability) return;
 
     const telemetry = extractSpellTelemetry(ability);
+    const combatProfile = computeSpellCombatProfile(ability);
     const tier = normalizeForgeTierRarity(card.rarity);
     const superKey = resolveSuperchargedMetricKey(telemetry, tier);
     const cooldownValue = parseFloat(telemetry.cooldownSec) || 0;
+    const reachSuffix =
+      combatProfile.displacement.peakForce > 0
+        ? ` · ~${combatProfile.displacement.lethality.maxTravelPx}px reach`
+        : '';
 
     if (options?.animate) {
       this.animateMetricRollUp(
@@ -3155,7 +3189,11 @@ export class DraftModal {
         this.animateMetricRollUp(
           slot.telemetryValues.repulse,
           telemetry.repulseForce,
-          (value) => `${Math.round(value)} Force`,
+          (value) => {
+            const rounded = Math.round(value);
+            const base = `${rounded} Force`;
+            return rounded >= telemetry.repulseForce ? `${base}${reachSuffix}` : base;
+          },
         );
       } else {
         slot.telemetryValues.repulse.textContent = 'Minimal';
@@ -3164,7 +3202,9 @@ export class DraftModal {
       slot.telemetryValues.cooldown.textContent = telemetry.cooldownSec;
       slot.telemetryValues.recoil.textContent = `${telemetry.recoilKick} px/s`;
       slot.telemetryValues.repulse.textContent =
-        telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal';
+        telemetry.repulseForce > 0
+          ? `${telemetry.repulseForce} Force${reachSuffix}`
+          : 'Minimal';
     }
 
     slot.telemetryValues.instability.textContent = `+${telemetry.instabilityYield}% Yield`;

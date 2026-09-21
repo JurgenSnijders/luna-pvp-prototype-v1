@@ -1,6 +1,7 @@
 import { sortVaultSpells } from '../src/game/spellRoles';
 import {
   compareCombatProfiles,
+  computeKineticLethality,
   computeSpellCombatProfile,
   extractMechanicDiffChips,
 } from '../src/primitives/combatProfile';
@@ -658,6 +659,43 @@ assert(
   computeSpellCombatProfile(byInstability[0]).instabilityYield >=
     computeSpellCombatProfile(byInstability[1]).instabilityYield,
   'INSTABILITY sort orders by yield descending',
+);
+
+const lethal1500 = computeKineticLethality(1500, 'PUSH');
+assert(lethal1500.baseTravelPx === 420, '1500 PUSH baseTravelPx is 420');
+assert(lethal1500.maxTravelPx === 840, '1500 PUSH maxTravelPx is 840');
+assert(lethal1500.tier === 'LETHAL_FINISHER', '1500 PUSH is LETHAL_FINISHER');
+
+const lethal800 = computeKineticLethality(800, 'PUSH');
+assert(lethal800.baseTravelPx === 224, '800 PUSH baseTravelPx is 224');
+assert(lethal800.maxTravelPx === 448, '800 PUSH maxTravelPx is 448');
+assert(lethal800.tier === 'LETHAL_FINISHER', '800 PUSH is LETHAL_FINISHER');
+
+const heavyPull = computeKineticLethality(500, 'PULL');
+assert(heavyPull.baseTravelPx === 140, '500 PULL baseTravelPx is 140');
+assert(heavyPull.maxTravelPx === 280, '500 PULL maxTravelPx is 280');
+assert(heavyPull.tier === 'HEAVY_SHOVE', '500 PULL is HEAVY_SHOVE');
+assert(heavyPull.label === 'HEAVY DRAG', '500 PULL label is HEAVY DRAG');
+
+const tactical250 = computeKineticLethality(250, 'PUSH');
+assert(tactical250.baseTravelPx === 70, '250 PUSH baseTravelPx is 70');
+assert(tactical250.maxTravelPx === 140, '250 PUSH maxTravelPx is 140');
+assert(
+  tactical250.tier === 'TACTICAL_REPOSITION',
+  '250 PUSH is TACTICAL_REPOSITION',
+);
+
+const noneForce = computeKineticLethality(0, 'PUSH');
+assert(noneForce.tier === 'NONE', '0 force tier is NONE');
+
+const integrated800 = computeSpellCombatProfile(kineticImpulseAbility(800));
+assert(
+  integrated800.displacement.lethality.maxTravelPx === 448,
+  'integrated profile populates lethality for 800 force',
+);
+assert(
+  integrated800.displacement.lethality.tier === 'LETHAL_FINISHER',
+  'integrated 800 force is LETHAL_FINISHER',
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

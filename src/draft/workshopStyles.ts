@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v28';
+export const STYLE_ID = 'luna-workshop-styles-v29';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -384,6 +384,51 @@ export function injectStyles(): void {
 
     .telemetry-value.val-delivery {
       color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .lethality-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      font-family: ${FONTS.mono};
+    }
+
+    .lethality-badge.tier-lethal {
+      color: #ff0055;
+      background: rgba(255, 0, 85, 0.15);
+      border: 1px solid rgba(255, 0, 85, 0.5);
+      box-shadow: 0 0 8px rgba(255, 0, 85, 0.3);
+    }
+
+    .lethality-badge.tier-shove {
+      color: #ffaa00;
+      background: rgba(255, 170, 0, 0.15);
+      border: 1px solid rgba(255, 170, 0, 0.45);
+    }
+
+    .lethality-badge.tier-reposition {
+      color: #00e5ff;
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+    }
+
+    .lethality-badge.tier-micro {
+      color: #8b949e;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .displacement-distance-subtext {
+      font-size: 9px;
+      color: var(--retro-text-muted, #8b949e);
+      font-family: ${FONTS.mono};
+      margin-top: 1px;
     }
 
     .inspector-telemetry-grid,

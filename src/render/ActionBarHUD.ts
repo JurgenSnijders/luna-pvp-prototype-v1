@@ -102,7 +102,11 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const category = getCategoryLabel(SLOT_CATEGORY_MAP[slotKey]);
   const profile = computeSpellCombatProfile(ability);
   const cadence = formatProfileCadence(profile);
-  const displacement = `${profile.displacement.peakForce} Force [${profile.displacement.primaryTag}]`;
+  const disp = profile.displacement;
+  const displacement =
+    disp.peakForce > 0
+      ? `${disp.peakForce} Force [${disp.primaryTag}] · ~${disp.lethality.baseTravelPx}–${disp.lethality.maxTravelPx}px (${disp.lethality.label})`
+      : '0 Force [NONE]';
   const tacticalLines = buildTacticalVerbLines(ability, profile);
   const flavorBlock = [
     ability.tagline
