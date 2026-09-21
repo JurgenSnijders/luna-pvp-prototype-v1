@@ -10,7 +10,10 @@ import { resolveLiveAimingPaths } from './aimingRollout';
 import {
   abilityUsesGroundReticle,
   collectGroundImpactFieldRadii,
+  deployableTangentAngle,
+  resolveDeployableInfo,
   resolveRootTrajectory,
+  type DeployableTargetInfo,
   type PredictivePath,
 } from './trajectoryTracer';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
@@ -492,6 +495,98 @@ export function drawPredictivePaths(
   }
 }
 
+function drawRectCornerBrackets(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  arm: number,
+  color: string,
+): void {
+  const hw = width / 2;
+  const hh = height / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+
+  const drawCorner = (cx: number, cy: number, sx: number, sy: number) => {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + sx * arm, cy);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy + sy * arm);
+    ctx.stroke();
+  };
+
+  drawCorner(-hw, -hh, 1, 1);
+  drawCorner(hw, -hh, -1, 1);
+  drawCorner(hw, hh, -1, -1);
+  drawCorner(-hw, hh, 1, -1);
+}
+
+function drawDeployableGhost(
+  ctx: CanvasRenderingContext2D,
+  info: DeployableTargetInfo,
+  center: { x: number; y: number },
+  origin: { x: number; y: number },
+  color: string,
+): void {
+  const dx = center.x - origin.x;
+  const dy = center.y - origin.y;
+  const aimAngle = Math.atan2(dy, dx);
+  const tangentAngle = deployableTangentAngle(dx, dy);
+
+  ctx.save();
+  ctx.translate(center.x, center.y);
+
+  if (info.shape === 'BOX') {
+    const halfW = info.width / 2;
+    const halfH = info.height / 2;
+    ctx.rotate(tangentAngle);
+    ctx.fillStyle = hexToRgba(color, 0.12);
+    ctx.fillRect(-halfW, -halfH, info.width, info.height);
+    ctx.strokeStyle = hexToRgba(color, 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(-halfW, -halfH, info.width, info.height);
+    ctx.setLineDash([]);
+    drawRectCornerBrackets(ctx, info.width, info.height, 6, color);
+    ctx.beginPath();
+    ctx.arc(0, -halfH - 4, 2, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else if (info.shape === 'TURRET') {
+    const half = info.radius;
+    ctx.fillStyle = hexToRgba(color, 0.12);
+    ctx.fillRect(-half, -half, half * 2, half * 2);
+    ctx.strokeStyle = hexToRgba(color, 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(-half, -half, half * 2, half * 2);
+    ctx.setLineDash([]);
+    const barrelLen = info.radius + 12;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(aimAngle) * barrelLen, Math.sin(aimAngle) * barrelLen);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = hexToRgba(color, 0.85);
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, info.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = hexToRgba(color, 0.12);
+    ctx.beginPath();
+    ctx.arc(0, 0, info.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 export function drawAoERadial(
   ctx: CanvasRenderingContext2D,
   state: AimingState,
@@ -499,6 +594,7 @@ export function drawAoERadial(
 ): void {
   const archetype = state.ability.archetype ?? 'KINETIC';
   const color = getArchetypeColor(archetype, state.ability.visuals?.color);
+  const deployableInfo = resolveDeployableInfo(state.ability);
   const radius = state.radialRadius > 0 ? state.radialRadius : state.range;
   const center =
     abilityUsesGroundReticle(state.ability)
@@ -519,6 +615,11 @@ export function drawAoERadial(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  if (deployableInfo) {
+    drawDeployableGhost(ctx, deployableInfo, center, state.origin, color);
+    return;
   }
 
   ctx.save();

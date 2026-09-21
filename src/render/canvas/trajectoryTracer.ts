@@ -89,6 +89,107 @@ export function abilityUsesGroundReticle(ability: AbilitySchema): boolean {
   return (traj.spawnAltitude ?? 0) > 0;
 }
 
+export interface DeployableTargetInfo {
+  kind: 'OBSTACLE' | 'ACTOR';
+  shape: 'BOX' | 'CIRCLE' | 'TURRET' | 'DECOY';
+  width: number;
+  height: number;
+  radius: number;
+  color: string;
+}
+
+/** Tangent angle so a box wall's wide face is perpendicular to caster→target (shield orientation). */
+export function deployableTangentAngle(dx: number, dy: number): number {
+  return Math.atan2(dy, dx) + Math.PI / 2;
+}
+
+function deployableFromAction(
+  action: ActionPayload,
+  ability: AbilitySchema,
+): DeployableTargetInfo | null {
+  const color = ability.visuals?.color ?? '#aa8844';
+
+  if (action.type === 'SPAWN_OBSTACLE') {
+    const obs = action.obstacle;
+    if (obs.shape === 'BOX') {
+      return {
+        kind: 'OBSTACLE',
+        shape: 'BOX',
+        width: obs.width ?? 80,
+        height: obs.height ?? 24,
+        radius: 0,
+        color,
+      };
+    }
+    if (obs.shape === 'CIRCLE') {
+      const w = obs.width ?? 40;
+      return {
+        kind: 'OBSTACLE',
+        shape: 'CIRCLE',
+        width: w,
+        height: obs.height ?? w,
+        radius: w / 2,
+        color,
+      };
+    }
+    return null;
+  }
+
+  if (action.type === 'SPAWN_ACTOR') {
+    const actor = action.actor;
+    if (actor.actorArchetype === 'TURRET') {
+      const r = actor.radius ?? 15;
+      return {
+        kind: 'ACTOR',
+        shape: 'TURRET',
+        width: r * 2,
+        height: r * 2,
+        radius: r,
+        color,
+      };
+    }
+    if (actor.actorArchetype === 'DECOY') {
+      const r = actor.radius ?? 18;
+      return {
+        kind: 'ACTOR',
+        shape: 'DECOY',
+        width: 0,
+        height: 0,
+        radius: r,
+        color,
+      };
+    }
+  }
+
+  return null;
+}
+
+function findDeployableOnTrigger(
+  ability: AbilitySchema,
+  trigger: 'ON_CAST' | 'ON_EXPIRY',
+): DeployableTargetInfo | null {
+  for (const node of ability.triggers ?? []) {
+    if (node.trigger !== trigger) continue;
+    for (const action of node.actions ?? []) {
+      const info = deployableFromAction(action, ability);
+      if (info) return info;
+    }
+  }
+  return null;
+}
+
+/** Footprint metadata for ground deployables (walls, turrets, decoys). Null for pure fields / ballistics. */
+export function resolveDeployableInfo(ability: AbilitySchema): DeployableTargetInfo | null {
+  const onCast = findDeployableOnTrigger(ability, 'ON_CAST');
+  if (onCast) return onCast;
+
+  const hasTrajectory = resolveRootTrajectory(ability) !== undefined;
+  const hasOnCastProjectile = findOnCastProjectileConfig(ability) !== null;
+  if (hasTrajectory || hasOnCastProjectile) return null;
+
+  return findDeployableOnTrigger(ability, 'ON_EXPIRY');
+}
+
 const GROUND_IMPACT_TRIGGERS = new Set(['ON_GROUND_SLAM', 'ON_EXPIRY', 'ON_HIT']);
 
 export function collectGroundImpactFieldRadii(ability: AbilitySchema): number[] {

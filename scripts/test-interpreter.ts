@@ -61,6 +61,68 @@ function castPreset(presetName: string, schema: AbilitySchema): CastCounts {
   return countLiveEntities(world);
 }
 
+function testGroundPointBoxOrientation(): string | null {
+  const schema: AbilitySchema = {
+    id: 'test_ground_wall',
+    name: 'Ground Wall',
+    targetingMode: 'GROUND_POINT',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_OBSTACLE',
+            obstacle: {
+              shape: 'BOX',
+              width: 80,
+              height: 24,
+              durationMs: 5000,
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const castAt = (aimX: number, aimY: number, expectedAngle: number): string | null => {
+    const world = new PhysicsWorld(Vector2D.zero(), 400);
+    const caster = new Player(new Vector2D(0, 0));
+    world.addPlayer(caster);
+    const interpreter = new Interpreter();
+    interpreter.executeAbility(
+      schema,
+      {
+        origin: caster.pos.clone(),
+        heading: new Vector2D(1, 0),
+        caster,
+        depth: 0,
+        ability: schema,
+        aimPoint: new Vector2D(aimX, aimY),
+      },
+      world,
+    );
+    const obs = world.obstacles[0];
+    if (!obs) return `no obstacle spawned at aim (${aimX}, ${aimY})`;
+    const actual = obs.config.angle ?? 0;
+    const delta = Math.abs(actual - expectedAngle);
+    const wrapped = Math.min(delta, Math.abs(delta - Math.PI * 2));
+    if (wrapped > 0.02) {
+      return `aim (${aimX}, ${aimY}): expected angle ${expectedAngle}, got ${actual}`;
+    }
+    return null;
+  };
+
+  const rightFail = castAt(100, 0, Math.PI / 2);
+  if (rightFail) return `ground wall right: ${rightFail}`;
+
+  const upFail = castAt(0, -100, 0);
+  if (upFail) return `ground wall up: ${upFail}`;
+
+  return null;
+}
+
 function testDeployableNestedTriggerSelfHit(): string | null {
   const world = new PhysicsWorld(Vector2D.zero(), 400);
   const caster = new Player(new Vector2D(0, 0));
@@ -146,6 +208,9 @@ function run(): void {
 
   const deployableFailure = testDeployableNestedTriggerSelfHit();
   if (deployableFailure) failures.push(deployableFailure);
+
+  const wallOrientationFailure = testGroundPointBoxOrientation();
+  if (wallOrientationFailure) failures.push(wallOrientationFailure);
 
   for (const name of CAST_PRESETS) {
     const preset = PRESETS[name];

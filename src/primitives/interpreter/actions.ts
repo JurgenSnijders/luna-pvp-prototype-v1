@@ -480,10 +480,13 @@ export function dispatchAction(
         pos = (t ?? ctx.caster).pos.clone();
       }
       const obstacleConfig = { ...action.obstacle };
-      if (obstacleConfig.shape === 'BOX' && obstacleConfig.angle === undefined) {
-        const aim = t ? t.pos.sub(ctx.caster.pos) : ctx.heading;
-        if (aim.magSq() > 0) {
-          obstacleConfig.angle = Math.atan2(aim.y, aim.x);
+      if (obstacleConfig.shape === 'BOX') {
+        const disp = pos.sub(ctx.caster.pos);
+        const aim = disp.magSq() > 0.01 ? disp : ctx.heading;
+        if (aim.magSq() > 0.01) {
+          obstacleConfig.angle = Math.atan2(aim.y, aim.x) + Math.PI / 2;
+        } else if (obstacleConfig.angle === undefined) {
+          obstacleConfig.angle = 0;
         }
       }
       world.addObstacle(
