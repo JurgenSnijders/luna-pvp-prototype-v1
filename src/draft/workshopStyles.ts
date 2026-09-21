@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v25';
+export const STYLE_ID = 'luna-workshop-styles-v26';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -121,6 +121,10 @@ export function injectStyles(): void {
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0, 229, 255, 0.25) transparent;
     }
 
     .workspace-inspector-pane {
@@ -134,6 +138,9 @@ export function injectStyles(): void {
       box-sizing: border-box;
       overflow-y: auto;
       overflow-x: hidden;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0, 229, 255, 0.25) transparent;
       min-height: 0;
     }
 
@@ -709,19 +716,20 @@ export function injectStyles(): void {
     .forge-root {
       display: flex;
       flex-direction: column;
-      min-height: 100%;
+      min-height: 0;
+      box-sizing: border-box;
       gap: 0;
     }
 
     .forge-cards {
       flex: 1 1 auto;
-      min-height: 280px;
-      overflow-y: auto;
+      min-height: 0;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
+      gap: 12px;
       align-items: stretch;
-      margin-top: 16px;
+      margin-top: 8px;
+      box-sizing: border-box;
     }
 
     .forge-card-redesign {
@@ -729,6 +737,7 @@ export function injectStyles(): void {
       flex-direction: column;
       min-height: 480px;
       box-sizing: border-box;
+      overflow: hidden;
       background: var(--tier-bg, rgba(6, 9, 18, 0.9));
       border: 1.5px solid var(--tier-border, var(--card-border-color, var(--retro-border-subtle)));
       border-radius: 6px;
@@ -1028,12 +1037,22 @@ export function injectStyles(): void {
       font-family: ${FONTS.mono};
       font-size: 15px;
       color: #ffffff;
+      height: 20px;
+      line-height: 20px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .forge-card-tagline {
       font-family: ${FONTS.mono};
       font-size: 11px;
       color: var(--retro-text-muted);
+      height: 18px;
+      line-height: 18px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .forge-card-desc {
