@@ -29,6 +29,10 @@ import { Obstacle } from '../src/entities/Obstacle';
 import { Player } from '../src/entities/Player';
 import { Projectile } from '../src/entities/Projectile';
 import { SpatialZone } from '../src/entities/SpatialZone';
+import {
+  ballisticGroundRange,
+  solveBallisticSpeedForRange,
+} from '../src/math/ballisticSolver';
 import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { dispatchAction } from '../src/primitives/interpreter/actions';
@@ -1979,19 +1983,27 @@ function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
   const deltaAngle = Math.PI / 4;
 
   // Warm JIT / module paths so "cold" measures uncached physics, not first-load noise.
-  resolveLiveAimingPaths(ability, origin, aimAngle + deltaAngle, 28, 0);
+  const aimGroundRange = 280;
+  resolveLiveAimingPaths(ability, origin, aimAngle + deltaAngle, 28, 0, aimGroundRange);
   clearAimingPathCache();
 
   const t0 = performance.now();
-  const pathsA = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0);
+  const pathsA = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0, aimGroundRange);
   const coldMs = performance.now() - t0;
 
   const t1 = performance.now();
-  const pathsB = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0);
+  const pathsB = resolveLiveAimingPaths(ability, origin, aimAngle, 28, 0, aimGroundRange);
   const cachedMs = performance.now() - t1;
 
   const t2 = performance.now();
-  const pathsRotated = resolveLiveAimingPaths(ability, origin, aimAngle + deltaAngle, 28, 0);
+  const pathsRotated = resolveLiveAimingPaths(
+    ability,
+    origin,
+    aimAngle + deltaAngle,
+    28,
+    0,
+    aimGroundRange,
+  );
   const crossAngleMs = performance.now() - t2;
 
   if (pathsA.length < 2) {
@@ -2073,8 +2085,8 @@ function planarPathEndDistance(path: {
   return Math.hypot(last.x, last.y);
 }
 
-/** Aiming overlay — center FAN ray must not be truncated by a phantom dummy hit. */
-function assertAimingFanEqualLengths(): { pass: boolean; reason: string } {
+/** Aiming overlay — FAN mortars share center-aim solved speed; outer rays land shorter. */
+function assertBallisticFanSharedSpeed(): { pass: boolean; reason: string } {
   clearAimingPathCache();
   const fanAbility: AbilitySchema = {
     id: 'test_aiming_fan',
@@ -2102,7 +2114,16 @@ function assertAimingFanEqualLengths(): { pass: boolean; reason: string } {
     ],
   };
 
-  const paths = resolveLiveAimingPaths(fanAbility, { x: 0, y: 0 }, 0, 28, 0);
+  const muzzleOffset = 28;
+  const aimGroundRange = 300;
+  const paths = resolveLiveAimingPaths(
+    fanAbility,
+    { x: 0, y: 0 },
+    0,
+    muzzleOffset,
+    0,
+    aimGroundRange,
+  );
   if (paths.length !== 5) {
     return { pass: false, reason: `expected 5 paths, got ${paths.length}` };
   }
@@ -2110,20 +2131,96 @@ function assertAimingFanEqualLengths(): { pass: boolean; reason: string } {
   const ends = paths.map(planarPathEndDistance);
   const maxEnd = Math.max(...ends);
   const minEnd = Math.min(...ends);
+  const expectedEnd = muzzleOffset + aimGroundRange;
+  const centerError = Math.abs(maxEnd - expectedEnd);
   if (maxEnd <= 0) {
     return { pass: false, reason: 'fan paths have zero length' };
   }
+  if (centerError > expectedEnd * 0.05 + 8) {
+    return {
+      pass: false,
+      reason: `center end ${maxEnd.toFixed(1)} expected ~${expectedEnd.toFixed(1)} (err=${centerError.toFixed(1)})`,
+    };
+  }
+
   const spread = (maxEnd - minEnd) / maxEnd;
   if (spread > 0.1) {
     return {
       pass: false,
-      reason: `fan end spread ${(spread * 100).toFixed(1)}% (min=${minEnd.toFixed(0)} max=${maxEnd.toFixed(0)})`,
+      reason: `shared-speed fan spread ${(spread * 100).toFixed(1)}% (min=${minEnd.toFixed(0)} max=${maxEnd.toFixed(0)})`,
     };
   }
 
   return {
     pass: true,
-    reason: `5 paths within ${(spread * 100).toFixed(1)}% planar length`,
+    reason: `end=${maxEnd.toFixed(0)} expected=${expectedEnd.toFixed(0)} spread=${(spread * 100).toFixed(1)}%`,
+  };
+}
+
+function assertBallisticLandOnCursor(): { pass: boolean; reason: string } {
+  const lobApex = 150;
+  const aimGroundRange = 280;
+  const solved = solveBallisticSpeedForRange(aimGroundRange, lobApex);
+  const range = ballisticGroundRange(solved.speed, lobApex);
+  if (Math.abs(range - aimGroundRange) > 1) {
+    return {
+      pass: false,
+      reason: `solver range ${range.toFixed(1)} != ${aimGroundRange}`,
+    };
+  }
+
+  clearAimingPathCache();
+  const mortarAbility: AbilitySchema = {
+    id: 'test_land_on_cursor',
+    name: 'Cursor Mortar',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: {
+              type: 'BALLISTIC_ARC',
+              speed: 320,
+              maxRange: 480,
+              lobApex,
+              bounces: 0,
+            },
+            emitter: { count: 1 },
+          },
+        ],
+      },
+    ],
+  };
+  const muzzleOffset = 28;
+  const paths = resolveLiveAimingPaths(
+    mortarAbility,
+    { x: 0, y: 0 },
+    0,
+    muzzleOffset,
+    0,
+    aimGroundRange,
+  );
+  if (paths.length !== 1) {
+    return { pass: false, reason: `expected 1 path, got ${paths.length}` };
+  }
+
+  const end = planarPathEndDistance(paths[0]);
+  const expectedEnd = muzzleOffset + aimGroundRange;
+  const rolloutError = Math.abs(end - expectedEnd);
+  if (rolloutError > expectedEnd * 0.06 + 10) {
+    return {
+      pass: false,
+      reason: `rollout end ${end.toFixed(1)} expected ~${expectedEnd.toFixed(1)}`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `solver speed=${solved.speed.toFixed(0)} rollout end=${end.toFixed(0)}`,
   };
 }
 
@@ -3850,11 +3947,21 @@ function run(): void {
   console.log(`  ${DIM}${clusterMortarAiming.reason}${RESET}`);
   if (clusterMortarAiming.pass) passed++;
 
-  const aimingFanEqual = assertAimingFanEqualLengths();
-  const aimingFanEqualTag = aimingFanEqual.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
-  console.log(`${aimingFanEqualTag} Aiming fan equal lengths`);
-  console.log(`  ${DIM}${aimingFanEqual.reason}${RESET}`);
-  if (aimingFanEqual.pass) passed++;
+  const ballisticLandOnCursor = assertBallisticLandOnCursor();
+  const ballisticLandOnCursorTag = ballisticLandOnCursor.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${ballisticLandOnCursorTag} Ballistic land-on-cursor solver`);
+  console.log(`  ${DIM}${ballisticLandOnCursor.reason}${RESET}`);
+  if (ballisticLandOnCursor.pass) passed++;
+
+  const ballisticFanShared = assertBallisticFanSharedSpeed();
+  const ballisticFanSharedTag = ballisticFanShared.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${ballisticFanSharedTag} Ballistic fan shared speed`);
+  console.log(`  ${DIM}${ballisticFanShared.reason}${RESET}`);
+  if (ballisticFanShared.pass) passed++;
 
   const onHitOverlay = assertOnHitChildrenExcludedFromOverlay();
   const onHitOverlayTag = onHitOverlay.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
@@ -3986,7 +4093,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 42;
+  const totalCases = suite.length + 43;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

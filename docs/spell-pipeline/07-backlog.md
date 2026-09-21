@@ -30,6 +30,7 @@ Source docs:
 - [x] **Ceiling policy** — `MAX_DEPTH` unified at 4, `MAX_ENTITIES` raised to 512; saturation chips and runtime safety clamp kept; evolution upgrades not refused.
 - [x] **Hold-to-guard shield** — `REFLECT_PROJECTILES.whileHeld` binds live wedge to slot `isHeld` (drops on release); optional `durationMs` is max-hold cap only; separate **Hold Guard** preset from tap **Directional Parry**; `slotIndex` threaded through player casts.
 - [x] **Timing phases on summons** — `CastPhaseState` on `Entity`; optional `ActorConfig.inputProfile` telegraphs ON_TICK / turret fire; Player slot machine unchanged.
+- [x] **Land-on-cursor ballistic solver** — fix `lobApex`, solve `speed` from clamped cursor range for forward `BALLISTIC_ARC` mortars; live cast + aiming overlay share solved speed; fan outer rays use center-aim speed.
 
 ---
 
@@ -44,9 +45,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Authoring / melee / VFX
 
 ### Product / later
-
-- [ ] **9. Land-on-cursor ballistic solver** (optional)  
-  Current aiming is **heading-only**. Overlay length is `min(maxRange, speed * t_impact)`, not cursor distance. A solver would set `speed` or `lobApex` from clamped mouse range for both live flight and the overlay. Outer fan shots share that solved speed.
 
 - [ ] **10.** `ON_SLAM` **as its own trigger** (optional)  
   Wall = `ON_HIT_WALL`; ground = `ON_GROUND_SLAM`. Dedicated obstacle-slam was never added.

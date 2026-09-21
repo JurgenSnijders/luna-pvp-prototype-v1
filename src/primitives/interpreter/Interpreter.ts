@@ -1,3 +1,4 @@
+import { resolveCursorBallisticTrajectory } from '../../math/ballisticSolver';
 import { Vector2D } from '../../math/Vector2D';
 import { MAX_ENTITIES, type PhysicsWorld } from '../../engine/PhysicsWorld';
 import { Projectile } from '../../entities/Projectile';
@@ -99,9 +100,20 @@ export class Interpreter {
       const triggerMap = buildTriggerMap(
         schema.triggers.filter((t) => t.trigger !== 'ON_CAST'),
       );
-      const trajectoryConfig = { ...schema.trajectory };
+      let trajectoryConfig = { ...schema.trajectory };
       if (overrides?.drawnPath) {
         trajectoryConfig.pathPoints = overrides.drawnPath;
+      }
+      if (depth === 0 && castCtx.aimPoint) {
+        const rootMuzzleOffset = castCtx.caster.radius + 12;
+        trajectoryConfig = resolveCursorBallisticTrajectory(
+          trajectoryConfig,
+          castCtx.caster.pos,
+          castCtx.aimPoint,
+          rootMuzzleOffset,
+          heading,
+          schema,
+        );
       }
       const projectile = new Projectile(
         spawnPos,

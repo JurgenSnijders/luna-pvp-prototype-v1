@@ -1,3 +1,4 @@
+import { resolveCursorBallisticTrajectory } from '../../math/ballisticSolver';
 import { clampToHex } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import { MAX_ENTITIES, getInstabilityScale, type PhysicsWorld } from '../../engine/PhysicsWorld';
@@ -53,6 +54,19 @@ export function executeEmitter(
   const triggerMap = buildTriggerMap(triggers ?? []);
   const vfx = visuals ?? DEFAULT_VISUALS;
   const inherit = emitter.inheritVelocityRatio ?? 0;
+  const muzzleEntity = ctx.sourceEntity ?? ctx.caster;
+  const muzzleOffset = muzzleEntity.radius + Math.max(4, vfx.size ?? 8);
+  const spawnTrajectory =
+    ctx.depth === 0 && ctx.aimPoint
+      ? resolveCursorBallisticTrajectory(
+          trajectory,
+          ctx.origin,
+          ctx.aimPoint,
+          muzzleOffset,
+          baseHeading,
+          ctx.ability,
+        )
+      : trajectory;
 
   for (let i = 0; i < count; i++) {
     if (!world.canAddEntity()) break;
@@ -79,9 +93,7 @@ export function executeEmitter(
     }
 
     const fireDir = Vector2D.fromAngle(theta);
-    const muzzle = ctx.sourceEntity ?? ctx.caster;
-    const muzzleOffset = muzzle.radius + Math.max(4, vfx.size ?? 8);
-    const isSkyDrop = (trajectory.spawnAltitude ?? 0) > 0;
+    const isSkyDrop = (spawnTrajectory.spawnAltitude ?? 0) > 0;
     const spawnAtAnchor =
       ctx.ability?.targetingMode === 'GROUND_POINT' &&
       isSkyDrop &&
@@ -109,7 +121,7 @@ export function executeEmitter(
 
     const projectile = new Projectile(
       spawnPos,
-      structuredClone(trajectory),
+      structuredClone(spawnTrajectory),
       ctx.caster.id,
       aimAngle,
       triggerMap,
@@ -125,13 +137,13 @@ export function executeEmitter(
       projectile.vel = projectile.vel.add(inherited);
     }
 
-    if (trajectory.type === 'ORBIT_ANCHOR') {
+    if (spawnTrajectory.type === 'ORBIT_ANCHOR') {
       projectile.maxLifetimeMs = 3000;
       projectile.orbitAngle = theta;
     }
 
-    if (hasBallisticParams(trajectory)) {
-      initBallisticKinematics(projectile, trajectory);
+    if (hasBallisticParams(spawnTrajectory)) {
+      initBallisticKinematics(projectile, spawnTrajectory);
     }
 
     if (ctx.sourceEntity instanceof Projectile) {

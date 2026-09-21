@@ -3,6 +3,7 @@ import { Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Dummy } from '../../entities/Dummy';
 import type { Projectile } from '../../entities/Projectile';
 import { Player } from '../../entities/Player';
+import { shouldApplyCursorBallisticSolver } from '../../math/ballisticSolver';
 import { Vector2D } from '../../math/Vector2D';
 import { applyField } from '../../primitives/Fields';
 import { Interpreter } from '../../primitives/Interpreter';
@@ -183,7 +184,8 @@ function runAimingRollout(
   ability: AbilitySchema,
   aimAngle: number,
   startZ: number,
-  _muzzleOffset: number,
+  muzzleOffset: number,
+  aimGroundRange?: number,
 ): PredictivePath[] {
   const world = new PhysicsWorld(Vector2D.zero(), AIM_ROLLOUT_HEX_RADIUS);
   const caster = new Player(Vector2D.zero(), ['player', 'combatant', 'kinematic']);
@@ -196,7 +198,14 @@ function runAimingRollout(
   const heading = Vector2D.fromAngle(aimAngle);
   const maxRange = resolveAbilityMaxRange(ability);
   const beaconDist = Math.max(maxRange * 2.5, 800);
-  const aimPoint = heading.scale(beaconDist);
+  const castConfig = resolveLiveCastConfig(ability);
+  const useCursorSolver =
+    castConfig !== null &&
+    shouldApplyCursorBallisticSolver(castConfig.trajectory, ability) &&
+    aimGroundRange !== undefined;
+  const aimPoint = useCursorSolver
+    ? heading.scale(muzzleOffset + aimGroundRange)
+    : heading.scale(beaconDist);
 
   if (abilityNeedsHomingBeacon(ability)) {
     const beacon = new Dummy(aimPoint);
@@ -318,6 +327,7 @@ export function resolveLiveAimingPaths(
   aimAngle: number,
   muzzleOffset = 0,
   startZ = 0,
+  aimGroundRange?: number,
 ): PredictivePath[] {
   if (abilityUsesGroundReticle(ability)) return [];
 
@@ -325,11 +335,22 @@ export function resolveLiveAimingPaths(
   if (!config) return [];
 
   const qStartZ = Math.round(startZ);
-  const cacheKey = `${abilitySchemaFingerprint(ability)}|${qStartZ}|${muzzleOffset}`;
+  const useCursorSolver = shouldApplyCursorBallisticSolver(config.trajectory, ability);
+  const distKey =
+    useCursorSolver && aimGroundRange !== undefined
+      ? `|dist:${Math.round(aimGroundRange)}`
+      : '';
+  const cacheKey = `${abilitySchemaFingerprint(ability)}|${qStartZ}|${muzzleOffset}${distKey}`;
 
   let canonical = aimingPathCache.get(cacheKey);
   if (!canonical) {
-    canonical = runAimingRollout(ability, 0, qStartZ, muzzleOffset);
+    canonical = runAimingRollout(
+      ability,
+      0,
+      qStartZ,
+      muzzleOffset,
+      useCursorSolver ? aimGroundRange : undefined,
+    );
     aimingPathCache.set(cacheKey, clonePredictivePaths(canonical));
   }
 

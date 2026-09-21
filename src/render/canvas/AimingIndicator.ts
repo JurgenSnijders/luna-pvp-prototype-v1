@@ -1,4 +1,9 @@
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
+import {
+  resolveCursorGroundRange,
+  shouldApplyCursorBallisticSolver,
+} from '../../math/ballisticSolver';
+import { Vector2D } from '../../math/Vector2D';
 import type { AbilitySchema, PathPoint, TrajectoryConfig } from '../../types/schema';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveLiveAimingPaths } from './aimingRollout';
@@ -459,12 +464,25 @@ export function drawPredictivePaths(
   const muzzleOffset =
     state.playerRadius + Math.max(4, state.ability.visuals?.size ?? 8);
   const origin = planarOrigin ?? state.origin;
+  const rootTrajectory = resolveRootTrajectory(state.ability);
+  let aimGroundRange: number | undefined;
+  if (rootTrajectory && shouldApplyCursorBallisticSolver(rootTrajectory, state.ability)) {
+    const heading = Vector2D.fromAngle(state.angle);
+    aimGroundRange = resolveCursorGroundRange(
+      Vector2D.create(origin.x, origin.y),
+      Vector2D.create(state.target.x, state.target.y),
+      heading,
+      muzzleOffset,
+      rootTrajectory.maxRange ?? 500,
+    );
+  }
   const paths = resolveLiveAimingPaths(
     state.ability,
     origin,
     state.angle,
     muzzleOffset,
     startZ,
+    aimGroundRange,
   );
 
   if (paths.length === 0) return;
