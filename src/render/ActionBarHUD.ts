@@ -6,12 +6,16 @@ import {
 } from '../engine/PhysicsWorld';
 import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey, type CardRarity } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
-import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
+import type { AbilitySchema } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 import { getTierCrest, injectStyles, resolveSpellRarity, showQuickEquipMenu } from '../draft/workshopStyles';
 import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
 import { SpellInventoryManager } from '../game/SpellInventory';
-import { computeSpellCombatProfile } from '../primitives/combatProfile';
+import {
+  buildTacticalVerbLines,
+  computeSpellCombatProfile,
+  formatProfileCadence,
+} from '../primitives/combatProfile';
 import { generateSpellIcon } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
@@ -94,104 +98,12 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function formatEnumLabel(value: string): string {
-  return value.replace(/_/g, ' ');
-}
-
-interface DisplayTrajectory {
-  trajectory?: TrajectoryConfig;
-  emitter?: EmitterConfig;
-  isNested?: boolean;
-}
-
-function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
-  if (ability.trajectory) {
-    return { trajectory: ability.trajectory, isNested: false };
-  }
-  for (const triggerNode of ability.triggers ?? []) {
-    if (triggerNode.trigger !== 'ON_CAST') continue;
-    for (const action of triggerNode.actions ?? []) {
-      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
-        return {
-          trajectory: action.projectileTrajectory,
-          emitter: action.emitter,
-          isNested: true,
-        };
-      }
-      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
-        return {
-          trajectory: action.payload.trajectory,
-          isNested: true,
-        };
-      }
-    }
-  }
-  return {};
-}
-
-function formatTrajectoryLine(resolved: DisplayTrajectory): string {
-  if (!resolved.trajectory) {
-    return 'Instant · 0px/s · 0px range';
-  }
-  const trajectory = resolved.trajectory;
-  const type = escapeHtml(formatEnumLabel(trajectory.type));
-  const speed = trajectory.speed ?? 0;
-  const range = trajectory.maxRange ?? 0;
-  let line = `${type} · ${speed}px/s · ${range}px range`;
-  if (resolved.emitter && resolved.emitter.count > 1) {
-    const distribution = escapeHtml(formatEnumLabel(resolved.emitter.distribution ?? 'FAN'));
-    line += ` · ${resolved.emitter.count}x ${distribution}`;
-  }
-  return line;
-}
-
-// Trigger trees can nest another full trigger tree inside a SPAWN_PROJECTILE action
-// (e.g. the projectile's own ON_EXPIRY behavior), so tooltip summaries must recurse.
-function walkTriggers(
-  nodes: TriggerNode[],
-  visit: (node: TriggerNode, action: ActionPayload) => void,
-): void {
-  for (const node of nodes) {
-    for (const action of node.actions) {
-      visit(node, action);
-      if (action.type === 'SPAWN_PROJECTILE' && action.triggers) {
-        walkTriggers(action.triggers, visit);
-      }
-      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.triggers) {
-        walkTriggers(action.payload.triggers, visit);
-      }
-    }
-    if (node.children) walkTriggers(node.children, visit);
-  }
-}
-
-function collectAllActionTypes(ability: AbilitySchema): string[] {
-  const actions = new Set<string>();
-  walkTriggers(ability.triggers, (_node, action) => {
-    actions.add(action.type);
-  });
-  return [...actions];
-}
-
-function summarizeTriggerNames(ability: AbilitySchema): string[] {
-  const triggers = new Set<string>();
-  walkTriggers(ability.triggers, (node) => {
-    triggers.add(node.trigger);
-  });
-  return [...triggers];
-}
-
 function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, accentColor: string): string {
   const category = getCategoryLabel(SLOT_CATEGORY_MAP[slotKey]);
-  const cooldown = ability.cooldownMs >= 1000
-    ? `${(ability.cooldownMs / 1000).toFixed(1)}s`
-    : `${ability.cooldownMs}ms`;
-  const instability = computeSpellCombatProfile(ability).instabilityYield;
-  const trajectoryLine = formatTrajectoryLine(resolveDisplayTrajectory(ability));
-  const triggers = summarizeTriggerNames(ability);
-  const actionTypes = collectAllActionTypes(ability);
-  const triggerList = triggers.length > 0 ? escapeHtml(triggers.join(', ')) : '—';
-  const actionList = actionTypes.length > 0 ? escapeHtml(formatEnumLabel(actionTypes.join(', '))) : '—';
+  const profile = computeSpellCombatProfile(ability);
+  const cadence = formatProfileCadence(profile);
+  const displacement = `${profile.displacement.peakForce} Force [${profile.displacement.primaryTag}]`;
+  const tacticalLines = buildTacticalVerbLines(ability, profile);
   const flavorBlock = [
     ability.tagline
       ? `<div style="font-size:${FONTS.size.sm};color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
@@ -202,20 +114,24 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   ].join('');
   const visuals = ability.visuals;
   const swatchColor = visuals?.color ?? '#888';
-  const projectileStyle = visuals ? escapeHtml(formatEnumLabel(visuals.projectileStyle)) : '—';
-  const resourceCost = ability.resourceCost;
-  const resourceLine = resourceCost
-    ? `<div style="margin-bottom:8px;">
-        <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Resource</div>
-        <div style="font-size:${FONTS.size.body};">${escapeHtml(formatEnumLabel(resourceCost.type))} · cost ${resourceCost.cost}${
-          resourceCost.maxCapacity !== undefined ? ` · cap ${resourceCost.maxCapacity}` : ''
-        }${
-          resourceCost.rechargeRate !== undefined ? ` · ${resourceCost.rechargeRate}/s` : ''
-        }</div>
-      </div>`
-    : '';
+  const projectileStyle = visuals?.projectileStyle
+    ? escapeHtml(visuals.projectileStyle.replace(/_/g, ' '))
+    : '—';
   const rarity = resolveSpellRarity(ability);
   const tierCrest = escapeHtml(getTierCrest(rarity));
+
+  const tacticalBlock =
+    tacticalLines.length > 0
+      ? `<div style="margin-bottom:8px;">
+        <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:4px;">Tactical</div>
+        ${tacticalLines
+          .map(
+            (line) =>
+              `<div style="font-size:${FONTS.size.body}; color:#cbd5e1; line-height:1.35; margin-bottom:2px;">${escapeHtml(line)}</div>`,
+          )
+          .join('')}
+      </div>`
+      : '';
 
   return `
     <div style="font-family:${FONTS.mono};">
@@ -228,22 +144,13 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
     </div>
     ${flavorBlock}
     <div style="font-size:${FONTS.size.badge}; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
-    <div style="display:flex; gap:10px; margin-bottom:8px; font-size:${FONTS.size.body};">
-      <div><span style="color:${RETRO_COLORS.textMuted};">CD</span> ${cooldown}</div>
-      <div><span style="color:${RETRO_COLORS.textMuted};">Recoil</span> ${ability.recoilKick}px/s</div>
-      <div><span style="color:${RETRO_COLORS.textMuted};">Instab</span> ${instability}</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-bottom:8px; font-size:${FONTS.size.body};">
+      <div><span style="color:${RETRO_COLORS.textMuted};">Cadence</span> ${escapeHtml(cadence)}</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">Recoil</span> ${profile.recoilKick}px/s</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">Displacement</span> ${escapeHtml(displacement)}</div>
+      <div><span style="color:${RETRO_COLORS.textMuted};">Instab</span> +${profile.instabilityYield}%</div>
     </div>
-    <div style="margin-bottom:8px;">
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Trajectory</div>
-      <div style="font-size:${FONTS.size.body};">${trajectoryLine}</div>
-    </div>
-    <div style="margin-bottom:8px;">
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:2px;">Triggers</div>
-      <div style="font-size:${FONTS.size.body};">${triggerList}</div>
-      <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin:4px 0 2px;">Actions</div>
-      <div style="font-size:${FONTS.size.body};">${actionList}</div>
-    </div>
-    ${resourceLine}
+    ${tacticalBlock}
     <div style="display:flex; align-items:center; gap:6px;">
       <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
       <span style="font-size:${FONTS.size.badge}; color:#cbd5e1;">${projectileStyle}</span>

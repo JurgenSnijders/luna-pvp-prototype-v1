@@ -79,6 +79,13 @@ export interface MetricDelta {
   formattedDiff: string;
 }
 
+export type MechanicDiffChipKind = 'BUFF' | 'MUTATION' | 'NEUTRAL';
+
+export interface MechanicDiffChip {
+  label: string;
+  kind: MechanicDiffChipKind;
+}
+
 export interface CombatProfileDiff {
   cooldown?: MetricDelta;
   recoil?: MetricDelta;
@@ -92,6 +99,7 @@ export interface CombatProfileDiff {
   resourceMatch: boolean;
   displacementDirectionMatch: boolean;
   mechanicChanges: string[];
+  mechanicChips: MechanicDiffChip[];
 }
 
 const STATUS_CC_LABELS: Partial<Record<SpellArchetype, (dur: string) => string>> = {
@@ -448,6 +456,64 @@ function polarityFromDelta(delta: number, lowerIsBetter: boolean): DeltaPolarity
   return delta > 0 ? 'POSITIVE' : 'NEGATIVE';
 }
 
+export function extractMechanicDiffChips(
+  current: SpellCombatProfile,
+  baseline: SpellCombatProfile | null,
+): MechanicDiffChip[] {
+  if (!baseline) return [];
+
+  const chips: MechanicDiffChip[] = [];
+
+  if (baseline.delivery.targetingMode !== current.delivery.targetingMode) {
+    if (current.delivery.targetingMode === 'GROUND_POINT') {
+      chips.push({ label: '+ GROUND TARGET', kind: 'MUTATION' });
+    } else {
+      chips.push({ label: 'DIRECTIONAL', kind: 'MUTATION' });
+    }
+  }
+
+  if (!baseline.delivery.piercing && current.delivery.piercing) {
+    chips.push({ label: '+ PIERCING', kind: 'BUFF' });
+  } else if (baseline.delivery.piercing && !current.delivery.piercing) {
+    chips.push({ label: '- PIERCING', kind: 'NEUTRAL' });
+  }
+
+  if (current.delivery.bounces > baseline.delivery.bounces) {
+    const delta = current.delivery.bounces - baseline.delivery.bounces;
+    chips.push({
+      label: `+${delta} BOUNCE${delta > 1 ? 'S' : ''}`,
+      kind: 'BUFF',
+    });
+  }
+
+  const baseTag = baseline.displacement.primaryTag;
+  const curTag = current.displacement.primaryTag;
+  if (baseTag !== curTag && baseTag !== 'NONE' && curTag !== 'NONE') {
+    chips.push({
+      label: `${baseTag} ➔ ${curTag}`,
+      kind: 'MUTATION',
+    });
+  }
+
+  if (baseline.delivery.trajectoryType !== current.delivery.trajectoryType) {
+    if (current.delivery.trajectoryType === 'BALLISTIC_ARC') {
+      chips.push({ label: '+ MORTAR ARC', kind: 'BUFF' });
+    } else if (current.delivery.trajectoryType === 'HOMING_SLERP') {
+      chips.push({ label: '+ HOMING', kind: 'BUFF' });
+    }
+  }
+
+  if (current.delivery.shotCount > baseline.delivery.shotCount) {
+    const delta = current.delivery.shotCount - baseline.delivery.shotCount;
+    chips.push({
+      label: `+${delta} SHOT${delta > 1 ? 'S' : ''}`,
+      kind: 'BUFF',
+    });
+  }
+
+  return chips;
+}
+
 export function compareCombatProfiles(
   current: SpellCombatProfile,
   baseline: SpellCombatProfile | null,
@@ -456,9 +522,12 @@ export function compareCombatProfiles(
     resourceMatch: true,
     displacementDirectionMatch: true,
     mechanicChanges: [],
+    mechanicChips: [],
   };
 
   if (!baseline) return result;
+
+  result.mechanicChips = extractMechanicDiffChips(current, baseline);
 
   const curRes = current.resource;
   const baseRes = baseline.resource;
@@ -630,4 +699,95 @@ export function formatCombatStatDiff(
   else if (hasPositive && hasNegative) color = '#fcd34d';
 
   return { text, color };
+}
+
+export function formatProfileCadence(profile: SpellCombatProfile): string {
+  const res = profile.resource;
+  if (res.type === 'COOLDOWN') {
+    return profile.cooldownMs >= 1000
+      ? `${(profile.cooldownMs / 1000).toFixed(1)}s CD`
+      : `${profile.cooldownMs}ms CD`;
+  }
+  const parts = [`${res.cost} ${res.type.replace(/_/g, ' ')}`];
+  if (res.capacity !== undefined) parts.push(`cap ${res.capacity}`);
+  return parts.join(' · ');
+}
+
+export function buildTacticalVerbLines(
+  ability: AbilitySchema,
+  profile: SpellCombatProfile,
+): string[] {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (key: string, line: string): void => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    lines.push(line);
+  };
+
+  walkActions(ability, (v) => {
+    if (!v.isPrimary) return;
+    const action = v.action;
+
+    switch (action.type) {
+      case 'SPAWN_ACTOR': {
+        const archetype = action.actor.actorArchetype;
+        const dur = (action.actor.durationMs / 1000).toFixed(1);
+        push('actor', `DEPLOYMENT: Spawns ${archetype} (${dur}s)`);
+        break;
+      }
+      case 'SPAWN_OBSTACLE': {
+        const shape = action.obstacle.shape;
+        push('obstacle', `BARRIER: Places ${shape} barricade`);
+        break;
+      }
+      case 'REFLECT_PROJECTILES': {
+        const arc = action.arcDeg;
+        if (arc !== undefined && arc < 360) {
+          push('reflect', `DEFENSE: Directional parry (${arc}°)`);
+        } else {
+          push('reflect', 'DEFENSE: Projectile parry');
+        }
+        break;
+      }
+      case 'TELEPORT':
+        push('teleport', `MOBILITY: Blink ${action.distance}px`);
+        break;
+      case 'APPLY_STASIS':
+        push(
+          'stasis',
+          `CONTROL: Stasis ${(action.durationMs / 1000).toFixed(1)}s`,
+        );
+        break;
+      case 'MODIFY_STAT':
+        if (action.stat === 'health') {
+          if (action.value > 0) {
+            push('heal', `HEAL: Restores ${action.value} HP`);
+          } else if (action.value < 0) {
+            push('damage', `DAMAGE: ${Math.abs(action.value)} HP`);
+          }
+        }
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (profile.delivery.summary) {
+    push('delivery', profile.delivery.summary);
+  }
+
+  return lines;
+}
+
+export function polarityCssClass(polarity: DeltaPolarity): string {
+  switch (polarity) {
+    case 'POSITIVE':
+      return 'is-positive';
+    case 'NEGATIVE':
+      return 'is-negative';
+    default:
+      return 'is-neutral';
+  }
 }

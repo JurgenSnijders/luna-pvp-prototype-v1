@@ -1,3 +1,4 @@
+import { computeSpellCombatProfile } from '../primitives/combatProfile';
 import type { AbilitySchema, ActionPayload, ActionTarget } from '../types/schema';
 import { walkActions } from '../types/schema';
 
@@ -12,13 +13,23 @@ export type SpellRole =
 
 export type VaultMetaFilter = 'EQUIPPED' | 'NEW' | 'CUSTOM';
 
-export type VaultSortOrder = 'NEWEST' | 'OLDEST' | 'NAME_ASC' | 'NAME_DESC';
+export type VaultSortOrder =
+  | 'NEWEST'
+  | 'OLDEST'
+  | 'NAME_ASC'
+  | 'NAME_DESC'
+  | 'PEAK_FORCE'
+  | 'COOLDOWN'
+  | 'INSTABILITY';
 
 export const VAULT_SORT_ORDERS: readonly VaultSortOrder[] = [
   'NEWEST',
   'OLDEST',
   'NAME_ASC',
   'NAME_DESC',
+  'PEAK_FORCE',
+  'COOLDOWN',
+  'INSTABILITY',
 ];
 
 const VAULT_SORT_LABELS: Record<VaultSortOrder, string> = {
@@ -26,6 +37,9 @@ const VAULT_SORT_LABELS: Record<VaultSortOrder, string> = {
   OLDEST: 'Oldest first',
   NAME_ASC: 'Name A–Z',
   NAME_DESC: 'Name Z–A',
+  PEAK_FORCE: 'Peak Force (High to Low)',
+  COOLDOWN: 'Fastest Cooldown',
+  INSTABILITY: 'Max Instability Yield',
 };
 
 export function getVaultSortLabel(order: VaultSortOrder): string {
@@ -50,6 +64,28 @@ export function sortVaultSpells(
       break;
     case 'NAME_DESC':
       sorted.sort((a, b) => b.name.localeCompare(a.name));
+      break;
+    case 'PEAK_FORCE':
+      sorted.sort((a, b) => {
+        const diff =
+          computeSpellCombatProfile(b).displacement.peakForce -
+          computeSpellCombatProfile(a).displacement.peakForce;
+        return diff !== 0 ? diff : getInsertionIndex(b.id) - getInsertionIndex(a.id);
+      });
+      break;
+    case 'COOLDOWN':
+      sorted.sort((a, b) => {
+        const diff = a.cooldownMs - b.cooldownMs;
+        return diff !== 0 ? diff : getInsertionIndex(b.id) - getInsertionIndex(a.id);
+      });
+      break;
+    case 'INSTABILITY':
+      sorted.sort((a, b) => {
+        const diff =
+          computeSpellCombatProfile(b).instabilityYield -
+          computeSpellCombatProfile(a).instabilityYield;
+        return diff !== 0 ? diff : getInsertionIndex(b.id) - getInsertionIndex(a.id);
+      });
       break;
   }
   return sorted;

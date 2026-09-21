@@ -1,6 +1,8 @@
+import { sortVaultSpells } from '../src/game/spellRoles';
 import {
   compareCombatProfiles,
   computeSpellCombatProfile,
+  extractMechanicDiffChips,
 } from '../src/primitives/combatProfile';
 import type { AbilitySchema } from '../src/types/schema';
 
@@ -518,6 +520,7 @@ assert(pushPullDiff.displacementDirectionMatch === false, 'push vs pull directio
 const nullDiff = compareCombatProfiles(kineticPush, null);
 assert(nullDiff.cooldown === undefined, 'null baseline returns no cooldown delta');
 assert(nullDiff.mechanicChanges.length === 0, 'null baseline has no mechanic changes');
+assert(nullDiff.mechanicChips.length === 0, 'null baseline has no mechanic chips');
 
 // delivery struct
 const delivery = computeSpellCombatProfile(deliveryStructAbility());
@@ -530,6 +533,131 @@ assert(deliveryFan.delivery.shotCount === 3, 'delivery emitter count from ON_CAS
 assert(
   deliveryFan.delivery.summary.includes('3x FAN'),
   'delivery summary includes fan spread sentence',
+);
+
+const linearBoltProfile = computeSpellCombatProfile({
+  id: 'linear_bolt',
+  name: 'Linear Bolt',
+  archetype: 'KINETIC',
+  cooldownMs: 1000,
+  recoilKick: 0,
+  targetingMode: 'DIRECTIONAL',
+  trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+  triggers: [
+    {
+      trigger: 'ON_HIT',
+      actions: [
+        {
+          type: 'APPLY_IMPULSE',
+          baseForce: 500,
+          target: 'TARGET',
+          directionMode: 'AWAY_FROM_ORIGIN',
+        },
+      ],
+    },
+  ],
+});
+
+const mortarProfile = computeSpellCombatProfile({
+  id: 'mortar',
+  name: 'Mortar',
+  archetype: 'KINETIC',
+  cooldownMs: 1200,
+  recoilKick: 0,
+  targetingMode: 'GROUND_POINT',
+  trajectory: {
+    type: 'BALLISTIC_ARC',
+    speed: 280,
+    maxRange: 500,
+    piercing: 2,
+    lobApex: 150,
+  },
+  triggers: [
+    {
+      trigger: 'ON_HIT',
+      actions: [
+        {
+          type: 'APPLY_IMPULSE',
+          baseForce: 500,
+          target: 'TARGET',
+          directionMode: 'AWAY_FROM_ORIGIN',
+        },
+      ],
+    },
+  ],
+});
+
+const mortarChips = extractMechanicDiffChips(mortarProfile, linearBoltProfile);
+const mortarLabels = mortarChips.map((c) => c.label);
+assert(mortarLabels.includes('+ GROUND TARGET'), 'mortar vs bolt has + GROUND TARGET chip');
+assert(mortarLabels.includes('+ MORTAR ARC'), 'mortar vs bolt has + MORTAR ARC chip');
+assert(mortarLabels.includes('+ PIERCING'), 'mortar vs bolt has + PIERCING chip');
+
+const pushPullChips = extractMechanicDiffChips(pullProfile, pushProfile);
+assert(
+  pushPullChips.some((c) => c.label === 'PUSH ➔ PULL'),
+  'push vs pull yields PUSH ➔ PULL chip',
+);
+
+const compareDiff = compareCombatProfiles(mortarProfile, linearBoltProfile);
+assert(compareDiff.mechanicChips.length >= 3, 'compareCombatProfiles includes mechanic chips');
+
+const sortSpells: AbilitySchema[] = [
+  {
+    id: 'low_force',
+    name: 'Low',
+    cooldownMs: 2000,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 200,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'high_force',
+    name: 'High',
+    cooldownMs: 500,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'APPLY_IMPULSE',
+            baseForce: 1200,
+            target: 'TARGET',
+            directionMode: 'AWAY_FROM_ORIGIN',
+          },
+        ],
+      },
+    ],
+  },
+  kineticImpulseAbility(600),
+];
+
+const insertionIndex = (id: string): number =>
+  ({ low_force: 0, high_force: 1, test_impulse: 2 })[id] ?? 0;
+
+const byForce = sortVaultSpells(sortSpells, 'PEAK_FORCE', insertionIndex);
+assert(byForce[0].id === 'high_force', 'PEAK_FORCE sort puts highest force first');
+
+const byCooldown = sortVaultSpells(sortSpells, 'COOLDOWN', insertionIndex);
+assert(byCooldown[0].id === 'high_force', 'COOLDOWN sort puts fastest first');
+
+const byInstability = sortVaultSpells(sortSpells, 'INSTABILITY', insertionIndex);
+assert(
+  computeSpellCombatProfile(byInstability[0]).instabilityYield >=
+    computeSpellCombatProfile(byInstability[1]).instabilityYield,
+  'INSTABILITY sort orders by yield descending',
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

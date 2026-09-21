@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v26';
+export const STYLE_ID = 'luna-workshop-styles-v27';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1165,6 +1165,80 @@ export function injectStyles(): void {
       color: var(--retro-neon-cyan);
       min-height: 28px;
       flex-shrink: 0;
+    }
+
+    .forge-card-equipped-diff {
+      min-height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 8px;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      font-size: 9px;
+      letter-spacing: 0.3px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .forge-diff-baseline-tag {
+      color: var(--retro-text-muted, #8b949e);
+      font-weight: 600;
+      flex-shrink: 0;
+      max-width: 45%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .forge-diff-values {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      font-family: ${FONTS.mono};
+    }
+
+    .forge-diff-val.is-positive { color: #00ff88; }
+    .forge-diff-val.is-negative { color: #ff3366; }
+    .forge-diff-val.is-neutral { color: #d0d7de; }
+
+    .forge-mechanic-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
+      min-height: 20px;
+      flex-shrink: 0;
+    }
+
+    .mechanic-diff-chip {
+      font-size: 8.5px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 2px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      font-family: ${FONTS.mono};
+    }
+
+    .mechanic-diff-chip.chip-buff {
+      background: rgba(0, 255, 136, 0.15);
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      color: #00ff88;
+    }
+
+    .mechanic-diff-chip.chip-mutation {
+      background: rgba(255, 215, 0, 0.15);
+      border: 1px solid rgba(255, 215, 0, 0.4);
+      color: #ffd700;
+    }
+
+    .mechanic-diff-chip.chip-neutral {
+      background: rgba(0, 229, 255, 0.15);
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      color: #00e5ff;
     }
 
     .forge-card-footer {

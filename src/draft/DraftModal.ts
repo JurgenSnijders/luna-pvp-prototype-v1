@@ -36,6 +36,9 @@ import {
   compareCombatProfiles,
   computeSpellCombatProfile,
   formatCombatStatDiff,
+  polarityCssClass,
+  type CombatProfileDiff,
+  type MechanicDiffChip,
 } from '../primitives/combatProfile';
 import {
   extractMechanicBadges,
@@ -181,6 +184,8 @@ interface ForgeCardSlot {
     delivery: HTMLElement;
   };
   statusEl: HTMLElement;
+  mechanicChipsRowEl: HTMLElement;
+  equippedDiffEl: HTMLElement;
   badgesRowEl: HTMLElement;
   saveBtn: HTMLButtonElement;
   isSealed: boolean;
@@ -364,6 +369,33 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
         ? `Deploys a persistent ${a.field.radius ?? 60}px area-of-effect zone applying force or damage over time.`
         : 'Deploys a persistent area-of-effect zone applying force or damage over time.',
   },
+  MASS_ATTRACTOR: {
+    label: '🌀 GRAVITY WELL',
+    category: 'CONTROL',
+    accentColor: '#bf00ff',
+    getDescription: (a) =>
+      a.type === 'SPAWN_FIELD'
+        ? `Pulls targets toward a ${a.field.radius ?? 60}px singularity with ${Math.abs(a.field.strength ?? 5000)} field strength.`
+        : 'Pulls targets toward a gravitational singularity.',
+  },
+  VORTEX_TANGENT: {
+    label: '🌪️ VORTEX',
+    category: 'CONTROL',
+    accentColor: '#bf00ff',
+    getDescription: (a) =>
+      a.type === 'SPAWN_FIELD'
+        ? `Spins targets in a ${a.field.radius ?? 60}px tangential vortex with inward pull.`
+        : 'Spins targets in a tangential vortex field.',
+  },
+  FRICTION_OVERRIDE: {
+    label: '🧊 FRICTION PATCH',
+    category: 'CONTROL',
+    accentColor: '#00e5ff',
+    getDescription: (a) =>
+      a.type === 'SPAWN_FIELD'
+        ? `Overrides ground friction to ${a.field.frictionValue ?? 0.02} inside a ${a.field.radius ?? 60}px zone.`
+        : 'Overrides friction inside a hazard zone.',
+  },
   SPAWN_OBSTACLE: {
     label: '🧱 BARRICADE',
     category: 'DEFENSE',
@@ -394,20 +426,165 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
     getDescription: () =>
       'Instantly translates player position across space, ignoring obstacles and hazard zones.',
   },
-  MODIFY_STAT: {
+  MODIFY_STAT_DAMAGE: {
     label: '💔 DIRECT DAMAGE',
     category: 'OFFENSE',
     accentColor: '#ff0055',
     getDescription: (a) =>
       a.type === 'MODIFY_STAT'
-        ? `Directly alters target vitals (${a.value ?? -10} HP).`
-        : 'Directly alters target vitals.',
+        ? `Depletes ${Math.abs(a.value ?? 10)} target health on impact.`
+        : 'Depletes target health.',
+  },
+  MODIFY_STAT_HEAL: {
+    label: '💚 HEAL',
+    category: 'UTILITY',
+    accentColor: '#44ff88',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Restores ${a.value ?? 10} health points to the target.`
+        : 'Restores health points.',
+  },
+  MODIFY_STAT_moveSpeed: {
+    label: '⚡ HASTE',
+    category: 'UTILITY',
+    accentColor: '#00e5ff',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Modifies movement velocity (${a.mode} ${a.value}).`
+        : 'Modifies movement velocity.',
+  },
+  MODIFY_STAT_mass: {
+    label: '⚖️ MASS SHIFT',
+    category: 'CONTROL',
+    accentColor: '#d4a373',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Alters target mass (${a.mode} ${a.value}), changing knockback susceptibility.`
+        : 'Alters target mass.',
+  },
+  MODIFY_STAT_linearDrag: {
+    label: '🛞 DRAG SHIFT',
+    category: 'CONTROL',
+    accentColor: '#00e5ff',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Changes target linear drag (${a.mode} ${a.value}), affecting slide distance.`
+        : 'Changes target linear drag.',
+  },
+  MODIFY_STAT_instabilityPct: {
+    label: '⚡ INSTABILITY',
+    category: 'CONTROL',
+    accentColor: '#ff4400',
+    getDescription: (a) =>
+      a.type === 'MODIFY_STAT'
+        ? `Directly shifts instability (${a.mode} ${a.value}).`
+        : 'Directly shifts instability.',
+  },
+  APPLY_STASIS: {
+    label: '❄️ STASIS',
+    category: 'CONTROL',
+    accentColor: '#00e5ff',
+    getDescription: (a) =>
+      a.type === 'APPLY_STASIS'
+        ? `Suspends target velocity and physics for ${(a.durationMs / 1000).toFixed(1)}s.`
+        : 'Suspends target velocity, actions, and physics interactions.',
+  },
+  RELEASE_STASIS: {
+    label: '🔓 RELEASE STASIS',
+    category: 'UTILITY',
+    accentColor: '#00e5ff',
+    getDescription: () => 'Releases an active stasis lock, restoring normal physics.',
+  },
+  REFLECT_PROJECTILES: {
+    label: '🛡️ REFLECT GUARD',
+    category: 'DEFENSE',
+    accentColor: '#ffd700',
+    getDescription: (a) =>
+      a.type === 'REFLECT_PROJECTILES'
+        ? `Deflects incoming projectiles within a ${a.arcDeg ?? 360}° wedge back toward attackers.`
+        : 'Deflects incoming enemy projectiles within the active wedge.',
+  },
+  MUTATE_TERRAIN: {
+    label: '🌋 TERRAIN SHIFT',
+    category: 'CONTROL',
+    accentColor: '#ff6644',
+    getDescription: (a) =>
+      a.type === 'MUTATE_TERRAIN'
+        ? `Alters arena floor (${a.mutation.type}) across a ${a.mutation.radius}px radius.`
+        : 'Alters the arena floor, creating or removing hazardous terrain.',
+  },
+  MORPH_ENTITY: {
+    label: '🔄 MORPH',
+    category: 'UTILITY',
+    accentColor: '#bf00ff',
+    getDescription: (a) =>
+      a.type === 'MORPH_ENTITY'
+        ? `Transforms the target for ${(a.morph.durationMs / 1000).toFixed(1)}s with altered combat stats.`
+        : 'Temporarily transforms the target into an alternate combatant form.',
+  },
+  APPLY_STEALTH: {
+    label: '👻 STEALTH',
+    category: 'UTILITY',
+    accentColor: '#94a3b8',
+    getDescription: (a) =>
+      a.type === 'APPLY_STEALTH'
+        ? `Cloaks the caster for ${(a.durationMs / 1000).toFixed(1)}s, breaking targeting locks.`
+        : 'Cloaks the caster, granting temporary invisibility.',
+  },
+  APPLY_STATUS: {
+    label: '✨ STATUS',
+    category: 'CONTROL',
+    accentColor: '#bf00ff',
+    getDescription: (a) =>
+      a.type === 'APPLY_STATUS'
+        ? `Applies ${a.archetype} elemental status for ${(a.durationMs / 1000).toFixed(1)}s.`
+        : 'Applies an elemental status effect to the target.',
+  },
+  LAUNCH_VERTICAL: {
+    label: '🚀 LAUNCH',
+    category: 'OFFENSE',
+    accentColor: '#ffaa00',
+    getDescription: (a) =>
+      a.type === 'LAUNCH_VERTICAL'
+        ? `Launches targets airborne${a.targetApex ? ` to ${a.targetApex}px apex` : ''}.`
+        : 'Launches targets airborne along a ballistic arc.',
+  },
+  SET_GRAVITY_SCALE: {
+    label: '🌍 GRAVITY SHIFT',
+    category: 'CONTROL',
+    accentColor: '#00e5ff',
+    getDescription: (a) =>
+      a.type === 'SET_GRAVITY_SCALE'
+        ? `Sets gravity to ${a.scale}× for ${((a.durationMs ?? 1000) / 1000).toFixed(1)}s.`
+        : 'Modifies gravitational pull, altering fall speed and apex hang time.',
+  },
+  CAST_CHILD_PAYLOAD: {
+    label: '💣 SPLIT PAYLOAD',
+    category: 'OFFENSE',
+    accentColor: '#ff6644',
+    getDescription: () => 'Detonates or splits into a secondary nested payload.',
+  },
+  PLAY_VFX: {
+    label: '✨ VFX BURST',
+    category: 'UTILITY',
+    accentColor: '#cbd5e1',
+    getDescription: () => 'Triggers a cosmetic visual burst with no direct physics cost.',
   },
 };
 
 function semanticActionKey(action: ActionPayload): string {
-  if (action.type === 'SPAWN_FIELD' && action.field.fieldType === 'RADIAL_IMPULSE') {
-    return 'RADIAL_IMPULSE';
+  if (action.type === 'SPAWN_FIELD') {
+    const fieldType = action.field.fieldType;
+    if (fieldType === 'RADIAL_IMPULSE') return 'RADIAL_IMPULSE';
+    if (fieldType === 'MASS_ATTRACTOR') return 'MASS_ATTRACTOR';
+    if (fieldType === 'VORTEX_TANGENT') return 'VORTEX_TANGENT';
+    if (fieldType === 'FRICTION_OVERRIDE') return 'FRICTION_OVERRIDE';
+  }
+  if (action.type === 'MODIFY_STAT') {
+    if (action.stat === 'health') {
+      return action.value < 0 ? 'MODIFY_STAT_DAMAGE' : 'MODIFY_STAT_HEAL';
+    }
+    return `MODIFY_STAT_${action.stat}`;
   }
   return action.type;
 }
@@ -2596,6 +2773,12 @@ export class DraftModal {
     statusEl.className = 'forge-card-status-block';
     statusEl.textContent = 'Awaiting telemetry...';
 
+    const mechanicChipsRowEl = document.createElement('div');
+    mechanicChipsRowEl.className = 'forge-mechanic-chips-row';
+
+    const equippedDiffEl = document.createElement('div');
+    equippedDiffEl.className = 'forge-card-equipped-diff';
+
     const footerEl = document.createElement('div');
     footerEl.className = 'forge-card-footer';
 
@@ -2613,6 +2796,8 @@ export class DraftModal {
     root.appendChild(telemetryGridEl);
     root.appendChild(badgesRowEl);
     root.appendChild(statusEl);
+    root.appendChild(mechanicChipsRowEl);
+    root.appendChild(equippedDiffEl);
     root.appendChild(footerEl);
 
     const cooldownVal = cooldownItem.querySelector('.telemetry-v');
@@ -2646,12 +2831,71 @@ export class DraftModal {
         delivery: deliveryVal as HTMLElement,
       },
       statusEl,
+      mechanicChipsRowEl,
+      equippedDiffEl,
       badgesRowEl,
       saveBtn,
       isSealed: false,
       card: null,
       handlersBound: false,
     };
+  }
+
+  private renderMechanicDiffChip(chip: MechanicDiffChip): HTMLElement {
+    const el = document.createElement('span');
+    const kindClass =
+      chip.kind === 'BUFF' ? 'chip-buff' : chip.kind === 'MUTATION' ? 'chip-mutation' : 'chip-neutral';
+    el.className = `mechanic-diff-chip ${kindClass}`;
+    el.textContent = chip.label;
+    return el;
+  }
+
+  private renderForgeEquippedComparison(slot: ForgeCardSlot, card: DraftCard): void {
+    slot.mechanicChipsRowEl.innerHTML = '';
+    slot.equippedDiffEl.innerHTML = '';
+
+    const ability = card.abilityPayload;
+    if (!ability) return;
+
+    const baseline = this.getCompareAbility(this.callbacks.getLoadout(), card);
+    if (!baseline) return;
+
+    const currentProfile = computeSpellCombatProfile(ability);
+    const baselineProfile = computeSpellCombatProfile(baseline);
+    const diff = compareCombatProfiles(currentProfile, baselineProfile);
+
+    for (const chip of diff.mechanicChips) {
+      slot.mechanicChipsRowEl.appendChild(this.renderMechanicDiffChip(chip));
+    }
+
+    const tag = document.createElement('span');
+    tag.className = 'forge-diff-baseline-tag';
+    if (this.evolutionContext) {
+      tag.textContent = 'vs Parent';
+    } else if (card.category) {
+      const slotKey = CATEGORY_SLOT_MAP[card.category];
+      tag.textContent = `vs [${slotKey}] ${baseline.name}`;
+    } else {
+      tag.textContent = `vs ${baseline.name}`;
+    }
+
+    const valuesEl = document.createElement('div');
+    valuesEl.className = 'forge-diff-values';
+
+    const addDelta = (label: string, metric: CombatProfileDiff['cooldown']): void => {
+      if (!metric) return;
+      const span = document.createElement('span');
+      span.className = `forge-diff-val ${polarityCssClass(metric.polarity)}`;
+      span.textContent = `${label} ${metric.formattedDiff}`;
+      valuesEl.appendChild(span);
+    };
+
+    addDelta('CD', diff.cooldown);
+    addDelta('Force', diff.peakDisplacement);
+    addDelta('Instab', diff.instabilityYield);
+
+    slot.equippedDiffEl.appendChild(tag);
+    slot.equippedDiffEl.appendChild(valuesEl);
   }
 
   private animateMetricRollUp(
@@ -2920,6 +3164,8 @@ export class DraftModal {
         ? telemetry.ccDescriptions.join(' · ')
         : '[CLEAN HIT] Pure Kinetic Force';
 
+    this.renderForgeEquippedComparison(slot, card);
+
     const anotherSaved =
       this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex;
     if (!anotherSaved) {
@@ -3032,6 +3278,7 @@ export class DraftModal {
             telemetry.ccDescriptions.length > 0
               ? telemetry.ccDescriptions.join(' · ')
               : '[CLEAN HIT] Pure Kinetic Force';
+          this.renderForgeEquippedComparison(slot, card);
         }
       }
     }
