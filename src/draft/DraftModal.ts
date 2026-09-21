@@ -36,9 +36,12 @@ import {
   compareCombatProfiles,
   computeSpellCombatProfile,
   formatCombatStatDiff,
+  formatProfileCadence,
   polarityCssClass,
   type CombatProfileDiff,
   type MechanicDiffChip,
+  type MetricDelta,
+  type SpellCombatProfile,
 } from '../primitives/combatProfile';
 import {
   extractMechanicBadges,
@@ -628,6 +631,19 @@ export function extractSpellTelemetry(ability: AbilitySchema): SpellTelemetry {
     ccDescriptions: profile.controlDescriptions,
     deliveryText: profile.delivery.summary,
   };
+}
+
+function formatInspectorPeakForce(profile: SpellCombatProfile): string {
+  const force = profile.displacement.peakForce;
+  const tag = profile.displacement.primaryTag;
+  if (tag === 'NONE' || tag === 'MIXED' || force === 0) {
+    return `${force} Force`;
+  }
+  return `${force} [${tag}]`;
+}
+
+function formatInspectorInstability(profile: SpellCombatProfile): string {
+  return `+${profile.instabilityYield}%`;
 }
 
 function walkTriggers(
@@ -1554,45 +1570,10 @@ export class DraftModal {
       mutationBanner.appendChild(document.createTextNode(` ${evolutionDiff[0]}`));
     }
 
-    const telemetryGrid = document.createElement('div');
-    telemetryGrid.className = 'inspector-telemetry-grid';
-
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
-    );
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
-    );
-
-    const repulseVal = document.createElement('span');
-    repulseVal.className = 'telemetry-value val-repulse';
-    repulseVal.textContent = `${telemetry.repulseForce} Force`;
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
-    );
-
-    const instabilityVal = document.createElement('span');
-    instabilityVal.className = 'telemetry-value val-instability';
-    instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
-    );
-
-    if (telemetry.directDamage > 0) {
-      telemetryGrid.appendChild(
-        this.buildInspectorTelemetryCell(
-          'DIRECT DAMAGE',
-          `${telemetry.directDamage} HP`,
-        ),
-      );
-    }
-
-    const deliveryVal = document.createElement('span');
-    deliveryVal.className = 'telemetry-value val-delivery';
-    deliveryVal.textContent = telemetry.deliveryText;
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
-    );
+    const inspectorBaseline = this.resolveInspectorBaseline(spell);
+    const telemetryBlock = inspectorBaseline
+      ? this.buildInspectorComparisonDrawer(spell, inspectorBaseline)
+      : this.buildInspectorTelemetryGrid(telemetry);
 
     const profileCard = this.buildImpactProfileCard(profile);
 
@@ -1632,7 +1613,7 @@ export class DraftModal {
     panel.appendChild(heroWrap);
     panel.appendChild(header);
     if (mutationBanner) panel.appendChild(mutationBanner);
-    panel.appendChild(telemetryGrid);
+    panel.appendChild(telemetryBlock);
     panel.appendChild(profileCard);
     panel.appendChild(tagsRow);
     panel.appendChild(desc);
@@ -2589,6 +2570,234 @@ export class DraftModal {
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, sonarRad, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  private resolveInspectorBaseline(spell: AbilitySchema): {
+    baseline: AbilitySchema;
+    slotKey: ActionSlotKey;
+    vsParent: boolean;
+  } | null {
+    const loadout = SpellInventoryManager.getLoadout();
+    const isEquipped = Object.values(loadout).some((id) => id === spell.id);
+    if (isEquipped) return null;
+
+    if (
+      this.evolutionContext &&
+      this.evolutionContext.baseAbility.id !== spell.id
+    ) {
+      return {
+        baseline: this.evolutionContext.baseAbility,
+        slotKey: this.evolutionContext.slotKey,
+        vsParent: true,
+      };
+    }
+
+    let category: SkillCategory = this.selectedCategory;
+    const matchingForgeSlot = this.activeForgeCardSlots?.find(
+      (slot) =>
+        slot.isSealed &&
+        slot.card?.abilityPayload?.id === spell.id &&
+        slot.card.category,
+    );
+    if (matchingForgeSlot?.card?.category) {
+      category = matchingForgeSlot.card.category;
+    }
+
+    const slotKey = CATEGORY_SLOT_MAP[category];
+    const baseline = SpellInventoryManager.getEquippedAbilities()[slotKey];
+    if (!baseline || baseline.id === spell.id) return null;
+
+    return {
+      baseline,
+      slotKey,
+      vsParent: false,
+    };
+  }
+
+  private buildInspectorTelemetryGrid(telemetry: SpellTelemetry): HTMLElement {
+    const telemetryGrid = document.createElement('div');
+    telemetryGrid.className = 'inspector-telemetry-grid';
+
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
+    );
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
+    );
+
+    const repulseVal = document.createElement('span');
+    repulseVal.className = 'telemetry-value val-repulse';
+    repulseVal.textContent = `${telemetry.repulseForce} Force`;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal),
+    );
+
+    const instabilityVal = document.createElement('span');
+    instabilityVal.className = 'telemetry-value val-instability';
+    instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
+    );
+
+    if (telemetry.directDamage > 0) {
+      telemetryGrid.appendChild(
+        this.buildInspectorTelemetryCell(
+          'DIRECT DAMAGE',
+          `${telemetry.directDamage} HP`,
+        ),
+      );
+    }
+
+    const deliveryVal = document.createElement('span');
+    deliveryVal.className = 'telemetry-value val-delivery';
+    deliveryVal.textContent = telemetry.deliveryText;
+    telemetryGrid.appendChild(
+      this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
+    );
+
+    return telemetryGrid;
+  }
+
+  private buildInspectorComparisonRow(
+    label: string,
+    inspectedText: string,
+    baselineText: string,
+    delta: MetricDelta | undefined,
+    valueClass = '',
+  ): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'inspector-comparison-row';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'inspector-comparison-label';
+    labelEl.textContent = label;
+
+    const inspectedCell = document.createElement('div');
+    inspectedCell.className = 'inspector-comparison-cell is-inspected';
+
+    const inspectedVal = document.createElement('span');
+    inspectedVal.className = `inspector-comparison-val${valueClass ? ` ${valueClass}` : ''}`;
+    inspectedVal.textContent = inspectedText;
+    inspectedCell.appendChild(inspectedVal);
+
+    if (delta) {
+      const pill = document.createElement('span');
+      pill.className = `inspector-comparison-pill ${polarityCssClass(delta.polarity)}`;
+      pill.textContent = delta.formattedDiff;
+      inspectedCell.appendChild(pill);
+    }
+
+    const baselineCell = document.createElement('div');
+    baselineCell.className = 'inspector-comparison-cell is-baseline';
+
+    const baselineVal = document.createElement('span');
+    baselineVal.className = `inspector-comparison-val${valueClass ? ` ${valueClass}` : ''}`;
+    baselineVal.textContent = baselineText;
+    baselineCell.appendChild(baselineVal);
+
+    row.appendChild(labelEl);
+    row.appendChild(inspectedCell);
+    row.appendChild(baselineCell);
+    return row;
+  }
+
+  private buildInspectorComparisonDrawer(
+    spell: AbilitySchema,
+    context: {
+      baseline: AbilitySchema;
+      slotKey: ActionSlotKey;
+      vsParent: boolean;
+    },
+  ): HTMLElement {
+    const drawer = document.createElement('div');
+    drawer.className = 'inspector-comparison-drawer';
+
+    const header = document.createElement('div');
+    header.className = 'inspector-comparison-header';
+    if (context.vsParent) {
+      header.textContent = 'VS PARENT';
+    } else {
+      header.textContent = `VS [${context.slotKey}] ${context.baseline.name}`;
+    }
+    drawer.appendChild(header);
+
+    const inspectedProfile = computeSpellCombatProfile(spell);
+    const baselineProfile = computeSpellCombatProfile(context.baseline);
+    const diff = compareCombatProfiles(inspectedProfile, baselineProfile);
+
+    const rows = document.createElement('div');
+    rows.className = 'inspector-comparison-rows';
+
+    rows.appendChild(
+      this.buildInspectorComparisonRow(
+        'CADENCE',
+        formatProfileCadence(inspectedProfile),
+        formatProfileCadence(baselineProfile),
+        diff.cooldown,
+      ),
+    );
+
+    const forceDelta =
+      diff.displacementDirectionMatch ? diff.peakDisplacement : undefined;
+    rows.appendChild(
+      this.buildInspectorComparisonRow(
+        'PEAK FORCE',
+        formatInspectorPeakForce(inspectedProfile),
+        formatInspectorPeakForce(baselineProfile),
+        forceDelta,
+        'val-repulse',
+      ),
+    );
+
+    rows.appendChild(
+      this.buildInspectorComparisonRow(
+        'INSTABILITY',
+        formatInspectorInstability(inspectedProfile),
+        formatInspectorInstability(baselineProfile),
+        diff.instabilityYield,
+        'val-instability',
+      ),
+    );
+
+    rows.appendChild(
+      this.buildInspectorComparisonRow(
+        'RECOIL',
+        `${inspectedProfile.recoilKick} px/s`,
+        `${baselineProfile.recoilKick} px/s`,
+        diff.recoil,
+      ),
+    );
+
+    if (inspectedProfile.directDamage > 0 || baselineProfile.directDamage > 0) {
+      rows.appendChild(
+        this.buildInspectorComparisonRow(
+          'DIRECT DMG',
+          `${inspectedProfile.directDamage} HP`,
+          `${baselineProfile.directDamage} HP`,
+          diff.directDamage,
+        ),
+      );
+    }
+
+    drawer.appendChild(rows);
+
+    if (diff.mechanicChips.length > 0) {
+      const chipsRow = document.createElement('div');
+      chipsRow.className = 'inspector-comparison-chips';
+      for (const chip of diff.mechanicChips) {
+        chipsRow.appendChild(this.renderMechanicDiffChip(chip));
+      }
+      drawer.appendChild(chipsRow);
+    }
+
+    if (inspectedProfile.delivery.summary) {
+      const delivery = document.createElement('div');
+      delivery.className = 'inspector-comparison-delivery';
+      delivery.textContent = inspectedProfile.delivery.summary;
+      drawer.appendChild(delivery);
+    }
+
+    return drawer;
   }
 
   private buildInspectorTelemetryCell(

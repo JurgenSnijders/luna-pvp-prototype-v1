@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v27';
+export const STYLE_ID = 'luna-workshop-styles-v28';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -384,6 +384,129 @@ export function injectStyles(): void {
 
     .telemetry-value.val-delivery {
       color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .inspector-telemetry-grid,
+    .inspector-comparison-drawer {
+      transition: opacity 0.15s ease;
+    }
+
+    .inspector-comparison-drawer {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(10, 14, 26, 0.65);
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
+      padding: 8px 10px;
+      min-width: 0;
+    }
+
+    .inspector-comparison-header {
+      font-family: ${FONTS.mono};
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--retro-text-muted, #6a7796);
+      border-bottom: 1px dashed rgba(26, 34, 54, 0.8);
+      padding-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .inspector-comparison-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .inspector-comparison-row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr);
+      gap: 4px 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .inspector-comparison-label {
+      font-family: ${FONTS.mono};
+      font-size: 8px;
+      color: var(--retro-text-muted, #6a7796);
+      text-transform: uppercase;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .inspector-comparison-cell {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .inspector-comparison-val {
+      font-family: ${FONTS.mono};
+      font-size: 11px;
+      color: var(--retro-text-primary, #e0f8ff);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .inspector-comparison-cell.is-baseline .inspector-comparison-val {
+      color: var(--retro-text-muted, #8b949e);
+    }
+
+    .inspector-comparison-val.val-repulse {
+      color: #ffaa00;
+      font-weight: bold;
+    }
+
+    .inspector-comparison-val.val-instability {
+      color: #ff6644;
+      font-weight: bold;
+    }
+
+    .inspector-comparison-pill {
+      flex-shrink: 0;
+      font-family: ${FONTS.mono};
+      font-size: 9px;
+      font-weight: 700;
+      padding: 0 4px;
+      border-radius: 2px;
+      background: rgba(0, 0, 0, 0.35);
+    }
+
+    .inspector-comparison-pill.is-positive { color: #00ff88; }
+    .inspector-comparison-pill.is-negative { color: #ff3366; }
+    .inspector-comparison-pill.is-neutral { color: #d0d7de; }
+
+    .inspector-comparison-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-width: 0;
+      padding-top: 2px;
+      border-top: 1px dashed rgba(26, 34, 54, 0.6);
+    }
+
+    .inspector-comparison-delivery {
+      font-family: ${FONTS.mono};
+      font-size: 10px;
+      color: var(--retro-neon-cyan, #00e5ff);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      padding-top: 2px;
+      border-top: 1px dashed rgba(26, 34, 54, 0.6);
     }
 
     .inspector-profile-card {
