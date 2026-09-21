@@ -5,6 +5,7 @@ import { MAX_DEPTH, MAX_EVOLVED_RECOIL } from '../src/ai/budget/constants';
 import { resolveEvolutionTree } from '../src/game/EvolutionStore';
 import type { EvolutionNode, EvolutionTree } from '../src/types/evolution';
 import { scoreAbilitySchema } from '../src/ai/budget/score';
+import { sanitizeVfxLayers } from '../src/ai/budget/sanitize/vfxLayers';
 import { sanitizeVisuals } from '../src/ai/budget/sanitize/visuals';
 import { repairAbilityPayload } from '../src/ai/synthesizer/llmRepair';
 import { PRESETS } from '../src/devtools/Presets';
@@ -44,6 +45,12 @@ import {
 import { ParticleSystem } from '../src/render/ParticleSystem';
 import { RecordingBackend } from '../src/render/backends/RecordingBackend';
 import {
+  estimateLayerSpawns,
+  maxVfxLayerSpawns,
+  playVfxLayers,
+  type VfxLayerSpawnSink,
+} from '../src/render/backends/vfxLayerComposer';
+import {
   buildArcLengthTable,
   resolvePathWorldPoints,
   simplifyPath,
@@ -56,7 +63,7 @@ import {
 import { buildBallisticArcPath } from '../src/render/canvas/trajectoryTracer';
 import { BACKGROUND_FRAGMENT_SHADER } from '../src/render/gl/shaders';
 import { DEBRIS_MAX_SHARDS, DebrisManager } from '../src/render/canvas/debris';
-import type { AbilitySchema, TriggerNode, VisualDescriptor } from '../src/types/schema';
+import type { AbilitySchema, TriggerNode, VisualDescriptor, VfxLayer } from '../src/types/schema';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -1973,6 +1980,142 @@ function assertLayeredTrailsSanitizeAndTick(): { pass: boolean; reason: string }
     pass: true,
     reason: `score=${baseScore} layers=${sanitized.trailLayers.length} tick=${layeredCount}`,
   };
+}
+
+function createVfxSpawnCounter(): { sink: VfxLayerSpawnSink; count: () => number } {
+  let spawned = 0;
+  const sink: VfxLayerSpawnSink = {
+    spawnRing() {
+      spawned += 1;
+    },
+    spawnFlash() {
+      spawned += 1;
+    },
+    spawnStreak() {
+      spawned += 1;
+    },
+    burstSparks(_pos, count) {
+      spawned += count;
+    },
+  };
+  return { sink, count: () => spawned };
+}
+
+function sumLayerSpawns(layers: VfxLayer[]): number {
+  return layers.reduce((sum, layer) => sum + estimateLayerSpawns(layer), 0);
+}
+
+/** 04 §3 — maximal legal VFX layer stack stays under LOW-tier particleBudget at spawn time. */
+function assertMaxLegalVfxStackParticleBudget(): { pass: boolean; reason: string } {
+  const previousVfxTier = getGraphicsSettings().vfxTier;
+  try {
+    seedEffectiveVfxTierForTests('LOW');
+    const lowBudget = getTierLimits().particleBudget;
+    const maxSpawns = maxVfxLayerSpawns(lowBudget);
+
+    const baseLayer = {
+      size: 40,
+      lifetime: 0.4,
+      colorRef: 'PRIMARY' as const,
+      layer: 'CORE' as const,
+    };
+
+    const oversizedStack: VfxLayer[] = [
+      { kind: 'RING', ...baseLayer },
+      { kind: 'FLASH', ...baseLayer, layer: 'PRIMARY' },
+      {
+        kind: 'STREAK',
+        count: 4,
+        speed: 120,
+        spreadDeg: 360,
+        ...baseLayer,
+        layer: 'SECONDARY',
+      },
+      { kind: 'SPARKS', count: 4, ...baseLayer, layer: 'SECONDARY' },
+      {
+        kind: 'STREAK',
+        count: 4,
+        speed: 120,
+        spreadDeg: 360,
+        ...baseLayer,
+        layer: 'PRIMARY',
+      },
+      { kind: 'SPARKS', count: 2, ...baseLayer, layer: 'PRIMARY' },
+      { kind: 'SPARKS', count: 24, ...baseLayer },
+      {
+        kind: 'STREAK',
+        count: 24,
+        speed: 120,
+        spreadDeg: 360,
+        ...baseLayer,
+        layer: 'SECONDARY',
+      },
+    ];
+
+    const uncappedEstimate = sumLayerSpawns(oversizedStack);
+    if (uncappedEstimate <= maxSpawns) {
+      return {
+        pass: false,
+        reason: `oversized stack estimate ${uncappedEstimate} should exceed cap ${maxSpawns}`,
+      };
+    }
+
+    const sanitized = sanitizeVfxLayers(oversizedStack);
+    if (!sanitized || sanitized.length === 0) {
+      return { pass: false, reason: 'sanitizeVfxLayers stripped maximal stack' };
+    }
+    if (sanitized.length > 6) {
+      return { pass: false, reason: `sanitized length ${sanitized.length} > 6` };
+    }
+
+    const legalEstimate = sumLayerSpawns(sanitized);
+    if (legalEstimate > maxSpawns) {
+      return {
+        pass: false,
+        reason: `sanitized estimate ${legalEstimate} > maxSpawns ${maxSpawns}`,
+      };
+    }
+
+    const pos = Vector2D.zero();
+    const legalCounter = createVfxSpawnCounter();
+    playVfxLayers(legalCounter.sink, pos, sanitized, '#ff4400', '#ffaa00', 1, 0);
+    const legalSpawned = legalCounter.count();
+    if (legalSpawned !== legalEstimate) {
+      return {
+        pass: false,
+        reason: `legal spawn ${legalSpawned} != estimate ${legalEstimate}`,
+      };
+    }
+    if (legalSpawned >= lowBudget) {
+      return {
+        pass: false,
+        reason: `legal spawned ${legalSpawned} >= budget ${lowBudget}`,
+      };
+    }
+
+    const rawCounter = createVfxSpawnCounter();
+    playVfxLayers(rawCounter.sink, pos, oversizedStack, '#ff4400', '#ffaa00', 1, 0);
+    const rawSpawned = rawCounter.count();
+    if (rawSpawned > maxSpawns) {
+      return {
+        pass: false,
+        reason: `raw spawn ${rawSpawned} > maxSpawns ${maxSpawns}`,
+      };
+    }
+    if (rawSpawned >= lowBudget) {
+      return {
+        pass: false,
+        reason: `raw spawned ${rawSpawned} >= budget ${lowBudget}`,
+      };
+    }
+
+    return {
+      pass: true,
+      reason: `LOW budget=${lowBudget} legal=${legalSpawned}/${legalEstimate} raw=${rawSpawned} cap=${maxSpawns} uncapped=${uncappedEstimate}`,
+    };
+  } finally {
+    seedEffectiveVfxTierForTests(previousVfxTier);
+  }
 }
 
 function assertClusterMortarAimingRollout(): { pass: boolean; reason: string } {
@@ -4224,6 +4367,12 @@ function run(): void {
   console.log(`  ${DIM}${layeredTrails.reason}${RESET}`);
   if (layeredTrails.pass) passed++;
 
+  const maxVfxStack = assertMaxLegalVfxStackParticleBudget();
+  const maxVfxStackTag = maxVfxStack.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${maxVfxStackTag} Max legal VFX-stack particle budget`);
+  console.log(`  ${DIM}${maxVfxStack.reason}${RESET}`);
+  if (maxVfxStack.pass) passed++;
+
   const derivedIntensity = assertDerivedImpactIntensity();
   const derivedIntensityTag = derivedIntensity.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -4330,7 +4479,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 46;
+  const totalCases = suite.length + 47;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
