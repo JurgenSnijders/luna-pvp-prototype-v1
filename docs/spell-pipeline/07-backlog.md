@@ -12,6 +12,7 @@ Source docs:
 - `[04-upgrade-design.md](04-upgrade-design.md)` — original proposals
 - `[05-open-questions.md](05-open-questions.md)` — product questions
 - `[06-execution-plan.md](06-execution-plan.md)` — what the numbered phases shipped
+- `[08-capability-audit.md](08-capability-audit.md)` — current capability snapshot (01–03 are history)
 
 ---
 
@@ -44,15 +45,41 @@ Tick these as they land. Suggested order is the numbering.
 
 ### Next
 
+#### Verification
+
+- [ ] **12-point combat playtest** — confirmation pass only. The checks below already have invariant or fidelity coverage in the shipped list. File a new backlog item only for a check that fails. Do not open an implementation slice up front.
+  1. Cluster mortar apex split at `v_z = 0`; bomblets match inspector reach.
+  2. `HOMING_SLERP` with `lobApex` keeps apex triggers and bounce momentum.
+  3. Cursor-solved mortar fans: outer pellets share center-aim landing range.
+  4. `ON_RAM` fires only for the rammer at the 350 speed gate.
+  5. `ON_SLAM` vs `ON_GROUND_SLAM`: wall and obstacle hits dispatch without pre-arming.
+  6. 90° forward impulse excludes rear targets.
+  7. Parry and hold-guard: fixed 120° wedge, overhead channel bar, 180° linear reflection.
+  8. Phased summons: turret windup shows before the first `ON_TICK` burst.
+  9. Semantic evolution repair keeps `BALLISTIC_ARC` and apex splits under flavor text such as "explosive self ring".
+  10. A 6-layer particle stack on LOW clamps to 16 spawns with zero cooldown penalty.
+  11. Drawn paths travel at a steady speed along the stroke.
+  12. Seeded motion noise matches across repeated casts.
+
+#### Product slices
+
+- [ ] **Loadout kit balance** — bottom-dock meter over the five equipped combat profiles: Primers (instability builders), Finishers (`maxTravelPx >= 400`), Utility/Defense (parry, mobility, stasis, walls). Contextual warnings (no ring-out finisher, no mobility, redundant primary role). Cross-slot synergy tags from a small rule table (primer archetype to detonation action). Display only; no physics changes.
+- [ ] **Vault tile scan layer** — corner micro-verb icons (push, vortex, shield, blink), a compact name and dominant-stat strip, and a clearer equipped-slot badge. Independent of the dock meter. Tiles already show a slot-key badge.
+
+#### Docs
+
+- [x] **Capability audit** — `[08-capability-audit.md](08-capability-audit.md)` is the current snapshot. Docs 01–03 stay historical.
+- [x] **Close Q5 and Q6** — recorded in the `[05](05-open-questions.md)` decision log (2026-09-21). Trees persist across matches. Mechanic branches reverse by path, not by JSON patch.
+
 ### Authoring / melee / VFX
 
 ### Product / later
 
-- [ ] **12. Fill the decision log in** `05`  
-  Execution decisions live in `06`. The table at the bottom of `05` is still empty.
+- [ ] **12. Finish the decision log in** `05`  
+  Q4, Q5, Q6, and Q9 are recorded. Q1, Q2, Q3, Q7, Q8, Q10, Q12, and Q13 are settled in `06` but not copied into the `05` log. Q2's inspector-warning option stays open as a product call.
 
 - [ ] **13. Refresh docs 01–03 line numbers**  
-  Those files are snapshots from before Phases 0–13. Treat them as history until rewritten.
+  Those files are snapshots from commit `53e3893`. `[08-capability-audit.md](08-capability-audit.md)` is the current capability set. Rewrite 01–03 only if a claim in them is still used as fact.
 
 ---
 
@@ -88,8 +115,8 @@ Tick these as they land. Suggested order is the numbering.
 | Question                           | What we did for the runbook                                                     | What is still a product call                                        |
 | ---------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | **Q2** Semantic drift in evolution | Accept it. No provenance tracking.                                              | Warn in the inspector? Repair only the new subtree?                 |
-| **Q5** Fun vs balance              | Tier-aware budget in Phase 10. Evolved spells are stronger at similar cooldown. | Does the tree reset per match?                                      |
-| **Q6** Deltas vs resolved schemas  | Hybrid: stat nodes = modifiers, mechanic nodes = resolved schemas.              | Fine unless you want fully reversible mechanic branches.            |
+| **Q5** Fun vs balance              | Closed 2026-09-21 in `05`. Tier-aware budget stays. Trees persist across matches. | None. Match-scoped reset only if a ranked mode is added.            |
+| **Q6** Deltas vs resolved schemas  | Closed 2026-09-21 in `05`. Hybrid stays. Path switch reverses a mechanic branch. | None. JSON-patch mechanic nodes are rejected.                       |
 | **Q7** Networked game?             | Assume **local-only**. Seeded noise is still required for motion modifiers.     | If you ever network, determinism becomes a correctness requirement. |
 | **Q1 / Q3 / Q10 / Q12 / Q13**      | Implemented as decided in `06`.                                                 | Closed for execution. Revisit only with a new argument.             |
 

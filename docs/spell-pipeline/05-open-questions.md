@@ -97,6 +97,9 @@ which is itself an instance of the drift problem in §6.
 
 ### Q5 — How much balance are we willing to trade for fun?
 
+**Closed 2026-09-21.** See the decision log. Tier-aware budget stays. Trees persist across
+matches; reset is the evolution-panel button, not match start.
+
 `balanceAbilitySchema` converts power into cooldown and self-knockback. Making it tier-aware
 ([`04-upgrade-design.md`](04-upgrade-design.md) §4) means an evolved spell is strictly stronger
 than a base spell at the same cooldown.
@@ -108,6 +111,9 @@ climbed further than another. Worth deciding alongside: does the tree reset per 
 ---
 
 ### Q6 — Does the tree store deltas or resolved schemas?
+
+**Closed 2026-09-21.** See the decision log. Hybrid stays. Mechanic branches are reversible by
+changing `activePath`, not by JSON patch.
 
 [`04`](04-upgrade-design.md) §4 recommends base + ordered modifier list. That works cleanly for
 *stat* nodes. It is less obvious for *mechanic* nodes, which are LLM-generated structural
@@ -358,3 +364,5 @@ this file stays self-contained.
 | 2026-09-21 | Q9 — Where does the caster action state machine live? | On `Entity` (`activeCastPhase` + `tickCastPhases`); Player keeps slot input / `requestCast`; summons honor optional `ActorConfig.inputProfile` timing fields only. | Bots already inherit via `Player`; deployables get telegraphed ON_TICK/turret fire without duplicating the phase machine or moving charge/channel onto summons. |
 | 2026-09-21 | Land-on-cursor ballistic solver (backlog #9) | Fix authored `lobApex`, solve `speed` from clamped muzzle-to-cursor ground range for forward `BALLISTIC_ARC` DIRECTIONAL casts; fan shots share center-aim solved speed. | Keeps arc height and `ON_AIR_APEX` timing stable while overlay and live flight land at cursor distance; sky drops and `GROUND_POINT` reticles stay out of scope. |
 | 2026-09-21 | `ON_SLAM` catch-all surface trigger (backlog #10) | Add `ON_SLAM` for high-speed hex wall, obstacle, and ground hits without arming; keep `ON_HIT_WALL` for projectile wall death and `ON_GROUND_SLAM` for armed dive/meteor recipes. | Completes the missing obstacle-slam dispatch from 04 §8; catch-all composability without replacing specialized triggers. |
+| 2026-09-21 | Q5 — How much balance are we willing to trade for fun? Does the tree reset per match? | Keep tier-aware budget: an evolved spell stays stronger than its base at a similar cooldown. Trees persist in `localStorage` across rounds and matches. `MatchManager.startMatch` does not reset them. The player clears a tree with the evolution panel **RESET TREE** button. | The prototype is a workshop. Wiping progression at match start fights the vault. A later ranked mode can add a match-scoped tree without changing the store. |
+| 2026-09-21 | Q6 — Does the tree store deltas or resolved schemas? Are mechanic branches fully reversible? | Keep the hybrid from `06`: stat nodes are modifiers, mechanic nodes store `resolvedSchema`. A branch is reversible by `setActivePath` or **RESET TREE**, which re-resolves from `baseSchema` plus the mechanic nodes still on the path, then reapplies stat modifiers. Do not store mechanic nodes as JSON patches. | Path switching already restores the prior resolved schema. Patches against a schema that itself changed were the fragile option. |

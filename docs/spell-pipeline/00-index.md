@@ -15,11 +15,14 @@
 ## ▶ Here to implement?
 
 - Remaining work after the runbook: [`07-backlog.md`](07-backlog.md) (living checklist).
+- Current capability set: [`08-capability-audit.md`](08-capability-audit.md). Docs 01–03 are
+  historical snapshots from commit `53e3893`.
 - Numbered phases 0–13: [`06-execution-plan.md`](06-execution-plan.md) — **done**. That file is
   the historical runbook. New slices come from `07`, planned separately.
 
-Docs 01–05 are reference material. You do not need to read them all before starting — each
-open backlog item names the section it depends on.
+Docs 04, 05, and 08 are the reference material for new work. Docs 01–03 are the historical
+snapshot. You do not need to read them all before starting — each open backlog item names the
+section it depends on.
 
 ---
 
@@ -47,10 +50,12 @@ Evolution Tree feature that depends on it.
 | [`05-open-questions.md`](05-open-questions.md) | Design questions + rejected options | Decisions |
 | [`06-execution-plan.md`](06-execution-plan.md) | Phase-by-phase implementation runbook (0–13 **done**) | **Execute** (historical) |
 | [`07-backlog.md`](07-backlog.md) | Living checklist of remaining work | **Track** |
+| [`08-capability-audit.md`](08-capability-audit.md) | What the engine and spell UI can do now | Facts |
 
-**The facts/proposals split is deliberate.** Docs 01–03 describe the codebase as it is and
-should only change when the code changes. Doc 04 describes what we think we should build.
-Doc 06 is what was executed. Doc 07 is what remains — tick boxes there when a slice ships.
+**The facts/proposals split is deliberate.** Doc 08 describes the codebase as it is now and
+should change when the code changes. Docs 01–03 are the 2026-09-08 snapshot and stay as
+history. Doc 04 describes what we thought we should build. Doc 06 is what was executed.
+Doc 07 is what remains — tick boxes there when a slice ships.
 
 Note that `06` **overrides** `05` for execution purposes: its "Pre-decided decisions" table
 settles every open question so implementation never blocks on one. `05` remains the record of
