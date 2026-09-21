@@ -23,6 +23,8 @@ rationale is worth more than a clean document.
 
 ### Q1 — Which entry points default to `EVOLUTION` mode?
 
+**Closed 2026-09-22.** See the decision log. `FIRST_GENERATION` only for the initial forge from a raw prompt. `EVOLUTION` everywhere else.
+
 `sanitizeAbilitySchema` is called from at least six places
 ([`02-pipeline-audit.md`](02-pipeline-audit.md)). Evolution tiers clearly want `EVOLUTION`.
 Less obvious:
@@ -42,6 +44,8 @@ the repair rules firing.
 
 ### Q2 — How do we detect semantic drift in `EVOLUTION` mode?
 
+**Closed 2026-09-22 for execution.** See the decision log. Accept drift. Do not build provenance tracking. Option 3 is closed by Q6. Option 2, an inspector warning with no repair, stays an open product call.
+
 Skipping overwrite rules means an evolved spell can end up describing one thing and doing
 another — *"now it pulls enemies inward"* layered onto a spell whose impulses push.
 
@@ -58,6 +62,8 @@ schemas (which would make it expensive). Related to Q6.
 ---
 
 ### Q3 — How granular should `placementKey` become?
+
+**Closed 2026-09-22.** See the decision log. Keys include trajectory type and emitter count. Child payloads key on the payload id.
 
 Today `SPAWN_PROJECTILE` and `CAST_CHILD_PAYLOAD` return undiscriminated keys, so structurally
 different spawns on `ON_HIT` and `ON_EXPIRY` collapse
@@ -134,6 +140,8 @@ Hybrid is probably the pragmatic answer. This decision also determines whether Q
 
 ### Q7 — Is the game networked, and does that harden the determinism requirement?
 
+**Closed 2026-09-22.** See the decision log. Local-only. Seeded motion noise stays. No `Math.random` patching outside the preview sandbox. Reopen only if the game is networked.
+
 [`04`](04-upgrade-design.md) §2 requires seeded per-projectile noise so preview and live cast
 agree. If the game is or will be networked, determinism becomes a correctness requirement
 rather than a polish one — two clients must simulate identically.
@@ -145,6 +153,8 @@ early because it constrains how modifiers and VFX layers are implemented.
 ---
 
 ### Q8 — Which cluster recipe is canonical in the prompt grammar?
+
+**Closed 2026-09-22.** See the decision log. `ON_AIR_APEX` + `SPAWN_PROJECTILE` is the canonical cluster recipe.
 
 [`prompts.ts`](../../src/ai/synthesizer/prompts.ts) L203–204 offer two patterns for the same
 player intent, and the older one's reference implementation is entirely `LINEAR`
@@ -183,6 +193,8 @@ directly with no restore mechanism, so phases need something the morph system al
 
 ### Q10 — What are the semantics of the contact trigger?
 
+**Closed 2026-09-22.** See the decision log. Rammer-owned, unarmed, node-level `minRamSpeed`. Summons included.
+
 [`04`](04-upgrade-design.md) §8 Part A proposes `ON_RAM`. Undecided:
 
 - **Who owns the trigger?** The rammer's spell, the target's spell, or both? The collision site
@@ -218,6 +230,8 @@ already takes a `radius`.
 
 ### Q12 — What curve maps spell power to visual intensity?
 
+**Closed 2026-09-22.** See the decision log. Asymptotic `x / (x + k)`, per-channel curves. Shake stays below blur and glitch.
+
 [`04-upgrade-design.md`](04-upgrade-design.md) §9 Part C derives impact intensity from
 `scoreAbilitySchema` normalized against `CATEGORY_BUDGETS[category].targetPower`. The mapping
 curve is undecided and it matters more than the inputs do.
@@ -243,6 +257,8 @@ reactive tuning).
 ---
 
 ### Q13 — Is `PLAY_VFX` an action, or a field on `TriggerNode`?
+
+**Closed 2026-09-22.** See the decision log. `PLAY_VFX` is an action with zero budget cost.
 
 [`04`](04-upgrade-design.md) §9 Part B proposes an action. The alternative is a `vfx` property on
 `TriggerNode` itself, so every node can carry a visual without occupying an action slot.
@@ -366,3 +382,11 @@ this file stays self-contained.
 | 2026-09-21 | `ON_SLAM` catch-all surface trigger (backlog #10) | Add `ON_SLAM` for high-speed hex wall, obstacle, and ground hits without arming; keep `ON_HIT_WALL` for projectile wall death and `ON_GROUND_SLAM` for armed dive/meteor recipes. | Completes the missing obstacle-slam dispatch from 04 §8; catch-all composability without replacing specialized triggers. |
 | 2026-09-21 | Q5 — How much balance are we willing to trade for fun? Does the tree reset per match? | Keep tier-aware budget: an evolved spell stays stronger than its base at a similar cooldown. Trees persist in `localStorage` across rounds and matches. `MatchManager.startMatch` does not reset them. The player clears a tree with the evolution panel **RESET TREE** button. | The prototype is a workshop. Wiping progression at match start fights the vault. A later ranked mode can add a match-scoped tree without changing the store. |
 | 2026-09-21 | Q6 — Does the tree store deltas or resolved schemas? Are mechanic branches fully reversible? | Keep the hybrid from `06`: stat nodes are modifiers, mechanic nodes store `resolvedSchema`. A branch is reversible by `setActivePath` or **RESET TREE**, which re-resolves from `baseSchema` plus the mechanic nodes still on the path, then reapplies stat modifiers. Do not store mechanic nodes as JSON patches. | Path switching already restores the prior resolved schema. Patches against a schema that itself changed were the fragile option. |
+| 2026-09-22 | Q1 — Which entry points default to `EVOLUTION` mode? | `FIRST_GENERATION` only for the initial LLM forge or compile from a raw player prompt. `EVOLUTION` everywhere else: evolution tiers, modifier application, preset load, inspector JSON paste, and offline fallbacks. | Settled in `06` so the runbook would not block. Presets and pasted JSON must not be rewritten by first-generation repair. |
+| 2026-09-22 | Q2 — How do we detect semantic drift in `EVOLUTION` mode? | Accept drift. Do not build provenance tracking. Option 3 (repair only the new subtree) is closed by Q6. | Unpredictability is on-brand, and provenance would fight the hybrid store. An inspector warning that takes no repair action stays an open product call. |
+| 2026-09-22 | Q3 — How granular should `placementKey` become? | `SPAWN_PROJECTILE` keys as `SPAWN_PROJECTILE:${trajectory.type}:${emitter?.count ?? 1}`. `CAST_CHILD_PAYLOAD` keys as `CAST_CHILD_PAYLOAD:${payload.id}`. | Settled in `06`. Stops identical detonations collapsing onto two triggers without hashing the whole action. |
+| 2026-09-22 | Q7 — Is the game networked, and does that harden the determinism requirement? | Local-only. Seeded per-projectile noise stays. No global `Math.random` patching outside the existing preview sandbox. | Settled in `06`. Determinism is polish until a network exists. |
+| 2026-09-22 | Q8 — Which cluster recipe is canonical in the prompt grammar? | `ON_AIR_APEX` + `SPAWN_PROJECTILE` is the canonical cluster pattern. | Settled in `06` and confirmed by the forge prompt. `ON_EXPIRY` + `CAST_CHILD_PAYLOAD` is not the cluster recipe. |
+| 2026-09-22 | Q10 — What are the semantics of the contact trigger? | `ON_RAM` is rammer-owned, fires without arming, supports node-level `minRamSpeed`, and includes summons. | Settled in `06`. The collision site already names the rammer, so the spell that is moving owns the trigger. |
+| 2026-09-22 | Q12 — What curve maps spell power to visual intensity? | Asymptotic `x / (x + k)`, with per-channel response curves exposed as devtools sliders. Shake has a lower ceiling than blur or glitch. | Settled in `06`. A linear map saturates late-tree spells. |
+| 2026-09-22 | Q13 — Is `PLAY_VFX` an action, or a field on `TriggerNode`? | `PLAY_VFX` is an action with zero budget cost (`case 'PLAY_VFX': return 0` in `score.ts`). | Settled in `06`. Visual upgrades stay in the action pipeline without raising cooldown. |

@@ -76,8 +76,10 @@ Tick these as they land. Suggested order is the numbering.
 
 ### Product / later
 
-- [ ] **12. Finish the decision log in** `05`  
-  Q4, Q5, Q6, and Q9 are recorded. Q1, Q2, Q3, Q7, Q8, Q10, Q12, and Q13 are settled in `06` but not copied into the `05` log. Q2's inspector-warning option stays open as a product call.
+- [x] **12. Finish the decision log in** `05`  
+  Q1, Q2, Q3, Q7, Q8, Q10, Q12, and Q13 were copied from `06` on 2026-09-22. Q4, Q5, Q6, and Q9 were already logged. The older Q4 line in `06` ("do not raise caps") stays superseded by the 2026-09-16 raise.
+
+- [ ] **Q2 inspector warning** — semantic drift is accepted and provenance is not tracked. Whether the inspector should warn on a mismatch, without repairing it, is still open.
 
 - [ ] **13. Refresh docs 01–03 line numbers**  
   Those files are snapshots from commit `53e3893`. `[08-capability-audit.md](08-capability-audit.md)` is the current capability set. Rewrite 01–03 only if a claim in them is still used as fact.
@@ -115,11 +117,11 @@ Tick these as they land. Suggested order is the numbering.
 
 | Question                           | What we did for the runbook                                                     | What is still a product call                                        |
 | ---------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **Q2** Semantic drift in evolution | Accept it. No provenance tracking.                                              | Warn in the inspector? Repair only the new subtree?                 |
+| **Q2** Semantic drift in evolution | Closed 2026-09-22 in `05`. Accept drift. No provenance. Option 3 closed by Q6. | Warn in the inspector, with no repair? |
 | **Q5** Fun vs balance              | Closed 2026-09-21 in `05`. Tier-aware budget stays. Trees persist across matches. | None. Match-scoped reset only if a ranked mode is added.            |
 | **Q6** Deltas vs resolved schemas  | Closed 2026-09-21 in `05`. Hybrid stays. Path switch reverses a mechanic branch. | None. JSON-patch mechanic nodes are rejected.                       |
-| **Q7** Networked game?             | Assume **local-only**. Seeded noise is still required for motion modifiers.     | If you ever network, determinism becomes a correctness requirement. |
-| **Q1 / Q3 / Q10 / Q12 / Q13**      | Implemented as decided in `06`.                                                 | Closed for execution. Revisit only with a new argument.             |
+| **Q7** Networked game?             | Closed 2026-09-22 in `05`. Local-only. Seeded noise stays.                     | Reopen only if the game is networked.                               |
+| **Q1 / Q3 / Q8 / Q10 / Q12 / Q13** | Closed 2026-09-22 in `05`, copied from `06`.                                   | None. Revisit only with a new argument.                             |
 
 
 ---
