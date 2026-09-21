@@ -35,6 +35,7 @@ Source docs:
 - [x] **`ON_SLAM` catch-all surface trigger** — hex wall, obstacle, and ground high-speed hits dispatch `ON_SLAM` without arming; `ON_HIT_WALL` and `ON_GROUND_SLAM` unchanged.
 - [x] **Max legal VFX-stack particle invariant** — `test:invariants` asserts a maximal `impactLayers` stack on LOW stays under `particleBudget` via sanitize + `playVfxLayers` spawn caps.
 - [x] **12-point combat playtest** (2026-09-22) — headless confirmation via `test:invariants` (54/54) and `test:fidelity` (32/32); no live exceptions filed.
+- [x] **Loadout kit balance** (2026-09-22) — bottom-dock three-segment meter, contextual warnings, and cross-slot synergy chip from `analyzeLoadoutKit`; display only.
 
 ---
 
@@ -64,7 +65,7 @@ Tick these as they land. Suggested order is the numbering.
 
 #### Product slices
 
-- [ ] **Loadout kit balance** — bottom-dock meter over the five equipped combat profiles: Primers (instability builders), Finishers (`maxTravelPx >= 400`), Utility/Defense (parry, mobility, stasis, walls). Contextual warnings (no ring-out finisher, no mobility, redundant primary role). Cross-slot synergy tags from a small rule table (primer archetype to detonation action). Display only; no physics changes.
+- [x] **Loadout kit balance** — bottom-dock meter over the five equipped combat profiles: Primers (instability builders), Finishers (`maxTravelPx >= 400`), Utility/Defense (parry, mobility, stasis, walls). Contextual warnings (no ring-out finisher, no mobility, redundant primary role). Cross-slot synergy tags from a small rule table (primer archetype to detonation action). Display only; no physics changes.
 - [ ] **Vault tile scan layer** — corner micro-verb icons (push, vortex, shield, blink), a compact name and dominant-stat strip, and a clearer equipped-slot badge. Independent of the dock meter. Tiles already show a slot-key badge.
 
 #### Docs

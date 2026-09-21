@@ -76,6 +76,7 @@ import {
 } from './workshopStyles';
 
 export { normalizeForgeTierRarity, resolveSpellRarity } from './workshopStyles';
+import { analyzeLoadoutKit } from '../game/kitBalance';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   getSpellRoleLabel,
@@ -1804,6 +1805,58 @@ export class DraftModal {
     this.bottomLoadoutBay.innerHTML = '';
     const equipped = SpellInventoryManager.getEquippedAbilities();
     const loadout = SpellInventoryManager.getLoadout();
+    const kit = analyzeLoadoutKit(equipped);
+
+    if (kit.filledCount > 0) {
+      const kitBlock = document.createElement('div');
+      kitBlock.className = 'loadout-kit-block';
+
+      const meter = document.createElement('div');
+      meter.className = 'loadout-kit-meter';
+      meter.setAttribute('aria-hidden', 'true');
+
+      const segments: { tag: 'primer' | 'finisher' | 'utility'; count: number }[] = [
+        { tag: 'primer', count: kit.meter.primer },
+        { tag: 'finisher', count: kit.meter.finisher },
+        { tag: 'utility', count: kit.meter.utility },
+      ];
+
+      for (const segment of segments) {
+        if (segment.count <= 0) continue;
+        const bar = document.createElement('div');
+        bar.className = `loadout-kit-meter-segment is-${segment.tag}`;
+        bar.style.flexGrow = String(segment.count);
+        bar.style.flexBasis = '0';
+        meter.appendChild(bar);
+      }
+      kitBlock.appendChild(meter);
+
+      if (kit.warnings.length > 0 || kit.synergy) {
+        const meta = document.createElement('div');
+        meta.className = 'loadout-kit-meta';
+
+        if (kit.warnings.length > 0) {
+          const warnings = document.createElement('div');
+          warnings.className = 'loadout-kit-warnings';
+          warnings.textContent = kit.warnings.join(' · ');
+          meta.appendChild(warnings);
+        }
+
+        if (kit.synergy) {
+          const synergy = document.createElement('div');
+          synergy.className = 'loadout-kit-synergy';
+          synergy.textContent = kit.synergy;
+          meta.appendChild(synergy);
+        }
+
+        kitBlock.appendChild(meta);
+      }
+
+      this.bottomLoadoutBay.appendChild(kitBlock);
+    }
+
+    const slotRow = document.createElement('div');
+    slotRow.className = 'bottom-loadout-slots';
 
     for (const key of ACTION_SLOT_KEYS) {
       const spell = equipped[key];
@@ -1843,8 +1896,10 @@ export class DraftModal {
       }
 
       attachInventoryDropZone(slot, key, (e) => this.handleForgeCardDrop(key, e));
-      this.bottomLoadoutBay.appendChild(slot);
+      slotRow.appendChild(slot);
     }
+
+    this.bottomLoadoutBay.appendChild(slotRow);
   }
 
   private renderSynthesisControls(): void {

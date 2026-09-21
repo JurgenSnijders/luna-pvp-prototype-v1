@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v29';
+export const STYLE_ID = 'luna-workshop-styles-v30';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -786,14 +786,85 @@ export function injectStyles(): void {
     .bottom-loadout-bay {
       flex: 0 0 auto;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
       padding: 10px 16px;
       background: rgba(6, 9, 18, 0.85);
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       border-radius: 6px;
       box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+    }
+
+    .bottom-loadout-slots {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .loadout-kit-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .loadout-kit-meter {
+      display: flex;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .loadout-kit-meter-segment {
+      height: 100%;
+      min-width: 0;
+      transition: flex-grow 0.2s ease;
+    }
+
+    .loadout-kit-meter-segment.is-primer {
+      background: #ffb020;
+    }
+
+    .loadout-kit-meter-segment.is-finisher {
+      background: #ff0055;
+    }
+
+    .loadout-kit-meter-segment.is-utility {
+      background: #00e5ff;
+    }
+
+    .loadout-kit-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 18px;
+    }
+
+    .loadout-kit-warnings {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-family: ${FONTS.mono};
+      font-size: 10px;
+      color: rgba(255, 176, 32, 0.75);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .loadout-kit-synergy {
+      flex: 0 0 auto;
+      font-family: ${FONTS.mono};
+      font-size: 10px;
+      color: #00e5ff;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-radius: 3px;
+      padding: 1px 6px;
+      white-space: nowrap;
     }
 
     .bottom-slot {
