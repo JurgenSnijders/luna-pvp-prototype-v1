@@ -283,6 +283,71 @@ function testPlacedTurretAim(): string | null {
   return null;
 }
 
+function testPlacedTurretRotationParity(): string | null {
+  const schema: AbilitySchema = {
+    id: 'test_turret_rotation_parity',
+    name: 'Rotation Parity Turret',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: { actorArchetype: 'TURRET', health: 80, durationMs: 8000 },
+          },
+        ],
+      },
+    ],
+  };
+
+  const world = new PhysicsWorld(Vector2D.zero(), 400);
+  const caster = new Player(new Vector2D(0, 0));
+  world.addPlayer(caster);
+  const aimPoint = new Vector2D(150, 75);
+  const expectedAngle = Math.atan2(75, 150);
+
+  const interpreter = new Interpreter();
+  interpreter.executeAbility(
+    schema,
+    {
+      origin: caster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster,
+      depth: 0,
+      ability: schema,
+      aimPoint,
+    },
+    world,
+  );
+
+  const summon = world.summons[0];
+  if (!summon) return 'turret rotation parity: summon not spawned';
+
+  const posDelta = summon.pos.sub(aimPoint).mag();
+  if (posDelta > 0.01) {
+    return `turret rotation parity: expected pos (150, 75), got (${summon.pos.x}, ${summon.pos.y})`;
+  }
+
+  const angleDelta = Math.abs(summon.facingAngle - expectedAngle);
+  const wrappedAngle = Math.min(angleDelta, Math.abs(angleDelta - Math.PI * 2));
+  if (wrappedAngle > 0.02) {
+    return `turret rotation parity: expected facingAngle ${expectedAngle}, got ${summon.facingAngle}`;
+  }
+
+  const disp = summon.pos.sub(caster.pos);
+  const aimDir = aimPoint.normalize();
+  const dispDir = disp.normalize();
+  const dot = aimDir.x * dispDir.x + aimDir.y * dispDir.y;
+  if (dot < 0.99) {
+    return `turret rotation parity: displacement not parallel to aim vector (dot=${dot})`;
+  }
+
+  return null;
+}
+
 function testTurretSpawnFacing(): string | null {
   const schema: AbilitySchema = {
     id: 'test_turret_facing',
@@ -440,6 +505,9 @@ function run(): void {
 
   const placedTurretAimFailure = testPlacedTurretAim();
   if (placedTurretAimFailure) failures.push(placedTurretAimFailure);
+
+  const turretRotationParityFailure = testPlacedTurretRotationParity();
+  if (turretRotationParityFailure) failures.push(turretRotationParityFailure);
 
   const turretFacingFailure = testTurretSpawnFacing();
   if (turretFacingFailure) failures.push(turretFacingFailure);

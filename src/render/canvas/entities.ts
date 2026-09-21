@@ -283,17 +283,23 @@ export function drawSummons(
     drawEntityContactShadow(ctx, pos.x, pos.y, half);
 
     if (summon.config.actorArchetype === 'TURRET') {
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(summon.facingAngle);
+
       ctx.fillStyle = turretColor;
-      ctx.fillRect(pos.x - half, pos.y - half, half * 2, half * 2);
+      ctx.fillRect(-half, -half, half * 2, half * 2);
       ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
-      ctx.strokeRect(pos.x - half - 2, pos.y - half - 2, half * 2 + 4, half * 2 + 4);
-      const barrelEnd = pos.add(Vector2D.fromAngle(summon.facingAngle, half + 12));
+      ctx.strokeRect(-half - 2, -half - 2, half * 2 + 4, half * 2 + 4);
+
       ctx.strokeStyle = turretColor;
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-      ctx.lineTo(barrelEnd.x, barrelEnd.y);
+      ctx.moveTo(half, 0);
+      ctx.lineTo(half + 12, 0);
       ctx.stroke();
+
+      ctx.restore();
     } else {
       ctx.fillStyle = decoyColor;
       ctx.beginPath();

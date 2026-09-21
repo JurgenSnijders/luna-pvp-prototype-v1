@@ -655,19 +655,19 @@ function drawDeployableGhost(
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(-half, -half, half * 2, half * 2);
     ctx.setLineDash([]);
-    const barrelLen = info.radius + 12;
+    const barrelTip = half + 12;
     ctx.strokeStyle = color;
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(barrelLen, 0);
+    ctx.moveTo(half, 0);
+    ctx.lineTo(barrelTip, 0);
     ctx.stroke();
     ctx.strokeStyle = hexToRgba(color, 0.45);
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
-    ctx.moveTo(barrelLen, 0);
-    ctx.lineTo(barrelLen + half * 1.4, 0);
+    ctx.moveTo(barrelTip, 0);
+    ctx.lineTo(barrelTip + half * 1.4, 0);
     ctx.stroke();
     ctx.setLineDash([]);
   } else if (info.shape === 'WEDGE_FIELD') {
