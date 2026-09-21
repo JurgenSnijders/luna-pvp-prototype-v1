@@ -1,4 +1,8 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import {
+  parryShieldShowsStamina,
+  parryShieldStaminaRatio,
+} from '../../engine/PhysicsWorld';
 import type { Obstacle } from '../../entities/Obstacle';
 import type { SpatialZone } from '../../entities/SpatialZone';
 import type { FieldType } from '../../types/schema';
@@ -39,10 +43,11 @@ function drawHologramFill(
   startAngle = 0,
   endAngle = Math.PI * 2,
   wedge = false,
+  alphaBoost = 0,
 ): void {
   const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
-  grad.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
-  grad.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.03)`);
+  grad.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${0.15 + alphaBoost})`);
+  grad.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${0.03 + alphaBoost * 0.5})`);
   ctx.fillStyle = grad;
   ctx.beginPath();
   if (wedge) {
@@ -225,16 +230,37 @@ function drawParryShieldHologram(
   facingRad: number,
   arcDeg: number | undefined,
   now: number,
+  staminaRatio = 1,
+  remainingMs = 0,
+  showStamina = false,
 ): void {
   const rgb = parseRgbaColor(color);
   const wedge = arcDeg !== undefined && arcDeg < 360;
   const half = (((arcDeg ?? 360) * Math.PI) / 180) / 2;
   const startAngle = wedge ? facingRad - half : 0;
   const endAngle = wedge ? facingRad + half : Math.PI * 2;
+  const span = endAngle - startAngle;
+  const staminaEndAngle = showStamina
+    ? startAngle + span * Math.max(0, Math.min(1, staminaRatio))
+    : endAngle;
   const rot = now * 0.5;
+  const lowStaminaPulse =
+    showStamina && remainingMs > 0 && remainingMs < 400
+      ? 0.12 + 0.08 * Math.sin(now * 12)
+      : 0;
 
-  drawHologramFill(ctx, x, y, radius, rgb, startAngle, endAngle, wedge);
-  drawInnerReticle(ctx, x, y, radius, rot, rgb, startAngle, endAngle, wedge);
+  drawHologramFill(
+    ctx,
+    x,
+    y,
+    radius,
+    rgb,
+    startAngle,
+    staminaEndAngle,
+    wedge,
+    lowStaminaPulse,
+  );
+  drawInnerReticle(ctx, x, y, radius, rot, rgb, startAngle, staminaEndAngle, wedge);
   drawOuterPerimeter(
     ctx,
     x,
@@ -244,9 +270,27 @@ function drawParryShieldHologram(
     rgb,
     'FRICTION_OVERRIDE',
     startAngle,
-    endAngle,
+    staminaEndAngle,
     wedge,
   );
+
+  if (showStamina && remainingMs > 0) {
+    const labelAngle = (startAngle + staminaEndAngle) / 2;
+    const labelR = radius * 0.72;
+    const lx = x + Math.cos(labelAngle) * labelR;
+    const ly = y + Math.sin(labelAngle) * labelR;
+    const secs = (remainingMs / 1000).toFixed(1);
+    ctx.save();
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95)`;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(secs, lx, ly);
+    ctx.fillText(secs, lx, ly);
+    ctx.restore();
+  }
 }
 
 export function drawParryShieldOverlays(
@@ -257,6 +301,7 @@ export function drawParryShieldOverlays(
   for (const overlay of world.parryShieldOverlays) {
     if (overlay.remainingMs <= 0) continue;
     const facing = world.getParryShieldFacingRad(overlay);
+    const showStamina = parryShieldShowsStamina(overlay);
     drawParryShieldHologram(
       ctx,
       overlay.pos.x,
@@ -266,6 +311,9 @@ export function drawParryShieldOverlays(
       facing,
       overlay.arcDeg,
       now,
+      parryShieldStaminaRatio(overlay),
+      overlay.remainingMs,
+      showStamina,
     );
   }
 }

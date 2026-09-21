@@ -560,7 +560,7 @@ function init(app: GameApp): void {
       app.physicsDebugLayer.render(app.world, app.camera, alpha, shake.x, shake.y);
 
       app.inspector.updateTelemetry();
-      app.actionBarHUD.update(app.player);
+      app.actionBarHUD.update(app.player, app.world);
     },
   });
 

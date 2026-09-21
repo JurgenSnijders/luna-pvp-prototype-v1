@@ -126,6 +126,8 @@ export interface ParryShieldOverlay {
   castHeadingRad: number;
   color: string;
   remainingMs: number;
+  /** Initial duration at spawn; used for stamina ratio UI. */
+  totalMs: number;
   /** When true, re-scans for projectiles each tick until expiry. */
   live: boolean;
   casterId: string;
@@ -136,6 +138,18 @@ export interface ParryShieldOverlay {
   slotIndex?: number;
   /** Max hold ms when whileHeld; omitted = no cap (release-only). */
   holdCapMs?: number;
+}
+
+/** True when the overlay should show a hold-stamina timer (not tap parry). */
+export function parryShieldShowsStamina(overlay: ParryShieldOverlay): boolean {
+  if (overlay.holdCapMs !== undefined) return true;
+  if (!overlay.whileHeld && overlay.live && overlay.totalMs >= 1000) return true;
+  return false;
+}
+
+export function parryShieldStaminaRatio(overlay: ParryShieldOverlay): number {
+  if (!parryShieldShowsStamina(overlay) || overlay.totalMs <= 0) return 1;
+  return Math.max(0, Math.min(1, overlay.remainingMs / overlay.totalMs));
 }
 
 export class PhysicsWorld {
@@ -611,6 +625,7 @@ export class PhysicsWorld {
     const follow = this.getEntityById(config.followEntityId);
     const live = config.live ?? false;
     const holdCapMs = config.holdCapMs;
+    const initialMs = holdCapMs ?? config.durationMs ?? 250;
     this.parryShieldOverlays.push({
       followEntityId: config.followEntityId,
       pos: follow?.pos.clone() ?? Vector2D.zero(),
@@ -620,7 +635,8 @@ export class PhysicsWorld {
       arcOffsetDeg: config.arcOffsetDeg ?? 0,
       castHeadingRad: config.castHeadingRad,
       color: config.color,
-      remainingMs: holdCapMs ?? config.durationMs ?? 250,
+      remainingMs: initialMs,
+      totalMs: initialMs,
       live,
       casterId: config.casterId ?? config.followEntityId,
       spellArchetype: config.spellArchetype,
@@ -661,6 +677,18 @@ export class PhysicsWorld {
     return arc !== undefined && arc < 360;
   }
 
+  private emitParryShieldCapExpired(overlay: ParryShieldOverlay): void {
+    const follow = this.getEntityById(overlay.followEntityId);
+    if (!follow) return;
+    this.emitCombatVisualEvent({
+      type: 'STATUS_APPLIED',
+      pos: { x: follow.pos.x, y: follow.pos.y },
+      label: 'GUARD DOWN',
+      archetype: overlay.spellArchetype,
+      targetId: overlay.followEntityId,
+    });
+  }
+
   private updateParryShieldOverlays(dt: number): void {
     const dtMs = dt * 1000;
     let write = 0;
@@ -677,11 +705,19 @@ export class PhysicsWorld {
 
         if (overlay.holdCapMs !== undefined) {
           overlay.remainingMs -= dtMs;
-          if (overlay.remainingMs <= 0) continue;
+          if (overlay.remainingMs <= 0) {
+            this.emitParryShieldCapExpired(overlay);
+            continue;
+          }
         }
       } else {
         overlay.remainingMs -= dtMs;
-        if (overlay.remainingMs <= 0) continue;
+        if (overlay.remainingMs <= 0) {
+          if (parryShieldShowsStamina(overlay)) {
+            this.emitParryShieldCapExpired(overlay);
+          }
+          continue;
+        }
       }
 
       const follow = this.getEntityById(overlay.followEntityId);

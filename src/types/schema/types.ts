@@ -407,7 +407,10 @@ export interface ReflectProjectilesAction {
   arcDeg?: number;
   arcFacing?: FieldArcFacing;
   arcOffsetDeg?: number;
-  /** Catch window in ms. Omitted or 0 = one-shot snapshot on ON_CAST only. */
+  /**
+   * When whileHeld is false: tap-parry catch window in ms (omitted or 0 = one-shot on ON_CAST).
+   * When whileHeld is true: optional max-hold cap in ms (omitted = hold until release only).
+   */
   durationMs?: number;
   /** When true, wedge stays live while the casting slot button is held (drops on release). */
   whileHeld?: boolean;

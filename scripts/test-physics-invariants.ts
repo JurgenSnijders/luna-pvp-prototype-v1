@@ -1517,6 +1517,127 @@ function assertHoldToGuardShield(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'while-held wedge reflects on hold and drops on release' };
 }
 
+/** Hold-guard stamina cap — expires on timer while held; GUARD DOWN FCT; release is silent. */
+function assertHoldGuardStaminaCap(): { pass: boolean; reason: string } {
+  const DT = 1 / 60;
+  const CAP_MS = 400;
+  const radius = 180;
+
+  const holdGuardAbility: AbilitySchema = {
+    id: 'test_hold_guard_cap',
+    name: 'Hold Guard Cap',
+    archetype: 'KINETIC',
+    cooldownMs: 0,
+    recoilKick: 0,
+    inputProfile: { mode: 'INSTANT' },
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'REFLECT_PROJECTILES',
+            target: 'CASTER',
+            radius,
+            arcDeg: 120,
+            arcFacing: 'CASTER_FACING',
+            whileHeld: true,
+            durationMs: CAP_MS,
+          },
+        ],
+      },
+    ],
+  };
+
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const player = new Player(new Vector2D(0, 0));
+  player.facingAngle = 0;
+  player.aimTarget = new Vector2D(500, 0);
+  player.id = 'hold_guard_cap_caster';
+  player.globalCooldownTimerMs = 0;
+  player.setAbility(0, holdGuardAbility);
+  player.cooldownTimersMs[0] = 0;
+  world.addPlayer(player);
+  const interp = new Interpreter();
+
+  const onCast = (slotIndex: number) => {
+    const ability = player.getAbility(slotIndex);
+    if (!ability) return;
+    const aimDir = player.aimTarget.sub(player.pos);
+    if (aimDir.magSq() < 0.01) return;
+    interp.executeAbility(
+      ability,
+      {
+        origin: player.pos.clone(),
+        heading: aimDir.normalize(),
+        aimPoint: player.aimTarget.clone(),
+        caster: player,
+        depth: 0,
+        slotIndex,
+      },
+      world,
+    );
+    player.triggerSlotCooldown(slotIndex, false);
+  };
+
+  const advance = (frames: number): void => {
+    for (let i = 0; i < frames; i++) {
+      interp.updateTrajectories(world, DT);
+      world.updateSpatialZones(DT);
+      interp.tickLiveParryShields(world);
+      world.step(DT);
+    }
+  };
+
+  player.setSlotInput(0, true, onCast);
+  if (world.parryShieldOverlays.length === 0) {
+    return { pass: false, reason: 'stamina hold guard did not spawn overlay' };
+  }
+  if (world.parryShieldOverlays[0].totalMs !== CAP_MS) {
+    return {
+      pass: false,
+      reason: `expected totalMs ${CAP_MS}, got ${world.parryShieldOverlays[0].totalMs}`,
+    };
+  }
+
+  advance(Math.ceil((CAP_MS / 1000) / DT) + 2);
+
+  if (world.parryShieldOverlays.some((o) => o.whileHeld)) {
+    return { pass: false, reason: 'overlay still active after stamina cap while button held' };
+  }
+  if (!player.isSlotInputHeld(0)) {
+    return { pass: false, reason: 'slot input should still be held after cap expiry' };
+  }
+
+  const capEvents = world.drainCombatVisualEvents();
+  if (!capEvents.some((e) => e.label === 'GUARD DOWN')) {
+    return { pass: false, reason: 'cap expiry did not emit GUARD DOWN combat text' };
+  }
+
+  player.setSlotInput(0, false, onCast);
+  player.setSlotInput(0, true, onCast);
+  if (world.parryShieldOverlays.length === 0) {
+    return { pass: false, reason: 'fresh hold guard did not spawn after release and re-press' };
+  }
+
+  advance(5);
+  player.setSlotInput(0, false, onCast);
+  advance(1);
+  if (world.parryShieldOverlays.some((o) => o.whileHeld)) {
+    return { pass: false, reason: 'overlay still active after release before cap' };
+  }
+
+  const releaseEvents = world.drainCombatVisualEvents();
+  if (releaseEvents.some((e) => e.label === 'GUARD DOWN')) {
+    return { pass: false, reason: 'release before cap should not emit GUARD DOWN' };
+  }
+
+  return {
+    pass: true,
+    reason: 'stamina cap expires while held with GUARD DOWN; release is silent',
+  };
+}
+
 function assertDerivedImpactIntensity(): { pass: boolean; reason: string } {
   seedEffectiveTierForTests('LOW');
   const runtime = {
@@ -3650,6 +3771,12 @@ function run(): void {
   console.log(`${holdGuardTag} Hold-to-guard shield`);
   console.log(`  ${DIM}${holdGuard.reason}${RESET}`);
   if (holdGuard.pass) passed++;
+
+  const holdGuardCap = assertHoldGuardStaminaCap();
+  const holdGuardCapTag = holdGuardCap.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${holdGuardCapTag} Hold-guard stamina cap`);
+  console.log(`  ${DIM}${holdGuardCap.reason}${RESET}`);
+  if (holdGuardCap.pass) passed++;
 
   const sixTierEvolution = assertSixTierEvolution();
   const sixTierEvolutionTag = sixTierEvolution.pass

@@ -1,4 +1,9 @@
 import type { Player } from '../entities/Player';
+import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import {
+  parryShieldShowsStamina,
+  parryShieldStaminaRatio,
+} from '../engine/PhysicsWorld';
 import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey, type CardRarity } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema, ActionPayload, EmitterConfig, TrajectoryConfig, TriggerNode } from '../types/schema';
@@ -63,6 +68,22 @@ const RARITY_GLYPHS: Record<CardRarity, string> = {
   EPIC: '✦',
   CHAOTIC: '★',
 };
+
+function abilityHasWhileHeldReflectWithCap(ability: AbilitySchema): boolean {
+  for (const node of ability.triggers ?? []) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions ?? []) {
+      if (
+        action.type === 'REFLECT_PROJECTILES' &&
+        action.whileHeld &&
+        (action.durationMs ?? 0) > 0
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -665,7 +686,7 @@ export class ActionBarHUD {
     this.tooltipEl.style.opacity = '1';
   }
 
-  update(player: Player): void {
+  update(player: Player, world?: PhysicsWorld): void {
     this.cachedPlayerRef = player;
     this.setSlotAimingState(
       player.activeAimingState ? player.activeAimingState.slotIndex : null,
@@ -764,6 +785,19 @@ export class ActionBarHUD {
         castPhase?.phase === 'RECOVERY' && castPhase.slotIndex === i;
       const isCharging =
         ability?.inputProfile?.mode === 'CHARGE_AND_RELEASE' && slotInput.charging;
+      const holdGuardOverlay = world?.parryShieldOverlays.find(
+        (overlay) =>
+          overlay.whileHeld &&
+          overlay.casterId === player.id &&
+          overlay.slotIndex === i,
+      );
+      const holdGuardStamina =
+        holdGuardOverlay !== undefined && parryShieldShowsStamina(holdGuardOverlay);
+      const deadHoldGuard =
+        !holdGuardOverlay &&
+        player.isSlotInputHeld(i) &&
+        ability !== null &&
+        abilityHasWhileHeldReflectWithCap(ability);
       if (isWindupPhase) {
         const windupRatio =
           castPhase.totalMs > 0 ? castPhase.remainingMs / castPhase.totalMs : 0;
@@ -774,6 +808,13 @@ export class ActionBarHUD {
         const chargeRatio = maxCharge > 0 ? slotInput.chargeMs / maxCharge : 0;
         slot.chargeOverlay.style.display = 'block';
         slot.chargeOverlay.style.height = `${Math.min(1, chargeRatio) * 100}%`;
+      } else if (holdGuardStamina && holdGuardOverlay) {
+        const shieldRatio = parryShieldStaminaRatio(holdGuardOverlay);
+        slot.chargeOverlay.style.display = 'block';
+        slot.chargeOverlay.style.height = `${shieldRatio * 100}%`;
+      } else if (deadHoldGuard) {
+        slot.chargeOverlay.style.display = 'block';
+        slot.chargeOverlay.style.height = '0%';
       } else {
         slot.chargeOverlay.style.display = 'none';
         slot.chargeOverlay.style.height = '0%';
@@ -795,7 +836,18 @@ export class ActionBarHUD {
         }
       }
 
-      if (player.isSlotOverheated(i) || player.isSlotReloading(i)) {
+      if (holdGuardStamina && holdGuardOverlay) {
+        slot.countdown.style.display = 'flex';
+        slot.countdown.style.fontSize = FONTS.size.lg;
+        const shieldRemaining = holdGuardOverlay.remainingMs;
+        slot.countdown.textContent = shieldRemaining >= 1000
+          ? `${(shieldRemaining / 1000).toFixed(1)}s`
+          : `${Math.ceil(shieldRemaining)}ms`;
+      } else if (deadHoldGuard) {
+        slot.countdown.style.display = 'flex';
+        slot.countdown.style.fontSize = FONTS.size.badge;
+        slot.countdown.textContent = 'RELEASE';
+      } else if (player.isSlotOverheated(i) || player.isSlotReloading(i)) {
         slot.countdown.style.display = 'flex';
         slot.countdown.style.fontSize = FONTS.size.badge;
         const lockoutRemaining = player.getSlotLockoutRemainingMs(i);
