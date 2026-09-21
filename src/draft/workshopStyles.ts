@@ -1613,11 +1613,9 @@ export function injectStyles(): void {
     .spell-tile.tile-new {
       border-color: var(--retro-neon-cyan, #00e5ff) !important;
       box-shadow: 0 0 8px rgba(0, 229, 255, 0.55), 0 0 18px rgba(0, 229, 255, 0.28);
-      animation: newTilePulse 1.8s ease-in-out infinite;
     }
 
     .spell-tile.tile-new.tile-selected {
-      animation: none;
       border-color: #ffffff !important;
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
     }
@@ -1703,8 +1701,8 @@ export function injectStyles(): void {
       line-height: 1;
       letter-spacing: 0.04em;
       background: rgba(0, 0, 0, 0.85);
-      border: 1px solid var(--retro-neon-cyan, #00e5ff);
-      color: var(--retro-neon-cyan, #00e5ff);
+      border: 1px solid var(--retro-neon-green, #39ff14);
+      color: var(--retro-neon-green, #39ff14);
       border-radius: 2px;
       z-index: 3;
       pointer-events: none;
@@ -1746,15 +1744,6 @@ export function injectStyles(): void {
 
     .action-slot.is-dragging {
       cursor: grabbing;
-    }
-
-    @keyframes newTilePulse {
-      0%, 100% {
-        box-shadow: 0 0 6px rgba(0, 229, 255, 0.4), 0 0 12px rgba(0, 229, 255, 0.18);
-      }
-      50% {
-        box-shadow: 0 0 12px rgba(0, 229, 255, 0.85), 0 0 22px rgba(0, 229, 255, 0.4);
-      }
     }
 
     .quick-equip-menu {
