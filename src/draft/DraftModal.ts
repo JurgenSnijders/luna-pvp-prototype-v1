@@ -1966,13 +1966,13 @@ export class DraftModal {
     this.forgeVaultPickerActive = true;
 
     const pickerCards = this.getForgePickerCards();
-    this.selectedForgeIndex = pickerCards.length > 0 ? 0 : null;
-    this.activeTransientSpell = pickerCards[0]?.abilityPayload ?? null;
+    this.selectedForgeIndex = null;
+    this.activeTransientSpell = null;
 
     this.renderForgeVaultPickerCards();
 
-    if (this.activeTransientSpell) {
-      this.renderTacticalInspector(this.activeTransientSpell);
+    if (pickerCards.length > 0) {
+      this.previewForgeCard(0);
     }
   }
 
@@ -1982,6 +1982,24 @@ export class DraftModal {
 
   private getForgePickerCard(cardIndex: number): DraftCard | null {
     return this.getForgePickerCards()[cardIndex] ?? null;
+  }
+
+  private previewForgeCard(cardIndex: number): void {
+    const card = this.getForgePickerCard(cardIndex);
+    const ability = card?.abilityPayload ?? null;
+    if (!ability) return;
+
+    const unchanged = this.selectedForgeIndex === cardIndex;
+    this.selectedForgeIndex = cardIndex;
+    this.activeTransientSpell = ability;
+
+    this.cardsContainer
+      .querySelectorAll('.forge-card-redesign')
+      .forEach((el, i) => el.classList.toggle('is-selected', i === cardIndex));
+
+    if (!unchanged) {
+      this.renderTacticalInspector(ability);
+    }
   }
 
   private handleForgeCardDrop(targetSlot: ActionSlotKey, event: DragEvent): void {
@@ -2649,29 +2667,11 @@ export class DraftModal {
 
     root.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.forge-claim-btn')) return;
-      this.selectedForgeIndex = cardIndex;
-      this.activeTransientSpell = card.abilityPayload ?? null;
-      const container = root.parentElement;
-      if (container) {
-        container.querySelectorAll('.forge-card-redesign').forEach((el, i) => {
-          el.classList.toggle('is-selected', i === cardIndex);
-        });
-      }
-      if (card.abilityPayload) {
-        this.renderTacticalInspector(card.abilityPayload);
-      }
+      this.previewForgeCard(cardIndex);
     });
 
     root.addEventListener('mouseenter', () => {
-      if (this.selectedForgeIndex === null && card.abilityPayload) {
-        this.renderTacticalInspector(card.abilityPayload);
-      }
-    });
-
-    root.addEventListener('mouseleave', () => {
-      if (this.selectedForgeIndex === null) {
-        this.renderTacticalInspector();
-      }
+      this.previewForgeCard(cardIndex);
     });
 
     root.appendChild(header);
@@ -2705,11 +2705,7 @@ export class DraftModal {
     }
 
     if (this.selectedForgeIndex !== null) {
-      const selected = this.getForgePickerCard(this.selectedForgeIndex);
-      this.activeTransientSpell = selected?.abilityPayload ?? null;
-      if (this.activeTransientSpell) {
-        this.renderTacticalInspector(this.activeTransientSpell);
-      }
+      this.previewForgeCard(this.selectedForgeIndex);
     }
   }
 
