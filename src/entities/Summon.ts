@@ -1,8 +1,9 @@
 import { Vector2D } from '../math/Vector2D';
-import type { ActorConfig, SpellArchetype, TriggerNode, VisualDescriptor } from '../types/schema';
+import type { ActorConfig, InputProfile, SpellArchetype, TriggerNode, VisualDescriptor } from '../types/schema';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { isAlliedTo } from '../engine/allegiance';
 import { buildTriggerMap } from '../primitives/interpreter/helpers';
+import { createCastPhaseState, hasTimingPhases } from './castPhases';
 import { Entity, generateEntityId } from './Entity';
 import { Projectile } from './Projectile';
 
@@ -14,6 +15,10 @@ export interface SummonSpawnOptions {
   spellArchetype?: SpellArchetype;
   abilityName?: string;
   visuals?: VisualDescriptor | null;
+}
+
+function getActorInputProfile(config: ActorConfig): InputProfile {
+  return config.inputProfile ?? { mode: 'INSTANT' };
 }
 
 export class Summon extends Entity {
@@ -28,6 +33,7 @@ export class Summon extends Entity {
   spellArchetype?: SpellArchetype;
   abilityName: string;
   facingAngle: number;
+  private pendingPhaseDispatch: (() => void) | null = null;
 
   constructor(
     pos: Vector2D,
@@ -75,7 +81,46 @@ export class Summon extends Entity {
     return this.triggerMap.get(trigger) ?? [];
   }
 
+  hasActorTimingPhases(): boolean {
+    return hasTimingPhases(getActorInputProfile(this.config));
+  }
+
+  requestPhasedAction(dispatch: () => void): void {
+    if (this.activeCastPhase) return;
+
+    const profile = getActorInputProfile(this.config);
+    if (!hasTimingPhases(profile)) {
+      dispatch();
+      return;
+    }
+
+    this.pendingPhaseDispatch = dispatch;
+    const state = createCastPhaseState(
+      0,
+      profile,
+      { overrides: {}, isChannelTick: false },
+      false,
+    );
+    if (state) {
+      this.beginCastPhase(state);
+      return;
+    }
+
+    this.pendingPhaseDispatch = null;
+    dispatch();
+  }
+
+  private tickSummonCastPhases(dt: number): void {
+    this.tickCastPhases(dt, () => {
+      if (this.pendingPhaseDispatch) {
+        this.pendingPhaseDispatch();
+        this.pendingPhaseDispatch = null;
+      }
+    });
+  }
+
   override update(dt: number, world?: PhysicsWorld): void {
+    this.tickSummonCastPhases(dt);
     this.tickStatusTimers(dt, world);
     this.remainingDurationMs = Math.max(0, this.remainingDurationMs - dt * 1000);
     if (this.remainingDurationMs <= 0 || this.health <= 0) {
@@ -88,12 +133,26 @@ export class Summon extends Entity {
       return;
     }
 
+    if (this.activeCastPhase) {
+      this.pinAnchoredVertical();
+      return;
+    }
+
     this.fireCooldownMs = Math.max(0, this.fireCooldownMs - dt * 1000);
     if (this.fireCooldownMs > 0) return;
 
     const target = this.findNearestEnemy(world);
     if (!target) return;
 
+    this.requestPhasedAction(() => {
+      const liveTarget = this.findNearestEnemy(world);
+      if (!liveTarget) return;
+      this.fireTurretProjectile(world, liveTarget);
+    });
+    this.pinAnchoredVertical();
+  }
+
+  private fireTurretProjectile(world: PhysicsWorld, target: Entity): void {
     const dir = target.pos.sub(this.pos);
     if (dir.magSq() < 0.01) return;
 
@@ -115,7 +174,6 @@ export class Summon extends Entity {
     projectile.registerHit(this.id);
     world.addProjectile(projectile);
     this.fireCooldownMs = TURRET_FIRE_INTERVAL_MS;
-    this.pinAnchoredVertical();
   }
 
   private pinAnchoredVertical(): void {

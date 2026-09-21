@@ -3,6 +3,12 @@ import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { AIR_DRAG, HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import type { MorphConfig, SpellArchetype, AbilitySchema } from '../types/schema';
+import {
+  advanceCastPhase,
+  phaseMoveScale,
+  type CastPhaseState,
+  type PendingCast,
+} from './castPhases';
 
 let nextEntityId = 1;
 
@@ -85,6 +91,7 @@ export class Entity {
   groundSlamArmed?: { ability: AbilitySchema; depth: number };
   inLava = false;
   lavaImmersionTimer = 0;
+  activeCastPhase: CastPhaseState | null = null;
 
   constructor(
     id: string,
@@ -213,10 +220,65 @@ export class Entity {
     return friction;
   }
 
+  getCastPhaseMoveScale(): number {
+    if (!this.activeCastPhase) return 1;
+    return phaseMoveScale(this.activeCastPhase);
+  }
+
+  beginCastPhase(state: CastPhaseState): void {
+    this.activeCastPhase = state;
+  }
+
+  clearCastPhase(): void {
+    this.activeCastPhase = null;
+  }
+
+  tickCastPhases(
+    dt: number,
+    onDispatch: (pending: PendingCast, state: CastPhaseState) => void,
+    onChannelArmed?: (slotIndex: number) => void,
+  ): void {
+    if (this.stasisRemainingMs > 0) return;
+    if (!this.activeCastPhase) return;
+
+    let guard = 8;
+    let dtMs = dt * 1000;
+
+    while (this.activeCastPhase && guard-- > 0) {
+      const state = this.activeCastPhase;
+      const result = advanceCastPhase(state, dtMs);
+      dtMs = 0;
+
+      if (result.kind === 'dispatched') {
+        onDispatch(result.pending, state);
+      }
+
+      if (result.kind === 'channel_armed') {
+        onChannelArmed?.(state.slotIndex);
+      }
+
+      if (result.kind === 'completed') {
+        if (result.armChannel) {
+          onChannelArmed?.(state.slotIndex);
+        }
+        this.activeCastPhase = null;
+        return;
+      }
+
+      if (result.kind === 'continuing') {
+        return;
+      }
+
+      if (state.remainingMs > 0) {
+        return;
+      }
+    }
+  }
+
   getEffectiveMoveSpeed(): number {
     let speed = this.moveSpeed;
     if (this.activeStatuses.has('FROST')) speed *= 0.5;
-    return speed;
+    return speed * this.getCastPhaseMoveScale();
   }
 
   getEffectiveMaxSpeed(): number {

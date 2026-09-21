@@ -9,6 +9,7 @@ import type {
   TerrainType,
 } from '../../../types/schema';
 import { clamp, ensureFiniteNumber, isObject } from '../helpers';
+import { sanitizeInputProfile } from './condition';
 import { sanitizeTriggerNode } from './trigger';
 import { sanitizeVisuals } from './visuals';
 
@@ -106,6 +107,9 @@ export function sanitizeActorConfig(
       .map((t) => sanitizeTriggerNode(t, depth, category))
       .filter((n): n is NonNullable<typeof n> => n !== null);
     if (triggers.length > 0) config.triggers = triggers;
+  }
+  if (obj.inputProfile !== undefined) {
+    config.inputProfile = sanitizeInputProfile(obj.inputProfile);
   }
 
   return config;

@@ -9,6 +9,7 @@ import type {
   TerrainType,
   TriggerNode,
 } from '../types';
+import { validateInputProfile } from './condition';
 import { validateTriggerNode } from './trigger';
 import {
   isNumber,
@@ -170,6 +171,13 @@ export function validateActorConfig(
       triggers.push(node);
     }
     if (triggers.length > 0) config.triggers = triggers;
+  }
+  if (value.inputProfile !== undefined) {
+    const inputProfile = validateInputProfile(value.inputProfile);
+    if (!inputProfile) {
+      return validationFail(issues, `${path}.inputProfile`, 'invalid inputProfile');
+    }
+    config.inputProfile = inputProfile;
   }
 
   return config;

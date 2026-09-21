@@ -168,7 +168,7 @@ REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACI
 SPAWN_OBSTACLE { obstacle: { shape: CIRCLE|BOX, width, height, durationMs, isDestructible?, maxHealth? }, target? }
 MUTATE_TERRAIN { mutation: { type: SAFE|LAVA, radius, durationMs }, target? }
 MORPH_ENTITY { morph: { radius?, mass?, speedMultiplier?, durationMs }, target? }
-SPAWN_ACTOR { actor: { actorArchetype: TURRET|DECOY, health, durationMs, anchored?, radius?, mass?, targetingRange?, triggers[], visuals? }, target? }
+SPAWN_ACTOR { actor: { actorArchetype: TURRET|DECOY, health, durationMs, anchored?, radius?, mass?, targetingRange?, triggers[], visuals?, inputProfile?:{ windupMs?, activeMs?, recoveryMs?, moveScale? } }, target? }
 APPLY_STEALTH { durationMs, revealOnCast?, target? }
 LAUNCH_VERTICAL { verticalImpulse?, targetApex?, target? } — launch target upward. verticalImpulse: direct vz (px/s). targetApex: peak height (engine computes impulse). Does not affect anchored turrets.
 SET_GRAVITY_SCALE { scale: 0-8, durationMs?, target? } — override gravity multiplier; durationMs restores default when expired.
@@ -234,6 +234,7 @@ Crowd Breaker: ON_CAST conditions:[{ query:"PROXIMITY_COUNT", target:"CASTER", r
 Iron Colossus: ON_CAST -> MORPH_ENTITY { target:"CASTER", morph:{ radius:32, mass:200, speedMultiplier:0.6, durationMs:6000 } }
 Tripwire Bomb: trajectory LINEAR + ON_DISTANCE_TRAVELED triggerDistance:300 -> SPAWN_FIELD { field: { fieldType:"RADIAL_IMPULSE", radius:90, strength:700, durationMs:500 } }
 Ice Turret: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ actorArchetype:"TURRET", health:80, durationMs:8000, triggers:[{ trigger:"ON_TICK", tickIntervalMs:900, actions:[{ type:"SPAWN_PROJECTILE", projectileTrajectory:{ type:"HOMING_SLERP", speed:420, maxRange:400, turnAccel:400 }, triggers:[{ trigger:"ON_HIT", actions:[{ type:"MODIFY_STAT", stat:"moveSpeed", value:0.6, mode:"multiply", target:"TARGET" }] }] }] }] } } + archetype FROST + frost visuals
+Telegraphed Turret: same as Ice Turret but actor.inputProfile:{ windupMs:300, activeMs:100, recoveryMs:200 } — delays ON_TICK fire until windup completes.
 Deployed Singularity: ON_CAST -> SPAWN_ACTOR { target:"CASTER", actor:{ actorArchetype:"DECOY", health:60, durationMs:6000, anchored:true, triggers:[{ trigger:"ON_TICK", tickIntervalMs:100, actions:[{ type:"SPAWN_FIELD", field:{ fieldType:"MASS_ATTRACTOR", attachToSource:true, strength:5000, radius:140, durationMs:600 } }] }] } } + archetype VOID + void visuals
 
 Set inputProfile and/or resourceCost whenever the concept implies charging, channeling, combos, overheating, magazines, or health cost.

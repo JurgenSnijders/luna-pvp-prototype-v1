@@ -149,7 +149,7 @@ export class BotController {
       Vector2D.fromAngle(this.currentFacingAngle, AIM_PROJECTION_DIST),
     );
 
-    this.bot.tickCastPhases(dt, (slotIndex, overrides, isChannelTick) => {
+    this.bot.tickPlayerCastPhases(dt, (slotIndex, overrides, isChannelTick) => {
       this.dispatchBotCast(slotIndex, interpreter, world, intercept, overrides, isChannelTick);
     });
 

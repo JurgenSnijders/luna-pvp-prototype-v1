@@ -16,11 +16,8 @@ import {
   type AimingState,
 } from '../render/canvas/AimingIndicator';
 import {
-  advanceCastPhase,
   createCastPhaseState,
   hasTimingPhases,
-  phaseMoveScale,
-  type CastPhaseState,
   type PendingCast,
 } from './castPhases';
 import { Entity, generateEntityId } from './Entity';
@@ -124,7 +121,6 @@ export class Player extends Entity {
   slotInputs: SlotInputState[];
   slotResources: SlotResourceState[];
   activeAimingState: AimingState | null = null;
-  activeCastPhase: CastPhaseState | null = null;
 
   constructor(pos: Vector2D, tags: string[] = ['player', 'combatant']) {
     super(generateEntityId('player'), pos, {
@@ -445,7 +441,7 @@ export class Player extends Entity {
       return;
     }
 
-    this.activeCastPhase = state;
+    this.beginCastPhase(state);
   }
 
   private beginTimedCast(
@@ -456,7 +452,7 @@ export class Player extends Entity {
   ): void {
     const state = createCastPhaseState(slotIndex, profile, pendingCast, armChannelOnActive);
     if (state) {
-      this.activeCastPhase = state;
+      this.beginCastPhase(state);
     }
   }
 
@@ -478,52 +474,20 @@ export class Player extends Entity {
       phase.cancelable &&
       phase.slotIndex === slotIndex
     ) {
-      this.activeCastPhase = null;
+      this.clearCastPhase();
     }
   }
 
-  tickCastPhases(dt: number, onCast: SlotCastCallback): void {
-    if (this.stasisRemainingMs > 0) return;
-    if (!this.activeCastPhase) return;
-
-    let guard = 8;
-    let dtMs = dt * 1000;
-
-    while (this.activeCastPhase && guard-- > 0) {
-      const state = this.activeCastPhase;
-      const result = advanceCastPhase(state, dtMs);
-      dtMs = 0;
-
-      if (result.kind === 'dispatched') {
-        const { overrides, isChannelTick } = result.pending;
-        onCast(state.slotIndex, overrides, isChannelTick);
-      }
-
-      if (result.kind === 'channel_armed') {
-        this.slotInputs[state.slotIndex].channelArmed = true;
-      }
-
-      if (result.kind === 'completed') {
-        if (result.armChannel) {
-          this.slotInputs[state.slotIndex].channelArmed = true;
-        }
-        this.activeCastPhase = null;
-        return;
-      }
-
-      if (result.kind === 'continuing') {
-        return;
-      }
-
-      if (state.remainingMs > 0) {
-        return;
-      }
-    }
-  }
-
-  getCastPhaseMoveScale(): number {
-    if (!this.activeCastPhase) return 1;
-    return phaseMoveScale(this.activeCastPhase);
+  tickPlayerCastPhases(dt: number, onCast: SlotCastCallback): void {
+    super.tickCastPhases(
+      dt,
+      (pending, state) => {
+        onCast(state.slotIndex, pending.overrides, pending.isChannelTick);
+      },
+      (slotIndex) => {
+        this.slotInputs[slotIndex].channelArmed = true;
+      },
+    );
   }
 
   setSlotInput(
@@ -548,7 +512,7 @@ export class Player extends Entity {
           const recoveryCancel = this.canCancelRecoveryIntoCast(slotIndex);
           if (this.isSlotReady(slotIndex) || recoveryCancel) {
             if (recoveryCancel) {
-              this.activeCastPhase = null;
+              this.clearCastPhase();
             }
             this.requestCast(slotIndex, {}, false, onCast);
           }
@@ -558,7 +522,7 @@ export class Player extends Entity {
           const recoveryCancel = this.canCancelRecoveryIntoCast(slotIndex);
           if (this.isSlotReady(slotIndex) || slot.comboStep > 0 || recoveryCancel) {
             if (recoveryCancel) {
-              this.activeCastPhase = null;
+              this.clearCastPhase();
             }
             this.requestCast(slotIndex, { comboStep: slot.comboStep }, false, onCast);
             slot.comboStep++;
@@ -623,7 +587,7 @@ export class Player extends Entity {
   }
 
   updateSlotInputs(dt: number, onCast: SlotCastCallback): void {
-    this.tickCastPhases(dt, onCast);
+    this.tickPlayerCastPhases(dt, onCast);
     const dtMs = dt * 1000;
 
     for (let i = 0; i < SLOT_COUNT; i++) {
@@ -844,9 +808,8 @@ export class Player extends Entity {
 
     const moveDir =
       this.smoothedInputMove.magSq() > 0 ? this.smoothedInputMove.normalize() : Vector2D.zero();
-    const speedMultiplier =
-      (this.activeMorph?.speedMultiplier ?? 1) * this.getCastPhaseMoveScale();
-    const targetVel = moveDir.scale(this.getEffectiveMoveSpeed() * speedMultiplier);
+    const morphScale = this.activeMorph?.speedMultiplier ?? 1;
+    const targetVel = moveDir.scale(this.getEffectiveMoveSpeed() * morphScale);
     const velDiff = targetVel.sub(this.vel);
 
     if (moveDir.magSq() === 0) {
@@ -903,7 +866,7 @@ export class Player extends Entity {
     this.globalCooldownTimerMs = 0;
     this.clearCastInputs();
     this.activeAimingState = null;
-    this.activeCastPhase = null;
+    this.clearCastPhase();
     this.resetSlotInputs();
     this.smoothedInputMove = Vector2D.zero();
     this.resetStasis();

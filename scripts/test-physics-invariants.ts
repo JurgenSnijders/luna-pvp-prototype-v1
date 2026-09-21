@@ -3093,6 +3093,146 @@ function assertDrawnPathFollowing(): { pass: boolean; reason: string } {
   };
 }
 
+function assertSummonCastPhases(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const interpreter = new Interpreter();
+
+  const buildTurretSchema = (
+    id: string,
+    inputProfile?: AbilitySchema['inputProfile'],
+  ): AbilitySchema => ({
+    id,
+    name: id,
+    archetype: 'KINETIC',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    visuals: DEFAULT_VISUALS,
+    triggers: [
+      {
+        trigger: 'ON_CAST',
+        actions: [
+          {
+            type: 'SPAWN_ACTOR',
+            target: 'CASTER',
+            actor: {
+              actorArchetype: 'TURRET',
+              health: 80,
+              durationMs: 8000,
+              ...(inputProfile ? { inputProfile } : {}),
+              triggers: [
+                {
+                  trigger: 'ON_TICK',
+                  tickIntervalMs: 100,
+                  actions: [
+                    {
+                      type: 'SPAWN_PROJECTILE',
+                      projectileTrajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const runSummonSim = (world: PhysicsWorld, frames: number): void => {
+    for (let i = 0; i < frames; i++) {
+      world.step(dt);
+      interpreter.processLifecycleEvents(world, dt, HEADLESS_LIFECYCLE_FX);
+    }
+  };
+
+  const unphasedWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  unphasedWorld.setViewportBounds(2000, 2000);
+  const unphasedCaster = new Player(new Vector2D(-80, 0));
+  unphasedCaster.tags.add('kinematic');
+  const unphasedTarget = new Dummy(new Vector2D(220, 0));
+  unphasedWorld.addPlayer(unphasedCaster);
+  unphasedWorld.addDummy(unphasedTarget);
+  const unphasedSchema = buildTurretSchema('test_unphased_summon_turret');
+  interpreter.executeAbility(
+    unphasedSchema,
+    {
+      origin: unphasedCaster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster: unphasedCaster,
+      depth: 0,
+      ability: unphasedSchema,
+    },
+    unphasedWorld,
+  );
+  runSummonSim(unphasedWorld, 8);
+  if (unphasedWorld.projectiles.filter((p) => !p.isDead).length === 0) {
+    return { pass: false, reason: 'unphased summon did not fire on first tick interval' };
+  }
+
+  const phasedWorld = new PhysicsWorld(Vector2D.zero(), 400);
+  phasedWorld.setViewportBounds(2000, 2000);
+  const phasedCaster = new Player(new Vector2D(-80, 0));
+  phasedCaster.tags.add('kinematic');
+  const phasedTarget = new Dummy(new Vector2D(220, 0));
+  phasedWorld.addPlayer(phasedCaster);
+  phasedWorld.addDummy(phasedTarget);
+  const phasedSchema = buildTurretSchema('test_phased_summon_turret', {
+    mode: 'INSTANT',
+    windupMs: 200,
+    activeMs: 100,
+    recoveryMs: 100,
+  });
+  interpreter.executeAbility(
+    phasedSchema,
+    {
+      origin: phasedCaster.pos.clone(),
+      heading: new Vector2D(1, 0),
+      caster: phasedCaster,
+      depth: 0,
+      ability: phasedSchema,
+    },
+    phasedWorld,
+  );
+
+  runSummonSim(phasedWorld, 8);
+  const phasedSummon = phasedWorld.summons[0];
+  if (!phasedSummon || phasedSummon.isDead) {
+    return { pass: false, reason: 'phased summon missing after spawn' };
+  }
+  if (phasedWorld.projectiles.filter((p) => !p.isDead).length > 0) {
+    return { pass: false, reason: 'phased summon fired before windup completed' };
+  }
+  if (!phasedSummon.activeCastPhase || phasedSummon.activeCastPhase.phase !== 'WINDUP') {
+    return { pass: false, reason: 'expected WINDUP after tick interval with inputProfile' };
+  }
+
+  const windupRemainingStart = phasedSummon.activeCastPhase.remainingMs;
+  phasedSummon.stasisRemainingMs = 500;
+  phasedWorld.step(dt);
+  if (phasedSummon.activeCastPhase?.remainingMs !== windupRemainingStart) {
+    return { pass: false, reason: 'summon cast phase advanced during stasis' };
+  }
+  phasedSummon.stasisRemainingMs = 0;
+
+  let liveProjectiles = 0;
+  for (let i = 0; i < 40; i++) {
+    runSummonSim(phasedWorld, 1);
+    liveProjectiles = phasedWorld.projectiles.filter((p) => !p.isDead).length;
+    if (liveProjectiles > 0) break;
+  }
+  if (liveProjectiles === 0) {
+    return { pass: false, reason: 'phased summon never fired after windup' };
+  }
+  if (phasedSummon.activeCastPhase?.phase === 'WINDUP') {
+    return { pass: false, reason: 'still in WINDUP after deferred dispatch' };
+  }
+
+  return {
+    pass: true,
+    reason: 'unphased immediate ON_TICK + phased windup/stasis defer',
+  };
+}
+
 function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
   const dt = 1 / 60;
   const player = new Player(Vector2D.zero());
@@ -3157,7 +3297,7 @@ function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
 
   const windupRemainingStart = player.activeCastPhase.remainingMs;
   player.stasisRemainingMs = 500;
-  player.tickCastPhases(dt, onCast);
+  player.tickPlayerCastPhases(dt, onCast);
   if (player.activeCastPhase?.remainingMs !== windupRemainingStart) {
     return { pass: false, reason: 'cast phase advanced during stasis' };
   }
@@ -3165,7 +3305,7 @@ function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
 
   let elapsed = 0;
   while (dispatchCount === 0 && elapsed < 500) {
-    player.tickCastPhases(dt, onCast);
+    player.tickPlayerCastPhases(dt, onCast);
     player.update(dt);
     elapsed += dt * 1000;
   }
@@ -3193,7 +3333,7 @@ function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
 
   elapsed = 0;
   while (player.activeCastPhase && elapsed < 1000) {
-    player.tickCastPhases(dt, onCast);
+    player.tickPlayerCastPhases(dt, onCast);
     player.update(dt);
     elapsed += dt * 1000;
     if (player.isSlotReady(0) && player.activeCastPhase) {
@@ -3242,7 +3382,7 @@ function assertCastPhaseTimeline(): { pass: boolean; reason: string } {
   if (player.activeCastPhase) {
     return { pass: false, reason: 'cancelable feint did not abort windup' };
   }
-  player.tickCastPhases(dt, onCast);
+  player.tickPlayerCastPhases(dt, onCast);
   if (dispatchCount !== 0 || cooldownCount !== 0) {
     return { pass: false, reason: 'cancelable feint should not dispatch or cooldown' };
   }
@@ -3794,6 +3934,14 @@ function run(): void {
   console.log(`  ${DIM}${castPhaseTimeline.reason}${RESET}`);
   if (castPhaseTimeline.pass) passed++;
 
+  const summonCastPhases = assertSummonCastPhases();
+  const summonCastPhasesTag = summonCastPhases.pass
+    ? `${GREEN}[PASS]${RESET}`
+    : `${RED}[FAIL]${RESET}`;
+  console.log(`${summonCastPhasesTag} Summon cast phases`);
+  console.log(`  ${DIM}${summonCastPhases.reason}${RESET}`);
+  if (summonCastPhases.pass) passed++;
+
   const drawnPathFollowing = assertDrawnPathFollowing();
   const drawnPathFollowingTag = drawnPathFollowing.pass
     ? `${GREEN}[PASS]${RESET}`
@@ -3838,7 +3986,7 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 40;
+  const totalCases = suite.length + 42;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);

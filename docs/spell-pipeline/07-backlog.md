@@ -29,6 +29,7 @@ Source docs:
 - [x] **Layered trails** — optional `trailLayers` on `VisualDescriptor` overrides `trailType` on projectile motion ticks; reuses `VfxLayer` primitives and budget cap.
 - [x] **Ceiling policy** — `MAX_DEPTH` unified at 4, `MAX_ENTITIES` raised to 512; saturation chips and runtime safety clamp kept; evolution upgrades not refused.
 - [x] **Hold-to-guard shield** — `REFLECT_PROJECTILES.whileHeld` binds live wedge to slot `isHeld` (drops on release); optional `durationMs` is max-hold cap only; separate **Hold Guard** preset from tap **Directional Parry**; `slotIndex` threaded through player casts.
+- [x] **Timing phases on summons** — `CastPhaseState` on `Entity`; optional `ActorConfig.inputProfile` telegraphs ON_TICK / turret fire; Player slot machine unchanged.
 
 ---
 
@@ -43,9 +44,6 @@ Tick these as they land. Suggested order is the numbering.
 ### Authoring / melee / VFX
 
 ### Product / later
-
-- [ ] **8. Timing phases on summons**  
-  From [05 Q9](05-open-questions.md). Windup / active / recovery live on `Player`; bots go through `requestCast`. Actors / summons do not.
 
 - [ ] **9. Land-on-cursor ballistic solver** (optional)  
   Current aiming is **heading-only**. Overlay length is `min(maxRange, speed * t_impact)`, not cursor distance. A solver would set `speed` or `lobApex` from clamped mouse range for both live flight and the overlay. Outer fan shots share that solved speed.

@@ -265,6 +265,7 @@ function drawCombatantBody(
 
   ctx.globalAlpha = prevAlpha;
   drawStasisOverlay(ctx, state, entity, physicsPos);
+  drawCastPhaseTelegraph(ctx, entity, physicsPos);
 }
 
 export function drawSummons(
@@ -302,7 +303,27 @@ export function drawSummons(
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+
+    drawCastPhaseTelegraph(ctx, summon, pos);
   }
+}
+
+function drawCastPhaseTelegraph(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  pos: Vector2D,
+): void {
+  const phase = entity.activeCastPhase;
+  if (!phase || phase.phase !== 'WINDUP') return;
+
+  const progress =
+    phase.totalMs > 0 ? 1 - phase.remainingMs / phase.totalMs : 1;
+  const radius = entity.effectiveRadius + 6 + progress * 8;
+  ctx.strokeStyle = `rgba(255, 210, 90, ${0.35 + progress * 0.45})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+  ctx.stroke();
 }
 
 function drawStasisOverlay(

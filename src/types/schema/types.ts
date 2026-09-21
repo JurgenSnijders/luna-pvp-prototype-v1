@@ -464,6 +464,8 @@ export interface ActorConfig {
   targetingRange?: number;
   triggers?: TriggerNode[];
   visuals?: VisualDescriptor;
+  /** Optional windup/active/recovery before autonomous ON_TICK or turret fire. */
+  inputProfile?: InputProfile;
 }
 
 export interface MorphEntityAction {

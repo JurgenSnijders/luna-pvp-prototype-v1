@@ -236,6 +236,7 @@ const actorConfig = {
     targetingRange: { type: 'number' },
     visuals: visualDescriptor,
     triggers: { type: 'array', items: { $ref: '#/$defs/TriggerNode' } },
+    inputProfile: { $ref: '#/$defs/InputProfile' },
   },
   additionalProperties: false,
 };

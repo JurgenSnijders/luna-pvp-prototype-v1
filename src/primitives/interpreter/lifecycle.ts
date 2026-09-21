@@ -30,6 +30,7 @@ import type { Entity } from '../../entities/Entity';
 import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
 import { Summon } from '../../entities/Summon';
+import { hasTimingPhases } from '../../entities/castPhases';
 import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, type SkillCategory } from '../../types/cards';
 import type {
   AbilitySchema,
@@ -564,16 +565,33 @@ function dispatchHostTicks(
   const tickNodes = host.getTriggers('ON_TICK');
   if (tickNodes.length === 0) return;
 
+  const phasedSummon = host instanceof Summon && host.hasActorTimingPhases() ? host : null;
+
   let ctx: TriggerContext | null | undefined;
   for (let i = 0; i < tickNodes.length; i++) {
     const node = tickNodes[i];
     const interval = Math.max(16, node.tickIntervalMs ?? 100);
+
+    if (phasedSummon?.activeCastPhase) {
+      continue;
+    }
+
     const elapsed = (host.tickAccumulatorsMs.get(i) ?? 0) + dt * 1000;
     if (elapsed < interval) {
       host.tickAccumulatorsMs.set(i, elapsed);
       continue;
     }
     host.tickAccumulatorsMs.set(i, elapsed % interval);
+
+    if (phasedSummon) {
+      phasedSummon.requestPhasedAction(() => {
+        const liveCtx = buildCtx();
+        if (shouldSkipNode?.(node, liveCtx)) return;
+        if (liveCtx) dispatchTriggerNode(interp, node, liveCtx, world);
+      });
+      continue;
+    }
+
     if (ctx === undefined) ctx = buildCtx();
     if (shouldSkipNode?.(node, ctx ?? null)) continue;
     if (ctx) dispatchTriggerNode(interp, node, ctx, world);
