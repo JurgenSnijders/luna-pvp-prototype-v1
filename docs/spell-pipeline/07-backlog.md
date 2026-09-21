@@ -64,8 +64,7 @@ Tick these as they land. Suggested order is the numbering.
 
 #### Product slices
 
-- [ ] **Loadout kit balance** — bottom-dock meter over the five equipped combat profiles: Primers (instability builders), Finishers (`maxTravelPx >= 400`), Utility/Defense (parry, mobility, stasis, walls). Contextual warnings (no ring-out finisher, no mobility, redundant primary role). Cross-slot synergy tags from a small rule table (primer archetype to detonation action). Display only; no physics changes.
-- [ ] **Vault tile scan layer** — corner micro-verb icons (push, vortex, shield, blink), a compact name and dominant-stat strip, and a clearer equipped-slot badge. Independent of the dock meter. Tiles already show a slot-key badge.
+- [ ] **Vault tile scan layer** — corner micro-verb icons (push, vortex, shield, blink), a compact name and dominant-stat strip, and a clearer equipped-slot badge. Tiles already show a slot-key badge.
 
 #### Docs
 
@@ -78,8 +77,6 @@ Tick these as they land. Suggested order is the numbering.
 
 - [x] **12. Finish the decision log in** `05`  
   Q1, Q2, Q3, Q7, Q8, Q10, Q12, and Q13 were copied from `06` on 2026-09-22. Q4, Q5, Q6, and Q9 were already logged. The older Q4 line in `06` ("do not raise caps") stays superseded by the 2026-09-16 raise.
-
-- [ ] **Q2 inspector warning** — semantic drift is accepted and provenance is not tracked. Whether the inspector should warn on a mismatch, without repairing it, is still open.
 
 - [ ] **13. Refresh docs 01–03 line numbers**  
   Those files are snapshots from commit `53e3893`. `[08-capability-audit.md](08-capability-audit.md)` is the current capability set. Rewrite 01–03 only if a claim in them is still used as fact.
