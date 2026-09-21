@@ -11,6 +11,7 @@ import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 import { getTierCrest, injectStyles, resolveSpellRarity, showQuickEquipMenu } from '../draft/workshopStyles';
 import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
 import { SpellInventoryManager } from '../game/SpellInventory';
+import { computeSpellCombatProfile } from '../primitives/combatProfile';
 import { generateSpellIcon } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
@@ -164,14 +165,6 @@ function walkTriggers(
   }
 }
 
-function sumInstability(ability: AbilitySchema): number {
-  let total = 0;
-  walkTriggers(ability.triggers, (_node, action) => {
-    if (action.type === 'ADD_INSTABILITY') total += action.amount;
-  });
-  return total;
-}
-
 function collectAllActionTypes(ability: AbilitySchema): string[] {
   const actions = new Set<string>();
   walkTriggers(ability.triggers, (_node, action) => {
@@ -193,7 +186,7 @@ function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, ac
   const cooldown = ability.cooldownMs >= 1000
     ? `${(ability.cooldownMs / 1000).toFixed(1)}s`
     : `${ability.cooldownMs}ms`;
-  const instability = sumInstability(ability);
+  const instability = computeSpellCombatProfile(ability).instabilityYield;
   const trajectoryLine = formatTrajectoryLine(resolveDisplayTrajectory(ability));
   const triggers = summarizeTriggerNames(ability);
   const actionTypes = collectAllActionTypes(ability);

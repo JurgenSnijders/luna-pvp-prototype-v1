@@ -17,6 +17,7 @@ import type {
   SkillCategory,
 } from '../types/cards';
 import {
+  ACTION_SLOT_INDEX,
   ACTION_SLOT_KEYS,
   CATEGORY_SLOT_MAP,
   getCategoryLabel,
@@ -31,8 +32,11 @@ import type {
   TriggerNode,
 } from '../types/schema';
 import { walkActions } from '../types/schema';
-import { BASELINE_INSTABILITY_ON_HIT } from '../engine/PhysicsWorld';
-import { ARCHETYPE_TUNING } from '../primitives/interpreter/constants';
+import {
+  compareCombatProfiles,
+  computeSpellCombatProfile,
+  formatCombatStatDiff,
+} from '../primitives/combatProfile';
 import {
   extractMechanicBadges,
   renderBadge,
@@ -113,15 +117,6 @@ const ARCHETYPE_DESCRIPTIONS: Partial<Record<SpellArchetype, string>> = {
 };
 
 const ARCHETYPE_FALLBACK = 'Elemental physics modifier active on hit.';
-
-const STATUS_CC_LABELS: Partial<Record<SpellArchetype, (dur: string) => string>> = {
-  FROST: (d) => `50% Chill Slow (${d})`,
-  KINETIC: (d) => `80% Drag Loss / Extreme Slip (${d})`,
-  EARTH: (d) => `3× Heavy Mass Anchor (${d})`,
-  GRAVITY: (d) => `0.2× Weightless Float (${d})`,
-  FIRE: (d) => `Thermal Instability on Move (${d})`,
-  PLASMA: () => 'Detonation at 100% Instability',
-};
 
 export interface SpellTelemetry {
   cooldownSec: string;
@@ -445,106 +440,16 @@ function formatDurationSec(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function abilityCanHit(ability: AbilitySchema): boolean {
-  if (ability.trajectory) return true;
-  let hasProjectile = false;
-  walkActions(ability, (v) => {
-    if (v.action.type === 'SPAWN_PROJECTILE') hasProjectile = true;
-  });
-  return hasProjectile;
-}
-
 export function extractSpellTelemetry(ability: AbilitySchema): SpellTelemetry {
-  const archetype = ability.archetype ?? 'KINETIC';
-  const tuning = ARCHETYPE_TUNING[archetype];
-
-  let repulseForce = 0;
-  let instabilityExplicit = 0;
-  let implicitInstability = 0;
-  let directDamage = 0;
-  const ccDescriptions: string[] = [];
-  const ccSeen = new Set<string>();
-
-  const pushCc = (desc: string): void => {
-    if (ccSeen.has(desc)) return;
-    ccSeen.add(desc);
-    ccDescriptions.push(desc);
-  };
-
-  walkActions(ability, (v) => {
-    const action = v.action;
-    switch (action.type) {
-      case 'APPLY_IMPULSE':
-        repulseForce = Math.max(repulseForce, action.baseForce);
-        implicitInstability += action.baseForce * 0.02 * tuning.impactInstabilityScale;
-        break;
-      case 'SPAWN_FIELD':
-        if (action.field.fieldType === 'RADIAL_IMPULSE') {
-          repulseForce = Math.max(repulseForce, Math.abs(action.field.strength));
-        }
-        break;
-      case 'ADD_INSTABILITY':
-        instabilityExplicit += action.amount;
-        break;
-      case 'MODIFY_STAT':
-        if (action.stat === 'health' && action.value < 0) {
-          directDamage += Math.abs(action.value);
-        }
-        break;
-      case 'APPLY_STATUS': {
-        const dur = formatDurationSec(action.durationMs);
-        const labelFn = STATUS_CC_LABELS[action.archetype];
-        pushCc(labelFn ? labelFn(dur) : `${formatEnumLabel(action.archetype)} (${dur})`);
-        break;
-      }
-      case 'APPLY_STASIS':
-        pushCc(`Stasis lock (${formatDurationSec(action.durationMs)})`);
-        break;
-      default:
-        break;
-    }
-  });
-
-  if (abilityCanHit(ability) && archetype) {
-    const labelFn = STATUS_CC_LABELS[archetype];
-    if (labelFn) {
-      const archetypeDesc = labelFn('2.0s');
-      if (!ccSeen.has(archetypeDesc)) {
-        ccDescriptions.unshift(archetypeDesc);
-        ccSeen.add(archetypeDesc);
-      }
-    }
-  }
-
-  const baseline = abilityCanHit(ability) ? BASELINE_INSTABILITY_ON_HIT : 0;
-  const instabilityYield = Math.round(baseline + instabilityExplicit + implicitInstability);
-
-  const { trajectory, emitter } = resolveDisplayTrajectory(ability);
-  let deliveryText = 'Instant';
-  if (trajectory) {
-    const parts: string[] = [];
-    if (emitter && emitter.count > 1) {
-      const distLabel =
-        emitter.distribution === 'RADIAL' ? 'RING' : formatEnumLabel(emitter.distribution);
-      const spread =
-        emitter.spreadDeg > 0 ? ` (${emitter.spreadDeg}°)` : '';
-      parts.push(`${emitter.count}x ${distLabel}${spread}`);
-    }
-    const range = trajectory.maxRange ?? 0;
-    const speed = trajectory.speed ?? 0;
-    if (range > 0) parts.push(`${range} Range`);
-    if (speed > 0) parts.push(`${speed} px/s`);
-    deliveryText = parts.length > 0 ? parts.join(' · ') : formatEnumLabel(trajectory.type);
-  }
-
+  const profile = computeSpellCombatProfile(ability);
   return {
     cooldownSec: formatDurationSec(ability.cooldownMs),
-    recoilKick: ability.recoilKick ?? 0,
-    repulseForce: Math.round(repulseForce),
-    instabilityYield,
-    directDamage: Math.round(directDamage),
-    ccDescriptions,
-    deliveryText,
+    recoilKick: profile.recoilKick,
+    repulseForce: profile.displacement.peakForce,
+    instabilityYield: profile.instabilityYield,
+    directDamage: profile.directDamage,
+    ccDescriptions: profile.controlDescriptions,
+    deliveryText: profile.delivery.summary,
   };
 }
 
@@ -3356,15 +3261,15 @@ export class DraftModal {
       slot.power = newPower;
 
       if (card.type === 'ACTIVE_ABILITY') {
-        const compareAgainst = this.getCompareAbility(loadout);
+        const compareAgainst = this.getCompareAbility(loadout, card);
         const diff = this.statDiff(compareAgainst, card.abilityPayload);
         const existingDiff = slot.root.querySelector('.card-stat-diff');
         existingDiff?.remove();
         if (diff) {
           const diffEl = document.createElement('div');
           diffEl.className = 'card-stat-diff';
-          diffEl.textContent = diff;
-          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:#4f8;margin-bottom:8px;`;
+          diffEl.textContent = diff.text;
+          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:${diff.color};margin-bottom:8px;`;
           slot.power.before(diffEl);
         }
       }
@@ -3483,12 +3388,12 @@ export class DraftModal {
       footer.style.cssText = 'margin-top:auto;flex-shrink:0;';
 
       if (card.type === 'ACTIVE_ABILITY') {
-        const compareAgainst = this.getCompareAbility(loadout);
+        const compareAgainst = this.getCompareAbility(loadout, card);
         const diff = this.statDiff(compareAgainst, card.abilityPayload);
         if (diff) {
           const diffEl = document.createElement('div');
-          diffEl.textContent = diff;
-          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:#4f8;margin-bottom:8px;`;
+          diffEl.textContent = diff.text;
+          diffEl.style.cssText = `font-size:${FONTS.size.sm};color:${diff.color};margin-bottom:8px;`;
           footer.appendChild(diffEl);
         }
 
@@ -3526,24 +3431,23 @@ export class DraftModal {
     }
   }
 
-  private getCompareAbility(loadout: PlayerLoadout): AbilitySchema | null {
+  private getCompareAbility(loadout: PlayerLoadout, card: DraftCard): AbilitySchema | null {
     if (this.evolutionContext) return this.evolutionContext.baseAbility;
-    return loadout.abilities[0];
+    if (!card.category) return null;
+    const slotKey = CATEGORY_SLOT_MAP[card.category];
+    const slotIndex = ACTION_SLOT_INDEX[slotKey];
+    return loadout.abilities[slotIndex];
   }
 
-  private statDiff(current: AbilitySchema | null, incoming?: AbilitySchema): string | null {
-    if (!incoming) return null;
-    const parts: string[] = [];
-    if (current) {
-      const cdDelta = incoming.cooldownMs - current.cooldownMs;
-      if (cdDelta !== 0) parts.push(`CD ${cdDelta > 0 ? '+' : ''}${cdDelta}ms`);
-      const recoilDelta = incoming.recoilKick - current.recoilKick;
-      if (recoilDelta !== 0) parts.push(`Recoil ${recoilDelta > 0 ? '+' : ''}${recoilDelta}`);
-    } else {
-      if (incoming.recoilKick > 0) parts.push(`Recoil ${incoming.recoilKick}`);
-      parts.push(`CD ${incoming.cooldownMs}ms`);
-    }
-    return parts.length ? parts.join(' · ') : null;
+  private statDiff(
+    baseline: AbilitySchema | null,
+    incoming?: AbilitySchema,
+  ): ReturnType<typeof formatCombatStatDiff> {
+    if (!incoming || !baseline) return null;
+    const currentProfile = computeSpellCombatProfile(incoming);
+    const baselineProfile = computeSpellCombatProfile(baseline);
+    const diff = compareCombatProfiles(currentProfile, baselineProfile);
+    return formatCombatStatDiff(diff);
   }
 
   private equip(card: DraftCard, slot: DraftSelection['slot']): void {

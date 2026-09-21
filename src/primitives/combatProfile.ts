@@ -1,0 +1,633 @@
+import { BASELINE_INSTABILITY_ON_HIT } from '../engine/PhysicsWorld';
+import { ARCHETYPE_TUNING } from './interpreter/constants';
+import type {
+  AbilitySchema,
+  ActionPayload,
+  ActionTarget,
+  EmitterConfig,
+  ImpulseDirectionMode,
+  SpellArchetype,
+  TrajectoryConfig,
+} from '../types/schema';
+import { walkActions } from '../types/schema';
+
+export type DisplacementDirectionTag =
+  | 'PUSH'
+  | 'PULL'
+  | 'LATERAL'
+  | 'ALONG'
+  | 'CUSTOM'
+  | 'MIXED'
+  | 'NONE';
+
+type DirectionFamily = 'PUSH' | 'PULL' | 'LATERAL' | 'ALONG' | 'CUSTOM';
+
+export interface DisplacementProfile {
+  peakForce: number;
+  directions: readonly string[];
+  primaryTag: DisplacementDirectionTag;
+  hasAttractor: boolean;
+  hasRadial: boolean;
+}
+
+export type ResourceProfileType = 'COOLDOWN' | 'HEAT' | 'AMMO' | 'HEALTH_PCT';
+
+export interface ResourceProfile {
+  type: ResourceProfileType;
+  cost: number;
+  capacity?: number;
+  rechargeRate?: number;
+  lockoutMs?: number;
+}
+
+export interface DeliveryProfile {
+  trajectoryType: string;
+  targetingMode: 'DIRECTIONAL' | 'GROUND_POINT';
+  shotCount: number;
+  fanAngleDeg?: number;
+  range: number;
+  speed: number;
+  piercing: boolean;
+  bounces: number;
+  lobApex?: number;
+  summary: string;
+}
+
+export interface SpellCombatProfile {
+  abilityId: string;
+  name: string;
+  archetype: string;
+  role?: string;
+  cooldownMs: number;
+  recoilKick: number;
+  displacement: DisplacementProfile;
+  instabilityYield: number;
+  instabilityAppliesToSelf: boolean;
+  directDamage: number;
+  resource: ResourceProfile;
+  delivery: DeliveryProfile;
+  controlDescriptions: string[];
+}
+
+export type DeltaPolarity = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+
+export interface MetricDelta {
+  current: number;
+  baseline: number;
+  delta: number;
+  polarity: DeltaPolarity;
+  formattedDiff: string;
+}
+
+export interface CombatProfileDiff {
+  cooldown?: MetricDelta;
+  recoil?: MetricDelta;
+  peakDisplacement?: MetricDelta;
+  instabilityYield?: MetricDelta;
+  directDamage?: MetricDelta;
+  resourceCost?: MetricDelta;
+  resourceCapacity?: MetricDelta;
+  resourceRecharge?: MetricDelta;
+  resourceLockout?: MetricDelta;
+  resourceMatch: boolean;
+  displacementDirectionMatch: boolean;
+  mechanicChanges: string[];
+}
+
+const STATUS_CC_LABELS: Partial<Record<SpellArchetype, (dur: string) => string>> = {
+  FROST: (d) => `50% Chill Slow (${d})`,
+  KINETIC: (d) => `80% Drag Loss / Extreme Slip (${d})`,
+  EARTH: (d) => `3× Heavy Mass Anchor (${d})`,
+  GRAVITY: (d) => `0.2× Weightless Float (${d})`,
+  FIRE: (d) => `Thermal Instability on Move (${d})`,
+  PLASMA: () => 'Detonation at 100% Instability',
+};
+
+const CASTER_TARGETS: ReadonlySet<ActionTarget | undefined> = new Set(['CASTER', 'SELF']);
+
+const MOBILITY_RECOIL_THRESHOLD = 200;
+
+function formatEnumLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+function formatDurationSec(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function isCasterTarget(target: ActionTarget | undefined): boolean {
+  return CASTER_TARGETS.has(target);
+}
+
+interface DisplayTrajectory {
+  trajectory?: TrajectoryConfig;
+  emitter?: EmitterConfig;
+}
+
+function emitterHasSpread(emitter: EmitterConfig): boolean {
+  return (
+    emitter.count > 1 ||
+    emitter.spreadDeg > 0 ||
+    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0)
+  );
+}
+
+function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
+  let onCast: DisplayTrajectory | null = null;
+
+  for (const triggerNode of ability.triggers ?? []) {
+    if (triggerNode.trigger !== 'ON_CAST') continue;
+    for (const action of triggerNode.actions ?? []) {
+      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
+        onCast = {
+          trajectory: action.projectileTrajectory,
+          emitter: action.emitter,
+        };
+        break;
+      }
+      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
+        return { trajectory: action.payload.trajectory };
+      }
+    }
+    if (onCast) break;
+  }
+
+  if (onCast?.emitter && emitterHasSpread(onCast.emitter)) {
+    return onCast;
+  }
+  if (!ability.trajectory && onCast) {
+    return onCast;
+  }
+  if (ability.trajectory) {
+    return { trajectory: ability.trajectory, emitter: onCast?.emitter };
+  }
+  return onCast ?? {};
+}
+
+function abilityCanHit(ability: AbilitySchema): boolean {
+  if (ability.trajectory) return true;
+  let hasProjectile = false;
+  walkActions(ability, (v) => {
+    if (v.action.type === 'SPAWN_PROJECTILE') hasProjectile = true;
+  });
+  return hasProjectile;
+}
+
+function classifyImpulseDirection(
+  mode: ImpulseDirectionMode | undefined,
+  hasCustomVector: boolean,
+): DirectionFamily {
+  if ((mode === 'CUSTOM' || mode === undefined) && hasCustomVector) {
+    return 'CUSTOM';
+  }
+  switch (mode) {
+    case 'TOWARDS_CASTER':
+    case 'TOWARDS_ORIGIN':
+      return 'PULL';
+    case 'PERPENDICULAR_TRAJECTORY':
+      return 'LATERAL';
+    case 'ALONG_TRAJECTORY':
+      return 'ALONG';
+    case 'CUSTOM':
+      return 'CUSTOM';
+    case 'AWAY_FROM_ORIGIN':
+    default:
+      return 'PUSH';
+  }
+}
+
+function classifyFieldDirection(
+  fieldType: string,
+  strength: number,
+): DirectionFamily | null {
+  switch (fieldType) {
+    case 'RADIAL_IMPULSE':
+      return strength >= 0 ? 'PUSH' : 'PULL';
+    case 'MASS_ATTRACTOR':
+      return strength >= 0 ? 'PULL' : 'PUSH';
+    case 'VORTEX_TANGENT':
+      return 'LATERAL';
+    default:
+      return null;
+  }
+}
+
+function derivePrimaryTag(families: Set<DirectionFamily>): DisplacementDirectionTag {
+  if (families.size === 0) return 'NONE';
+  if (families.size > 1) return 'MIXED';
+  const only = [...families][0];
+  return only;
+}
+
+function buildResourceProfile(ability: AbilitySchema): ResourceProfile {
+  const rc = ability.resourceCost;
+  if (!rc) {
+    return { type: 'COOLDOWN', cost: ability.cooldownMs };
+  }
+  return {
+    type: rc.type,
+    cost: rc.cost,
+    capacity: rc.maxCapacity,
+    rechargeRate: rc.rechargeRate,
+    lockoutMs: rc.lockoutDurationMs,
+  };
+}
+
+function buildDeliveryProfile(ability: AbilitySchema): DeliveryProfile {
+  const { trajectory, emitter } = resolveDisplayTrajectory(ability);
+  const targetingMode = ability.targetingMode ?? 'DIRECTIONAL';
+
+  if (!trajectory) {
+    return {
+      trajectoryType: 'INSTANT',
+      targetingMode,
+      shotCount: 1,
+      range: 0,
+      speed: 0,
+      piercing: false,
+      bounces: 0,
+      summary: 'Instant',
+    };
+  }
+
+  const shotCount = emitter?.count ?? 1;
+  const fanAngleDeg = emitter && emitter.spreadDeg > 0 ? emitter.spreadDeg : undefined;
+  const range = trajectory.maxRange ?? 0;
+  const speed = trajectory.speed ?? 0;
+  const piercing = (trajectory.piercing ?? 0) > 0;
+  const bounces = trajectory.bounces ?? 0;
+  const lobApex = trajectory.lobApex;
+
+  const parts: string[] = [];
+  if (emitter && emitter.count > 1) {
+    const distLabel =
+      emitter.distribution === 'RADIAL' ? 'RING' : formatEnumLabel(emitter.distribution);
+    const spread = emitter.spreadDeg > 0 ? ` (${emitter.spreadDeg}°)` : '';
+    parts.push(`${emitter.count}x ${distLabel}${spread}`);
+  }
+  if (range > 0) parts.push(`${range} Range`);
+  if (speed > 0) parts.push(`${speed} px/s`);
+
+  const summary =
+    parts.length > 0 ? parts.join(' · ') : formatEnumLabel(trajectory.type);
+
+  return {
+    trajectoryType: trajectory.type,
+    targetingMode,
+    shotCount,
+    fanAngleDeg,
+    range,
+    speed,
+    piercing,
+    bounces,
+    lobApex,
+    summary,
+  };
+}
+
+function collectControlDescriptions(ability: AbilitySchema): string[] {
+  const archetype = ability.archetype ?? 'KINETIC';
+  const ccDescriptions: string[] = [];
+  const ccSeen = new Set<string>();
+
+  const pushCc = (desc: string): void => {
+    if (ccSeen.has(desc)) return;
+    ccSeen.add(desc);
+    ccDescriptions.push(desc);
+  };
+
+  walkActions(ability, (v) => {
+    const action = v.action;
+    switch (action.type) {
+      case 'APPLY_STATUS': {
+        const dur = formatDurationSec(action.durationMs);
+        const labelFn = STATUS_CC_LABELS[action.archetype];
+        pushCc(labelFn ? labelFn(dur) : `${formatEnumLabel(action.archetype)} (${dur})`);
+        break;
+      }
+      case 'APPLY_STASIS':
+        pushCc(`Stasis lock (${formatDurationSec(action.durationMs)})`);
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (abilityCanHit(ability) && archetype) {
+    const labelFn = STATUS_CC_LABELS[archetype];
+    if (labelFn) {
+      const archetypeDesc = labelFn('2.0s');
+      if (!ccSeen.has(archetypeDesc)) {
+        ccDescriptions.unshift(archetypeDesc);
+        ccSeen.add(archetypeDesc);
+      }
+    }
+  }
+
+  return ccDescriptions;
+}
+
+export function computeSpellCombatProfile(ability: AbilitySchema): SpellCombatProfile {
+  const archetype = ability.archetype ?? 'KINETIC';
+  const tuning = ARCHETYPE_TUNING[archetype];
+
+  let peakForce = 0;
+  const directionSet = new Set<string>();
+  const familySet = new Set<DirectionFamily>();
+  let hasAttractor = false;
+  let hasRadial = false;
+
+  let instabilityExplicit = 0;
+  let implicitInstability = 0;
+  let instabilityAppliesToSelf = false;
+  let directDamage = 0;
+
+  walkActions(ability, (v) => {
+    if (!v.isPrimary) return;
+
+    const action = v.action;
+    switch (action.type) {
+      case 'APPLY_IMPULSE': {
+        const force = action.baseForce;
+        peakForce = Math.max(peakForce, force);
+
+        const mode = action.directionMode;
+        const hasCustom = action.direction !== undefined;
+        const family = classifyImpulseDirection(mode, hasCustom);
+        familySet.add(family);
+        directionSet.add(mode ?? (hasCustom ? 'CUSTOM' : 'AWAY_FROM_ORIGIN'));
+
+        const implicit = force * 0.02 * tuning.impactInstabilityScale;
+        implicitInstability += implicit;
+        if (isCasterTarget(action.target)) {
+          instabilityAppliesToSelf = true;
+        }
+        break;
+      }
+      case 'SPAWN_FIELD': {
+        const { fieldType, strength } = action.field;
+        const scaled = Math.abs(strength) * tuning.fieldStrengthScale;
+        if (
+          fieldType === 'RADIAL_IMPULSE' ||
+          fieldType === 'MASS_ATTRACTOR' ||
+          fieldType === 'VORTEX_TANGENT'
+        ) {
+          peakForce = Math.max(peakForce, scaled);
+          const family = classifyFieldDirection(fieldType, strength);
+          if (family) {
+            familySet.add(family);
+            directionSet.add(fieldType);
+          }
+          if (fieldType === 'MASS_ATTRACTOR') hasAttractor = true;
+          if (fieldType === 'RADIAL_IMPULSE') hasRadial = true;
+          if (fieldType === 'VORTEX_TANGENT') hasRadial = true;
+        }
+        break;
+      }
+      case 'ADD_INSTABILITY':
+        instabilityExplicit += action.amount;
+        if (isCasterTarget(action.target)) {
+          instabilityAppliesToSelf = true;
+        }
+        break;
+      case 'MODIFY_STAT':
+        if (action.stat === 'health' && action.value < 0) {
+          directDamage += Math.abs(action.value);
+        }
+        break;
+      default:
+        break;
+    }
+  });
+
+  const baseline = abilityCanHit(ability) ? BASELINE_INSTABILITY_ON_HIT : 0;
+  const instabilityYield = Math.round(
+    baseline + instabilityExplicit + implicitInstability,
+  );
+
+  const directions = [...directionSet].sort();
+
+  return {
+    abilityId: ability.id,
+    name: ability.name,
+    archetype,
+    cooldownMs: ability.cooldownMs,
+    recoilKick: ability.recoilKick ?? 0,
+    displacement: {
+      peakForce: Math.round(peakForce),
+      directions,
+      primaryTag: derivePrimaryTag(familySet),
+      hasAttractor,
+      hasRadial,
+    },
+    instabilityYield,
+    instabilityAppliesToSelf,
+    directDamage: Math.round(directDamage),
+    resource: buildResourceProfile(ability),
+    delivery: buildDeliveryProfile(ability),
+    controlDescriptions: collectControlDescriptions(ability),
+  };
+}
+
+function makeMetricDelta(
+  current: number,
+  baseline: number,
+  formattedDiff: string,
+  polarity: DeltaPolarity,
+): MetricDelta | undefined {
+  const delta = current - baseline;
+  if (delta === 0) return undefined;
+  return { current, baseline, delta, polarity, formattedDiff };
+}
+
+function polarityFromDelta(delta: number, lowerIsBetter: boolean): DeltaPolarity {
+  if (delta === 0) return 'NEUTRAL';
+  if (lowerIsBetter) {
+    return delta < 0 ? 'POSITIVE' : 'NEGATIVE';
+  }
+  return delta > 0 ? 'POSITIVE' : 'NEGATIVE';
+}
+
+export function compareCombatProfiles(
+  current: SpellCombatProfile,
+  baseline: SpellCombatProfile | null,
+): CombatProfileDiff {
+  const result: CombatProfileDiff = {
+    resourceMatch: true,
+    displacementDirectionMatch: true,
+    mechanicChanges: [],
+  };
+
+  if (!baseline) return result;
+
+  const curRes = current.resource;
+  const baseRes = baseline.resource;
+  result.resourceMatch = curRes.type === baseRes.type;
+
+  if (!result.resourceMatch) {
+    result.mechanicChanges.push(
+      `Resource: ${baseRes.type} → ${curRes.type}`,
+    );
+  } else {
+    const costDelta = makeMetricDelta(
+      curRes.cost,
+      baseRes.cost,
+      `${curRes.cost - baseRes.cost >= 0 ? '+' : ''}${curRes.cost - baseRes.cost}`,
+      polarityFromDelta(curRes.cost - baseRes.cost, true),
+    );
+    if (costDelta) result.resourceCost = costDelta;
+
+    if (curRes.capacity !== undefined || baseRes.capacity !== undefined) {
+      const curCap = curRes.capacity ?? 0;
+      const baseCap = baseRes.capacity ?? 0;
+      const capDelta = makeMetricDelta(
+        curCap,
+        baseCap,
+        `${curCap - baseCap >= 0 ? '+' : ''}${curCap - baseCap}`,
+        polarityFromDelta(curCap - baseCap, false),
+      );
+      if (capDelta) result.resourceCapacity = capDelta;
+    }
+
+    if (curRes.rechargeRate !== undefined || baseRes.rechargeRate !== undefined) {
+      const curRate = curRes.rechargeRate ?? 0;
+      const baseRate = baseRes.rechargeRate ?? 0;
+      const rateDelta = makeMetricDelta(
+        curRate,
+        baseRate,
+        `${curRate - baseRate >= 0 ? '+' : ''}${curRate - baseRate}`,
+        polarityFromDelta(curRate - baseRate, false),
+      );
+      if (rateDelta) result.resourceRecharge = rateDelta;
+    }
+
+    if (curRes.lockoutMs !== undefined || baseRes.lockoutMs !== undefined) {
+      const curLock = curRes.lockoutMs ?? 0;
+      const baseLock = baseRes.lockoutMs ?? 0;
+      const lockDelta = makeMetricDelta(
+        curLock,
+        baseLock,
+        `${curLock - baseLock >= 0 ? '+' : ''}${curLock - baseLock}ms`,
+        polarityFromDelta(curLock - baseLock, true),
+      );
+      if (lockDelta) result.resourceLockout = lockDelta;
+    }
+  }
+
+  if (curRes.type === 'COOLDOWN' && baseRes.type === 'COOLDOWN') {
+    const cdDelta = current.cooldownMs - baseline.cooldownMs;
+    const formatted = `${cdDelta >= 0 ? '+' : ''}${cdDelta}ms`;
+    const delta = makeMetricDelta(
+      current.cooldownMs,
+      baseline.cooldownMs,
+      formatted,
+      polarityFromDelta(cdDelta, true),
+    );
+    if (delta) result.cooldown = delta;
+  }
+
+  const recoilDelta = current.recoilKick - baseline.recoilKick;
+  if (recoilDelta !== 0) {
+    const bothMobility =
+      current.recoilKick >= MOBILITY_RECOIL_THRESHOLD &&
+      baseline.recoilKick >= MOBILITY_RECOIL_THRESHOLD;
+    const lowerIsBetter = !bothMobility;
+    result.recoil = makeMetricDelta(
+      current.recoilKick,
+      baseline.recoilKick,
+      `${recoilDelta >= 0 ? '+' : ''}${recoilDelta}`,
+      polarityFromDelta(recoilDelta, lowerIsBetter),
+    )!;
+  }
+
+  const curTag = current.displacement.primaryTag;
+  const baseTag = baseline.displacement.primaryTag;
+  result.displacementDirectionMatch =
+    curTag === baseTag && curTag !== 'MIXED' && curTag !== 'NONE';
+
+  if (!result.displacementDirectionMatch && curTag !== baseTag) {
+    result.mechanicChanges.push(
+      `Displacement: ${baseTag} → ${curTag}`,
+    );
+  }
+
+  if (
+    result.displacementDirectionMatch &&
+    curTag !== 'MIXED' &&
+    curTag !== 'NONE'
+  ) {
+    const forceDelta = current.displacement.peakForce - baseline.displacement.peakForce;
+    if (forceDelta !== 0) {
+      result.peakDisplacement = makeMetricDelta(
+        current.displacement.peakForce,
+        baseline.displacement.peakForce,
+        `${forceDelta >= 0 ? '+' : ''}${forceDelta}`,
+        polarityFromDelta(forceDelta, false),
+      )!;
+    }
+  }
+
+  if (!current.instabilityAppliesToSelf && !baseline.instabilityAppliesToSelf) {
+    const instDelta = current.instabilityYield - baseline.instabilityYield;
+    if (instDelta !== 0) {
+      result.instabilityYield = makeMetricDelta(
+        current.instabilityYield,
+        baseline.instabilityYield,
+        `${instDelta >= 0 ? '+' : ''}${instDelta}`,
+        polarityFromDelta(instDelta, false),
+      )!;
+    }
+  }
+
+  const dmgDelta = current.directDamage - baseline.directDamage;
+  if (dmgDelta !== 0) {
+    result.directDamage = makeMetricDelta(
+      current.directDamage,
+      baseline.directDamage,
+      `${dmgDelta >= 0 ? '+' : ''}${dmgDelta}`,
+      polarityFromDelta(dmgDelta, false),
+    )!;
+  }
+
+  return result;
+}
+
+export interface StatDiffDisplay {
+  text: string;
+  color: string;
+}
+
+/** Formats cooldown + recoil deltas for legacy result-card stat lines. */
+export function formatCombatStatDiff(
+  diff: CombatProfileDiff,
+): StatDiffDisplay | null {
+  const parts: { label: string; formatted: string; polarity: DeltaPolarity }[] = [];
+
+  if (diff.cooldown) {
+    parts.push({
+      label: 'CD',
+      formatted: diff.cooldown.formattedDiff,
+      polarity: diff.cooldown.polarity,
+    });
+  }
+  if (diff.recoil) {
+    parts.push({
+      label: 'Recoil',
+      formatted: diff.recoil.formattedDiff,
+      polarity: diff.recoil.polarity,
+    });
+  }
+
+  if (parts.length === 0) return null;
+
+  const text = parts.map((p) => `${p.label} ${p.formatted}`).join(' · ');
+
+  const hasNegative = parts.some((p) => p.polarity === 'NEGATIVE');
+  const hasPositive = parts.some((p) => p.polarity === 'POSITIVE');
+  let color = '#ccc';
+  if (hasPositive && !hasNegative) color = '#4f8';
+  else if (hasNegative && !hasPositive) color = '#f66';
+  else if (hasPositive && hasNegative) color = '#fcd34d';
+
+  return { text, color };
+}
