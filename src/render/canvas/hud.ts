@@ -1,7 +1,12 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import {
+  parryShieldShowsStamina,
+  parryShieldStaminaRatio,
+} from '../../engine/PhysicsWorld';
 import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import type { ActiveStatusTimer } from '../../entities/Entity';
 import { Entity } from '../../entities/Entity';
+import { Summon } from '../../entities/Summon';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { healthBarColor, instabilityColor } from './colors';
 import { lerpPos, lerpZ } from './helpers';
@@ -13,6 +18,8 @@ export const OVERHEAD_BAR_TOP_OFFSET = 14;
 export const OVERHEAD_BAR_HEIGHT = 5;
 export const OVERHEAD_INSTABILITY_BAR_HEIGHT = 3;
 export const OVERHEAD_INSTABILITY_BAR_GAP = 2;
+export const OVERHEAD_CHANNEL_BAR_HEIGHT = 3;
+export const OVERHEAD_LIFETIME_BAR_HEIGHT = 2;
 const OVERHEAD_INSTABILITY_LABEL_GAP = 6;
 export const OVERHEAD_INSTABILITY_FONT_SIZE = 16;
 export const OVERHEAD_STATUS_BAR_GAP = 6;
@@ -28,6 +35,35 @@ export const OVERHEAD_INSTABILITY_LABEL_OFFSET =
 
 function getInstabilityBarCap(): number {
   return Math.max(1, Entity.maxInstability);
+}
+
+function drawDepletionBar(
+  ctx: CanvasRenderingContext2D,
+  barX: number,
+  barY: number,
+  barWidth: number,
+  barHeight: number,
+  ratio: number,
+  fillColor: string,
+  nowMs: number,
+  urgent = false,
+): void {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(barX, barY, barWidth, barHeight);
+
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const fillWidth = (barWidth - 2) * clamped;
+  if (fillWidth <= 0) return;
+
+  const alpha = urgent && Math.sin(nowMs * 0.02) <= 0 ? 0.4 : 0.9;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2);
+  ctx.globalAlpha = 1;
+}
+
+function urgentLifetimeColor(nowMs: number): string {
+  return Math.sin(nowMs * 0.025) > 0 ? '#ff3366' : '#ffaa00';
 }
 
 function drawStatusDurationBars(
@@ -112,7 +148,49 @@ export function drawOverheadHUD(
       ctx.fill();
     }
 
-    const instabBarY = barY + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+    let subBarY = barY + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+
+    const channelOverlay = world.parryShieldOverlays.find(
+      (overlay) =>
+        overlay.followEntityId === entity.id &&
+        overlay.remainingMs > 0 &&
+        parryShieldShowsStamina(overlay),
+    );
+    if (channelOverlay) {
+      const channelRatio = parryShieldStaminaRatio(channelOverlay);
+      const channelUrgent = channelOverlay.remainingMs < 400;
+      drawDepletionBar(
+        ctx,
+        barX,
+        subBarY,
+        barWidth,
+        OVERHEAD_CHANNEL_BAR_HEIGHT,
+        channelRatio,
+        channelOverlay.color || '#00e5ff',
+        nowMs,
+        channelUrgent,
+      );
+      subBarY += OVERHEAD_CHANNEL_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+    }
+
+    if (entity instanceof Summon) {
+      const lifeRatio = entity.getRemainingLifeRatio();
+      const lifeUrgent = lifeRatio <= 0.2;
+      drawDepletionBar(
+        ctx,
+        barX,
+        subBarY,
+        barWidth,
+        OVERHEAD_LIFETIME_BAR_HEIGHT,
+        lifeRatio,
+        lifeUrgent ? urgentLifetimeColor(nowMs) : '#00e5ff',
+        nowMs,
+        lifeUrgent,
+      );
+      subBarY += OVERHEAD_LIFETIME_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP;
+    }
+
+    const instabBarY = subBarY;
     ctx.beginPath();
     ctx.roundRect(barX, instabBarY, barWidth, OVERHEAD_INSTABILITY_BAR_HEIGHT, 1);
     ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
@@ -156,19 +234,28 @@ export function drawOverheadHUD(
       ctx.fill();
     }
 
+    const extraSubBarHeight = subBarY - (barY + OVERHEAD_BAR_HEIGHT + OVERHEAD_INSTABILITY_BAR_GAP);
+    const instabLabelOffset =
+      OVERHEAD_BAR_TOP_OFFSET +
+      OVERHEAD_BAR_HEIGHT +
+      extraSubBarHeight +
+      OVERHEAD_INSTABILITY_BAR_GAP +
+      OVERHEAD_INSTABILITY_BAR_HEIGHT +
+      OVERHEAD_INSTABILITY_LABEL_GAP;
+
     ctx.fillStyle = instabilityColor(pct);
     ctx.globalAlpha = pct >= 200 ? 0.7 + 0.3 * Math.sin(performance.now() / 200) : 1;
     ctx.fillText(
       `${Math.round(pct)}`,
       physicsPos.x,
-      visualY - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET,
+      visualY - entity.effectiveRadius - instabLabelOffset,
     );
     ctx.globalAlpha = 1;
 
     const activeStatuses = entity.getActiveStatusTimers();
     if (activeStatuses.length > 0) {
       const statusStartY =
-        visualY - entity.effectiveRadius - OVERHEAD_INSTABILITY_LABEL_OFFSET + OVERHEAD_STATUS_BAR_GAP;
+        visualY - entity.effectiveRadius - instabLabelOffset + OVERHEAD_STATUS_BAR_GAP;
       const statusStartX = physicsPos.x - OVERHEAD_STATUS_BAR_TOTAL_WIDTH / 2;
       drawStatusDurationBars(ctx, activeStatuses, statusStartX, statusStartY);
     }

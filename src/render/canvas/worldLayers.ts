@@ -1,12 +1,9 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
-import {
-  parryShieldShowsStamina,
-  parryShieldStaminaRatio,
-} from '../../engine/PhysicsWorld';
+import { parryShieldShowsStamina } from '../../engine/PhysicsWorld';
 import type { Obstacle } from '../../entities/Obstacle';
 import type { SpatialZone } from '../../entities/SpatialZone';
 import type { FieldType } from '../../types/schema';
-import { FIELD_COLORS } from './colors';
+import { FIELD_COLORS, healthBarColor } from './colors';
 import type { CanvasRenderCtx } from './renderCtx';
 
 function parseRgbaColor(color: string): { r: number; g: number; b: number } {
@@ -230,7 +227,6 @@ function drawParryShieldHologram(
   facingRad: number,
   arcDeg: number | undefined,
   now: number,
-  staminaRatio = 1,
   remainingMs = 0,
   showStamina = false,
 ): void {
@@ -239,28 +235,14 @@ function drawParryShieldHologram(
   const half = (((arcDeg ?? 360) * Math.PI) / 180) / 2;
   const startAngle = wedge ? facingRad - half : 0;
   const endAngle = wedge ? facingRad + half : Math.PI * 2;
-  const span = endAngle - startAngle;
-  const staminaEndAngle = showStamina
-    ? startAngle + span * Math.max(0, Math.min(1, staminaRatio))
-    : endAngle;
   const rot = now * 0.5;
   const lowStaminaPulse =
     showStamina && remainingMs > 0 && remainingMs < 400
       ? 0.12 + 0.08 * Math.sin(now * 12)
       : 0;
 
-  drawHologramFill(
-    ctx,
-    x,
-    y,
-    radius,
-    rgb,
-    startAngle,
-    staminaEndAngle,
-    wedge,
-    lowStaminaPulse,
-  );
-  drawInnerReticle(ctx, x, y, radius, rot, rgb, startAngle, staminaEndAngle, wedge);
+  drawHologramFill(ctx, x, y, radius, rgb, startAngle, endAngle, wedge, lowStaminaPulse);
+  drawInnerReticle(ctx, x, y, radius, rot, rgb, startAngle, endAngle, wedge);
   drawOuterPerimeter(
     ctx,
     x,
@@ -270,27 +252,9 @@ function drawParryShieldHologram(
     rgb,
     'FRICTION_OVERRIDE',
     startAngle,
-    staminaEndAngle,
+    endAngle,
     wedge,
   );
-
-  if (showStamina && remainingMs > 0) {
-    const labelAngle = (startAngle + staminaEndAngle) / 2;
-    const labelR = radius * 0.72;
-    const lx = x + Math.cos(labelAngle) * labelR;
-    const ly = y + Math.sin(labelAngle) * labelR;
-    const secs = (remainingMs / 1000).toFixed(1);
-    ctx.save();
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.95)`;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.lineWidth = 3;
-    ctx.strokeText(secs, lx, ly);
-    ctx.fillText(secs, lx, ly);
-    ctx.restore();
-  }
 }
 
 export function drawParryShieldOverlays(
@@ -311,7 +275,6 @@ export function drawParryShieldOverlays(
       facing,
       overlay.arcDeg,
       now,
-      parryShieldStaminaRatio(overlay),
       overlay.remainingMs,
       showStamina,
     );
@@ -362,6 +325,89 @@ function lerpColor(a: string, b: string, t: number): string {
   const g = Math.round(ca.g + (cb.g - ca.g) * t);
   const bl = Math.round(ca.b + (cb.b - ca.b) * t);
   return `rgb(${r},${g},${bl})`;
+}
+
+function getObstacleTopY(obstacle: Obstacle): number {
+  const { pos, config } = obstacle;
+  if (config.shape === 'CIRCLE') return pos.y - config.width / 2;
+  return pos.y - config.height / 2;
+}
+
+function drawObstacleDepletionBar(
+  ctx: CanvasRenderingContext2D,
+  barX: number,
+  barY: number,
+  barWidth: number,
+  barHeight: number,
+  ratio: number,
+  fillColor: string,
+  nowMs: number,
+  urgent = false,
+): void {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(barX, barY, barWidth, barHeight);
+
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const fillWidth = barWidth * clamped;
+  if (fillWidth <= 0) return;
+
+  const alpha = urgent && Math.sin(nowMs * 0.025) <= 0 ? 0.4 : 0.9;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(barX, barY, fillWidth, barHeight);
+  ctx.globalAlpha = 1;
+}
+
+function drawObstacleOverheadBars(
+  ctx: CanvasRenderingContext2D,
+  obstacle: Obstacle,
+  nowMs: number,
+): void {
+  const lifeRatio = obstacle.getRemainingLifeRatio();
+  const topY = getObstacleTopY(obstacle);
+  const barW = Math.max(28, obstacle.getCollisionRadius() * 1.8);
+  const barX = obstacle.pos.x - barW / 2;
+  const healthBarH = 3;
+  const lifetimeBarH = 2;
+  const gap = 2;
+
+  let barY = topY - gap;
+
+  if (obstacle.config.isDestructible) {
+    barY -= healthBarH;
+    const maxHealth = obstacle.config.maxHealth ?? 100;
+    const healthRatio = Math.max(0, obstacle.health / maxHealth);
+    drawObstacleDepletionBar(
+      ctx,
+      barX,
+      barY,
+      barW,
+      healthBarH,
+      healthRatio,
+      healthBarColor(healthRatio),
+      nowMs,
+    );
+    barY -= gap;
+  }
+
+  barY -= lifetimeBarH;
+  const lifeUrgent = lifeRatio <= 0.2;
+  const lifeColor = lifeUrgent
+    ? Math.sin(nowMs * 0.025) > 0
+      ? '#ff3366'
+      : '#ffaa00'
+    : '#00e5ff';
+  drawObstacleDepletionBar(
+    ctx,
+    barX,
+    barY,
+    barW,
+    lifetimeBarH,
+    lifeRatio,
+    lifeColor,
+    nowMs,
+    lifeUrgent,
+  );
 }
 
 function drawDestructibleMine(
@@ -505,9 +551,11 @@ export function drawObstacles(
   state: CanvasRenderCtx,
   world: PhysicsWorld,
 ): void {
-  const now = performance.now() * 0.001;
+  const nowMs = performance.now();
+  const now = nowMs * 0.001;
   for (const obstacle of world.obstacles) {
     if (obstacle.isDead) continue;
+    drawObstacleOverheadBars(ctx, obstacle, nowMs);
     if (obstacle.config.isDestructible) {
       if (obstacle.config.shape === 'CIRCLE') {
         drawDestructibleMine(ctx, obstacle, now);

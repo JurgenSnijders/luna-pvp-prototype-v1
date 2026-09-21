@@ -77,6 +77,12 @@ export class Summon extends Entity {
     return this.config.anchored !== false;
   }
 
+  getRemainingLifeRatio(): number {
+    const total = this.config.durationMs;
+    if (total <= 0) return 1;
+    return Math.max(0, Math.min(1, this.remainingDurationMs / total));
+  }
+
   getTriggers(trigger: string): TriggerNode[] {
     return this.triggerMap.get(trigger) ?? [];
   }

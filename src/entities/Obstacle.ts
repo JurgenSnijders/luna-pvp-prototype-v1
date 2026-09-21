@@ -26,6 +26,12 @@ export class Obstacle {
     return Math.hypot(this.config.width, this.config.height) / 2;
   }
 
+  getRemainingLifeRatio(): number {
+    const total = this.config.durationMs;
+    if (total <= 0) return 1;
+    return Math.max(0, Math.min(1, this.remainingDurationMs / total));
+  }
+
   update(dt: number): void {
     this.remainingDurationMs -= dt * 1000;
     if (this.remainingDurationMs <= 0) {
