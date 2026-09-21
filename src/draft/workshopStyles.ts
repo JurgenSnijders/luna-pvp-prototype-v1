@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v23';
+export const STYLE_ID = 'luna-workshop-styles-v24';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -922,8 +922,10 @@ export function injectStyles(): void {
     }
 
     .telemetry-v.stat-supercharged {
+      font-size: 13px !important;
+      font-weight: 800 !important;
       color: #00ff88 !important;
-      text-shadow: 0 0 6px rgba(0, 255, 136, 0.5);
+      text-shadow: 0 0 8px currentColor;
     }
 
     .forge-card-header {
@@ -960,6 +962,12 @@ export function injectStyles(): void {
       border-radius: 4px;
       overflow: hidden;
       flex-shrink: 0;
+    }
+
+    .forge-glyph-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
     }
 
     .forge-card-glyph-frame.is-streaming::after {
@@ -1041,9 +1049,54 @@ export function injectStyles(): void {
     }
 
     .telemetry-item {
+      position: relative;
       display: flex;
       flex-direction: column;
       gap: 1px;
+    }
+
+    .telemetry-winner-pip {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-family: ${FONTS.mono};
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 1px 3px;
+      border-radius: 2px;
+      line-height: 1;
+      pointer-events: none;
+      animation: winnerPipFadeIn 0.25s ease-out;
+    }
+
+    .telemetry-winner-pip.winner-repulse {
+      color: #ffd700;
+      background: rgba(255, 215, 0, 0.15);
+      border: 1px solid rgba(255, 215, 0, 0.4);
+      box-shadow: 0 0 6px rgba(255, 215, 0, 0.25);
+    }
+
+    .telemetry-winner-pip.winner-cooldown {
+      color: #00e5ff;
+      background: rgba(0, 229, 255, 0.15);
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      box-shadow: 0 0 6px rgba(0, 229, 255, 0.25);
+    }
+
+    @keyframes winnerPipFadeIn {
+      from { opacity: 0; transform: scale(0.8); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .forge-card-redesign.just-sealed {
+      animation: cardSealSnap 0.35s ease-out;
+    }
+
+    @keyframes cardSealSnap {
+      0% { transform: scale(0.98); box-shadow: 0 0 24px rgba(255, 255, 255, 0.4); }
+      50% { transform: scale(1.01); }
+      100% { transform: scale(1); }
     }
 
     .telemetry-k {

@@ -191,6 +191,9 @@ interface ForgeCardSlot {
   isSealed: boolean;
   card: DraftCard | null;
   handlersBound: boolean;
+  glyphCanvas: HTMLCanvasElement | null;
+  playbackRecording: PlaybackRecording | null;
+  glyphArchetypeColor: string;
 }
 
 export function stampDraftCardMetadataOntoAbility(
@@ -231,6 +234,10 @@ export function resolveMutationPerk(card: DraftCard, telemetry: SpellTelemetry):
     return 'STANDARD BLUEPRINT';
   }
   return null;
+}
+
+export function stripMutationPerkNumericParenthetical(perk: string): string {
+  return perk.replace(/\s*\([^)]*\d[^)]*\)\s*$/i, '').trim();
 }
 
 export function resolveForgeCardTitle(
@@ -277,6 +284,8 @@ export function resolveSuperchargedMetricKey(
 
 const SCOPE_WIDTH = 240;
 const SCOPE_HEIGHT = 120;
+const FORGE_GLYPH_WIDTH = 160;
+const FORGE_GLYPH_HEIGHT = 88;
 
 export interface ScopeHudData {
   channels: string;
@@ -667,6 +676,8 @@ export class DraftModal {
   }> | null = null;
 
   private activeForgeCardSlots: ForgeCardSlot[] | null = null;
+  private cardLoopAnimId: number | null = null;
+  private forgePipSignature: string | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
@@ -936,6 +947,7 @@ export class DraftModal {
 
   close(): void {
     this.stopHeroScopeAnimation();
+    this.stopForgeCardPlaybackLoop();
     this.destroyCombatTooltip();
     this.invalidatePrefetch();
     this.clearSynthesisTimer();
@@ -1048,6 +1060,9 @@ export class DraftModal {
 
   private setActiveTab(tab: WorkshopTab): void {
     this.stopHeroScopeAnimation();
+    if (this.activeTab === 'FORGE' && tab !== 'FORGE') {
+      this.stopForgeCardPlaybackLoop(false);
+    }
     if (tab === 'VAULT') {
       this.clearForgeTransientState();
     }
@@ -1055,6 +1070,7 @@ export class DraftModal {
     this.refreshUI();
     if (tab === 'FORGE') {
       this.promptInput.focus();
+      this.restartForgeCardPlaybackLoopIfNeeded();
     }
     if (tab === 'VAULT') {
       this.renderTacticalInspector();
@@ -2216,6 +2232,196 @@ export class DraftModal {
     }
   }
 
+  private stopForgeCardPlaybackLoop(clearRecordings = true): void {
+    if (this.cardLoopAnimId !== null) {
+      cancelAnimationFrame(this.cardLoopAnimId);
+      this.cardLoopAnimId = null;
+    }
+    if (clearRecordings) {
+      for (const slot of this.activeForgeCardSlots ?? []) {
+        slot.playbackRecording = null;
+        slot.glyphCanvas = null;
+      }
+    }
+  }
+
+  private restartForgeCardPlaybackLoopIfNeeded(): void {
+    const hasRecording = this.activeForgeCardSlots?.some((slot) => slot.playbackRecording);
+    if (hasRecording && this.cardLoopAnimId === null) {
+      this.startForgeCardPlaybackLoop();
+    }
+  }
+
+  private startForgeCardPlaybackLoop(): void {
+    if (this.cardLoopAnimId !== null) return;
+
+    const animate = (timestamp: number): void => {
+      if (!this.panel.isConnected) {
+        this.stopForgeCardPlaybackLoop();
+        return;
+      }
+
+      for (const slot of this.activeForgeCardSlots ?? []) {
+        if (!slot.isSealed || !slot.playbackRecording || !slot.glyphCanvas) continue;
+
+        const recording = slot.playbackRecording;
+        const canvas = slot.glyphCanvas;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+
+        const totalFrames = recording.frames.length;
+        const frameIndex =
+          totalFrames > 0 ? Math.floor(timestamp / (1000 / 60)) % totalFrames : 0;
+        const frame = recording.frames[frameIndex];
+        const color = slot.glyphArchetypeColor;
+
+        ctx.clearRect(0, 0, recording.canvasWidth, recording.canvasHeight);
+        this.drawScopeBackground(
+          ctx,
+          recording.canvasWidth,
+          recording.canvasHeight,
+          timestamp,
+          color,
+          recording.originCanvasPos,
+        );
+
+        if (!frame || totalFrames === 0) {
+          this.drawScopeEmptyCrosshair(ctx, recording.canvasWidth, recording.canvasHeight);
+          continue;
+        }
+
+        this.drawScopeCasterHub(ctx, recording.originCanvasPos, color);
+        this.drawScopeTargetReticle(ctx, recording.targetCanvasPos, color);
+
+        for (const zone of frame.zones) {
+          this.drawScopeZone(ctx, zone.x, zone.y, zone.radius, zone.color, timestamp);
+        }
+
+        for (const proj of frame.projectiles) {
+          drawScopeProjectile(
+            ctx,
+            proj.x,
+            proj.y,
+            proj.radius,
+            proj.heading,
+            proj.style,
+            proj.color,
+            timestamp,
+            proj.z,
+          );
+        }
+
+        for (const particle of frame.particles) {
+          ctx.save();
+          ctx.globalAlpha = particle.alpha;
+          ctx.fillStyle = particle.color;
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        for (const impact of frame.impacts) {
+          this.drawScopeImpact(ctx, impact.x, impact.y, impact.radius, impact.color, impact.age);
+        }
+      }
+
+      this.cardLoopAnimId = requestAnimationFrame(animate);
+    };
+
+    this.cardLoopAnimId = requestAnimationFrame(animate);
+  }
+
+  private mountForgeGlyphPlayback(slot: ForgeCardSlot, ability: AbilitySchema): void {
+    slot.glyphFrameEl.classList.remove('is-streaming');
+    slot.glyphFrameEl.innerHTML = '';
+
+    const cardCanvas = document.createElement('canvas');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cardCanvas.width = FORGE_GLYPH_WIDTH * dpr;
+    cardCanvas.height = FORGE_GLYPH_HEIGHT * dpr;
+    cardCanvas.style.width = '100%';
+    cardCanvas.style.height = '100%';
+    cardCanvas.className = 'forge-glyph-canvas';
+    slot.glyphFrameEl.appendChild(cardCanvas);
+
+    const ctx = cardCanvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+    }
+
+    const archetype = ability.archetype ?? 'KINETIC';
+    slot.glyphCanvas = cardCanvas;
+    slot.glyphArchetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
+    slot.playbackRecording = recordSpellPlayback(
+      ability,
+      FORGE_GLYPH_WIDTH,
+      FORGE_GLYPH_HEIGHT,
+      10,
+    );
+    this.startForgeCardPlaybackLoop();
+  }
+
+  private clearForgeWinnerPips(): void {
+    for (const slot of this.activeForgeCardSlots ?? []) {
+      slot.telemetryItems.cooldown
+        .querySelectorAll('.telemetry-winner-pip')
+        .forEach((el) => el.remove());
+      slot.telemetryItems.repulse
+        .querySelectorAll('.telemetry-winner-pip')
+        .forEach((el) => el.remove());
+    }
+  }
+
+  private applyComparativeForgePips(): void {
+    const slots = this.activeForgeCardSlots;
+    if (!slots || slots.length < 2) {
+      this.clearForgeWinnerPips();
+      this.forgePipSignature = null;
+      return;
+    }
+
+    if (!slots.every((slot) => slot.isSealed && slot.card?.abilityPayload)) {
+      this.clearForgeWinnerPips();
+      this.forgePipSignature = null;
+      return;
+    }
+
+    const metrics = slots.map((slot) => {
+      const telemetry = extractSpellTelemetry(slot.card!.abilityPayload!);
+      return {
+        cooldown: parseFloat(telemetry.cooldownSec) || 0,
+        repulse: telemetry.repulseForce,
+      };
+    });
+
+    const minCooldown = Math.min(...metrics.map((metric) => metric.cooldown));
+    const maxRepulse = Math.max(...metrics.map((metric) => metric.repulse));
+    const signature = `${minCooldown}|${maxRepulse}|${metrics
+      .map((metric) => `${metric.cooldown},${metric.repulse}`)
+      .join(';')}`;
+
+    if (signature === this.forgePipSignature) return;
+    this.forgePipSignature = signature;
+    this.clearForgeWinnerPips();
+
+    for (let i = 0; i < slots.length; i++) {
+      const metric = metrics[i];
+      if (maxRepulse > 0 && metric.repulse === maxRepulse) {
+        const pip = document.createElement('span');
+        pip.className = 'telemetry-winner-pip winner-repulse';
+        pip.textContent = '▲ PEAK';
+        slots[i].telemetryItems.repulse.appendChild(pip);
+      }
+      if (minCooldown < 5 && metric.cooldown === minCooldown) {
+        const pip = document.createElement('span');
+        pip.className = 'telemetry-winner-pip winner-cooldown';
+        pip.textContent = '▲ FAST';
+        slots[i].telemetryItems.cooldown.appendChild(pip);
+      }
+    }
+  }
+
   private startHeroScopeAnimation(
     canvas: HTMLCanvasElement,
     ctx: CanvasRenderingContext2D,
@@ -2673,21 +2879,72 @@ export class DraftModal {
       isSealed: false,
       card: null,
       handlersBound: false,
+      glyphCanvas: null,
+      playbackRecording: null,
+      glyphArchetypeColor: '#00e5ff',
     };
   }
 
-  private populateForgeCardTelemetry(slot: ForgeCardSlot, card: DraftCard): void {
+  private animateMetricRollUp(
+    el: HTMLElement,
+    targetValue: number,
+    format: (value: number) => string,
+    durationMs = 180,
+  ): void {
+    const start = performance.now();
+    const step = (now: number): void => {
+      const progress = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = format(targetValue * eased);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = format(targetValue);
+      }
+    };
+    requestAnimationFrame(step);
+  }
+
+  private populateForgeCardTelemetry(
+    slot: ForgeCardSlot,
+    card: DraftCard,
+    options?: { animate?: boolean },
+  ): void {
     const ability = card.abilityPayload;
     if (!ability) return;
 
     const telemetry = extractSpellTelemetry(ability);
     const tier = normalizeForgeTierRarity(card.rarity);
     const superKey = resolveSuperchargedMetricKey(telemetry, tier);
+    const cooldownValue = parseFloat(telemetry.cooldownSec) || 0;
 
-    slot.telemetryValues.cooldown.textContent = telemetry.cooldownSec;
-    slot.telemetryValues.recoil.textContent = `${telemetry.recoilKick} px/s`;
-    slot.telemetryValues.repulse.textContent =
-      telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal';
+    if (options?.animate) {
+      this.animateMetricRollUp(
+        slot.telemetryValues.cooldown,
+        cooldownValue,
+        (value) => `${value.toFixed(1)}s`,
+      );
+      this.animateMetricRollUp(
+        slot.telemetryValues.recoil,
+        telemetry.recoilKick,
+        (value) => `${Math.round(value)} px/s`,
+      );
+      if (telemetry.repulseForce > 0) {
+        this.animateMetricRollUp(
+          slot.telemetryValues.repulse,
+          telemetry.repulseForce,
+          (value) => `${Math.round(value)} Force`,
+        );
+      } else {
+        slot.telemetryValues.repulse.textContent = 'Minimal';
+      }
+    } else {
+      slot.telemetryValues.cooldown.textContent = telemetry.cooldownSec;
+      slot.telemetryValues.recoil.textContent = `${telemetry.recoilKick} px/s`;
+      slot.telemetryValues.repulse.textContent =
+        telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal';
+    }
+
     slot.telemetryValues.instability.textContent = `+${telemetry.instabilityYield}% Yield`;
     slot.telemetryValues.delivery.textContent = telemetry.deliveryText;
 
@@ -2841,15 +3098,18 @@ export class DraftModal {
       const arrow = document.createElement('span');
       arrow.textContent = '▲';
       mutationBanner.appendChild(arrow);
-      mutationBanner.appendChild(document.createTextNode(` ${perk}`));
+      mutationBanner.appendChild(
+        document.createTextNode(` ${stripMutationPerkNumericParenthetical(perk)}`),
+      );
       slot.mutationSlotEl.appendChild(mutationBanner);
     }
 
-    slot.glyphFrameEl.classList.remove('is-streaming');
-    slot.glyphFrameEl.innerHTML = '';
-    slot.glyphFrameEl.appendChild(generateSpellIcon(ability, 64));
+    this.mountForgeGlyphPlayback(slot, ability);
 
-    this.populateForgeCardTelemetry(slot, card);
+    slot.cardEl.classList.add('just-sealed');
+    window.setTimeout(() => slot.cardEl.classList.remove('just-sealed'), 400);
+
+    this.populateForgeCardTelemetry(slot, card, { animate: true });
 
     slot.badgesRowEl.innerHTML = '';
     this.appendSemanticBadges(slot.badgesRowEl, ability);
@@ -2871,6 +3131,8 @@ export class DraftModal {
     if (this.selectedForgeIndex === null) {
       this.previewForgeCard(cardIndex);
     }
+
+    this.applyComparativeForgePips();
   }
 
   private buildForgeTelemetryCard(
@@ -2885,6 +3147,10 @@ export class DraftModal {
     slot.taglineEl.textContent = card.tagline;
     slot.descEl.textContent = card.description;
     slot.titleEl.classList.remove('is-forging');
+    if (!this.activeForgeCardSlots) {
+      this.activeForgeCardSlots = [];
+    }
+    this.activeForgeCardSlots.push(slot);
     this.sealForgeCardSlot(slot, card, allCards);
     this.applyForgeCardSavedState(slot, cardIndex);
     return slot.cardEl;
@@ -2915,6 +3181,8 @@ export class DraftModal {
   }
 
   private mountForgeStreamingCards(): void {
+    this.stopForgeCardPlaybackLoop();
+    this.forgePipSignature = null;
     this.cardsContainer.innerHTML = '';
     this.streamingSlots = null;
     this.activeForgeCardSlots = [];
@@ -2976,9 +3244,14 @@ export class DraftModal {
         this.previewForgeCard(firstSealed);
       }
     }
+
+    this.applyComparativeForgePips();
   }
 
   private renderForgeVaultPickerCards(): void {
+    this.stopForgeCardPlaybackLoop();
+    this.forgePipSignature = null;
+    this.activeForgeCardSlots = [];
     this.cardsContainer.innerHTML = '';
 
     if (this.vaultSavedCardIndex === null) {
@@ -2998,7 +3271,11 @@ export class DraftModal {
 
     if (this.selectedForgeIndex !== null) {
       this.previewForgeCard(this.selectedForgeIndex);
+    } else if (abilityCards.length > 0) {
+      this.previewForgeCard(0);
     }
+
+    this.applyComparativeForgePips();
   }
 
   private resolveEquipTarget(card?: DraftCard): DraftSelection['slot'] | null {
