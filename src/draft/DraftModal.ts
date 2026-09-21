@@ -159,6 +159,39 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
 }
 
 const FORGE_TIER_ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
+const FORGE_PARALLEL_RARITIES: CardRarity[] = ['COMMON', 'RARE', 'EPIC'];
+
+interface ForgeCardSlot {
+  cardEl: HTMLElement;
+  footerEl: HTMLElement;
+  rarity: CardRarity;
+  cardIndex: number;
+  titleEl: HTMLElement;
+  taglineEl: HTMLElement;
+  descEl: HTMLElement;
+  archetypeEl: HTMLElement;
+  mutationSlotEl: HTMLElement;
+  glyphFrameEl: HTMLElement;
+  telemetryGridEl: HTMLElement;
+  telemetryItems: {
+    cooldown: HTMLElement;
+    repulse: HTMLElement;
+    instability: HTMLElement;
+  };
+  telemetryValues: {
+    cooldown: HTMLElement;
+    recoil: HTMLElement;
+    repulse: HTMLElement;
+    instability: HTMLElement;
+    delivery: HTMLElement;
+  };
+  statusEl: HTMLElement;
+  badgesRowEl: HTMLElement;
+  saveBtn: HTMLButtonElement;
+  isSealed: boolean;
+  card: DraftCard | null;
+  handlersBound: boolean;
+}
 
 export function stampDraftCardMetadataOntoAbility(
   ability: AbilitySchema,
@@ -632,6 +665,8 @@ export class DraftModal {
     card: DraftCard | null;
     finalized: boolean;
   }> | null = null;
+
+  private activeForgeCardSlots: ForgeCardSlot[] | null = null;
 
   private mode: WorkshopMode = 'FORGE_NEW';
   private selectedCategory: SkillCategory = 'SECONDARY';
@@ -1613,7 +1648,11 @@ export class DraftModal {
   private renderForge(): void {
     this.renderSynthesisControls();
     if (this.forgeVaultPickerActive) {
-      this.renderForgeVaultPickerCards();
+      if (this.activeForgeCardSlots && this.activeForgeCardSlots.length > 0) {
+        this.reappendForgeCardSlots();
+      } else {
+        this.renderForgeVaultPickerCards();
+      }
     } else {
       this.renderResultCards();
     }
@@ -1848,7 +1887,10 @@ export class DraftModal {
       prefetchPromise = null;
     }
 
-    if (useStreaming) {
+    if (useStreaming && this.shouldShowForgeVaultPicker()) {
+      this.loadingEl.style.display = 'none';
+      this.mountForgeStreamingCards();
+    } else if (useStreaming) {
       this.loadingEl.style.display = 'none';
       this.renderStreamingSkeletons();
     } else {
@@ -1906,7 +1948,11 @@ export class DraftModal {
 
       this.renderApiStatusPill();
       if (this.shouldShowForgeVaultPicker()) {
-        await this.showForgeVaultPicker();
+        if (this.activeForgeCardSlots) {
+          await this.reconcileForgeCardsAfterSynthesis();
+        } else {
+          await this.showForgeVaultPicker();
+        }
       } else if (useStreaming && this.streamingSlots) {
         this.finalizeStreamingCards();
       } else {
@@ -1963,6 +2009,7 @@ export class DraftModal {
   private async showForgeVaultPicker(): Promise<void> {
     await this.prepareForgeCardsForDisplay();
     this.streamingSlots = null;
+    this.activeForgeCardSlots = null;
     this.forgeVaultPickerActive = true;
 
     const pickerCards = this.getForgePickerCards();
@@ -1985,7 +2032,8 @@ export class DraftModal {
   }
 
   private previewForgeCard(cardIndex: number): void {
-    const card = this.getForgePickerCard(cardIndex);
+    const slotCard = this.activeForgeCardSlots?.[cardIndex]?.card ?? null;
+    const card = slotCard ?? this.getForgePickerCard(cardIndex);
     const ability = card?.abilityPayload ?? null;
     if (!ability) return;
 
@@ -2011,7 +2059,8 @@ export class DraftModal {
     const payload = parseForgeCardDragPayload(raw);
     if (!payload) return;
 
-    const card = this.getForgePickerCard(payload.cardIndex);
+    const slotCard = this.activeForgeCardSlots?.[payload.cardIndex]?.card ?? null;
+    const card = slotCard ?? this.getForgePickerCard(payload.cardIndex);
     if (!card?.abilityPayload) return;
 
     if (this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== payload.cardIndex) {
@@ -2058,7 +2107,7 @@ export class DraftModal {
     this.evolutionContext = null;
     this.mode = 'FORGE_NEW';
     this.selectedCategory = category;
-    this.renderForgeVaultPickerCards();
+    this.updateForgeCardFootersInPlace();
   }
 
   private navigateToVaultSpell(spellId: string): void {
@@ -2494,20 +2543,9 @@ export class DraftModal {
     return item;
   }
 
-  private buildForgeTelemetryCard(
-    card: DraftCard,
-    cardIndex: number,
-    allCards: DraftCard[],
-  ): HTMLElement | null {
-    const ability = card.abilityPayload;
-    if (!ability) return null;
-
-    const telemetry = extractSpellTelemetry(ability);
-    const tier = normalizeForgeTierRarity(card.rarity);
-    const rarityColor = RARITY_COLORS[card.rarity];
-    const archetype = ability.archetype ?? 'KINETIC';
-    const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
-    const superKey = resolveSuperchargedMetricKey(telemetry, tier);
+  private mountForgeCardShell(cardIndex: number, rarity: CardRarity): ForgeCardSlot {
+    const tier = normalizeForgeTierRarity(rarity);
+    const rarityColor = RARITY_COLORS[rarity];
 
     const root = document.createElement('div');
     root.className = `forge-card-redesign tier-${tier.toLowerCase()}`;
@@ -2526,164 +2564,418 @@ export class DraftModal {
 
     const archetypeEl = document.createElement('span');
     archetypeEl.className = 'forge-card-archetype';
-    archetypeEl.textContent = archetype;
-    archetypeEl.style.color = archetypeColor;
-    archetypeEl.style.borderColor = archetypeColor;
-    archetypeEl.style.background = `${archetypeColor}18`;
+    archetypeEl.style.opacity = '0';
+    archetypeEl.style.minWidth = '52px';
 
     header.appendChild(rarityEl);
     header.appendChild(archetypeEl);
 
-    const perk = resolveMutationPerk(card, telemetry);
-    const mutationBanner = document.createElement('div');
-    mutationBanner.className = 'forge-mutation-banner';
-    if (perk) {
-      const arrow = document.createElement('span');
-      arrow.textContent = '▲';
-      mutationBanner.appendChild(arrow);
-      mutationBanner.appendChild(document.createTextNode(` ${perk}`));
-    }
+    const mutationSlotEl = document.createElement('div');
+    mutationSlotEl.className = 'forge-card-mutation-slot';
 
-    const glyphFrame = document.createElement('div');
-    glyphFrame.className = 'forge-card-glyph-frame';
-    glyphFrame.appendChild(generateSpellIcon(ability, 64));
+    const glyphFrameEl = document.createElement('div');
+    glyphFrameEl.className = 'forge-card-glyph-frame forge-card-drag-handle is-streaming';
 
     const info = document.createElement('div');
     info.className = 'forge-card-info';
 
-    const title = document.createElement('div');
-    title.className = 'forge-card-title';
-    title.textContent = resolveForgeCardTitle(card, cardIndex, allCards);
+    const titleEl = document.createElement('div');
+    titleEl.className = 'forge-card-title is-forging';
+    titleEl.textContent = 'Forging Spell...';
 
-    const tagline = document.createElement('div');
-    tagline.className = 'forge-card-tagline';
-    tagline.textContent = card.tagline;
+    const taglineEl = document.createElement('div');
+    taglineEl.className = 'forge-card-tagline';
+    taglineEl.textContent = 'Synthesizing concept...';
 
-    const desc = document.createElement('div');
-    desc.className = 'forge-card-desc';
-    desc.textContent = card.description;
+    const descEl = document.createElement('div');
+    descEl.className = 'forge-card-desc';
+    descEl.textContent = '';
 
-    info.appendChild(title);
-    info.appendChild(tagline);
-    info.appendChild(desc);
+    info.appendChild(titleEl);
+    info.appendChild(taglineEl);
+    info.appendChild(descEl);
 
-    const telemetryGrid = document.createElement('div');
-    telemetryGrid.className = 'forge-card-telemetry';
+    const telemetryGridEl = document.createElement('div');
+    telemetryGridEl.className = 'forge-card-telemetry';
 
-    const cooldownItem = this.buildTelemetryItem('Cooldown', telemetry.cooldownSec);
-    telemetryGrid.appendChild(cooldownItem);
-    telemetryGrid.appendChild(this.buildTelemetryItem('Recoil', `${telemetry.recoilKick} px/s`));
+    const cooldownItem = this.buildTelemetryItem('Cooldown', '—');
+    const recoilItem = this.buildTelemetryItem('Recoil', '—');
+    const repulseItem = this.buildTelemetryItem('Repulse', '—');
+    const instabilityItem = this.buildTelemetryItem('Instability', '—', 'highlight-instability');
+    const deliveryItem = this.buildTelemetryItem('Delivery', '—');
+    deliveryItem.classList.add('telemetry-row-full');
 
-    const repulseItem = this.buildTelemetryItem(
-      'Repulse',
-      telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal',
-      telemetry.repulseForce > 0 ? 'highlight-repulse' : '',
+    telemetryGridEl.appendChild(cooldownItem);
+    telemetryGridEl.appendChild(recoilItem);
+    telemetryGridEl.appendChild(repulseItem);
+    telemetryGridEl.appendChild(instabilityItem);
+    telemetryGridEl.appendChild(deliveryItem);
+
+    const badgesRowEl = document.createElement('div');
+    badgesRowEl.className = 'forge-semantic-badges';
+
+    const statusEl = document.createElement('div');
+    statusEl.className = 'forge-card-status-block';
+    statusEl.textContent = 'Awaiting telemetry...';
+
+    const footerEl = document.createElement('div');
+    footerEl.className = 'forge-card-footer';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'forge-claim-btn save-vault-btn';
+    saveBtn.textContent = 'SYNTHESIZING...';
+    saveBtn.disabled = true;
+    footerEl.appendChild(saveBtn);
+
+    root.appendChild(header);
+    root.appendChild(mutationSlotEl);
+    root.appendChild(glyphFrameEl);
+    root.appendChild(info);
+    root.appendChild(telemetryGridEl);
+    root.appendChild(badgesRowEl);
+    root.appendChild(statusEl);
+    root.appendChild(footerEl);
+
+    const cooldownVal = cooldownItem.querySelector('.telemetry-v');
+    const recoilVal = recoilItem.querySelector('.telemetry-v');
+    const repulseVal = repulseItem.querySelector('.telemetry-v');
+    const instabilityVal = instabilityItem.querySelector('.telemetry-v');
+    const deliveryVal = deliveryItem.querySelector('.telemetry-v');
+
+    return {
+      cardEl: root,
+      footerEl,
+      rarity,
+      cardIndex,
+      titleEl,
+      taglineEl,
+      descEl,
+      archetypeEl,
+      mutationSlotEl,
+      glyphFrameEl,
+      telemetryGridEl,
+      telemetryItems: {
+        cooldown: cooldownItem,
+        repulse: repulseItem,
+        instability: instabilityItem,
+      },
+      telemetryValues: {
+        cooldown: cooldownVal as HTMLElement,
+        recoil: recoilVal as HTMLElement,
+        repulse: repulseVal as HTMLElement,
+        instability: instabilityVal as HTMLElement,
+        delivery: deliveryVal as HTMLElement,
+      },
+      statusEl,
+      badgesRowEl,
+      saveBtn,
+      isSealed: false,
+      card: null,
+      handlersBound: false,
+    };
+  }
+
+  private populateForgeCardTelemetry(slot: ForgeCardSlot, card: DraftCard): void {
+    const ability = card.abilityPayload;
+    if (!ability) return;
+
+    const telemetry = extractSpellTelemetry(ability);
+    const tier = normalizeForgeTierRarity(card.rarity);
+    const superKey = resolveSuperchargedMetricKey(telemetry, tier);
+
+    slot.telemetryValues.cooldown.textContent = telemetry.cooldownSec;
+    slot.telemetryValues.recoil.textContent = `${telemetry.recoilKick} px/s`;
+    slot.telemetryValues.repulse.textContent =
+      telemetry.repulseForce > 0 ? `${telemetry.repulseForce} Force` : 'Minimal';
+    slot.telemetryValues.instability.textContent = `+${telemetry.instabilityYield}% Yield`;
+    slot.telemetryValues.delivery.textContent = telemetry.deliveryText;
+
+    slot.telemetryValues.repulse.classList.toggle(
+      'highlight-repulse',
+      telemetry.repulseForce > 0,
     );
-    telemetryGrid.appendChild(repulseItem);
 
-    const instabilityItem = this.buildTelemetryItem(
-      'Instability',
-      `+${telemetry.instabilityYield}% Yield`,
-      'highlight-instability',
-    );
-    telemetryGrid.appendChild(instabilityItem);
+    for (const item of Object.values(slot.telemetryItems)) {
+      item.querySelector('.telemetry-v')?.classList.remove('stat-supercharged');
+    }
 
     if (superKey === 'cooldown') {
-      cooldownItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+      slot.telemetryValues.cooldown.classList.add('stat-supercharged');
     } else if (superKey === 'repulse') {
-      repulseItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+      slot.telemetryValues.repulse.classList.add('stat-supercharged');
     } else if (superKey === 'instability') {
-      instabilityItem.querySelector('.telemetry-v')?.classList.add('stat-supercharged');
+      slot.telemetryValues.instability.classList.add('stat-supercharged');
     }
+  }
 
-    if (telemetry.directDamage > 0) {
-      telemetryGrid.appendChild(
-        this.buildTelemetryItem('Direct HP', `${telemetry.directDamage} HP`),
-      );
-    }
-
-    const deliveryItem = this.buildTelemetryItem('Delivery', telemetry.deliveryText);
-    deliveryItem.classList.add('telemetry-row-full');
-    telemetryGrid.appendChild(deliveryItem);
-
-    const badgeRow = document.createElement('div');
-    badgeRow.className = 'forge-semantic-badges';
-    this.appendSemanticBadges(badgeRow, ability);
-
-    const statusBlock = document.createElement('div');
-    statusBlock.className = 'forge-card-status-block';
-    statusBlock.textContent =
-      telemetry.ccDescriptions.length > 0
-        ? telemetry.ccDescriptions.join(' · ')
-        : '[CLEAN HIT] Pure Kinetic Force';
-
-    const footer = document.createElement('div');
-    footer.className = 'forge-card-footer';
+  private renderForgeCardFooter(slot: ForgeCardSlot, cardIndex: number): void {
+    const card = slot.card;
+    slot.footerEl.innerHTML = '';
 
     const isSaved = this.vaultSavedCardIndex === cardIndex;
     const anotherSaved =
       this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex;
 
+    slot.cardEl.classList.remove('forge-card-saved', 'forge-card-discarded');
     if (isSaved) {
-      root.classList.add('forge-card-saved');
+      slot.cardEl.classList.add('forge-card-saved');
+    } else if (anotherSaved) {
+      slot.cardEl.classList.add('forge-card-discarded');
+    }
 
+    if (isSaved) {
       const storedIndicator = document.createElement('div');
       storedIndicator.className = 'forge-stored-indicator';
       storedIndicator.textContent = '✦ SAVED TO SPELL VAULT';
 
       const viewBtn = document.createElement('button');
       viewBtn.type = 'button';
-      viewBtn.className = 'forge-claim-btn';
+      viewBtn.className = 'forge-claim-btn save-vault-btn';
       viewBtn.textContent = 'VIEW IN VAULT';
       viewBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (ability.id) this.navigateToVaultSpell(ability.id);
+        const spellId = card?.abilityPayload?.id;
+        if (spellId) this.navigateToVaultSpell(spellId);
       });
 
-      footer.appendChild(storedIndicator);
-      footer.appendChild(viewBtn);
-    } else if (anotherSaved) {
-      root.classList.add('forge-card-discarded');
+      slot.footerEl.appendChild(storedIndicator);
+      slot.footerEl.appendChild(viewBtn);
+      slot.saveBtn = viewBtn;
+      return;
+    }
 
+    if (anotherSaved) {
       const discardedHint = document.createElement('div');
       discardedHint.className = 'forge-card-discarded-hint';
       discardedHint.textContent = 'Not saved';
-      footer.appendChild(discardedHint);
-    } else {
-      const saveBtn = document.createElement('button');
-      saveBtn.type = 'button';
-      saveBtn.className = 'forge-claim-btn';
-      saveBtn.textContent = 'SAVE TO VAULT';
+      slot.footerEl.appendChild(discardedHint);
+      return;
+    }
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'forge-claim-btn save-vault-btn';
+    saveBtn.textContent = slot.isSealed ? 'SAVE TO VAULT' : 'SYNTHESIZING...';
+    saveBtn.disabled = !slot.isSealed;
+    if (slot.isSealed && card) {
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.saveCardToVault(card, cardIndex);
       });
-      footer.appendChild(saveBtn);
     }
+    slot.footerEl.appendChild(saveBtn);
+    slot.saveBtn = saveBtn;
+  }
 
-    if (!anotherSaved) {
-      attachForgeCardDrag(glyphFrame, cardIndex);
+  private updateForgeCardFootersInPlace(): void {
+    if (this.activeForgeCardSlots) {
+      for (const slot of this.activeForgeCardSlots) {
+        this.renderForgeCardFooter(slot, slot.cardIndex);
+      }
+      return;
     }
+    this.renderForgeVaultPickerCards();
+  }
 
-    root.addEventListener('click', (e) => {
+  private bindForgeCardInteraction(slot: ForgeCardSlot): void {
+    if (slot.handlersBound) return;
+    slot.handlersBound = true;
+
+    const cardIndex = slot.cardIndex;
+    slot.cardEl.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.forge-claim-btn')) return;
+      if (!slot.isSealed) return;
       this.previewForgeCard(cardIndex);
     });
 
-    root.addEventListener('mouseenter', () => {
+    slot.cardEl.addEventListener('mouseenter', () => {
+      if (!slot.isSealed) return;
       this.previewForgeCard(cardIndex);
     });
+  }
 
-    root.appendChild(header);
-    if (perk) root.appendChild(mutationBanner);
-    root.appendChild(glyphFrame);
-    root.appendChild(info);
-    root.appendChild(telemetryGrid);
-    root.appendChild(badgeRow);
-    root.appendChild(statusBlock);
-    root.appendChild(footer);
+  private sealForgeCard(
+    cardIndex: number,
+    card: DraftCard,
+    allCards?: DraftCard[],
+  ): void {
+    const slot = this.activeForgeCardSlots?.[cardIndex];
+    if (!slot) return;
+    this.sealForgeCardSlot(slot, card, allCards);
+  }
 
-    return root;
+  private sealForgeCardSlot(
+    slot: ForgeCardSlot,
+    card: DraftCard,
+    allCards?: DraftCard[],
+  ): void {
+    const cardIndex = slot.cardIndex;
+    const ability = card.abilityPayload;
+    if (!ability || slot.isSealed) return;
+
+    const pickerCards = allCards ?? this.getForgePickerCards();
+    const telemetry = extractSpellTelemetry(ability);
+    const archetype = ability.archetype ?? 'KINETIC';
+    const archetypeColor = getArchetypeColor(archetype, ability.visuals?.color);
+
+    slot.isSealed = true;
+    slot.card = card;
+
+    slot.titleEl.textContent = resolveForgeCardTitle(card, cardIndex, pickerCards);
+    slot.titleEl.classList.remove('is-forging');
+    slot.taglineEl.textContent = card.tagline;
+    slot.descEl.textContent = card.description;
+
+    slot.archetypeEl.textContent = archetype;
+    slot.archetypeEl.style.opacity = '1';
+    slot.archetypeEl.style.color = archetypeColor;
+    slot.archetypeEl.style.borderColor = archetypeColor;
+    slot.archetypeEl.style.background = `${archetypeColor}18`;
+
+    slot.mutationSlotEl.innerHTML = '';
+    const perk = resolveMutationPerk(card, telemetry);
+    if (perk) {
+      const mutationBanner = document.createElement('div');
+      mutationBanner.className = 'forge-mutation-banner';
+      const arrow = document.createElement('span');
+      arrow.textContent = '▲';
+      mutationBanner.appendChild(arrow);
+      mutationBanner.appendChild(document.createTextNode(` ${perk}`));
+      slot.mutationSlotEl.appendChild(mutationBanner);
+    }
+
+    slot.glyphFrameEl.classList.remove('is-streaming');
+    slot.glyphFrameEl.innerHTML = '';
+    slot.glyphFrameEl.appendChild(generateSpellIcon(ability, 64));
+
+    this.populateForgeCardTelemetry(slot, card);
+
+    slot.badgesRowEl.innerHTML = '';
+    this.appendSemanticBadges(slot.badgesRowEl, ability);
+
+    slot.statusEl.textContent =
+      telemetry.ccDescriptions.length > 0
+        ? telemetry.ccDescriptions.join(' · ')
+        : '[CLEAN HIT] Pure Kinetic Force';
+
+    const anotherSaved =
+      this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex;
+    if (!anotherSaved) {
+      attachForgeCardDrag(slot.glyphFrameEl, cardIndex);
+    }
+
+    this.renderForgeCardFooter(slot, cardIndex);
+    this.bindForgeCardInteraction(slot);
+
+    if (this.selectedForgeIndex === null) {
+      this.previewForgeCard(cardIndex);
+    }
+  }
+
+  private buildForgeTelemetryCard(
+    card: DraftCard,
+    cardIndex: number,
+    allCards: DraftCard[],
+  ): HTMLElement | null {
+    if (!card.abilityPayload) return null;
+
+    const slot = this.mountForgeCardShell(cardIndex, card.rarity);
+    slot.titleEl.textContent = resolveForgeCardTitle(card, cardIndex, allCards);
+    slot.taglineEl.textContent = card.tagline;
+    slot.descEl.textContent = card.description;
+    slot.titleEl.classList.remove('is-forging');
+    this.sealForgeCardSlot(slot, card, allCards);
+    this.applyForgeCardSavedState(slot, cardIndex);
+    return slot.cardEl;
+  }
+
+  private applyForgeCardSavedState(slot: ForgeCardSlot, cardIndex: number): void {
+    if (this.vaultSavedCardIndex === null) return;
+    this.renderForgeCardFooter(slot, cardIndex);
+    if (this.vaultSavedCardIndex === cardIndex) {
+      slot.cardEl.classList.add('forge-card-saved');
+    } else {
+      slot.cardEl.classList.add('forge-card-discarded');
+    }
+  }
+
+  private ensureForgeVaultPickerHint(): void {
+    const existing = this.cardsContainer.querySelector('.forge-vault-picker-hint');
+    if (this.vaultSavedCardIndex !== null) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+
+    const hint = document.createElement('div');
+    hint.className = 'forge-vault-picker-hint';
+    hint.textContent = 'Choose one spell to save, or drag it to your loadout below.';
+    this.cardsContainer.prepend(hint);
+  }
+
+  private mountForgeStreamingCards(): void {
+    this.cardsContainer.innerHTML = '';
+    this.streamingSlots = null;
+    this.activeForgeCardSlots = [];
+    this.forgeVaultPickerActive = true;
+    this.selectedForgeIndex = null;
+    this.activeTransientSpell = null;
+
+    this.ensureForgeVaultPickerHint();
+
+    for (let index = 0; index < FORGE_PARALLEL_RARITIES.length; index++) {
+      const slot = this.mountForgeCardShell(index, FORGE_PARALLEL_RARITIES[index]);
+      this.activeForgeCardSlots.push(slot);
+      this.cardsContainer.appendChild(slot.cardEl);
+    }
+  }
+
+  private reappendForgeCardSlots(): void {
+    this.cardsContainer.innerHTML = '';
+    this.ensureForgeVaultPickerHint();
+    for (const slot of this.activeForgeCardSlots ?? []) {
+      this.cardsContainer.appendChild(slot.cardEl);
+    }
+  }
+
+  private async reconcileForgeCardsAfterSynthesis(): Promise<void> {
+    await this.prepareForgeCardsForDisplay();
+    this.forgeVaultPickerActive = true;
+
+    const abilityCards = this.getForgePickerCards();
+    for (let i = 0; i < abilityCards.length; i++) {
+      const card = abilityCards[i];
+      const slot = this.activeForgeCardSlots?.[i];
+      if (!slot) continue;
+
+      slot.card = card;
+      slot.titleEl.textContent = resolveForgeCardTitle(card, i, abilityCards);
+      slot.taglineEl.textContent = card.tagline;
+      slot.descEl.textContent = card.description;
+
+      if (!slot.isSealed) {
+        this.sealForgeCard(i, card, abilityCards);
+      } else {
+        this.populateForgeCardTelemetry(slot, card);
+        if (slot.card?.abilityPayload) {
+          const telemetry = extractSpellTelemetry(slot.card.abilityPayload);
+          slot.statusEl.textContent =
+            telemetry.ccDescriptions.length > 0
+              ? telemetry.ccDescriptions.join(' · ')
+              : '[CLEAN HIT] Pure Kinetic Force';
+        }
+      }
+    }
+
+    this.ensureForgeVaultPickerHint();
+
+    if (this.selectedForgeIndex === null && abilityCards.length > 0) {
+      const firstSealed = this.activeForgeCardSlots?.findIndex((s) => s.isSealed) ?? -1;
+      if (firstSealed >= 0) {
+        this.previewForgeCard(firstSealed);
+      }
+    }
   }
 
   private renderForgeVaultPickerCards(): void {
@@ -2806,6 +3098,32 @@ export class DraftModal {
   }
 
   private updateStreamingCard(index: number, partial: PartialCardStream): void {
+    const forgeSlot = this.activeForgeCardSlots?.[index];
+    if (forgeSlot && !forgeSlot.isSealed) {
+      if (partial.name) {
+        forgeSlot.titleEl.textContent = partial.name;
+        forgeSlot.titleEl.classList.remove('is-forging');
+      }
+      if (partial.tagline) forgeSlot.taglineEl.textContent = partial.tagline;
+      if (partial.description) forgeSlot.descEl.textContent = partial.description;
+      if (partial.archetype) {
+        const archetypeColor = getArchetypeColor(
+          partial.archetype as SpellArchetype,
+          undefined,
+        );
+        forgeSlot.archetypeEl.textContent = partial.archetype;
+        forgeSlot.archetypeEl.style.opacity = '1';
+        forgeSlot.archetypeEl.style.color = archetypeColor;
+        forgeSlot.archetypeEl.style.borderColor = archetypeColor;
+        forgeSlot.archetypeEl.style.background = `${archetypeColor}18`;
+      }
+
+      if (partial.isComplete && partial.validatedCard) {
+        this.sealForgeCard(index, partial.validatedCard);
+      }
+      return;
+    }
+
     const slot = this.streamingSlots?.[index];
     if (!slot || slot.finalized) return;
 

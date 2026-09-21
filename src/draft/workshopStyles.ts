@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v22';
+export const STYLE_ID = 'luna-workshop-styles-v23';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -486,6 +486,11 @@ export function injectStyles(): void {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+      min-height: 52px;
+      max-height: 52px;
+      overflow: hidden;
+      align-content: flex-start;
+      flex-shrink: 0;
     }
 
     .retro-combat-tooltip {
@@ -722,6 +727,8 @@ export function injectStyles(): void {
     .forge-card-redesign {
       display: flex;
       flex-direction: column;
+      min-height: 480px;
+      box-sizing: border-box;
       background: var(--tier-bg, rgba(6, 9, 18, 0.9));
       border: 1.5px solid var(--tier-border, var(--card-border-color, var(--retro-border-subtle)));
       border-radius: 6px;
@@ -877,6 +884,19 @@ export function injectStyles(): void {
       border-right: 2px solid var(--tier-color);
     }
 
+    .forge-card-mutation-slot {
+      height: 28px;
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+
+    .forge-card-mutation-slot:empty {
+      visibility: hidden;
+    }
+
     .forge-mutation-banner {
       display: flex;
       align-items: center;
@@ -891,6 +911,7 @@ export function injectStyles(): void {
       letter-spacing: 0.5px;
       text-transform: uppercase;
       box-shadow: 0 0 6px var(--tier-glow);
+      width: 100%;
     }
 
     .forge-card-crest {
@@ -927,13 +948,36 @@ export function injectStyles(): void {
     }
 
     .forge-card-glyph-frame {
+      position: relative;
+      height: 96px;
+      min-height: 96px;
       display: flex;
       justify-content: center;
       align-items: center;
       padding: 10px;
-      background: rgba(4, 6, 12, 0.85);
+      background: rgba(4, 8, 16, 0.6);
       border: 1px solid var(--retro-border-subtle);
       border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .forge-card-glyph-frame.is-streaming::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(0, 229, 255, 0.5);
+      box-shadow: 0 0 8px rgba(0, 229, 255, 0.8);
+      animation: glyphScanline 1.6s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    @keyframes glyphScanline {
+      0% { top: 0%; opacity: 0.2; }
+      50% { opacity: 0.8; }
+      100% { top: 100%; opacity: 0.2; }
     }
 
     .forge-card-drag-handle {
@@ -973,7 +1017,13 @@ export function injectStyles(): void {
       font-size: 11px;
       line-height: 1.35;
       color: var(--retro-text-secondary, #9ba8c7);
-      min-height: 44px;
+      min-height: 38px;
+      max-height: 38px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .forge-card-telemetry {
@@ -1025,6 +1075,8 @@ export function injectStyles(): void {
       font-family: ${FONTS.mono};
       font-size: 10px;
       color: var(--retro-neon-cyan);
+      min-height: 28px;
+      flex-shrink: 0;
     }
 
     .forge-card-footer {
@@ -1059,6 +1111,50 @@ export function injectStyles(): void {
     .forge-claim-btn:hover {
       background: rgba(0, 229, 255, 0.3);
       box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    .save-vault-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .forge-card-redesign.tier-common .save-vault-btn {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #d0d7de;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .forge-card-redesign.tier-common .save-vault-btn:not(:disabled):hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: #ffffff;
+      box-shadow: none;
+    }
+
+    .forge-card-redesign.tier-rare .save-vault-btn {
+      border-color: rgba(0, 229, 255, 0.4);
+      color: #00e5ff;
+      background: rgba(0, 229, 255, 0.08);
+    }
+
+    .forge-card-redesign.tier-rare .save-vault-btn:not(:disabled):hover {
+      background: rgba(0, 229, 255, 0.15);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+    }
+
+    .forge-card-redesign.tier-epic .save-vault-btn {
+      border-color: rgba(191, 0, 255, 0.4);
+      color: #bf00ff;
+      background: rgba(191, 0, 255, 0.08);
+    }
+
+    .forge-card-redesign.tier-epic .save-vault-btn:not(:disabled):hover {
+      background: rgba(191, 0, 255, 0.15);
+      box-shadow: 0 0 10px rgba(191, 0, 255, 0.3);
+    }
+
+    .forge-card-title.is-forging {
+      animation: forgePulse 1.4s ease-in-out infinite;
     }
 
     .forge-vault-picker-hint {
