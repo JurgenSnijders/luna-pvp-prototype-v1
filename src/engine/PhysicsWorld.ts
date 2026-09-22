@@ -432,7 +432,7 @@ export class PhysicsWorld {
     const impulse = dir.scale(
       (baseForce / target.effectiveMass) * instabilityScale * (1 - resistance),
     );
-    if (target.stasisRemainingMs > 0) {
+    if (target.isMovementDisabled()) {
       target.stashedMomentum = target.stashedMomentum.add(
         impulse.scale(target.forceAccumulatorScale),
       );
@@ -456,7 +456,7 @@ export class PhysicsWorld {
   }
 
   private applyVelocityImpulse(entity: Entity, impulse: Vector2D): void {
-    if (entity.stasisRemainingMs > 0) {
+    if (entity.isMovementDisabled()) {
       entity.stashedMomentum = entity.stashedMomentum.add(
         impulse.scale(entity.forceAccumulatorScale),
       );
@@ -1111,8 +1111,8 @@ export class PhysicsWorld {
   private resolveCirclePair(a: Entity, b: Entity, dt: number): void {
     if (a.isIntangible() || b.isIntangible()) return;
     if (isOwnerSummonPair(a, b)) return;
-    const aStasis = a.stasisRemainingMs > 0;
-    const bStasis = b.stasisRemainingMs > 0;
+    const aStasis = a.isMovementDisabled();
+    const bStasis = b.isMovementDisabled();
     if (aStasis && bStasis) return;
     if (
       this.verticalActive &&
@@ -1432,7 +1432,7 @@ export class PhysicsWorld {
           continue;
         }
 
-        if (entity.stasisRemainingMs > 0) {
+        if (entity.isMovementDisabled()) {
           entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
           continue;
         }

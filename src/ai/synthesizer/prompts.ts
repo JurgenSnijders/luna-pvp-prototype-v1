@@ -160,7 +160,13 @@ SPAWN_CONSTRAINT { constraint: { type: SPRING_TETHER|DISTANCE_ROD|SURFACE_PIN, s
 CAST_CHILD_PAYLOAD { payload: AbilitySchema, inheritVelocity?, inheritInstability?, maxRecursionDepth? }
 MODIFY_STAT { stat: mass|linearDrag|moveSpeed|instabilityPct|health, value, mode: add|set|multiply, target? }
 TELEPORT { distance, target?, direction? }
-APPLY_STASIS { durationMs, target?, forceAccumulatorScale? }
+APPLY_STASIS { durationMs, target?, forceAccumulatorScale?, blocksMovement?, blocksCasting?, breakOn?: "NONE"|"INSTABILITY", breakThreshold? }
+  Crowd-control matrix. blocksMovement/blocksCasting both default true, breakOn defaults "NONE".
+  Stun: defaults only — target cannot move or cast, damage does not free them.
+  Root: blocksMovement:true + blocksCasting:false — pinned in place but can still cast.
+  Silence: blocksMovement:false + blocksCasting:true — can walk but cannot cast.
+  Incapacitate: breakOn:"INSTABILITY" + breakThreshold:10-25 — long lock that ends the moment it takes a real hit, releasing any knockback stored during it. Use durations above a stun's.
+  Never set both blocksMovement and blocksCasting false; that is an inert disable.
 RELEASE_STASIS { target? }
 REFLECT_PROJECTILES { target?, radius?, arcDeg?: 0-360, arcFacing?: "CASTER_FACING"|"CAST_HEADING"|"FIXED", arcOffsetDeg?: number, durationMs?: number, whileHeld?: boolean }
   arcDeg/arcFacing/arcOffsetDeg: optional wedge (same as SPAWN_FIELD). Omitted or arcDeg:360 = full circle. durationMs: tap-parry catch window in ms (omitted or 0 = one-shot snapshot on ON_CAST only); with whileHeld:true = optional max-hold cap in ms. whileHeld: true = wedge stays up while the player holds the cast button (drops on release). NEVER use CHARGE_AND_RELEASE or CHANNELED for hold shields.

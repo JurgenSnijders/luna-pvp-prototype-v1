@@ -25,6 +25,9 @@ export const SPELL_ARCHETYPE_SET: ReadonlySet<string> = new Set(SPELL_ARCHETYPES
 export const TARGETING_MODES = ['DIRECTIONAL', 'GROUND_POINT'] as const;
 export const TARGETING_MODE_SET: ReadonlySet<string> = new Set(TARGETING_MODES);
 
+export const DISABLE_BREAK_RULES = ['NONE', 'INSTABILITY'] as const;
+export const DISABLE_BREAK_RULE_SET: ReadonlySet<string> = new Set(DISABLE_BREAK_RULES);
+
 export const TRAJECTORY_TYPES: ReadonlySet<string> = new Set([
   'LINEAR',
   'RETURN_TO_SOURCE',

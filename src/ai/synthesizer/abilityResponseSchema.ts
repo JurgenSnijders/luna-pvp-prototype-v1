@@ -25,6 +25,7 @@ import {
   VFX_COLOR_REFS,
   VFX_DRAW_LAYERS,
   VFX_LAYER_KINDS,
+  DISABLE_BREAK_RULES,
 } from '../../types/schema/constants';
 import {
   FIELD_TYPES as BUDGET_FIELD_TYPES,
@@ -373,6 +374,10 @@ const actionBranches = [
       type: { type: 'string', enum: ['APPLY_STASIS'] },
       durationMs: { type: 'number' },
       forceAccumulatorScale: { type: 'number' },
+      blocksMovement: { type: 'boolean' },
+      blocksCasting: { type: 'boolean' },
+      breakOn: stringEnum(DISABLE_BREAK_RULES),
+      breakThreshold: { type: 'number' },
       target: actionTarget,
     },
     additionalProperties: false,

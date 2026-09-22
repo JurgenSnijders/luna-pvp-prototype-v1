@@ -4,7 +4,7 @@ import type { GameApp } from './GameApp';
 import { loadInputSettings, type InputSettings } from './inputSettings';
 import { canCombatInput } from './matchFlow';
 
-export type CastResult = 'ok' | 'no_ability' | 'zero_aim';
+export type CastResult = 'ok' | 'no_ability' | 'zero_aim' | 'disabled';
 
 const MOVEMENT_AIM_RANGE = 400;
 const POINTER_STALE_MS = 400;
@@ -30,6 +30,7 @@ export function executePlayerCast(
   const caster = app.player;
   const ability = caster.getAbility(slotIndex);
   if (!ability) return 'no_ability';
+  if (caster.isCastingDisabled()) return 'disabled';
 
   const aimDir = caster.aimTarget.sub(caster.pos);
   if (aimDir.magSq() < 0.01) return 'zero_aim';

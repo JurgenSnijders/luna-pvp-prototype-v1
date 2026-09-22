@@ -358,10 +358,25 @@ export interface TeleportAction {
   target?: ActionTarget;
 }
 
+export type DisableBreakRule = 'NONE' | 'INSTABILITY';
+
+/**
+ * One disable primitive covering the whole crowd-control matrix. Both axes blocked with
+ * breakOn NONE is a stun; movement only is a root; casting only is a silence; both axes
+ * with breakOn INSTABILITY is an incapacitate.
+ */
 export interface ApplyStasisAction {
   type: 'APPLY_STASIS';
   durationMs: number;
   forceAccumulatorScale?: number;
+  /** Defaults true. Both axes true reproduces full stasis. */
+  blocksMovement?: boolean;
+  /** Defaults true. */
+  blocksCasting?: boolean;
+  /** Defaults NONE. */
+  breakOn?: DisableBreakRule;
+  /** Minimum instability in a single application to break the disable. Defaults 1. */
+  breakThreshold?: number;
   target?: ActionTarget;
 }
 

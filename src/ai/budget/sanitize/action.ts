@@ -306,6 +306,17 @@ export function sanitizeAction(
         durationMs: clamp(ensureFiniteNumber(raw.durationMs, 2000), 100, 10000),
         forceAccumulatorScale: clamp(ensureFiniteNumber(raw.forceAccumulatorScale, 1), 0.1, 3),
       };
+      if (typeof raw.blocksMovement === 'boolean') action.blocksMovement = raw.blocksMovement;
+      if (typeof raw.blocksCasting === 'boolean') action.blocksCasting = raw.blocksCasting;
+      if (raw.breakOn === 'INSTABILITY' || raw.breakOn === 'NONE') action.breakOn = raw.breakOn;
+      if (raw.breakThreshold !== undefined) {
+        action.breakThreshold = clamp(ensureFiniteNumber(raw.breakThreshold, 1), 0, 100);
+      }
+      // A disable that blocks neither axis is inert; fall back to a full lock.
+      if (action.blocksMovement === false && action.blocksCasting === false) {
+        action.blocksMovement = true;
+        action.blocksCasting = true;
+      }
       const target = parseActionTarget(raw.target);
       if (target) action.target = target;
       return action;

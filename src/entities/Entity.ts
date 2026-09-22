@@ -2,7 +2,12 @@ import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
 import { AIR_DRAG, HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
-import type { MorphConfig, SpellArchetype, AbilitySchema } from '../types/schema';
+import type {
+  AbilitySchema,
+  DisableBreakRule,
+  MorphConfig,
+  SpellArchetype,
+} from '../types/schema';
 import {
   advanceCastPhase,
   phaseMoveScale,
@@ -65,6 +70,10 @@ export class Entity {
   maxHealth: number;
   tags: Set<string>;
   stasisRemainingMs: number;
+  stasisBlocksMovement: boolean;
+  stasisBlocksCasting: boolean;
+  stasisBreakOn: DisableBreakRule;
+  stasisBreakThreshold: number;
   stashedMomentum: Vector2D;
   stashedVz: number | null = null;
   forceAccumulatorScale: number;
@@ -123,6 +132,10 @@ export class Entity {
     this.health = options.health ?? this.maxHealth;
     this.tags = new Set(options.tags ?? []);
     this.stasisRemainingMs = 0;
+    this.stasisBlocksMovement = true;
+    this.stasisBlocksCasting = true;
+    this.stasisBreakOn = 'NONE';
+    this.stasisBreakThreshold = 1;
     this.stashedMomentum = Vector2D.zero();
     this.forceAccumulatorScale = 1.0;
     this.activeMorph = null;
@@ -238,7 +251,7 @@ export class Entity {
     onDispatch: (pending: PendingCast, state: CastPhaseState) => void,
     onChannelArmed?: (slotIndex: number) => void,
   ): void {
-    if (this.stasisRemainingMs > 0) return;
+    if (this.isCastingDisabled()) return;
     if (!this.activeCastPhase) return;
 
     let guard = 8;
@@ -291,7 +304,12 @@ export class Entity {
     return this.activeStatuses.has('SONIC') ? 1.5 : 1.0;
   }
 
-  addInstability(amount: number, world?: PhysicsWorld, isCascade = false): void {
+  addInstability(
+    amount: number,
+    world?: PhysicsWorld,
+    isCascade = false,
+    isSelfInflicted = false,
+  ): void {
     if (!isCascade && amount > 0 && this.activeStatuses.has('BLOOD') && world) {
       const sourceId = this.activeStatuses.get('BLOOD')!.sourceId;
       const source = sourceId ? world.getEntityById(sourceId) : null;
@@ -311,9 +329,25 @@ export class Entity {
       });
     }
 
+    if (!isSelfInflicted && amount > 0) {
+      this.tryBreakDisable(amount);
+    }
+
     if (old < 100 && next >= 100 && this.activeStatuses.has('PLASMA') && world) {
       this.triggerPlasmaDetonation(world);
     }
+  }
+
+  /**
+   * Incapacitate-style release. Discharging rather than resetting dumps the knockback that
+   * piled up while the target was locked, so bursting them free carries a cost.
+   */
+  private tryBreakDisable(amount: number): void {
+    if (this.stasisRemainingMs <= 0) return;
+    if (this.stasisBreakOn !== 'INSTABILITY') return;
+    if (amount < this.stasisBreakThreshold) return;
+    this.stasisRemainingMs = 0;
+    this.dischargeStasis();
   }
 
   private triggerPlasmaDetonation(world: PhysicsWorld): void {
@@ -331,7 +365,7 @@ export class Entity {
   }
 
   applyKineticImpulse(deltaVel: Vector2D, world?: PhysicsWorld): void {
-    if (this.stasisRemainingMs > 0) {
+    if (this.isMovementDisabled()) {
       this.stashedMomentum = this.stashedMomentum.add(
         deltaVel.scale(this.forceAccumulatorScale),
       );
@@ -462,6 +496,48 @@ export class Entity {
     return this.stasisRemainingMs > 0;
   }
 
+  isMovementDisabled(): boolean {
+    return this.stasisRemainingMs > 0 && this.stasisBlocksMovement;
+  }
+
+  isCastingDisabled(): boolean {
+    return this.stasisRemainingMs > 0 && this.stasisBlocksCasting;
+  }
+
+  /**
+   * True stasis: suspended in time rather than merely crowd-controlled. Only a disable that
+   * blocks both axes freezes vertical motion and waives environmental hazards, so a root
+   * cannot be used to stand in lava unharmed.
+   */
+  isTimeFrozen(): boolean {
+    return this.stasisRemainingMs > 0 && this.stasisBlocksMovement && this.stasisBlocksCasting;
+  }
+
+  applyDisable(
+    durationMs: number,
+    blocksMovement: boolean,
+    blocksCasting: boolean,
+    breakOn: DisableBreakRule,
+    breakThreshold: number,
+  ): void {
+    // Overlapping disables merge into the most restrictive combination.
+    if (this.stasisRemainingMs > 0) {
+      this.stasisBlocksMovement = this.stasisBlocksMovement || blocksMovement;
+      this.stasisBlocksCasting = this.stasisBlocksCasting || blocksCasting;
+      if (breakOn === 'NONE') this.stasisBreakOn = 'NONE';
+    } else {
+      this.stasisBlocksMovement = blocksMovement;
+      this.stasisBlocksCasting = blocksCasting;
+      this.stasisBreakOn = breakOn;
+    }
+    this.stasisBreakThreshold = breakThreshold;
+    // enterStasisVertical bails once the timer is live, so suspend before extending it.
+    if (this.stasisBlocksMovement && this.stasisBlocksCasting) {
+      this.enterStasisVertical();
+    }
+    this.stasisRemainingMs = Math.max(this.stasisRemainingMs, durationMs);
+  }
+
   enterStasisVertical(): void {
     if (this.stasisRemainingMs > 0) return;
     this.stashedVz = this.vz;
@@ -490,6 +566,10 @@ export class Entity {
       this.gravityScale = this.gravityScaleBase;
     }
     this.stasisRemainingMs = 0;
+    this.stasisBlocksMovement = true;
+    this.stasisBlocksCasting = true;
+    this.stasisBreakOn = 'NONE';
+    this.stasisBreakThreshold = 1;
     this.stashedMomentum = Vector2D.zero();
     this.forceAccumulatorScale = 1.0;
   }
@@ -532,10 +612,14 @@ export class Entity {
 
     if (this.stasisRemainingMs > 0) {
       this.stasisRemainingMs = Math.max(0, this.stasisRemainingMs - dt * 1000);
-      this.vel.set(0, 0);
-      this.accel.set(0, 0);
-      this.vz = 0;
-      this.gravityScale = 0;
+      if (this.stasisBlocksMovement) {
+        this.vel.set(0, 0);
+        this.accel.set(0, 0);
+      }
+      if (this.isTimeFrozen()) {
+        this.vz = 0;
+        this.gravityScale = 0;
+      }
       if (this.stasisRemainingMs <= 0) {
         this.dischargeStasis();
       }
@@ -557,7 +641,7 @@ export class Entity {
   integrate(dt: number, world?: PhysicsWorld): void {
     this.tickHitFeedback(dt);
     this.tickStatusTimers(dt, world);
-    if (this.stasisRemainingMs > 0) return;
+    if (this.isMovementDisabled()) return;
 
     this.prevPos.copyFrom(this.pos);
     this.prevZ = this.z;
@@ -575,7 +659,7 @@ export class Entity {
 
     const speed = this.vel.mag();
     if (this.activeStatuses.has('FIRE') && speed > 50) {
-      this.addInstability((speed * dt) / 50, world);
+      this.addInstability((speed * dt) / 50, world, false, true);
     }
     if (this.activeStatuses.has('VOID') && world) {
       this.voidDistanceAcc += speed * dt;

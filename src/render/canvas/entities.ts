@@ -338,8 +338,10 @@ function drawStasisOverlay(
   entity: Entity,
   pos: Vector2D,
 ): void {
-  if (entity.stasisRemainingMs > 0) {
-    const crystal = 0.5 + 0.5 * Math.sin(state.ringRotation * 5);
+  const crystal = 0.5 + 0.5 * Math.sin(state.ringRotation * 5);
+
+  // Which restriction is active is what the player must read, so each axis gets its own mark.
+  if (entity.isMovementDisabled()) {
     ctx.strokeStyle = `rgba(255, 215, 80, ${0.55 + crystal * 0.4})`;
     ctx.lineWidth = 2 + crystal * 2;
     ctx.beginPath();
@@ -352,6 +354,18 @@ function drawStasisOverlay(
     ctx.arc(pos.x, pos.y, entity.effectiveRadius + 7, state.ringRotation, state.ringRotation + Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  if (entity.isCastingDisabled()) {
+    const severedR = entity.effectiveRadius + 11;
+    ctx.strokeStyle = `rgba(200, 120, 255, ${0.6 + crystal * 0.3})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 2; i++) {
+      const start = state.ringRotation * -0.6 + i * Math.PI;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, severedR, start + 0.5, start + Math.PI - 0.5);
+      ctx.stroke();
+    }
   }
 
   if (entity.stashedMomentum.magSq() > 0) {

@@ -1,5 +1,11 @@
-import { ACTION_TYPES, FIELD_ARC_FACING_SET, IMPACT_VFX_TYPES, SPELL_ARCHETYPE_SET } from '../constants';
-import type { FieldArcFacing } from '../types';
+import {
+  ACTION_TYPES,
+  DISABLE_BREAK_RULE_SET,
+  FIELD_ARC_FACING_SET,
+  IMPACT_VFX_TYPES,
+  SPELL_ARCHETYPE_SET,
+} from '../constants';
+import type { DisableBreakRule, FieldArcFacing } from '../types';
 import type {
   ActionPayload,
   ApplyImpulseAction,
@@ -245,6 +251,30 @@ export function validateActionPayload(
           return validationFail(issues, `${path}.forceAccumulatorScale`, 'invalid forceAccumulatorScale');
         }
         action.forceAccumulatorScale = value.forceAccumulatorScale;
+      }
+      if (value.blocksMovement !== undefined) {
+        if (typeof value.blocksMovement !== 'boolean') {
+          return validationFail(issues, `${path}.blocksMovement`, 'invalid blocksMovement');
+        }
+        action.blocksMovement = value.blocksMovement;
+      }
+      if (value.blocksCasting !== undefined) {
+        if (typeof value.blocksCasting !== 'boolean') {
+          return validationFail(issues, `${path}.blocksCasting`, 'invalid blocksCasting');
+        }
+        action.blocksCasting = value.blocksCasting;
+      }
+      if (value.breakOn !== undefined) {
+        if (!isString(value.breakOn) || !DISABLE_BREAK_RULE_SET.has(value.breakOn)) {
+          return validationFail(issues, `${path}.breakOn`, 'invalid breakOn');
+        }
+        action.breakOn = value.breakOn as DisableBreakRule;
+      }
+      if (value.breakThreshold !== undefined) {
+        if (!isNumber(value.breakThreshold)) {
+          return validationFail(issues, `${path}.breakThreshold`, 'invalid breakThreshold');
+        }
+        action.breakThreshold = value.breakThreshold;
       }
       const target = parseActionTarget(value.target);
       if (target) action.target = target;

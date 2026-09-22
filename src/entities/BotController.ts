@@ -316,6 +316,7 @@ export class BotController {
     const bot = this.bot;
     const ability = bot.getAbility(slotIndex);
     if (!ability) return;
+    if (bot.isCastingDisabled()) return;
 
     const aimDir = bot.aimTarget.sub(bot.pos);
     if (aimDir.magSq() < 0.01) return;

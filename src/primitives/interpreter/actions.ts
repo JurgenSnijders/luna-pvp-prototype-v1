@@ -393,12 +393,15 @@ export function dispatchAction(
     case 'APPLY_STASIS': {
       const t = resolveActionTarget(action.target, ctx);
       if (!t) break;
-      if (t.stasisRemainingMs <= 0) {
-        t.enterStasisVertical();
-      }
-      t.stasisRemainingMs = Math.max(t.stasisRemainingMs, action.durationMs);
+      t.applyDisable(
+        action.durationMs,
+        action.blocksMovement ?? true,
+        action.blocksCasting ?? true,
+        action.breakOn ?? 'NONE',
+        action.breakThreshold ?? 1,
+      );
       t.forceAccumulatorScale = action.forceAccumulatorScale ?? 1.0;
-      t.vel = Vector2D.zero();
+      if (t.isMovementDisabled()) t.vel = Vector2D.zero();
       break;
     }
     case 'RELEASE_STASIS': {

@@ -303,10 +303,11 @@ function processLavaHazardTicks(world: PhysicsWorld, dt: number): void {
   for (const combatant of world.getCombatants()) {
     if (combatant.isDead) continue;
 
+    // Only true stasis waives lava: a root leaves the target standing in it, unable to walk out.
     const submerged =
       combatant.inLava &&
       combatant.z <= LAVA_AIRBORNE_IMMUNITY_Z &&
-      combatant.stasisRemainingMs <= 0;
+      !combatant.isTimeFrozen();
 
     if (!submerged) {
       combatant.lavaImmersionTimer = 0;

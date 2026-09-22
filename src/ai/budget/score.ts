@@ -66,8 +66,13 @@ function scoreAction(action: ActionPayload, depth: number): number {
       if (depth >= MAX_DEPTH) return 10;
       return scoreAbilitySchema(action.payload, depth + 1) * 1.5;
     }
-    case 'APPLY_STASIS':
-      return (action.durationMs / 1000) * 6;
+    case 'APPLY_STASIS': {
+      const blocksMovement = action.blocksMovement ?? true;
+      const blocksCasting = action.blocksCasting ?? true;
+      const axisFactor = blocksMovement && blocksCasting ? 1 : 0.6;
+      const breakFactor = action.breakOn === 'INSTABILITY' ? 0.7 : 1;
+      return (action.durationMs / 1000) * 6 * axisFactor * breakFactor;
+    }
     case 'RELEASE_STASIS':
       return 2;
     case 'REFLECT_PROJECTILES': {

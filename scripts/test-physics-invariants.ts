@@ -4144,6 +4144,194 @@ function assertGraphicsTierMonotonicLimits(): { pass: boolean; reason: string } 
   };
 }
 
+function makeDisableSubject(id: string): {
+  world: PhysicsWorld;
+  subject: Player;
+  interp: Interpreter;
+} {
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  world.setViewportBounds(2000, 2000);
+  const subject = new Player(Vector2D.zero());
+  subject.id = id;
+  world.addPlayer(subject);
+  return { world, subject, interp: new Interpreter() };
+}
+
+function applyDisableAction(
+  interp: Interpreter,
+  world: PhysicsWorld,
+  subject: Player,
+  overrides: Partial<Extract<ActionPayload, { type: 'APPLY_STASIS' }>>,
+): void {
+  dispatchAction(
+    interp,
+    { type: 'APPLY_STASIS', durationMs: 1000, target: 'CASTER', ...overrides },
+    {
+      origin: subject.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster: subject,
+      depth: 0,
+    },
+    world,
+  );
+}
+
+/** Root pins the target in place but leaves casting available. */
+function assertRootAxis(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const { world, subject, interp } = makeDisableSubject('root_subject');
+  applyDisableAction(interp, world, subject, { blocksMovement: true, blocksCasting: false });
+
+  if (!subject.isMovementDisabled()) return { pass: false, reason: 'root did not block movement' };
+  if (subject.isCastingDisabled()) return { pass: false, reason: 'root wrongly blocked casting' };
+  if (subject.isTimeFrozen()) {
+    return { pass: false, reason: 'root reported time-frozen, which would grant lava immunity' };
+  }
+
+  const startPos = subject.pos.clone();
+  world.applyKnockback(subject, new Vector2D(1, 0), 20000);
+  for (let i = 0; i < 30; i++) world.step(dt);
+  const moved = subject.pos.dist(startPos);
+  if (moved > 1) return { pass: false, reason: `rooted target displaced ${moved.toFixed(1)}px` };
+
+  return {
+    pass: true,
+    reason: `rooted: moved=${moved.toFixed(2)}px, casting allowed, not time-frozen`,
+  };
+}
+
+/** Silence blocks casting but leaves the target free to walk. */
+function assertSilenceAxis(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const { world, subject, interp } = makeDisableSubject('silence_subject');
+  applyDisableAction(interp, world, subject, { blocksMovement: false, blocksCasting: true });
+
+  if (!subject.isCastingDisabled()) return { pass: false, reason: 'silence did not block casting' };
+  if (subject.isMovementDisabled()) {
+    return { pass: false, reason: 'silence wrongly blocked movement' };
+  }
+  if (subject.isTimeFrozen()) return { pass: false, reason: 'silence reported time-frozen' };
+
+  const startPos = subject.pos.clone();
+  subject.vel = new Vector2D(200, 0);
+  for (let i = 0; i < 30; i++) world.step(dt);
+  const moved = subject.pos.dist(startPos);
+  if (moved < 5) {
+    return { pass: false, reason: `silenced target failed to move (${moved.toFixed(1)}px)` };
+  }
+
+  return { pass: true, reason: `silenced: moved=${moved.toFixed(0)}px, casting blocked` };
+}
+
+/** Incapacitate ends on an external hit and releases the knockback banked during the lock. */
+function assertIncapacitateBreak(): { pass: boolean; reason: string } {
+  const { world, subject, interp } = makeDisableSubject('incap_subject');
+  applyDisableAction(interp, world, subject, {
+    blocksMovement: true,
+    blocksCasting: true,
+    breakOn: 'INSTABILITY',
+    breakThreshold: 10,
+  });
+
+  world.applyKnockback(subject, new Vector2D(1, 0), 30000);
+  const banked = subject.stashedMomentum.mag();
+  if (banked <= 0) return { pass: false, reason: 'knockback was not banked during the lock' };
+  if (subject.vel.magSq() > 0.01) {
+    return { pass: false, reason: 'incapacitated target moved while locked' };
+  }
+
+  subject.addInstability(5, world);
+  if (!subject.isMovementDisabled()) {
+    return { pass: false, reason: 'sub-threshold damage broke the incapacitate' };
+  }
+
+  subject.addInstability(40, world, false, true);
+  if (!subject.isMovementDisabled()) {
+    return { pass: false, reason: 'self-inflicted damage broke the incapacitate' };
+  }
+
+  subject.addInstability(20, world);
+  if (subject.isMovementDisabled()) {
+    return { pass: false, reason: 'external damage above threshold did not break the lock' };
+  }
+
+  const released = subject.vel.mag();
+  if (released < banked * 0.99) {
+    return {
+      pass: false,
+      reason: `break did not discharge banked momentum (${released.toFixed(0)} < ${banked.toFixed(0)})`,
+    };
+  }
+
+  return {
+    pass: true,
+    reason: `incap broke on external hit, released ${released.toFixed(0)} banked momentum`,
+  };
+}
+
+/** A plain stun ignores damage entirely and still discharges when the timer runs out. */
+function assertStunIgnoresDamage(): { pass: boolean; reason: string } {
+  const dt = 1 / 60;
+  const { world, subject, interp } = makeDisableSubject('stun_subject');
+  applyDisableAction(interp, world, subject, { durationMs: 300 });
+
+  world.applyKnockback(subject, new Vector2D(1, 0), 3000);
+  const banked = subject.stashedMomentum.mag();
+
+  subject.addInstability(80, world);
+  if (!subject.isMovementDisabled()) {
+    return { pass: false, reason: 'stun broke on damage' };
+  }
+
+  // Sample on the frame the lock lifts. The release is clamped to maxSpeed by the normal
+  // speed limiter, so assert direction and non-zero motion rather than the raw banked figure.
+  let released = -1;
+  let heading = Vector2D.zero();
+  for (let i = 0; i < 40; i++) {
+    world.step(dt);
+    if (!subject.isMovementDisabled()) {
+      released = subject.vel.mag();
+      heading = released > 0 ? subject.vel.normalize() : Vector2D.zero();
+      break;
+    }
+  }
+  if (released < 0) return { pass: false, reason: 'stun outlived its duration' };
+  if (released <= 1) {
+    return { pass: false, reason: 'stun expiry did not discharge banked momentum' };
+  }
+  if (heading.x < 0.9) {
+    return { pass: false, reason: `released momentum lost its direction (x=${heading.x.toFixed(2)})` };
+  }
+
+  return {
+    pass: true,
+    reason: `stun survived 80 instability; banked ${banked.toFixed(0)} released as ${released.toFixed(0)} (speed-capped)`,
+  };
+}
+
+/** A bare APPLY_STASIS must behave exactly as it did before the axes existed. */
+function assertDisableDefaultsUnchanged(): { pass: boolean; reason: string } {
+  const { world, subject, interp } = makeDisableSubject('defaults_subject');
+  subject.vz = 120;
+  applyDisableAction(interp, world, subject, {});
+
+  if (!subject.isMovementDisabled() || !subject.isCastingDisabled()) {
+    return { pass: false, reason: 'bare stasis no longer blocks both axes' };
+  }
+  if (!subject.isTimeFrozen()) return { pass: false, reason: 'bare stasis is not time-frozen' };
+  if (subject.stashedVz === null) {
+    return { pass: false, reason: 'bare stasis did not suspend vertical motion' };
+  }
+
+  subject.addInstability(80, world);
+  if (!subject.isMovementDisabled()) {
+    return { pass: false, reason: 'bare stasis broke on damage; breakOn should default to NONE' };
+  }
+
+  return { pass: true, reason: 'bare stasis still locks both axes, suspends vz, ignores damage' };
+}
+
 function run(): void {
   console.log('test:invariants');
   const suite = buildBenchmarkSuite();
@@ -4479,7 +4667,37 @@ function run(): void {
   console.log(`  ${DIM}${ceilingHeadroom.reason}${RESET}`);
   if (ceilingHeadroom.pass) passed++;
 
-  const totalCases = suite.length + 47;
+  const rootAxis = assertRootAxis();
+  const rootAxisTag = rootAxis.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${rootAxisTag} Root blocks movement only`);
+  console.log(`  ${DIM}${rootAxis.reason}${RESET}`);
+  if (rootAxis.pass) passed++;
+
+  const silenceAxis = assertSilenceAxis();
+  const silenceAxisTag = silenceAxis.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${silenceAxisTag} Silence blocks casting only`);
+  console.log(`  ${DIM}${silenceAxis.reason}${RESET}`);
+  if (silenceAxis.pass) passed++;
+
+  const incapBreak = assertIncapacitateBreak();
+  const incapBreakTag = incapBreak.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${incapBreakTag} Incapacitate breaks on external damage`);
+  console.log(`  ${DIM}${incapBreak.reason}${RESET}`);
+  if (incapBreak.pass) passed++;
+
+  const stunDamage = assertStunIgnoresDamage();
+  const stunDamageTag = stunDamage.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${stunDamageTag} Stun ignores damage`);
+  console.log(`  ${DIM}${stunDamage.reason}${RESET}`);
+  if (stunDamage.pass) passed++;
+
+  const disableDefaults = assertDisableDefaultsUnchanged();
+  const disableDefaultsTag = disableDefaults.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${disableDefaultsTag} Bare stasis defaults unchanged`);
+  console.log(`  ${DIM}${disableDefaults.reason}${RESET}`);
+  if (disableDefaults.pass) passed++;
+
+  const totalCases = suite.length + 52;
 
   console.log('');
   console.log(`${passed}/${totalCases} passed`);
