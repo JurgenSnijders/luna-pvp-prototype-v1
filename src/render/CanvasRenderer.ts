@@ -164,7 +164,7 @@ export class CanvasRenderer {
 
 
 
-  private getRenderCtx(): CanvasRenderCtx {
+  private getRenderCtx(localEntity: Player | null): CanvasRenderCtx {
 
     return {
 
@@ -179,6 +179,8 @@ export class CanvasRenderer {
       cachedHexCenterY: this.cachedHexCenterY,
 
       cachedHexVertices: this.cachedHexVertices,
+
+      localEntity,
 
     };
 
@@ -264,7 +266,7 @@ export class CanvasRenderer {
 
     this.ringRotation += 0.02;
 
-    const state = this.getRenderCtx();
+    const state = this.getRenderCtx(aimingPlayer);
 
 
 

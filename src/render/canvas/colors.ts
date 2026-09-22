@@ -1,3 +1,12 @@
+import type { Rgb } from './glowDisc';
+import type { TelegraphIntent } from './telegraphIntent';
+
+export const TELEGRAPH_COLORS: Record<TelegraphIntent, Rgb> = {
+  HOSTILE: { r: 232, g: 78, b: 94 },
+  FRIENDLY: { r: 82, g: 200, b: 120 },
+  NEUTRAL: { r: 90, g: 205, b: 210 },
+};
+
 export const FIELD_COLORS: Record<string, string> = {
   RADIAL_IMPULSE: 'rgba(255, 68, 68, 0.25)',
   VORTEX_TANGENT: 'rgba(170, 68, 255, 0.25)',

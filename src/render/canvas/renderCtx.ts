@@ -1,3 +1,4 @@
+import type { Entity } from '../../entities/Entity';
 import type { SpriteCache } from './SpriteCache';
 import { Vector2D } from '../../math/Vector2D';
 
@@ -8,4 +9,5 @@ export interface CanvasRenderCtx {
   cachedHexCenterX: number;
   cachedHexCenterY: number;
   cachedHexVertices: Vector2D[];
+  localEntity: Entity | null;
 }

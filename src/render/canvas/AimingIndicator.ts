@@ -19,6 +19,14 @@ import {
   type PredictivePath,
 } from './trajectoryTracer';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
+import { TELEGRAPH_COLORS } from './colors';
+import {
+  drawGlowDisc,
+  drawRimArc,
+  drawRimTicks,
+  drawWedgeEdges,
+  hexToRgb,
+} from './glowDisc';
 
 export type AimingMode = 'directional' | 'radial' | 'draw';
 
@@ -579,18 +587,11 @@ function drawOmniCircleGhost(
   radius: number,
   color: string,
   isDestructible: boolean,
+  nowSec: number,
 ): void {
-  ctx.strokeStyle = hexToRgba(color, 0.85);
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = hexToRgba(color, 0.12);
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, Math.PI * 2);
-  ctx.fill();
+  const intentRgb = TELEGRAPH_COLORS.NEUTRAL;
+  drawGlowDisc(ctx, 0, 0, radius, intentRgb);
+  drawRimArc(ctx, 0, 0, radius, intentRgb, nowSec);
 
   ctx.strokeStyle = hexToRgba(color, 0.55);
   ctx.lineWidth = 1.5;
@@ -622,6 +623,7 @@ function drawDeployableGhost(
   origin: { x: number; y: number },
   color: string,
   fallbackAngle = 0,
+  nowSec = performance.now() * 0.001,
 ): void {
   const dx = center.x - origin.x;
   const dy = center.y - origin.y;
@@ -638,9 +640,7 @@ function drawDeployableGhost(
     ctx.fillRect(-halfW, -halfH, info.width, info.height);
     ctx.strokeStyle = hexToRgba(color, 0.85);
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
     ctx.strokeRect(-halfW, -halfH, info.width, info.height);
-    ctx.setLineDash([]);
     drawRectCornerBrackets(ctx, info.width, info.height, 6, color);
     ctx.beginPath();
     ctx.arc(0, -halfH - 4, 2, 0, Math.PI * 2);
@@ -652,9 +652,7 @@ function drawDeployableGhost(
     ctx.fillRect(-half, -half, half * 2, half * 2);
     ctx.strokeStyle = hexToRgba(color, 0.85);
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
     ctx.strokeRect(-half, -half, half * 2, half * 2);
-    ctx.setLineDash([]);
     const barrelTip = half + 12;
     ctx.strokeStyle = color;
     ctx.lineWidth = 4;
@@ -664,25 +662,26 @@ function drawDeployableGhost(
     ctx.stroke();
     ctx.strokeStyle = hexToRgba(color, 0.45);
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 6]);
     ctx.beginPath();
     ctx.moveTo(barrelTip, 0);
     ctx.lineTo(barrelTip + half * 1.4, 0);
     ctx.stroke();
-    ctx.setLineDash([]);
   } else if (info.shape === 'WEDGE_FIELD') {
     const halfArc = (((info.arcDeg ?? 90) * Math.PI) / 180) / 2;
-    ctx.fillStyle = hexToRgba(color, 0.12);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, info.radius, -halfArc, halfArc);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = hexToRgba(color, 0.85);
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    const startAngle = -halfArc;
+    const endAngle = halfArc;
+    const intentRgb = TELEGRAPH_COLORS.NEUTRAL;
+    drawGlowDisc(ctx, 0, 0, info.radius, intentRgb, {
+      wedge: true,
+      startAngle,
+      endAngle,
+    });
+    drawWedgeEdges(ctx, 0, 0, info.radius, intentRgb, startAngle, endAngle);
+    drawRimArc(ctx, 0, 0, info.radius, intentRgb, nowSec, {
+      wedge: true,
+      startAngle,
+      endAngle,
+    });
 
     const tickLen = info.radius * 0.12;
     for (const edgeAngle of [-halfArc, 0, halfArc]) {
@@ -699,6 +698,7 @@ function drawDeployableGhost(
       info.radius,
       color,
       info.isDestructible === true || info.shape === 'DECOY',
+      nowSec,
     );
   }
 
@@ -765,60 +765,29 @@ export function drawAoERadial(
         : state.target;
 
   const spawnAltitude = state.ability.trajectory?.spawnAltitude ?? 0;
+  const nowSec = now / 1000;
+
   if (spawnAltitude > 0) {
     ctx.save();
     ctx.strokeStyle = hexToRgba(color, 0.25);
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 6]);
     ctx.beginPath();
     ctx.moveTo(center.x, center.y - 120);
     ctx.lineTo(center.x, center.y);
     ctx.stroke();
-    ctx.setLineDash([]);
     ctx.restore();
   }
 
   if (deployableInfo) {
-    drawDeployableGhost(ctx, deployableInfo, center, state.origin, color, state.angle);
+    drawDeployableGhost(ctx, deployableInfo, center, state.origin, color, state.angle, nowSec);
     return;
   }
 
-  ctx.save();
-  ctx.strokeStyle = hexToRgba(color, 0.35);
-  ctx.lineWidth = 4;
-  ctx.setLineDash([8, 6]);
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const rotation = (now / 2000) * Math.PI * 2;
-  const tickCount = 8;
-  ctx.beginPath();
-  for (let i = 0; i < tickCount; i++) {
-    const angle = rotation + (i / tickCount) * Math.PI * 2;
-    const inner = radius - 10;
-    const outer = radius + 6;
-    ctx.moveTo(
-      center.x + Math.cos(angle) * inner,
-      center.y + Math.sin(angle) * inner,
-    );
-    ctx.lineTo(
-      center.x + Math.cos(angle) * outer,
-      center.y + Math.sin(angle) * outer,
-    );
-  }
-  ctx.stroke();
-
-  ctx.fillStyle = hexToRgba(color, 0.12);
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
+  const intentRgb = TELEGRAPH_COLORS.NEUTRAL;
+  const accentRgb = hexToRgb(color);
+  drawGlowDisc(ctx, center.x, center.y, radius, intentRgb);
+  drawRimArc(ctx, center.x, center.y, radius, intentRgb, nowSec);
+  drawRimTicks(ctx, center.x, center.y, radius, accentRgb, now);
 }
 
 export class AimingIndicatorRenderer {
