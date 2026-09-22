@@ -94,7 +94,7 @@ import {
   attachForgeCardDrag,
   attachInventoryDropZone,
   attachVaultCardDrag,
-  parseForgeCardDragPayload,
+  readForgeCardDrag,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { clampSchemaValues } from '../ai/budget/balance';
@@ -2145,10 +2145,7 @@ export class DraftModal {
   private handleForgeCardDrop(targetSlot: ActionSlotKey, event: DragEvent): void {
     if (!this.forgeVaultPickerActive) return;
 
-    const raw = event.dataTransfer?.getData('text/plain');
-    if (!raw) return;
-
-    const payload = parseForgeCardDragPayload(raw);
+    const payload = readForgeCardDrag(event);
     if (!payload) return;
 
     const slotCard = this.activeForgeCardSlots?.[payload.cardIndex]?.card ?? null;
