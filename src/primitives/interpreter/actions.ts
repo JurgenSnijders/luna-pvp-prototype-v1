@@ -33,6 +33,7 @@ import {
   secondaryColor,
 } from './helpers';
 import { entityFacingAngle, isPointInArcWedge, resolveArcFacingRad } from '../arcWedge';
+import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
 
 function getArchetypeTuning(ctx: TriggerContext) {
@@ -272,7 +273,11 @@ export function dispatchAction(
         zone.detachOnParentDeath = field.detachOnParentDeath ?? true;
       }
       world.addZone(zone);
-      interp.particles?.expandingRing(spawnPos, field.radius, interp.activeCastVisuals?.color ?? '#aa44ff');
+      interp.particles?.expandingRing(
+        spawnPos,
+        field.radius,
+        interp.activeCastVisuals?.color ?? getArchetypeColor(archetype),
+      );
       break;
     }
     case 'SPAWN_CONSTRAINT': {

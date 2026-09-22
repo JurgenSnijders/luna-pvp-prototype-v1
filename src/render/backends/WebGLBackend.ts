@@ -402,12 +402,12 @@ export class WebGLBackend implements ParticleBackend {
     statusFrostOrbitImpl(this.spawnCtx(), pos, radius);
   }
 
-  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
-    statusThermalSparksImpl(this.spawnCtx(), pos, radius, intensity);
+  statusThermal(pos: Vector2D, radius: number, intensity: number, color: string): void {
+    statusThermalSparksImpl(this.spawnCtx(), pos, radius, intensity, color);
   }
 
-  statusVoid(pos: Vector2D, radius: number): void {
-    statusVoidCollapseImpl(this.spawnCtx(), pos, radius);
+  statusVoid(pos: Vector2D, radius: number, color: string): void {
+    statusVoidCollapseImpl(this.spawnCtx(), pos, radius, color);
   }
 
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {

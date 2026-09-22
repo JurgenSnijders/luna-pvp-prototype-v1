@@ -6,7 +6,6 @@ import {
 import { Vector2D } from '../../math/Vector2D';
 import type { AbilitySchema, PathPoint, TrajectoryConfig } from '../../types/schema';
 import { resolveArcFacingRad } from '../../primitives/arcWedge';
-import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveLiveAimingPaths } from './aimingRollout';
 import {
   abilityUsesGroundReticle,
@@ -25,10 +24,13 @@ import {
   drawRimArc,
   drawRimTicks,
   drawWedgeEdges,
-  hexToRgb,
+  rgbToHex,
 } from './glowDisc';
 
 export type AimingMode = 'directional' | 'radial' | 'draw';
+
+/** Aiming is always the local player's own cast, so every telegraph reads as neutral intent. */
+const TELEGRAPH_HEX = rgbToHex(TELEGRAPH_COLORS.NEUTRAL);
 
 const DRAW_POINT_MIN_SPACING = 8;
 const DRAW_POINT_MAX_SAMPLES = 256;
@@ -479,8 +481,7 @@ export function drawPredictivePaths(
   startZ = 0,
   planarOrigin?: { x: number; y: number },
 ): void {
-  const archetype = state.ability.archetype ?? 'KINETIC';
-  const color = getArchetypeColor(archetype, state.ability.visuals?.color);
+  const color = TELEGRAPH_HEX;
 
   if (state.mode === 'draw') {
     if (state.drawnPoints.length < 2) return;
@@ -752,8 +753,7 @@ export function drawAoERadial(
   state: AimingState,
   now = performance.now(),
 ): void {
-  const archetype = state.ability.archetype ?? 'KINETIC';
-  const color = getArchetypeColor(archetype, state.ability.visuals?.color);
+  const color = TELEGRAPH_HEX;
   const deployableInfo = resolveDeployableInfo(state.ability);
   const placedDeployable = isPlacedDeployableAimTarget(state.ability);
   const radius = state.radialRadius > 0 ? state.radialRadius : state.range;
@@ -784,10 +784,9 @@ export function drawAoERadial(
   }
 
   const intentRgb = TELEGRAPH_COLORS.NEUTRAL;
-  const accentRgb = hexToRgb(color);
   drawGlowDisc(ctx, center.x, center.y, radius, intentRgb);
   drawRimArc(ctx, center.x, center.y, radius, intentRgb, nowSec);
-  drawRimTicks(ctx, center.x, center.y, radius, accentRgb, now);
+  drawRimTicks(ctx, center.x, center.y, radius, intentRgb, now);
 }
 
 export class AimingIndicatorRenderer {
@@ -806,14 +805,12 @@ export class AimingIndicatorRenderer {
       if (deployableInfo) {
         const landing = resolveTerminalLandingPoint(visual, planarOrigin, casterZ);
         if (landing) {
-          const archetype = visual.ability.archetype ?? 'KINETIC';
-          const color = getArchetypeColor(archetype, visual.ability.visuals?.color);
           drawDeployableGhost(
             ctx,
             deployableInfo,
             landing,
             visual.origin,
-            color,
+            TELEGRAPH_HEX,
             visual.angle,
           );
         }

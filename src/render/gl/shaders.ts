@@ -24,7 +24,10 @@ out float v_birthTime;
 void main() {
   float c = cos(a_rotation);
   float s = sin(a_rotation);
-  vec2 corner = a_corner * a_size * u_zoom;
+  // GLOW decays to nothing well inside its quad, so it needs a bigger quad to keep
+  // the apparent size its callers author.
+  float glowInflate = int(a_shapeId + 0.5) == 1 ? 1.6 : 1.0;
+  vec2 corner = a_corner * a_size * glowInflate * u_zoom;
   vec2 rotated = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
   vec2 screen = (a_pos - u_camPos) * u_zoom + 0.5 * u_resolution + u_shake + rotated;
   vec2 clip = (screen / u_resolution) * 2.0 - 1.0;
@@ -89,8 +92,11 @@ float shapeAlpha(vec2 uv, float shapeId, vec4 params) {
   if (sid == 0) {
     d = sdCircle(uv, 0.45);
   } else if (sid == 1) {
-    d = sdCircle(uv, 0.5);
-    float glow = exp(-max(d, 0.0) * 6.0);
+    // Alpha must reach 0 by the quad's inscribed radius, or the quad edge itself
+    // shows up as a hard square. r is 0 at the center and 1 at that radius.
+    float r = clamp(length(uv) * 2.0, 0.0, 1.0);
+    float k = 4.0;
+    float glow = (exp(-r * k) - exp(-k)) / (1.0 - exp(-k));
     return glow * 0.9;
   } else if (sid == 2) {
     d = sdRing(uv, 0.42, params.x * 0.08 + 0.04);

@@ -141,12 +141,12 @@ export class ParticleSystem {
     this.director.statusFrost(pos, radius);
   }
 
-  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
-    this.director.statusThermal(pos, radius, intensity);
+  statusThermal(pos: Vector2D, radius: number, intensity: number, color: string): void {
+    this.director.statusThermal(pos, radius, intensity, color);
   }
 
-  statusVoid(pos: Vector2D, radius: number): void {
-    this.director.statusVoid(pos, radius);
+  statusVoid(pos: Vector2D, radius: number, color: string): void {
+    this.director.statusVoid(pos, radius, color);
   }
 
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {

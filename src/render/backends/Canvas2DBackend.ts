@@ -7,6 +7,52 @@ import { playVfxLayers } from './vfxLayerComposer';
 import type { ParticleBackend, SpawnPriority, VfxCounters } from './ParticleBackend';
 
 const POOL_SIZE = 2048;
+const SPRITE_PX = 64;
+const TINT_CACHE_LIMIT = 64;
+/** The sprite fades to nothing at its edge, so it needs extra span to read as wide as a solid quad. */
+const SPRITE_SCALE = 1.5;
+
+let softSprite: HTMLCanvasElement | null = null;
+const tintCache = new Map<string, HTMLCanvasElement>();
+
+function getSoftSprite(): HTMLCanvasElement {
+  if (softSprite) return softSprite;
+  const canvas = document.createElement('canvas');
+  canvas.width = SPRITE_PX;
+  canvas.height = SPRITE_PX;
+  const sctx = canvas.getContext('2d')!;
+  const r = SPRITE_PX / 2;
+  const grad = sctx.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.55)');
+  grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.15)');
+  grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  sctx.fillStyle = grad;
+  sctx.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+  softSprite = canvas;
+  return canvas;
+}
+
+function getTintedSprite(color: string): HTMLCanvasElement {
+  const cached = tintCache.get(color);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SPRITE_PX;
+  canvas.height = SPRITE_PX;
+  const sctx = canvas.getContext('2d')!;
+  sctx.drawImage(getSoftSprite(), 0, 0);
+  sctx.globalCompositeOperation = 'source-in';
+  sctx.fillStyle = color;
+  sctx.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+
+  if (tintCache.size >= TINT_CACHE_LIMIT) {
+    const oldest = tintCache.keys().next().value;
+    if (oldest !== undefined) tintCache.delete(oldest);
+  }
+  tintCache.set(color, canvas);
+  return canvas;
+}
 
 interface Particle {
   pos: Vector2D;
@@ -17,6 +63,7 @@ interface Particle {
   size: number;
   alpha: number;
   peakAlpha: number;
+  additive: boolean;
   active: boolean;
 }
 
@@ -38,6 +85,7 @@ export class Canvas2DBackend implements ParticleBackend {
         size: 2,
         alpha: 1,
         peakAlpha: 1,
+        additive: true,
         active: false,
       });
     }
@@ -73,16 +121,23 @@ export class Canvas2DBackend implements ParticleBackend {
 
   draw(ctx: CanvasRenderingContext2D): void {
     const budget = Math.min(POOL_SIZE, getTierLimits().particleBudget);
+    const previousOp = ctx.globalCompositeOperation;
     let drawn = 0;
-    for (const p of this.pool) {
-      if (!p.active) continue;
-      if (drawn >= budget) break;
-      drawn++;
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle = p.color;
-      const s = Math.max(2, p.size * 2);
-      ctx.fillRect(p.pos.x - s * 0.5, p.pos.y - s * 0.5, s, s);
+
+    // Split by blend mode so the composite op is set twice a frame rather than per particle.
+    for (const additivePass of [false, true]) {
+      ctx.globalCompositeOperation = additivePass ? 'lighter' : 'source-over';
+      for (const p of this.pool) {
+        if (!p.active || p.additive !== additivePass) continue;
+        if (drawn >= budget) break;
+        drawn++;
+        ctx.globalAlpha = p.alpha;
+        const s = Math.max(2, p.size * 2) * SPRITE_SCALE;
+        ctx.drawImage(getTintedSprite(p.color), p.pos.x - s * 0.5, p.pos.y - s * 0.5, s, s);
+      }
     }
+
+    ctx.globalCompositeOperation = previousOp;
     ctx.globalAlpha = 1;
   }
 
@@ -107,6 +162,7 @@ export class Canvas2DBackend implements ParticleBackend {
     color: string,
     size: number,
     initialAlpha = 1,
+    additive = true,
   ): void {
     if (this.getLiveParticleCount() >= Math.min(POOL_SIZE, getTierLimits().particleBudget)) return;
     if (this.freeList.length === 0) return;
@@ -120,6 +176,7 @@ export class Canvas2DBackend implements ParticleBackend {
     slot.size = size;
     slot.alpha = initialAlpha;
     slot.peakAlpha = initialAlpha;
+    slot.additive = additive;
     slot.active = true;
   }
 
@@ -128,10 +185,10 @@ export class Canvas2DBackend implements ParticleBackend {
     size: number,
     color: string,
     alpha: number,
-    _additive: boolean,
+    additive: boolean,
     _priority: SpawnPriority,
   ): void {
-    this.spawn(pos, Vector2D.zero(), 0.4, color, size, alpha);
+    this.spawn(pos, Vector2D.zero(), 0.4, color, size, alpha, additive);
   }
 
   spawnGlow(
@@ -139,10 +196,10 @@ export class Canvas2DBackend implements ParticleBackend {
     size: number,
     color: string,
     alpha: number,
-    _additive: boolean,
+    additive: boolean,
     _priority: SpawnPriority,
   ): void {
-    this.spawn(pos, Vector2D.zero(), 0.35, color, size * 1.2, alpha);
+    this.spawn(pos, Vector2D.zero(), 0.35, color, size * 1.2, alpha, additive);
   }
 
   spawnRing(
@@ -307,7 +364,7 @@ export class Canvas2DBackend implements ParticleBackend {
       this.ember(pos);
       return;
     }
-    this.spawn(pos, Vector2D.fromAngle(Math.random() * Math.PI * 2, 10), 0.4, color, 3);
+    this.spawn(pos, Vector2D.fromAngle(Math.random() * Math.PI * 2, 10), 0.4, color, 3, 0.7, false);
   }
 
   neonRibbon(pos: Vector2D, color: string): void {
@@ -380,17 +437,17 @@ export class Canvas2DBackend implements ParticleBackend {
     this.spawnStreak(edge, tangent, 6, '#00e5ff', 0.75, 0.35, 'SECONDARY');
   }
 
-  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+  statusThermal(pos: Vector2D, radius: number, intensity: number, color: string): void {
     if (Math.random() > intensity) return;
     const spawn = pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, radius * 0.2));
-    this.spawn(spawn, new Vector2D((Math.random() - 0.5) * 15, -25), 0.4, '#ff6600', 3);
+    this.spawn(spawn, new Vector2D((Math.random() - 0.5) * 15, -25), 0.4, color, 3);
   }
 
-  statusVoid(pos: Vector2D, radius: number): void {
+  statusVoid(pos: Vector2D, radius: number, color: string): void {
     const angle = Math.random() * Math.PI * 2;
     const edge = pos.add(Vector2D.fromAngle(angle, radius * 1.5));
     const inward = pos.sub(edge).normalize().scale(60);
-    this.spawnStreak(edge, inward, 8, '#bf00ff', 0.7, 0.3, 'SECONDARY');
+    this.spawnStreak(edge, inward, 8, color, 0.7, 0.3, 'SECONDARY');
   }
 
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {

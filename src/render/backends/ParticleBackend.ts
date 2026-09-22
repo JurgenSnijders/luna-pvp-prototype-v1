@@ -94,8 +94,8 @@ export interface ParticleBackend {
   zoneVortexTick(pos: Vector2D, radius: number, color: string): void;
   zoneHazardPulse(pos: Vector2D, radius: number, color: string): void;
   statusFrost(pos: Vector2D, radius: number): void;
-  statusThermal(pos: Vector2D, radius: number, intensity: number): void;
-  statusVoid(pos: Vector2D, radius: number): void;
+  statusThermal(pos: Vector2D, radius: number, intensity: number, color: string): void;
+  statusVoid(pos: Vector2D, radius: number, color: string): void;
   statusKinetic(pos: Vector2D, velocity: Vector2D): void;
   emitLavaSizzle(pos: Vector2D): void;
 }

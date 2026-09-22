@@ -25,7 +25,7 @@ import { screenShake } from '../../render/ScreenShake';
 import { decalManager, mapArchetypeToDecal, type DecalType } from '../../render/canvas/decals';
 import { floorGridManager } from '../../render/canvas/floorGrid';
 import { DebrisManager } from '../../render/canvas/debris';
-import { FIELD_COLORS } from '../../render/canvas/colors';
+import { playZoneTick } from '../../render/zoneVfx';
 import type { Entity } from '../../entities/Entity';
 import { Player } from '../../entities/Player';
 import { Projectile } from '../../entities/Projectile';
@@ -201,7 +201,7 @@ function stampZoneExpirationDecals(world: PhysicsWorld, fx: LifecycleFx): void {
     if (!isInsideHex(zone.pos, world.hexCenter, world.hexRadius)) continue;
 
     const radius = zone.config.radius * 0.35;
-    const color = FIELD_COLORS[zone.config.fieldType] ?? '#aa44ff';
+    const color = getArchetypeColor(zone.spellArchetype);
     let type = mapArchetypeToDecal(zone.spellArchetype);
     if (zone.config.fieldType === 'RADIAL_IMPULSE') {
       type = 'KINETIC_CRATER';
@@ -267,19 +267,12 @@ function processZoneParticleTicks(interp: Interpreter, world: PhysicsWorld): voi
   if (zoneVfxFrame % 3 !== 0) return;
   if (!getGraphicsSettings().particleTrails) return;
 
+  const particles = interp.particles;
+  if (!particles) return;
+
   for (const zone of world.zones) {
     if (zone.isDead) continue;
-    const color = FIELD_COLORS[zone.config.fieldType] ?? '#aa44ff';
-    if (
-      zone.config.fieldType === 'MASS_ATTRACTOR' ||
-      zone.config.fieldType === 'VORTEX_TANGENT'
-    ) {
-      interp.particles?.zoneVortexTick(zone.pos, zone.config.radius, color);
-    } else if (zone.config.fieldType === 'RADIAL_IMPULSE') {
-      interp.particles?.zoneHazardPulse(zone.pos, zone.config.radius, color);
-    } else if (Math.abs(zone.config.strength) >= 2000) {
-      interp.particles?.ember(zone.pos);
-    }
+    playZoneTick(particles, zone);
   }
 }
 
@@ -352,15 +345,22 @@ function processStatusParticleTicks(interp: Interpreter, world: PhysicsWorld): v
       interp.particles?.statusFrost(pos, r);
     }
     if (entity.activeStatuses.has('FIRE') || entity.activeStatuses.has('PLASMA')) {
-      const intensity = entity.activeStatuses.has('PLASMA')
+      const isPlasma = entity.activeStatuses.has('PLASMA');
+      const intensity = isPlasma
         ? Math.min(1, entity.instabilityPct / 100)
         : Math.min(1, entity.vel.mag() / 250);
       if (intensity > 0.08) {
-        interp.particles?.statusThermal(pos, r, intensity);
+        interp.particles?.statusThermal(
+          pos,
+          r,
+          intensity,
+          getArchetypeColor(isPlasma ? 'PLASMA' : 'FIRE'),
+        );
       }
     }
     if (entity.activeStatuses.has('VOID') || entity.activeStatuses.has('GRAVITY')) {
-      interp.particles?.statusVoid(pos, r);
+      const isGravity = entity.activeStatuses.has('GRAVITY');
+      interp.particles?.statusVoid(pos, r, getArchetypeColor(isGravity ? 'GRAVITY' : 'VOID'));
     }
     if (entity.activeStatuses.has('KINETIC') && entity.vel.mag() > 50) {
       interp.particles?.statusKinetic(pos, entity.vel);

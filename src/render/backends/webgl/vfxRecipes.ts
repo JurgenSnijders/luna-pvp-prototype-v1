@@ -13,6 +13,17 @@ import {
   type WebGLSpawnCtx,
 } from './spawnPrimitives';
 
+function lightenHex(hex: string, t: number): string {
+  const [r, g, b] = parseColor(hex);
+  const mix = (c: number) => Math.round(c + (255 - c) * t);
+  return `#${[mix(r), mix(g), mix(b)].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Most embers stay round; a minority use the noise-perturbed shape so clusters do not tile. */
+function pickEmberShape(): number {
+  return Math.random() < 0.35 ? ShapeId.SMOKE : ShapeId.GLOW;
+}
+
 export function triggerMuzzleFlash(ctx: WebGLSpawnCtx, pos: Vector2D, dir: Vector2D, color: string): void {
   const heading = dir.magSq() > 0 ? dir.normalize() : Vector2D.fromAngle(0);
   const baseAngle = Math.atan2(heading.y, heading.x);
@@ -269,6 +280,7 @@ export function neonRibbon(ctx: WebGLSpawnCtx, pos: Vector2D, color: string): vo
   );
 }
 
+/** Lava and ambient arena embers. Intentionally lava-orange rather than archetype-tinted. */
 export function ember(ctx: WebGLSpawnCtx, pos: Vector2D): void {
   const colors = ['#ff5500', '#ffaa00'];
   const color = colors[Math.floor(Math.random() * colors.length)];
@@ -279,17 +291,17 @@ export function ember(ctx: WebGLSpawnCtx, pos: Vector2D): void {
       posY: pos.y,
       velX: (Math.random() - 0.5) * 30,
       velY: -10 - Math.random() * 20,
-      life: 0.5,
-      size: 3,
-      rot: 0,
+      life: 0.4 + Math.random() * 0.25,
+      size: 2.4 + Math.random() * 1.4,
+      rot: Math.random() * Math.PI * 2,
       angVel: 0,
       drag: 0.96,
       gravity: -15,
-      shapeId: ShapeId.GLOW,
+      shapeId: pickEmberShape(),
       r,
       g,
       b,
-      peakAlpha: 0.9,
+      peakAlpha: 0.7 + Math.random() * 0.25,
       additive: true,
     }),
     'AMBIENT',
@@ -417,12 +429,13 @@ export function statusThermalSparks(
   pos: Vector2D,
   radius: number,
   intensity: number,
+  color: string,
 ): void {
+  const hot = lightenHex(color, 0.45);
   const maxSpawns = Math.min(3, Math.ceil(intensity * 3));
   for (let i = 0; i < maxSpawns; i++) {
     if (Math.random() > intensity) continue;
-    const color = Math.random() > 0.5 ? '#ff4400' : '#ffaa00';
-    const [r, g, b] = parseColor(color);
+    const [r, g, b] = parseColor(Math.random() > 0.5 ? color : hot);
     const angle = Math.random() * Math.PI * 2;
     const spawn = pos.add(Vector2D.fromAngle(angle, radius * 0.3 * Math.random()));
     ctx.spawnParticle(
@@ -431,17 +444,17 @@ export function statusThermalSparks(
         posY: spawn.y,
         velX: (Math.random() - 0.5) * 20,
         velY: -20 - Math.random() * 30,
-        life: 0.4,
+        life: 0.3 + Math.random() * 0.25,
         size: 2 + Math.random() * 2,
-        rot: 0,
+        rot: Math.random() * Math.PI * 2,
         angVel: 0,
         drag: 0.97,
         gravity: -8,
-        shapeId: ShapeId.GLOW,
+        shapeId: pickEmberShape(),
         r,
         g,
         b,
-        peakAlpha: 0.9,
+        peakAlpha: 0.7 + Math.random() * 0.25,
         additive: true,
       }),
       'SECONDARY',
@@ -453,9 +466,9 @@ export function statusVoidCollapse(
   ctx: WebGLSpawnCtx,
   pos: Vector2D,
   radius: number,
+  color: string,
 ): void {
   const count = 1 + Math.floor(Math.random() * 2);
-  const color = '#bf00ff';
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const edge = pos.add(Vector2D.fromAngle(angle, radius * 1.5));
@@ -488,17 +501,17 @@ export function lavaSizzleParticle(ctx: WebGLSpawnCtx, pos: Vector2D): void {
         posY: pos.y + (Math.random() - 0.5) * 6,
         velX: (Math.random() - 0.5) * 20,
         velY: -80 - Math.random() * 60,
-        life: 0.25,
+        life: 0.2 + Math.random() * 0.15,
         size: 2 + Math.random() * 2,
-        rot: 0,
+        rot: Math.random() * Math.PI * 2,
         angVel: 0,
         drag: 0.94,
         gravity: -20,
-        shapeId: ShapeId.GLOW,
+        shapeId: pickEmberShape(),
         r: wr,
         g: wg,
         b: wb,
-        peakAlpha: 0.85,
+        peakAlpha: 0.7 + Math.random() * 0.2,
         additive: true,
       }),
       'SECONDARY',

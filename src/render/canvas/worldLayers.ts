@@ -6,15 +6,14 @@ import type { Entity } from '../../entities/Entity';
 import type { FieldType } from '../../types/schema';
 import { TELEGRAPH_COLORS, healthBarColor } from './colors';
 import {
+  computeZoneRingFade,
   drawGlowDisc,
   drawRimArc,
   drawTrackedCastRing,
   drawWedgeEdges,
-  hexToRgb,
-  type Rgb,
+  getZoneAgeMs,
 } from './glowDisc';
 import type { CanvasRenderCtx } from './renderCtx';
-import { getArchetypeColor } from './SpellIconGenerator';
 import { resolveParryIntent, resolveZoneIntent } from './telegraphIntent';
 
 export interface TimerBarOptions {
@@ -72,16 +71,6 @@ export function drawHorizontalTimerBar({
   ctx.globalAlpha = 1.0;
 }
 
-function parseRgbaColor(color: string): { r: number; g: number; b: number } {
-  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (match) {
-    return { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
-  }
-  const hex = color.replace('#', '');
-  const n = parseInt(hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex, 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-
 function fieldAccentRgb(fieldType: FieldType): { r: number; g: number; b: number } {
   switch (fieldType) {
     case 'RADIAL_IMPULSE':
@@ -107,12 +96,14 @@ function drawHologramFill(
   endAngle = Math.PI * 2,
   wedge = false,
   alphaBoost = 0,
+  alphaScale = 1,
 ): void {
   drawGlowDisc(ctx, x, y, radius, rgb, {
     startAngle,
     endAngle,
     wedge,
     alphaBoost,
+    alphaScale,
   });
 }
 
@@ -184,6 +175,7 @@ function drawOuterPerimeter(
   startAngle = 0,
   endAngle = Math.PI * 2,
   wedge = false,
+  alphaScale = 1,
 ): void {
   const fastSpin = fieldType === 'VORTEX_TANGENT';
   drawRimArc(ctx, x, y, radius, rgb, now, {
@@ -191,6 +183,7 @@ function drawOuterPerimeter(
     endAngle,
     wedge,
     fastSpin,
+    alphaScale,
   });
   if (wedge) {
     drawWedgeEdges(ctx, x, y, radius, rgb, startAngle, endAngle);
@@ -214,10 +207,6 @@ function drawSingularityCore(
   ctx.stroke();
 }
 
-function resolveZoneAccentRgb(zone: SpatialZone): Rgb {
-  return hexToRgb(getArchetypeColor(zone.spellArchetype));
-}
-
 /** Alpha multiplier for the zone hologram tail — full strength until the final fade window. */
 function computeZoneExpiryFade(remainingMs: number, durationMs: number): number {
   if (durationMs <= 0) return 1;
@@ -237,7 +226,6 @@ function drawZoneHologram(
   const radius = config.radius;
   const intent = resolveZoneIntent(zone, localEntity);
   const intentRgb = TELEGRAPH_COLORS[intent];
-  const accentRgb = resolveZoneAccentRgb(zone);
   const singularityAccent = fieldAccentRgb(config.fieldType);
   const rot = now * (config.fieldType === 'FRICTION_OVERRIDE' ? 0.25 : 0.5);
   const wedge = zone.isPartialArc();
@@ -246,12 +234,24 @@ function drawZoneHologram(
   const startAngle = wedge ? facing - half : 0;
   const endAngle = wedge ? facing + half : Math.PI * 2;
   const expiryFade = computeZoneExpiryFade(zone.remainingDurationMs, config.durationMs);
+  const landedFade = computeZoneRingFade(getZoneAgeMs(zone, nowMs));
 
   ctx.save();
   ctx.globalAlpha = expiryFade;
 
-  drawHologramFill(ctx, pos.x, pos.y, radius, intentRgb, startAngle, endAngle, wedge);
-  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, accentRgb, startAngle, endAngle, wedge);
+  drawHologramFill(
+    ctx,
+    pos.x,
+    pos.y,
+    radius,
+    intentRgb,
+    startAngle,
+    endAngle,
+    wedge,
+    0,
+    landedFade,
+  );
+  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, intentRgb, startAngle, endAngle, wedge);
   drawOuterPerimeter(
     ctx,
     pos.x,
@@ -263,8 +263,8 @@ function drawZoneHologram(
     startAngle,
     endAngle,
     wedge,
+    landedFade,
   );
-  drawTrackedCastRing(ctx, zone, pos.x, pos.y, radius, accentRgb, nowMs);
 
   if (config.fieldType === 'MASS_ATTRACTOR' || config.fieldType === 'VORTEX_TANGENT') {
     drawSingularityCore(ctx, pos.x, pos.y, now, singularityAccent);
@@ -288,13 +288,6 @@ export function drawZones(
   drawParryShieldOverlays(ctx, world, now, localEntity);
 }
 
-function resolveParryAccentRgb(overlay: ParryShieldOverlay): Rgb {
-  if (overlay.spellArchetype) {
-    return hexToRgb(getArchetypeColor(overlay.spellArchetype));
-  }
-  return parseRgbaColor(overlay.color);
-}
-
 function drawParryShieldHologram(
   ctx: CanvasRenderingContext2D,
   overlay: ParryShieldOverlay,
@@ -307,7 +300,6 @@ function drawParryShieldHologram(
 ): void {
   const { pos, radius, arcDeg } = overlay;
   const intentRgb = TELEGRAPH_COLORS[resolveParryIntent(overlay, localEntity)];
-  const accentRgb = resolveParryAccentRgb(overlay);
   const wedge = arcDeg !== undefined && arcDeg < 360;
   const half = (((arcDeg ?? 360) * Math.PI) / 180) / 2;
   const startAngle = wedge ? facingRad - half : 0;
@@ -329,7 +321,7 @@ function drawParryShieldHologram(
     wedge,
     lowStaminaPulse,
   );
-  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, accentRgb, startAngle, endAngle, wedge);
+  drawInnerReticle(ctx, pos.x, pos.y, radius, rot, intentRgb, startAngle, endAngle, wedge);
   drawOuterPerimeter(
     ctx,
     pos.x,
@@ -342,7 +334,7 @@ function drawParryShieldHologram(
     endAngle,
     wedge,
   );
-  drawTrackedCastRing(ctx, overlay, pos.x, pos.y, radius, accentRgb, nowMs);
+  drawTrackedCastRing(ctx, overlay, pos.x, pos.y, radius, intentRgb, nowMs);
 }
 
 export function drawParryShieldOverlays(

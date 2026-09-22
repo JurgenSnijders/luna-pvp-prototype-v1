@@ -311,15 +311,15 @@ export class RecordingBackend implements ParticleBackend {
     this.spawnStreak(edge, new Vector2D(-Math.sin(angle), Math.cos(angle)).scale(70), 6, '#00e5ff', 0.75, 0.35, 'SECONDARY');
   }
 
-  statusThermal(pos: Vector2D, radius: number, intensity: number): void {
+  statusThermal(pos: Vector2D, radius: number, intensity: number, color: string): void {
     if (Math.random() > intensity) return;
-    this.spawn(pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, radius * 0.2)), new Vector2D(0, -25), 0.4, '#ff6600', 3);
+    this.spawn(pos.add(Vector2D.fromAngle(Math.random() * Math.PI * 2, radius * 0.2)), new Vector2D(0, -25), 0.4, color, 3);
   }
 
-  statusVoid(pos: Vector2D, radius: number): void {
+  statusVoid(pos: Vector2D, radius: number, color: string): void {
     const angle = Math.random() * Math.PI * 2;
     const edge = pos.add(Vector2D.fromAngle(angle, radius * 1.5));
-    this.spawnStreak(edge, pos.sub(edge).normalize().scale(60), 8, '#bf00ff', 0.7, 0.3, 'SECONDARY');
+    this.spawnStreak(edge, pos.sub(edge).normalize().scale(60), 8, color, 0.7, 0.3, 'SECONDARY');
   }
 
   statusKinetic(pos: Vector2D, velocity: Vector2D): void {

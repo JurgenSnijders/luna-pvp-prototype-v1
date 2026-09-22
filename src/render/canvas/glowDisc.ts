@@ -10,6 +10,7 @@ export interface GlowDiscOptions {
   wedge?: boolean;
   alphaBoost?: number;
   glowScale?: number;
+  alphaScale?: number;
 }
 
 export interface RimArcOptions {
@@ -17,10 +18,19 @@ export interface RimArcOptions {
   endAngle?: number;
   wedge?: boolean;
   fastSpin?: boolean;
+  alphaScale?: number;
 }
 
 const CAST_RING_DURATION_MS = 160;
 const GLOW_SCALE = 1.07;
+
+/** How long a live zone ring takes to drop from full strength to its residual outline. */
+export const ZONE_RING_FADE_MS = 400;
+/**
+ * Floor the ring fade above zero: once the archetype VFX goes sparse the hazard
+ * boundary still has to read, so keep a faint outline that can be dialed here.
+ */
+export const ZONE_RING_RESIDUAL = 0.15;
 
 const zoneFirstSeenMs = new WeakMap<object, number>();
 
@@ -28,7 +38,7 @@ function rgba(rgb: Rgb, alpha: number): string {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
-function mixTowardWhite(rgb: Rgb, t: number): Rgb {
+export function mixTowardWhite(rgb: Rgb, t: number): Rgb {
   return {
     r: Math.round(rgb.r + (255 - rgb.r) * t),
     g: Math.round(rgb.g + (255 - rgb.g) * t),
@@ -44,6 +54,30 @@ export function hexToRgb(hex: string): Rgb {
     g: parseInt(full.substring(2, 4), 16),
     b: parseInt(full.substring(4, 6), 16),
   };
+}
+
+export function rgbToHex(rgb: Rgb): string {
+  const channel = (v: number) =>
+    Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  return `#${channel(rgb.r)}${channel(rgb.g)}${channel(rgb.b)}`;
+}
+
+/** Milliseconds since this zone/overlay was first drawn, registering it on first sight. */
+export function getZoneAgeMs(key: object, nowMs: number): number {
+  let firstSeen = zoneFirstSeenMs.get(key);
+  if (firstSeen === undefined) {
+    firstSeen = nowMs;
+    zoneFirstSeenMs.set(key, firstSeen);
+  }
+  return nowMs - firstSeen;
+}
+
+/** Ramps a landed zone's telegraph ring from full strength down to the residual outline. */
+export function computeZoneRingFade(ageMs: number): number {
+  if (ageMs <= 0) return 1;
+  if (ageMs >= ZONE_RING_FADE_MS) return ZONE_RING_RESIDUAL;
+  const t = ageMs / ZONE_RING_FADE_MS;
+  return 1 - (1 - ZONE_RING_RESIDUAL) * t;
 }
 
 function beginDiscPath(
@@ -80,18 +114,20 @@ export function drawGlowDisc(
     wedge = false,
     alphaBoost = 0,
     glowScale = GLOW_SCALE,
+    alphaScale = 1,
   } = options;
 
   const outerR = radius * glowScale;
   const rimT = radius / outerR;
   const shoulderT = rimT * 0.97;
   const hot = mixTowardWhite(rgb, 0.1);
+  const a = Math.max(0, alphaScale);
 
   const grad = ctx.createRadialGradient(x, y, 0, x, y, outerR);
-  grad.addColorStop(0, rgba(rgb, 0.05 + alphaBoost));
-  grad.addColorStop(0.45, rgba(rgb, 0.03 + alphaBoost * 0.5));
-  grad.addColorStop(shoulderT, rgba(rgb, 0.12 + alphaBoost * 0.3));
-  grad.addColorStop(rimT, rgba(hot, 0.4));
+  grad.addColorStop(0, rgba(rgb, (0.05 + alphaBoost) * a));
+  grad.addColorStop(0.45, rgba(rgb, (0.03 + alphaBoost * 0.5) * a));
+  grad.addColorStop(shoulderT, rgba(rgb, (0.12 + alphaBoost * 0.3) * a));
+  grad.addColorStop(rimT, rgba(hot, 0.4 * a));
   grad.addColorStop(1, rgba(rgb, 0));
 
   ctx.fillStyle = grad;
@@ -114,6 +150,7 @@ export function drawRimArc(
     endAngle = Math.PI * 2,
     wedge = false,
     fastSpin = false,
+    alphaScale = 1,
   } = options;
 
   const arcSpan = (40 * Math.PI) / 180;
@@ -132,7 +169,7 @@ export function drawRimArc(
   }
 
   ctx.save();
-  ctx.strokeStyle = rgba(rgb, 0.22);
+  ctx.strokeStyle = rgba(rgb, 0.22 * Math.max(0, alphaScale));
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(x, y, radius, arcStart, arcEnd);
@@ -176,12 +213,7 @@ export function drawTrackedCastRing(
   rgb: Rgb,
   nowMs: number,
 ): void {
-  let firstSeen = zoneFirstSeenMs.get(key);
-  if (firstSeen === undefined) {
-    firstSeen = nowMs;
-    zoneFirstSeenMs.set(key, firstSeen);
-  }
-  drawCastRing(ctx, x, y, radius, rgb, nowMs - firstSeen);
+  drawCastRing(ctx, x, y, radius, rgb, getZoneAgeMs(key, nowMs));
 }
 
 /** Thin solid strokes along wedge radial edges. */
