@@ -218,6 +218,14 @@ function resolveZoneAccentRgb(zone: SpatialZone): Rgb {
   return hexToRgb(getArchetypeColor(zone.spellArchetype));
 }
 
+/** Alpha multiplier for the zone hologram tail — full strength until the final fade window. */
+function computeZoneExpiryFade(remainingMs: number, durationMs: number): number {
+  if (durationMs <= 0) return 1;
+  const fadeWindowMs = Math.max(40, Math.min(400, durationMs * 0.2));
+  if (remainingMs >= fadeWindowMs) return 1;
+  return Math.max(0, remainingMs / fadeWindowMs);
+}
+
 function drawZoneHologram(
   ctx: CanvasRenderingContext2D,
   zone: SpatialZone,
@@ -237,6 +245,10 @@ function drawZoneHologram(
   const half = (((config.arcDeg ?? 360) * Math.PI) / 180) / 2;
   const startAngle = wedge ? facing - half : 0;
   const endAngle = wedge ? facing + half : Math.PI * 2;
+  const expiryFade = computeZoneExpiryFade(zone.remainingDurationMs, config.durationMs);
+
+  ctx.save();
+  ctx.globalAlpha = expiryFade;
 
   drawHologramFill(ctx, pos.x, pos.y, radius, intentRgb, startAngle, endAngle, wedge);
   drawInnerReticle(ctx, pos.x, pos.y, radius, rot, accentRgb, startAngle, endAngle, wedge);
@@ -257,6 +269,8 @@ function drawZoneHologram(
   if (config.fieldType === 'MASS_ATTRACTOR' || config.fieldType === 'VORTEX_TANGENT') {
     drawSingularityCore(ctx, pos.x, pos.y, now, singularityAccent);
   }
+
+  ctx.restore();
 }
 
 export function drawZones(
@@ -270,23 +284,6 @@ export function drawZones(
   for (const zone of world.zones) {
     if (zone.isDead) continue;
     drawZoneHologram(ctx, zone, localEntity, now, nowMs);
-    const lifeRatio = zone.getLifeRatio();
-    if (lifeRatio !== null) {
-      const radius = zone.config.radius;
-      const intentRgb = TELEGRAPH_COLORS[resolveZoneIntent(zone, localEntity)];
-      const barW = Math.min(60, Math.max(28, radius * 0.8));
-      drawHorizontalTimerBar({
-        ctx,
-        centerX: zone.pos.x,
-        topY: zone.pos.y - radius - 8,
-        width: barW,
-        height: 2,
-        ratio: lifeRatio,
-        color: `rgb(${intentRgb.r}, ${intentRgb.g}, ${intentRgb.b})`,
-        remainingMs: zone.remainingDurationMs,
-        nowMs,
-      });
-    }
   }
   drawParryShieldOverlays(ctx, world, now, localEntity);
 }
