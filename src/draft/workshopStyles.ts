@@ -34,17 +34,17 @@ export function getTierCrest(rarity: string): string {
 }
 
 export const RARITY_COLORS: Record<CardRarity, string> = {
-  COMMON: '#888888',
-  RARE: '#00ccff',
-  EPIC: '#aa44ff',
-  CHAOTIC: '#ff8800',
+  COMMON: '#5a6e8c',
+  RARE: '#00e5ff',
+  EPIC: '#bf00ff',
+  CHAOTIC: '#ffd700',
 };
 
 export const RARITY_BTN: Record<CardRarity, { border: string; bg: string }> = {
-  COMMON: { border: '#64748b', bg: 'rgba(100,116,139,0.25)' },
-  RARE: { border: '#00ccff', bg: 'rgba(0,200,255,0.22)' },
-  EPIC: { border: '#aa44ff', bg: 'rgba(170,68,255,0.22)' },
-  CHAOTIC: { border: '#ff8800', bg: 'rgba(255,136,0,0.22)' },
+  COMMON: { border: '#5a6e8c', bg: 'rgba(90,110,140,0.25)' },
+  RARE: { border: '#00e5ff', bg: 'rgba(0,229,255,0.22)' },
+  EPIC: { border: '#bf00ff', bg: 'rgba(191,0,255,0.22)' },
+  CHAOTIC: { border: '#ffd700', bg: 'rgba(255,215,0,0.22)' },
 };
 
 export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v29';
+export const STYLE_ID = 'luna-workshop-styles-v30';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1580,14 +1580,15 @@ export function injectStyles(): void {
     }
 
     .spell-tile {
+      --tile-grid:
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
       position: relative;
       width: 72px;
       height: 72px;
       box-sizing: border-box;
-      background: var(--retro-panel-bg, #080c18);
-      background-image:
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+      background-color: var(--retro-panel-bg, #080c18);
+      background-image: var(--tile-grid);
       background-size: 8px 8px;
       border: 1.5px solid var(--retro-border-subtle, #1a2236);
       border-radius: 4px;
@@ -1626,16 +1627,32 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
+    .spell-tile.tier-common {
+      background-image: linear-gradient(to top, rgba(90, 110, 140, 0.15) 0%, transparent 55%), var(--tile-grid);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      background-repeat: no-repeat, repeat, repeat;
+      box-shadow: inset 0 -2px 8px rgba(90, 110, 140, 0.05);
+    }
+
     .spell-tile.tier-rare {
-      box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.25);
+      background-image: linear-gradient(to top, rgba(0, 229, 255, 0.18) 0%, transparent 55%), var(--tile-grid);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      background-repeat: no-repeat, repeat, repeat;
+      box-shadow: inset 0 -2px 10px rgba(0, 229, 255, 0.08);
     }
 
     .spell-tile.tier-epic {
-      box-shadow: inset 0 0 8px rgba(191, 0, 255, 0.35), 0 0 4px rgba(191, 0, 255, 0.3);
+      background-image: linear-gradient(to top, rgba(191, 0, 255, 0.22) 0%, transparent 55%), var(--tile-grid);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      background-repeat: no-repeat, repeat, repeat;
+      box-shadow: inset 0 -2px 12px rgba(191, 0, 255, 0.12);
     }
 
     .spell-tile.tier-chaotic {
-      box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.4), 0 0 6px rgba(255, 215, 0, 0.4);
+      background-image: linear-gradient(to top, rgba(255, 215, 0, 0.25) 0%, transparent 55%), var(--tile-grid);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      background-repeat: no-repeat, repeat, repeat;
+      box-shadow: inset 0 -2px 14px rgba(255, 215, 0, 0.15);
     }
 
     .tile-rarity-notch {
@@ -1866,18 +1883,18 @@ export function injectStyles(): void {
       --rarity-glow: rgba(255, 215, 0, 0.50);
     }
 
-    .action-slot-rarity-frame {
+    .action-slot-archetype-frame {
       position: absolute;
       inset: 2px;
       z-index: 2;
       pointer-events: none;
       display: none;
-      border: 1px solid var(--rarity-color, transparent);
+      border: 1px solid var(--archetype-color, transparent);
       border-radius: 3px;
-      box-shadow: inset 0 0 10px var(--rarity-glow, transparent);
+      box-shadow: inset 0 0 10px color-mix(in srgb, var(--archetype-color, transparent) 30%, transparent);
     }
 
-    .action-slot[data-rarity] .action-slot-rarity-frame {
+    .action-slot[data-has-ability='true'] .action-slot-archetype-frame {
       display: block;
     }
 
@@ -1888,7 +1905,7 @@ export function injectStyles(): void {
       text-shadow: 0 0 4px var(--rarity-glow, transparent);
     }
 
-    html[data-cheap-ui='1'] .action-slot-rarity-frame {
+    html[data-cheap-ui='1'] .action-slot-archetype-frame {
       box-shadow: none;
     }
 
