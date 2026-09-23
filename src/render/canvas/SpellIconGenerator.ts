@@ -2,7 +2,6 @@ import {
   getEffectiveDprCap,
   getEffectiveTier,
 } from '../../devtools/graphicsSettings';
-import { RARITY_COLORS } from '../../draft/workshopStyles';
 import type { AbilitySchema, ProjectileStyle } from '../../types/schema';
 import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
 import { resolveIconTrajectoryPaths } from './trajectoryTracer';
@@ -44,21 +43,12 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function drawIconBackground(
-  ctx: CanvasRenderingContext2D,
-  rarity: keyof typeof RARITY_COLORS,
-): void {
+function drawIconBackground(ctx: CanvasRenderingContext2D): void {
   const gradient = ctx.createRadialGradient(24, 24, 4, 24, 24, 30);
   gradient.addColorStop(0, '#121826');
   gradient.addColorStop(1, '#05070e');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
-
-  ctx.strokeStyle = RARITY_COLORS[rarity];
-  ctx.globalAlpha = 0.9;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(1.25, 1.25, LOGICAL_SIZE - 2.5, LOGICAL_SIZE - 2.5);
-  ctx.globalAlpha = 1;
 }
 
 function drawPathChevrons(
@@ -168,7 +158,7 @@ function drawIconTrajectoryNetwork(
 function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const spec = analyzeSpellIcon(ability);
   const rng = createIconRng(spec.seed);
-  drawIconBackground(ctx, spec.rarity);
+  drawIconBackground(ctx);
   drawFamilyMotif(ctx, spec.family, spec.colors, rng);
   drawPrimaryMark(ctx, spec, rng);
   drawCornerHint(ctx, spec);
@@ -176,7 +166,7 @@ function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema
 
 function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const spec = analyzeSpellIcon(ability);
-  drawIconBackground(ctx, spec.rarity);
+  drawIconBackground(ctx);
   const network = drawIconTrajectoryNetwork(ctx, ability, spec.colors.primary, spec.style);
   if (!network.drew) {
     drawPrimaryMark(ctx, spec, createIconRng(spec.seed));

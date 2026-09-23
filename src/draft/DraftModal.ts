@@ -1649,19 +1649,16 @@ export class DraftModal {
     spell: AbilitySchema,
     equippedSlotBySpellId: Map<string, ActionSlotKey>,
   ): HTMLElement {
-    const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
     const rarity = resolveSpellRarity(spell);
     const tile = document.createElement('div');
     tile.className = `spell-tile tier-${rarity.toLowerCase()}`;
     tile.dataset.spellId = spell.id;
-    tile.style.borderColor = archetypeColor;
 
-    if (rarity !== 'COMMON') {
-      const notch = document.createElement('div');
-      notch.className = `tile-rarity-notch notch-${rarity.toLowerCase()}`;
-      notch.textContent = rarity === 'RARE' ? '◈' : rarity === 'EPIC' ? '✦' : '★';
-      tile.appendChild(notch);
-    }
+    const notch = document.createElement('div');
+    notch.className = `tile-rarity-notch notch-${rarity.toLowerCase()}`;
+    notch.textContent =
+      rarity === 'COMMON' ? '◇' : rarity === 'RARE' ? '◈' : rarity === 'EPIC' ? '✦' : '★';
+    tile.appendChild(notch);
 
     if (this.selectedSpellId === spell.id) {
       tile.classList.add('tile-selected');
@@ -1690,21 +1687,11 @@ export class DraftModal {
 
     tile.addEventListener('mouseenter', () => {
       this.hoveredSpellId = spell.id;
-      if (
-        rarity === 'COMMON' &&
-        !tile.classList.contains('tile-selected') &&
-        !tile.classList.contains('tile-new')
-      ) {
-        tile.style.boxShadow = `0 0 8px ${archetypeColor}66`;
-      }
       this.renderTacticalInspector();
     });
 
     tile.addEventListener('mouseleave', () => {
       this.hoveredSpellId = null;
-      if (!tile.classList.contains('tile-selected') && rarity === 'COMMON') {
-        tile.style.boxShadow = '';
-      }
       this.renderTacticalInspector();
     });
 

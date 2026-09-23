@@ -60,13 +60,6 @@ const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
 // edge without shifting layout; the resting color is transparent.
 const SLOT_BORDER_IDLE = 'transparent';
 
-const RARITY_WASH: Record<CardRarity, string> = {
-  COMMON: 'rgba(90, 110, 140, 0.10)',
-  RARE: 'rgba(0, 229, 255, 0.12)',
-  EPIC: 'rgba(191, 0, 255, 0.16)',
-  CHAOTIC: 'rgba(255, 215, 0, 0.18)',
-};
-
 const RARITY_GLYPHS: Record<CardRarity, string> = {
   COMMON: '◇',
   RARE: '◈',
@@ -283,14 +276,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px color-mix(in srgb, var(--rarity-color, #00e5ff) 35%, transparent),
-            0 0 8px color-mix(in srgb, var(--rarity-color, #00e5ff) 45%, transparent);
-          border-color: color-mix(in srgb, var(--rarity-color, #00e5ff) 75%, transparent);
+          box-shadow: inset 0 0 12px color-mix(in srgb, #8b949e 35%, transparent),
+            0 0 8px color-mix(in srgb, #ffffff 25%, transparent);
+          border-color: color-mix(in srgb, #8b949e 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px color-mix(in srgb, var(--rarity-color, #00e5ff) 55%, transparent),
-            0 0 18px color-mix(in srgb, var(--rarity-color, #00e5ff) 85%, transparent);
-          border-color: var(--rarity-color, #00e5ff);
+          box-shadow: inset 0 0 20px color-mix(in srgb, #8b949e 55%, transparent),
+            0 0 18px color-mix(in srgb, #ffffff 45%, transparent);
+          border-color: #8b949e;
         }
       }
       .slot-aiming {
@@ -427,8 +420,8 @@ export class ActionBarHUD {
     root.appendChild(iconContainer);
     root.appendChild(rarityFrame);
     headerRow.appendChild(badge);
-    headerRow.appendChild(rarityGlyph);
     root.appendChild(headerRow);
+    root.appendChild(rarityGlyph);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
@@ -542,8 +535,7 @@ export class ActionBarHUD {
       slot.root.dataset.equippedSpellId = ability.id;
       slot.root.dataset.rarity = rarity.toLowerCase();
       slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
-      slot.root.style.background =
-        `radial-gradient(circle at 50% 15%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
+      slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = true;
       slot.root.style.boxShadow = 'none';

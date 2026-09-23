@@ -1589,8 +1589,9 @@ export function injectStyles(): void {
         linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
       background-size: 8px 8px;
-      border: 1.5px solid var(--retro-border-subtle, #1a2236);
+      border: 1.5px solid #2a364a !important;
       border-radius: 4px;
+      box-shadow: none;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1626,44 +1627,44 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
-    .spell-tile.tier-rare {
-      box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.25);
-    }
-
-    .spell-tile.tier-epic {
-      box-shadow: inset 0 0 8px rgba(191, 0, 255, 0.35), 0 0 4px rgba(191, 0, 255, 0.3);
-    }
-
-    .spell-tile.tier-chaotic {
-      box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.4), 0 0 6px rgba(255, 215, 0, 0.4);
-    }
-
-    .tile-rarity-notch {
+    .tile-rarity-notch,
+    .action-slot-rarity-glyph {
       position: absolute;
-      bottom: 2px;
+      top: 2px;
       right: 2px;
       font-family: ${FONTS.mono};
-      font-size: 8px;
+      font-size: 11px;
       line-height: 1;
       pointer-events: none;
-      z-index: 2;
-      padding: 1px 2px;
+      z-index: 5;
+      padding: 2px 3px;
       border-radius: 2px;
+      background: rgba(8, 12, 24, 0.95);
+      border: 1px solid #2a364a;
     }
 
-    .tile-rarity-notch.notch-rare {
+    .tile-rarity-notch.notch-common,
+    .action-slot[data-rarity='common'] .action-slot-rarity-glyph {
+      color: #8b949e;
+      text-shadow: 0 0 4px rgba(139, 148, 158, 0.65);
+    }
+
+    .tile-rarity-notch.notch-rare,
+    .action-slot[data-rarity='rare'] .action-slot-rarity-glyph {
       color: #00e5ff;
-      text-shadow: 0 0 4px rgba(0, 229, 255, 0.8);
+      text-shadow: 0 0 6px rgba(0, 229, 255, 0.95);
     }
 
-    .tile-rarity-notch.notch-epic {
+    .tile-rarity-notch.notch-epic,
+    .action-slot[data-rarity='epic'] .action-slot-rarity-glyph {
       color: #bf00ff;
-      text-shadow: 0 0 4px rgba(191, 0, 255, 0.8);
+      text-shadow: 0 0 6px rgba(191, 0, 255, 0.95);
     }
 
-    .tile-rarity-notch.notch-chaotic {
+    .tile-rarity-notch.notch-chaotic,
+    .action-slot[data-rarity='chaotic'] .action-slot-rarity-glyph {
       color: #ffd700;
-      text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
+      text-shadow: 0 0 6px rgba(255, 215, 0, 0.95);
     }
 
     .tile-icon-wrap {
@@ -1847,7 +1848,7 @@ export function injectStyles(): void {
     }
 
     #action-bar-hud .action-slot[data-rarity='common'] {
-      --rarity-color: #5a6e8c;
+      --rarity-color: #8b949e;
       --rarity-glow: transparent;
     }
 
@@ -1868,24 +1869,17 @@ export function injectStyles(): void {
 
     .action-slot-rarity-frame {
       position: absolute;
-      inset: 2px;
+      inset: 0;
       z-index: 2;
       pointer-events: none;
       display: none;
-      border: 1px solid var(--rarity-color, transparent);
-      border-radius: 3px;
-      box-shadow: inset 0 0 10px var(--rarity-glow, transparent);
+      border: 1.5px solid #2a364a;
+      border-radius: 4px;
+      box-shadow: none;
     }
 
     .action-slot[data-rarity] .action-slot-rarity-frame {
       display: block;
-    }
-
-    .action-slot-rarity-glyph {
-      font-size: 10px;
-      line-height: 1;
-      color: var(--rarity-color, #5a6e8c);
-      text-shadow: 0 0 4px var(--rarity-glow, transparent);
     }
 
     html[data-cheap-ui='1'] .action-slot-rarity-frame {
