@@ -4,15 +4,15 @@ import {
   parryShieldShowsStamina,
   parryShieldStaminaRatio,
 } from '../engine/PhysicsWorld';
-import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
+import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
-import { getTierCrest, injectStyles, resolveSpellRarity, showQuickEquipMenu } from '../draft/workshopStyles';
+import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
 import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
-  buildTacticalVerbLines,
+  buildSpellTooltipStats,
   computeSpellCombatProfile,
   formatProfileCadence,
 } from '../primitives/combatProfile';
@@ -90,67 +90,92 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function formatAbilityTooltip(ability: AbilitySchema, slotKey: ActionSlotKey, accentColor: string): string {
-  const category = getCategoryLabel(SLOT_CATEGORY_MAP[slotKey]);
-  const profile = computeSpellCombatProfile(ability);
-  const cadence = formatProfileCadence(profile);
-  const disp = profile.displacement;
-  const displacement =
-    disp.peakForce > 0
-      ? `${disp.peakForce} Force [${disp.primaryTag}] · ~${disp.lethality.baseTravelPx}–${disp.lethality.maxTravelPx}px (${disp.lethality.label})`
-      : '0 Force [NONE]';
-  const tacticalLines = buildTacticalVerbLines(ability, profile);
-  const flavorBlock = [
-    ability.tagline
-      ? `<div style="font-size:${FONTS.size.sm};color:#00e5ff;font-style:italic;margin-bottom:2px;">${escapeHtml(ability.tagline)}</div>`
-      : '',
-    ability.description
-      ? `<div style="font-size:${FONTS.size.body};color:#aaa;line-height:1.3;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1);">${escapeHtml(ability.description)}</div>`
-      : '',
-  ].join('');
-  const visuals = ability.visuals;
-  const swatchColor = visuals?.color ?? '#888';
-  const projectileStyle = visuals?.projectileStyle
-    ? escapeHtml(visuals.projectileStyle.replace(/_/g, ' '))
-    : '—';
-  const rarity = resolveSpellRarity(ability);
-  const tierCrest = escapeHtml(getTierCrest(rarity));
+const TOOLTIP_VALUE_COLOR = '#e2e8f0';
+const TOOLTIP_HEAL_COLOR = '#4ade80';
+const TOOLTIP_BURN_COLOR = '#fb923c';
 
-  const tacticalBlock =
-    tacticalLines.length > 0
-      ? `<div style="margin-bottom:8px;">
-        <div style="color:${RETRO_COLORS.textMuted}; font-size:${FONTS.size.badge}; text-transform:uppercase; margin-bottom:4px;">Tactical</div>
-        ${tacticalLines
-          .map(
-            (line) =>
-              `<div style="font-size:${FONTS.size.body}; color:#cbd5e1; line-height:1.35; margin-bottom:2px;">${escapeHtml(line)}</div>`,
-          )
-          .join('')}
-      </div>`
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function tooltipStat(value: string, label: string, valueColor = TOOLTIP_VALUE_COLOR): string {
+  const labelHtml = label
+    ? ` <span style="color:${RETRO_COLORS.textMuted};">${escapeHtml(label)}</span>`
+    : '';
+  return `<span style="white-space:nowrap;"><span style="color:${valueColor}; font-weight:700;">${escapeHtml(value)}</span>${labelHtml}</span>`;
+}
+
+function formatAbilityTooltip(
+  ability: AbilitySchema,
+  slotKey: ActionSlotKey,
+  keyColor: string,
+  archetypeColor: string,
+): string {
+  const profile = computeSpellCombatProfile(ability);
+  const stats = buildSpellTooltipStats(ability, profile);
+  const disp = profile.displacement;
+  const archetypeLabel = profile.archetype.replace(/_/g, ' ');
+  const description = ability.description || ability.tagline;
+  const separator = `<span style="color:${RETRO_COLORS.textMuted};"> · </span>`;
+
+  const hitLines: string[] = [];
+  if (disp.peakForce > 0) {
+    hitLines.push(
+      `<div style="display:flex; gap:10px; flex-wrap:wrap;">${tooltipStat(String(disp.peakForce), 'FORCE')}<span style="color:${archetypeColor}; font-weight:700;">${escapeHtml(disp.lethality.label)}</span></div>`,
+    );
+  } else if (stats.directDamage > 0) {
+    hitLines.push(`<div>${tooltipStat(String(stats.directDamage), 'DMG')}</div>`);
+  }
+  if (profile.instabilityYield > 0) {
+    hitLines.push(`<div>${tooltipStat(`+${profile.instabilityYield}%`, 'Instability')}</div>`);
+  }
+
+  const delivery = profile.delivery;
+  const deliveryParts: string[] = [];
+  if (delivery.shotCount > 1) deliveryParts.push(tooltipStat(`x${delivery.shotCount}`, ''));
+  if (delivery.range > 0) deliveryParts.push(tooltipStat(String(delivery.range), 'range'));
+  if (delivery.speed > 0) deliveryParts.push(tooltipStat(`${delivery.speed}/s`, ''));
+  if (stats.durationMs !== null) deliveryParts.push(tooltipStat(formatSeconds(stats.durationMs), ''));
+
+  const effectParts: string[] = [];
+  if (stats.heal > 0) {
+    effectParts.push(
+      `<span style="white-space:nowrap;"><span style="color:${RETRO_COLORS.textMuted};">Heal</span> <span style="color:${TOOLTIP_HEAL_COLOR}; font-weight:700;">${stats.heal}</span></span>`,
+    );
+  }
+  if (stats.burn) {
+    const stacks = stats.burn.stacks > 1 ? ` x${stats.burn.stacks}` : '';
+    effectParts.push(
+      `<span style="white-space:nowrap;"><span style="color:${RETRO_COLORS.textMuted};">Burn</span> <span style="color:${TOOLTIP_BURN_COLOR}; font-weight:700;">${formatSeconds(stats.burn.durationMs)}${stacks}</span></span>`,
+    );
+  }
+
+  const hitBlock =
+    hitLines.length > 0
+      ? `<div style="font-size:${FONTS.size.body}; line-height:1.4; margin-bottom:8px;">${hitLines.join('')}</div>`
       : '';
+  const deliveryRow =
+    deliveryParts.length > 0
+      ? `<div style="font-size:${FONTS.size.body}; margin-bottom:2px;">${deliveryParts.join(separator)}</div>`
+      : '';
+  const effectsRow =
+    effectParts.length > 0
+      ? `<div style="display:flex; gap:14px; flex-wrap:wrap; font-size:${FONTS.size.body};">${effectParts.join('')}</div>`
+      : '';
+  const detailBlock =
+    deliveryRow || effectsRow ? `<div style="margin-bottom:8px;">${deliveryRow}${effectsRow}</div>` : '';
 
   return `
     <div style="font-family:${FONTS.mono};">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
-      <span style="font-weight:700; font-size:${FONTS.size.md}; color:${accentColor};">${escapeHtml(ability.name)}</span>
-      <span style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
-        <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${accentColor}22; color:${accentColor};">${slotKey}</span>
-        <span style="font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:rgba(255,255,255,0.08); color:#cbd5e1;">${tierCrest}</span>
-      </span>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:2px;">
+      <span style="font-weight:700; font-size:${FONTS.size.md}; color:${archetypeColor};">${escapeHtml(ability.name)}</span>
+      <span style="flex-shrink:0; font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${keyColor}22; color:${keyColor};">${slotKey}</span>
     </div>
-    ${flavorBlock}
-    <div style="font-size:${FONTS.size.badge}; color:#94a3b8; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:8px;">${category}</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-bottom:8px; font-size:${FONTS.size.body};">
-      <div><span style="color:${RETRO_COLORS.textMuted};">Cadence</span> ${escapeHtml(cadence)}</div>
-      <div><span style="color:${RETRO_COLORS.textMuted};">Recoil</span> ${profile.recoilKick}px/s</div>
-      <div><span style="color:${RETRO_COLORS.textMuted};">Displacement</span> ${escapeHtml(displacement)}</div>
-      <div><span style="color:${RETRO_COLORS.textMuted};">Instab</span> +${profile.instabilityYield}%</div>
-    </div>
-    ${tacticalBlock}
-    <div style="display:flex; align-items:center; gap:6px;">
-      <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${swatchColor}; border:1px solid rgba(255,255,255,0.3);"></span>
-      <span style="font-size:${FONTS.size.badge}; color:#cbd5e1;">${projectileStyle}</span>
-    </div>
+    <div style="font-size:${FONTS.size.badge}; font-weight:700; color:${archetypeColor}; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${escapeHtml(archetypeLabel)}</div>
+    ${description ? `<div style="font-size:${FONTS.size.body}; color:#aaa; line-height:1.3; margin-bottom:8px;">${escapeHtml(description)}</div>` : ''}
+    ${hitBlock}
+    ${detailBlock}
+    <div style="font-size:${FONTS.size.badge}; color:${RETRO_COLORS.textMuted};">${escapeHtml(formatProfileCadence(profile))}</div>
     </div>
   `;
 }
@@ -587,7 +612,12 @@ export class ActionBarHUD {
     }
 
     const key = ACTION_SLOT_KEYS[slotIndex];
-    this.tooltipEl.innerHTML = formatAbilityTooltip(ability, key, this.slots[slotIndex].accent);
+    this.tooltipEl.innerHTML = formatAbilityTooltip(
+      ability,
+      key,
+      this.slots[slotIndex].accent,
+      getArchetypeColor(ability.archetype, ability.visuals?.color),
+    );
     this.tooltipEl.style.display = 'block';
     this.tooltipEl.style.opacity = '1';
   }
