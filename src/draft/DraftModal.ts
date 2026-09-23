@@ -1649,10 +1649,15 @@ export class DraftModal {
     spell: AbilitySchema,
     equippedSlotBySpellId: Map<string, ActionSlotKey>,
   ): HTMLElement {
+    const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
     const rarity = resolveSpellRarity(spell);
     const tile = document.createElement('div');
-    tile.className = `spell-tile tier-${rarity.toLowerCase()}`;
+    tile.className = 'spell-tile';
     tile.dataset.spellId = spell.id;
+    tile.style.setProperty('--archetype-color', archetypeColor);
+    tile.style.background =
+      `radial-gradient(circle at 50% 100%, ${hexToRgba(archetypeColor, 0.22)} 0%, transparent 70%), rgba(18, 18, 30, 0.85)`;
+    tile.style.borderColor = archetypeColor;
 
     const notch = document.createElement('div');
     notch.className = `tile-rarity-notch pip-${rarity.toLowerCase()}`;

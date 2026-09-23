@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v30';
+export const STYLE_ID = 'luna-workshop-styles-v31';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1585,11 +1585,7 @@ export function injectStyles(): void {
       height: 72px;
       box-sizing: border-box;
       overflow: hidden;
-      background: var(--retro-panel-bg, #080c18);
-      background-image:
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
-      background-size: 8px 8px;
+      background: rgba(18, 18, 30, 0.85);
       border: 1.5px solid #2a364a !important;
       border-radius: 4px;
       box-shadow: none;
@@ -1599,6 +1595,10 @@ export function injectStyles(): void {
       cursor: grab;
       transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
       user-select: none;
+    }
+
+    .spell-grid-square > .spell-tile {
+      border-color: var(--archetype-color, #2a364a) !important;
     }
 
     .spell-tile:hover,
@@ -1621,41 +1621,6 @@ export function injectStyles(): void {
       opacity: 0.4;
       transform: scale(0.98);
       cursor: grabbing;
-    }
-
-    .spell-tile.tier-common,
-    .spell-tile.tier-rare,
-    .spell-tile.tier-epic,
-    .spell-tile.tier-chaotic {
-      background-size: 100% 100%, 8px 8px, 8px 8px;
-    }
-
-    .spell-tile.tier-common {
-      background-image:
-        radial-gradient(circle at 50% 100%, rgba(90, 110, 140, 0.22) 0%, transparent 70%),
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
-    }
-
-    .spell-tile.tier-rare {
-      background-image:
-        radial-gradient(circle at 50% 100%, rgba(0, 229, 255, 0.25) 0%, transparent 70%),
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
-    }
-
-    .spell-tile.tier-epic {
-      background-image:
-        radial-gradient(circle at 50% 100%, rgba(191, 0, 255, 0.28) 0%, transparent 70%),
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
-    }
-
-    .spell-tile.tier-chaotic {
-      background-image:
-        radial-gradient(circle at 50% 100%, rgba(255, 215, 0, 0.32) 0%, transparent 70%),
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
     .tile-rarity-notch {
