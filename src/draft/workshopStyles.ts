@@ -1612,11 +1612,6 @@ export function injectStyles(): void {
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
     }
 
-    .spell-tile.tile-new {
-      border-color: var(--retro-neon-cyan, #00e5ff) !important;
-      box-shadow: 0 0 8px rgba(0, 229, 255, 0.55), 0 0 18px rgba(0, 229, 255, 0.28);
-    }
-
     .spell-tile.tile-new.tile-selected {
       border-color: #ffffff !important;
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
