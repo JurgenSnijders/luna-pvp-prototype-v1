@@ -43,6 +43,14 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+function drawIconBackground(ctx: CanvasRenderingContext2D): void {
+  const gradient = ctx.createRadialGradient(24, 24, 4, 24, 24, 30);
+  gradient.addColorStop(0, '#121826');
+  gradient.addColorStop(1, '#05070e');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
+}
+
 function drawPathChevrons(
   ctx: CanvasRenderingContext2D,
   points: { x: number; y: number }[],
@@ -150,6 +158,7 @@ function drawIconTrajectoryNetwork(
 function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const spec = analyzeSpellIcon(ability);
   const rng = createIconRng(spec.seed);
+  drawIconBackground(ctx);
   drawFamilyMotif(ctx, spec.family, spec.colors, rng);
   drawPrimaryMark(ctx, spec, rng);
   drawCornerHint(ctx, spec);
@@ -157,6 +166,7 @@ function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema
 
 function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const spec = analyzeSpellIcon(ability);
+  drawIconBackground(ctx);
   const network = drawIconTrajectoryNetwork(ctx, ability, spec.colors.primary, spec.style);
   if (!network.drew) {
     drawPrimaryMark(ctx, spec, createIconRng(spec.seed));

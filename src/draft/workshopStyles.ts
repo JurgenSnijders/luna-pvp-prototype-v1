@@ -41,7 +41,7 @@ export const RARITY_COLORS: Record<CardRarity, string> = {
 };
 
 export const RARITY_BTN: Record<CardRarity, { border: string; bg: string }> = {
-  COMMON: { border: '#5a6e8c', bg: 'rgba(90,110,140,0.25)' },
+  COMMON: { border: '#5a6e8c', bg: 'rgba(90,110,140,0.22)' },
   RARE: { border: '#00e5ff', bg: 'rgba(0,229,255,0.22)' },
   EPIC: { border: '#bf00ff', bg: 'rgba(191,0,255,0.22)' },
   CHAOTIC: { border: '#ffd700', bg: 'rgba(255,215,0,0.22)' },
@@ -1580,18 +1580,19 @@ export function injectStyles(): void {
     }
 
     .spell-tile {
-      --tile-grid:
-        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
       position: relative;
       width: 72px;
       height: 72px;
       box-sizing: border-box;
-      background-color: var(--retro-panel-bg, #080c18);
-      background-image: var(--tile-grid);
+      overflow: hidden;
+      background: var(--retro-panel-bg, #080c18);
+      background-image:
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
       background-size: 8px 8px;
-      border: 1.5px solid var(--retro-border-subtle, #1a2236);
+      border: 1.5px solid #2a364a !important;
       border-radius: 4px;
+      box-shadow: none;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1627,61 +1628,65 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
-    .spell-tile.tier-common {
-      background-image: linear-gradient(to top, rgba(90, 110, 140, 0.15) 0%, transparent 55%), var(--tile-grid);
+    .spell-tile.tier-common,
+    .spell-tile.tier-rare,
+    .spell-tile.tier-epic,
+    .spell-tile.tier-chaotic {
       background-size: 100% 100%, 8px 8px, 8px 8px;
-      background-repeat: no-repeat, repeat, repeat;
-      box-shadow: inset 0 -2px 8px rgba(90, 110, 140, 0.05);
+    }
+
+    .spell-tile.tier-common {
+      background-image:
+        radial-gradient(circle at 50% 100%, rgba(90, 110, 140, 0.22) 0%, transparent 70%),
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
     .spell-tile.tier-rare {
-      background-image: linear-gradient(to top, rgba(0, 229, 255, 0.18) 0%, transparent 55%), var(--tile-grid);
-      background-size: 100% 100%, 8px 8px, 8px 8px;
-      background-repeat: no-repeat, repeat, repeat;
-      box-shadow: inset 0 -2px 10px rgba(0, 229, 255, 0.08);
+      background-image:
+        radial-gradient(circle at 50% 100%, rgba(0, 229, 255, 0.25) 0%, transparent 70%),
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
     .spell-tile.tier-epic {
-      background-image: linear-gradient(to top, rgba(191, 0, 255, 0.22) 0%, transparent 55%), var(--tile-grid);
-      background-size: 100% 100%, 8px 8px, 8px 8px;
-      background-repeat: no-repeat, repeat, repeat;
-      box-shadow: inset 0 -2px 12px rgba(191, 0, 255, 0.12);
+      background-image:
+        radial-gradient(circle at 50% 100%, rgba(191, 0, 255, 0.28) 0%, transparent 70%),
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
     .spell-tile.tier-chaotic {
-      background-image: linear-gradient(to top, rgba(255, 215, 0, 0.25) 0%, transparent 55%), var(--tile-grid);
-      background-size: 100% 100%, 8px 8px, 8px 8px;
-      background-repeat: no-repeat, repeat, repeat;
-      box-shadow: inset 0 -2px 14px rgba(255, 215, 0, 0.15);
+      background-image:
+        radial-gradient(circle at 50% 100%, rgba(255, 215, 0, 0.32) 0%, transparent 70%),
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
-    .tile-rarity-notch {
+    .tile-rarity-notch,
+    .action-slot-rarity-glyph-plate {
       position: absolute;
-      bottom: 2px;
-      right: 2px;
-      font-family: ${FONTS.mono};
-      font-size: 8px;
-      line-height: 1;
+      top: 0;
+      right: 0;
+      z-index: 3;
       pointer-events: none;
-      z-index: 2;
-      padding: 1px 2px;
-      border-radius: 2px;
+      font-family: ${FONTS.mono};
+      font-size: 11px;
+      line-height: 1;
+      padding: 2px 4px;
+      background: rgba(8, 12, 24, 0.92);
+      border-left: 1px solid #2a364a;
+      border-bottom: 1px solid #2a364a;
     }
 
-    .tile-rarity-notch.notch-rare {
-      color: #00e5ff;
-      text-shadow: 0 0 4px rgba(0, 229, 255, 0.8);
+    .action-slot-rarity-glyph-plate:empty {
+      display: none;
     }
 
-    .tile-rarity-notch.notch-epic {
-      color: #bf00ff;
-      text-shadow: 0 0 4px rgba(191, 0, 255, 0.8);
-    }
-
-    .tile-rarity-notch.notch-chaotic {
-      color: #ffd700;
-      text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
-    }
+    .pip-common { color: #8a9bb8; }
+    .pip-rare { color: #00e5ff; }
+    .pip-epic { color: #bf00ff; }
+    .pip-chaotic { color: #ffd700; }
 
     .tile-icon-wrap {
       width: 56px;
@@ -1883,29 +1888,22 @@ export function injectStyles(): void {
       --rarity-glow: rgba(255, 215, 0, 0.50);
     }
 
-    .action-slot-archetype-frame {
+    .action-slot-rarity-frame {
       position: absolute;
-      inset: 2px;
+      inset: 0;
       z-index: 2;
       pointer-events: none;
       display: none;
-      border: 1px solid var(--archetype-color, transparent);
-      border-radius: 3px;
-      box-shadow: inset 0 0 10px color-mix(in srgb, var(--archetype-color, transparent) 30%, transparent);
+      border: 1.5px solid #2a364a;
+      border-radius: 4px;
+      box-shadow: none;
     }
 
-    .action-slot[data-has-ability='true'] .action-slot-archetype-frame {
+    .action-slot[data-rarity] .action-slot-rarity-frame {
       display: block;
     }
 
-    .action-slot-rarity-glyph {
-      font-size: 10px;
-      line-height: 1;
-      color: var(--rarity-color, #5a6e8c);
-      text-shadow: 0 0 4px var(--rarity-glow, transparent);
-    }
-
-    html[data-cheap-ui='1'] .action-slot-archetype-frame {
+    html[data-cheap-ui='1'] .action-slot-rarity-frame {
       box-shadow: none;
     }
 

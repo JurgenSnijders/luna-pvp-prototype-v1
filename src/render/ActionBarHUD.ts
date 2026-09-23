@@ -16,7 +16,7 @@ import {
   computeSpellCombatProfile,
   formatProfileCadence,
 } from '../primitives/combatProfile';
-import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
+import { generateSpellIcon } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
 export interface ActionBarHUDCallbacks {
@@ -32,7 +32,7 @@ interface SlotElements {
   slotIndex: number;
   slotKey: ActionSlotKey;
   rarityGlyph: HTMLElement;
-  archetypeFrame: HTMLElement;
+  rarityFrame: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
   chargeOverlay: HTMLElement;
@@ -57,14 +57,14 @@ const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
 
 const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
 // Border width stays at 1px so drag-over, aiming and compiling states can tint the slot
-// edge without shifting layout; the resting color is transparent.
-const SLOT_BORDER_IDLE = 'transparent';
+// edge without shifting layout. Resting color is the display-case slate.
+const SLOT_BORDER_IDLE = '#2a364a';
 
 const RARITY_WASH: Record<CardRarity, string> = {
-  COMMON: 'rgba(90, 110, 140, 0.10)',
-  RARE: 'rgba(0, 229, 255, 0.12)',
-  EPIC: 'rgba(191, 0, 255, 0.16)',
-  CHAOTIC: 'rgba(255, 215, 0, 0.18)',
+  COMMON: 'rgba(90, 110, 140, 0.22)',
+  RARE: 'rgba(0, 229, 255, 0.25)',
+  EPIC: 'rgba(191, 0, 255, 0.28)',
+  CHAOTIC: 'rgba(255, 215, 0, 0.32)',
 };
 
 const RARITY_GLYPHS: Record<CardRarity, string> = {
@@ -283,14 +283,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px color-mix(in srgb, var(--archetype-color, #00e5ff) 35%, transparent),
-            0 0 8px color-mix(in srgb, var(--archetype-color, #00e5ff) 45%, transparent);
-          border-color: color-mix(in srgb, var(--archetype-color, #00e5ff) 75%, transparent);
+          box-shadow: inset 0 0 12px color-mix(in srgb, var(--rarity-color, #00e5ff) 35%, transparent),
+            0 0 8px color-mix(in srgb, var(--rarity-color, #00e5ff) 45%, transparent);
+          border-color: color-mix(in srgb, var(--rarity-color, #00e5ff) 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px color-mix(in srgb, var(--archetype-color, #00e5ff) 55%, transparent),
-            0 0 18px color-mix(in srgb, var(--archetype-color, #00e5ff) 85%, transparent);
-          border-color: var(--archetype-color, #00e5ff);
+          box-shadow: inset 0 0 20px color-mix(in srgb, var(--rarity-color, #00e5ff) 55%, transparent),
+            0 0 18px color-mix(in srgb, var(--rarity-color, #00e5ff) 85%, transparent);
+          border-color: var(--rarity-color, #00e5ff);
         }
       }
       .slot-aiming {
@@ -349,10 +349,10 @@ export class ActionBarHUD {
     `;
 
     const rarityGlyph = document.createElement('div');
-    rarityGlyph.className = 'action-slot-rarity-glyph';
+    rarityGlyph.className = 'action-slot-rarity-glyph-plate';
 
-    const archetypeFrame = document.createElement('div');
-    archetypeFrame.className = 'action-slot-archetype-frame';
+    const rarityFrame = document.createElement('div');
+    rarityFrame.className = 'action-slot-rarity-frame';
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
@@ -425,10 +425,10 @@ export class ActionBarHUD {
     `;
 
     root.appendChild(iconContainer);
-    root.appendChild(archetypeFrame);
+    root.appendChild(rarityFrame);
     headerRow.appendChild(badge);
-    headerRow.appendChild(rarityGlyph);
     root.appendChild(headerRow);
+    root.appendChild(rarityGlyph);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
@@ -507,7 +507,7 @@ export class ActionBarHUD {
       slotKey: key,
       iconContainer,
       rarityGlyph,
-      archetypeFrame,
+      rarityFrame,
       label,
       cooldownOverlay,
       chargeOverlay,
@@ -535,17 +535,16 @@ export class ActionBarHUD {
 
     if (ability) {
       const rarity = resolveSpellRarity(ability);
-      const archColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
       slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
       slot.label.textContent = ability.name;
       slot.label.style.color = '#ccc';
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
       slot.root.dataset.rarity = rarity.toLowerCase();
-      slot.root.style.setProperty('--archetype-color', archColor);
+      slot.rarityGlyph.className = `action-slot-rarity-glyph-plate pip-${rarity.toLowerCase()}`;
       slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
       slot.root.style.background =
-        `linear-gradient(to top, ${RARITY_WASH[rarity]} 0%, transparent 60%), ${SLOT_BASE_BG}`;
+        `radial-gradient(circle at 50% 100%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = true;
       slot.root.style.boxShadow = 'none';
@@ -555,7 +554,7 @@ export class ActionBarHUD {
       slot.root.dataset.hasAbility = 'false';
       delete slot.root.dataset.equippedSpellId;
       delete slot.root.dataset.rarity;
-      slot.root.style.removeProperty('--archetype-color');
+      slot.rarityGlyph.className = 'action-slot-rarity-glyph-plate';
       slot.rarityGlyph.textContent = '';
       slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
