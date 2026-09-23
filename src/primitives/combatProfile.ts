@@ -796,6 +796,75 @@ export function formatProfileCadence(profile: SpellCombatProfile): string {
   return parts.join(' · ');
 }
 
+export interface SpellTooltipBurn {
+  durationMs: number;
+  stacks: number;
+}
+
+export interface SpellTooltipStats {
+  heal: number;
+  burn: SpellTooltipBurn | null;
+  durationMs: number | null;
+  directDamage: number;
+}
+
+export function buildSpellTooltipStats(
+  ability: AbilitySchema,
+  profile: SpellCombatProfile,
+): SpellTooltipStats {
+  let heal = 0;
+  let burn: SpellTooltipBurn | null = null;
+  let durationMs: number | null = null;
+
+  const noteDuration = (ms: number | undefined): void => {
+    if (ms === undefined || !(ms > 0)) return;
+    durationMs = durationMs === null ? ms : Math.max(durationMs, ms);
+  };
+
+  walkActions(ability, (v) => {
+    const action = v.action;
+    switch (action.type) {
+      case 'MODIFY_STAT':
+        if (v.isPrimary && action.stat === 'health' && action.value > 0) {
+          heal += action.value;
+        }
+        break;
+      case 'APPLY_STATUS':
+        if (action.archetype === 'FIRE') {
+          const stacks = action.stacks ?? 1;
+          burn = burn
+            ? {
+                durationMs: Math.max(burn.durationMs, action.durationMs),
+                stacks: Math.max(burn.stacks, stacks),
+              }
+            : { durationMs: action.durationMs, stacks };
+        }
+        break;
+      case 'SPAWN_ACTOR':
+        noteDuration(action.actor.durationMs);
+        break;
+      case 'APPLY_STASIS':
+        noteDuration(action.durationMs);
+        break;
+      case 'SPAWN_FIELD':
+        noteDuration(action.field.durationMs);
+        break;
+      case 'SPAWN_OBSTACLE':
+        noteDuration(action.obstacle.durationMs);
+        break;
+      default:
+        break;
+    }
+  });
+
+  return {
+    heal: Math.round(heal),
+    burn,
+    durationMs,
+    directDamage: profile.directDamage > 0 ? profile.directDamage : 0,
+  };
+}
+
 export function buildTacticalVerbLines(
   ability: AbilitySchema,
   profile: SpellCombatProfile,

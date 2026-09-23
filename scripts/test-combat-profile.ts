@@ -1,5 +1,6 @@
 import { sortVaultSpells } from '../src/game/spellRoles';
 import {
+  buildSpellTooltipStats,
   compareCombatProfiles,
   computeKineticLethality,
   computeSpellCombatProfile,
@@ -697,6 +698,63 @@ assert(
   integrated800.displacement.lethality.tier === 'LETHAL_FINISHER',
   'integrated 800 force is LETHAL_FINISHER',
 );
+
+function tooltipStatsAbility(actions: AbilitySchema['triggers'][number]['actions']): AbilitySchema {
+  return {
+    id: 'test_tooltip_stats',
+    name: 'Tooltip Stats',
+    archetype: 'FIRE',
+    cooldownMs: 1000,
+    recoilKick: 0,
+    trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+    triggers: [{ trigger: 'ON_HIT', actions }],
+  };
+}
+
+function tooltipStatsFor(ability: AbilitySchema) {
+  return buildSpellTooltipStats(ability, computeSpellCombatProfile(ability));
+}
+
+const healStats = tooltipStatsFor(
+  tooltipStatsAbility([
+    { type: 'MODIFY_STAT', stat: 'health', value: 10, mode: 'add', target: 'CASTER' },
+    { type: 'MODIFY_STAT', stat: 'health', value: 5, mode: 'add', target: 'CASTER' },
+    { type: 'MODIFY_STAT', stat: 'health', value: -8, mode: 'add', target: 'TARGET' },
+  ]),
+);
+assert(healStats.heal === 15, 'tooltip stats sum positive health MODIFY_STAT into heal');
+assert(healStats.directDamage === 8, 'tooltip stats pass through direct damage');
+
+const burnStats = tooltipStatsFor(
+  tooltipStatsAbility([
+    { type: 'APPLY_STATUS', archetype: 'FIRE', durationMs: 2000, stacks: 2, target: 'TARGET' },
+    { type: 'APPLY_STATUS', archetype: 'FIRE', durationMs: 3000, target: 'TARGET' },
+    { type: 'APPLY_STATUS', archetype: 'FROST', durationMs: 5000, stacks: 4, target: 'TARGET' },
+  ]),
+);
+assert(
+  burnStats.burn?.durationMs === 3000 && burnStats.burn?.stacks === 2,
+  'tooltip stats burn uses longest FIRE duration and most stacks',
+);
+
+const noBurnStats = tooltipStatsFor(
+  tooltipStatsAbility([
+    { type: 'APPLY_STATUS', archetype: 'FROST', durationMs: 2000, target: 'TARGET' },
+  ]),
+);
+assert(noBurnStats.burn === null, 'tooltip stats burn is null without FIRE status');
+assert(noBurnStats.durationMs === null, 'tooltip stats duration is null without lifetimes');
+
+const actorStats = tooltipStatsFor(
+  tooltipStatsAbility([
+    {
+      type: 'SPAWN_ACTOR',
+      actor: { actorArchetype: 'TURRET', health: 50, durationMs: 4000 },
+    },
+    { type: 'APPLY_STASIS', durationMs: 1500 },
+  ]),
+);
+assert(actorStats.durationMs === 4000, 'tooltip stats duration uses longest actor lifetime');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
