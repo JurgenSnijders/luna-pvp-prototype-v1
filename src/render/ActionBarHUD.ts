@@ -57,14 +57,14 @@ const BADGE_STYLES: Record<ActionSlotKey, { color: string; bg: string }> = {
 
 const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
 // Border width stays at 1px so drag-over, aiming and compiling states can tint the slot
-// edge without shifting layout; the resting color is transparent.
-const SLOT_BORDER_IDLE = 'transparent';
+// edge without shifting layout. Resting color is the display-case slate.
+const SLOT_BORDER_IDLE = '#2a364a';
 
 const RARITY_WASH: Record<CardRarity, string> = {
-  COMMON: 'rgba(90, 110, 140, 0.10)',
-  RARE: 'rgba(0, 229, 255, 0.12)',
-  EPIC: 'rgba(191, 0, 255, 0.16)',
-  CHAOTIC: 'rgba(255, 215, 0, 0.18)',
+  COMMON: 'rgba(90, 110, 140, 0.22)',
+  RARE: 'rgba(0, 229, 255, 0.25)',
+  EPIC: 'rgba(191, 0, 255, 0.28)',
+  CHAOTIC: 'rgba(255, 215, 0, 0.32)',
 };
 
 const RARITY_GLYPHS: Record<CardRarity, string> = {
@@ -349,7 +349,7 @@ export class ActionBarHUD {
     `;
 
     const rarityGlyph = document.createElement('div');
-    rarityGlyph.className = 'action-slot-rarity-glyph';
+    rarityGlyph.className = 'action-slot-rarity-glyph-plate';
 
     const rarityFrame = document.createElement('div');
     rarityFrame.className = 'action-slot-rarity-frame';
@@ -427,8 +427,8 @@ export class ActionBarHUD {
     root.appendChild(iconContainer);
     root.appendChild(rarityFrame);
     headerRow.appendChild(badge);
-    headerRow.appendChild(rarityGlyph);
     root.appendChild(headerRow);
+    root.appendChild(rarityGlyph);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
@@ -541,9 +541,10 @@ export class ActionBarHUD {
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
       slot.root.dataset.rarity = rarity.toLowerCase();
+      slot.rarityGlyph.className = `action-slot-rarity-glyph-plate pip-${rarity.toLowerCase()}`;
       slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
       slot.root.style.background =
-        `radial-gradient(circle at 50% 15%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
+        `radial-gradient(circle at 50% 100%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = true;
       slot.root.style.boxShadow = 'none';
@@ -553,6 +554,7 @@ export class ActionBarHUD {
       slot.root.dataset.hasAbility = 'false';
       delete slot.root.dataset.equippedSpellId;
       delete slot.root.dataset.rarity;
+      slot.rarityGlyph.className = 'action-slot-rarity-glyph-plate';
       slot.rarityGlyph.textContent = '';
       slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
