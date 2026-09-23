@@ -16,7 +16,7 @@ import {
   computeSpellCombatProfile,
   formatProfileCadence,
 } from '../primitives/combatProfile';
-import { generateSpellIcon } from './canvas/SpellIconGenerator';
+import { generateSpellIcon, getArchetypeColor } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
 export interface ActionBarHUDCallbacks {
@@ -59,13 +59,6 @@ const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
 // Border width stays at 1px so drag-over, aiming and compiling states can tint the slot
 // edge without shifting layout; the resting color is transparent.
 const SLOT_BORDER_IDLE = 'transparent';
-
-const RARITY_WASH: Record<CardRarity, string> = {
-  COMMON: 'rgba(90, 110, 140, 0.10)',
-  RARE: 'rgba(0, 229, 255, 0.12)',
-  EPIC: 'rgba(191, 0, 255, 0.16)',
-  CHAOTIC: 'rgba(255, 215, 0, 0.18)',
-};
 
 const RARITY_GLYPHS: Record<CardRarity, string> = {
   COMMON: '◇',
@@ -283,14 +276,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px color-mix(in srgb, var(--rarity-color, #00e5ff) 35%, transparent),
-            0 0 8px color-mix(in srgb, var(--rarity-color, #00e5ff) 45%, transparent);
-          border-color: color-mix(in srgb, var(--rarity-color, #00e5ff) 75%, transparent);
+          box-shadow: inset 0 0 12px color-mix(in srgb, var(--archetype-color, #00e5ff) 35%, transparent),
+            0 0 8px color-mix(in srgb, var(--archetype-color, #00e5ff) 45%, transparent);
+          border-color: color-mix(in srgb, var(--archetype-color, #00e5ff) 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px color-mix(in srgb, var(--rarity-color, #00e5ff) 55%, transparent),
-            0 0 18px color-mix(in srgb, var(--rarity-color, #00e5ff) 85%, transparent);
-          border-color: var(--rarity-color, #00e5ff);
+          box-shadow: inset 0 0 20px color-mix(in srgb, var(--archetype-color, #00e5ff) 55%, transparent),
+            0 0 18px color-mix(in srgb, var(--archetype-color, #00e5ff) 85%, transparent);
+          border-color: var(--archetype-color, #00e5ff);
         }
       }
       .slot-aiming {
@@ -352,7 +345,7 @@ export class ActionBarHUD {
     rarityGlyph.className = 'action-slot-rarity-glyph';
 
     const rarityFrame = document.createElement('div');
-    rarityFrame.className = 'action-slot-rarity-frame';
+    rarityFrame.className = 'action-slot-frame geometric-frame';
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
@@ -535,15 +528,17 @@ export class ActionBarHUD {
 
     if (ability) {
       const rarity = resolveSpellRarity(ability);
+      const archColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
       slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
       slot.label.textContent = ability.name;
       slot.label.style.color = '#ccc';
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
       slot.root.dataset.rarity = rarity.toLowerCase();
+      slot.root.style.setProperty('--archetype-color', archColor);
+      slot.rarityFrame.className = `action-slot-frame geometric-frame shape-${rarity.toLowerCase()}`;
       slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
-      slot.root.style.background =
-        `radial-gradient(circle at 50% 15%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
+      slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = true;
       slot.root.style.boxShadow = 'none';
@@ -553,6 +548,8 @@ export class ActionBarHUD {
       slot.root.dataset.hasAbility = 'false';
       delete slot.root.dataset.equippedSpellId;
       delete slot.root.dataset.rarity;
+      slot.root.style.removeProperty('--archetype-color');
+      slot.rarityFrame.className = 'action-slot-frame geometric-frame';
       slot.rarityGlyph.textContent = '';
       slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;

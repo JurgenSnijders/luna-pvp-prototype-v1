@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v29';
+export const STYLE_ID = 'luna-workshop-styles-v31-option2';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1146,21 +1146,22 @@ export function injectStyles(): void {
       flex-shrink: 0;
     }
 
+    .forge-card-glyph-frame.geometric-frame {
+      background-color: transparent;
+      overflow: hidden;
+    }
+
     .forge-card-glyph-icon {
       display: block;
       width: 64px;
       height: 64px;
-      filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.25));
+      filter: drop-shadow(0 0 8px color-mix(in srgb, var(--archetype-color, #00e5ff) 40%, transparent));
       transition: transform 0.2s ease, filter 0.2s ease;
     }
 
     .forge-card-redesign:hover .forge-card-glyph-icon {
       transform: scale(1.06);
-      filter: drop-shadow(0 0 12px rgba(0, 229, 255, 0.45));
-    }
-
-    .forge-card-redesign.tier-epic:hover .forge-card-glyph-icon {
-      filter: drop-shadow(0 0 12px rgba(191, 0, 255, 0.45));
+      filter: drop-shadow(0 0 12px color-mix(in srgb, var(--archetype-color, #00e5ff) 55%, transparent));
     }
 
     .forge-card-glyph-frame.is-streaming::after {
@@ -1626,16 +1627,67 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
-    .spell-tile.tier-rare {
-      box-shadow: inset 0 0 6px rgba(0, 229, 255, 0.25);
+    /* Option 2: Tier = geometry; Archetype = sole neon via --archetype-color */
+    .geometric-frame {
+      border: 1px solid var(--archetype-color, var(--retro-border-subtle));
+      box-shadow: inset 0 0 12px color-mix(in srgb, var(--archetype-color, transparent) 20%, transparent);
+      background-color: var(--retro-panel-bg, #080c18);
+      position: relative;
     }
 
-    .spell-tile.tier-epic {
-      box-shadow: inset 0 0 8px rgba(191, 0, 255, 0.35), 0 0 4px rgba(191, 0, 255, 0.3);
+    .geometric-frame.shape-common {
+      border-radius: 4px;
     }
 
-    .spell-tile.tier-chaotic {
-      box-shadow: inset 0 0 10px rgba(255, 215, 0, 0.4), 0 0 6px rgba(255, 215, 0, 0.4);
+    .geometric-frame.shape-rare {
+      border-radius: 0;
+      clip-path: polygon(
+        8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px),
+        calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px
+      );
+    }
+
+    .geometric-frame.shape-epic {
+      border-radius: 2px;
+    }
+
+    .geometric-frame.shape-epic::before,
+    .geometric-frame.shape-epic::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .geometric-frame.shape-epic::before {
+      top: -1px;
+      left: -1px;
+      border-top: 2px solid var(--archetype-color);
+      border-left: 2px solid var(--archetype-color);
+    }
+
+    .geometric-frame.shape-epic::after {
+      bottom: -1px;
+      right: -1px;
+      border-bottom: 2px solid var(--archetype-color);
+      border-right: 2px solid var(--archetype-color);
+    }
+
+    .geometric-frame.shape-chaotic {
+      border-width: 2px;
+      border-radius: 0;
+      clip-path: polygon(
+        50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%
+      );
+    }
+
+    .spell-tile.geometric-frame {
+      background-image:
+        linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+      background-size: 8px 8px;
     }
 
     .tile-rarity-notch {
@@ -1649,21 +1701,8 @@ export function injectStyles(): void {
       z-index: 2;
       padding: 1px 2px;
       border-radius: 2px;
-    }
-
-    .tile-rarity-notch.notch-rare {
-      color: #00e5ff;
-      text-shadow: 0 0 4px rgba(0, 229, 255, 0.8);
-    }
-
-    .tile-rarity-notch.notch-epic {
-      color: #bf00ff;
-      text-shadow: 0 0 4px rgba(191, 0, 255, 0.8);
-    }
-
-    .tile-rarity-notch.notch-chaotic {
-      color: #ffd700;
-      text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
+      color: var(--archetype-color, #8a9bb8);
+      text-shadow: 0 0 4px color-mix(in srgb, var(--archetype-color, transparent) 70%, transparent);
     }
 
     .tile-icon-wrap {
@@ -1719,9 +1758,9 @@ export function injectStyles(): void {
     }
 
     .drop-zone.drag-over {
-      border-color: var(--retro-neon-cyan, #00e5ff) !important;
-      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6)) !important;
-      background: rgba(0, 229, 255, 0.1) !important;
+      border-color: var(--archetype-color, var(--retro-neon-cyan, #00e5ff)) !important;
+      box-shadow: 0 0 8px color-mix(in srgb, var(--archetype-color, #00e5ff) 60%, transparent) !important;
+      background: color-mix(in srgb, var(--archetype-color, #00e5ff) 10%, transparent) !important;
       transform: scale(1.05);
     }
 
@@ -1846,49 +1885,27 @@ export function injectStyles(): void {
       backdrop-filter: none !important;
     }
 
-    #action-bar-hud .action-slot[data-rarity='common'] {
-      --rarity-color: #5a6e8c;
-      --rarity-glow: transparent;
-    }
-
-    #action-bar-hud .action-slot[data-rarity='rare'] {
-      --rarity-color: #00e5ff;
-      --rarity-glow: rgba(0, 229, 255, 0.30);
-    }
-
-    #action-bar-hud .action-slot[data-rarity='epic'] {
-      --rarity-color: #bf00ff;
-      --rarity-glow: rgba(191, 0, 255, 0.45);
-    }
-
-    #action-bar-hud .action-slot[data-rarity='chaotic'] {
-      --rarity-color: #ffd700;
-      --rarity-glow: rgba(255, 215, 0, 0.50);
-    }
-
-    .action-slot-rarity-frame {
+    .action-slot-frame.geometric-frame {
       position: absolute;
       inset: 2px;
       z-index: 2;
       pointer-events: none;
       display: none;
-      border: 1px solid var(--rarity-color, transparent);
-      border-radius: 3px;
-      box-shadow: inset 0 0 10px var(--rarity-glow, transparent);
+      background-color: transparent;
     }
 
-    .action-slot[data-rarity] .action-slot-rarity-frame {
+    .action-slot[data-has-ability='true'] .action-slot-frame {
       display: block;
     }
 
     .action-slot-rarity-glyph {
       font-size: 10px;
       line-height: 1;
-      color: var(--rarity-color, #5a6e8c);
-      text-shadow: 0 0 4px var(--rarity-glow, transparent);
+      color: var(--archetype-color, #8a9bb8);
+      text-shadow: 0 0 4px color-mix(in srgb, var(--archetype-color, transparent) 50%, transparent);
     }
 
-    html[data-cheap-ui='1'] .action-slot-rarity-frame {
+    html[data-cheap-ui='1'] .action-slot-frame.geometric-frame {
       box-shadow: none;
     }
 

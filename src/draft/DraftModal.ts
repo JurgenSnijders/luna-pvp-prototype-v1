@@ -1652,9 +1652,9 @@ export class DraftModal {
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
     const rarity = resolveSpellRarity(spell);
     const tile = document.createElement('div');
-    tile.className = `spell-tile tier-${rarity.toLowerCase()}`;
+    tile.className = `spell-tile geometric-frame shape-${rarity.toLowerCase()}`;
     tile.dataset.spellId = spell.id;
-    tile.style.borderColor = archetypeColor;
+    tile.style.setProperty('--archetype-color', archetypeColor);
 
     if (rarity !== 'COMMON') {
       const notch = document.createElement('div');
@@ -2306,7 +2306,12 @@ export class DraftModal {
   }
 
   private mountForgeStaticGlyph(slot: ForgeCardSlot, ability: AbilitySchema): void {
+    const rarity = resolveSpellRarity(ability);
+    const archetypeColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
     slot.glyphFrameEl.classList.remove('is-streaming');
+    slot.glyphFrameEl.className =
+      `forge-card-glyph-frame forge-card-drag-handle geometric-frame shape-${rarity.toLowerCase()}`;
+    slot.glyphFrameEl.style.setProperty('--archetype-color', archetypeColor);
     slot.glyphFrameEl.innerHTML = '';
     const iconCanvas = generateSpellIcon(ability, 64);
     iconCanvas.className = 'forge-card-glyph-icon';
