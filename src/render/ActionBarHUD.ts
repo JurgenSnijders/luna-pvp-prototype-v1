@@ -4,7 +4,7 @@ import {
   parryShieldShowsStamina,
   parryShieldStaminaRatio,
 } from '../engine/PhysicsWorld';
-import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey, type CardRarity } from '../types/cards';
+import { ACTION_SLOT_KEYS, SLOT_CATEGORY_MAP, getCategoryLabel, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
@@ -16,7 +16,7 @@ import {
   computeSpellCombatProfile,
   formatProfileCadence,
 } from '../primitives/combatProfile';
-import { generateSpellIcon } from './canvas/SpellIconGenerator';
+import { generateSpellIcon, getArchetypeColor, hexToRgba } from './canvas/SpellIconGenerator';
 import { getIconRenderStyle, type IconRenderStyle } from './gl/retroVfxConfig';
 
 export interface ActionBarHUDCallbacks {
@@ -31,8 +31,8 @@ interface SlotElements {
   badge: HTMLElement;
   slotIndex: number;
   slotKey: ActionSlotKey;
-  rarityGlyph: HTMLElement;
-  rarityFrame: HTMLElement;
+  archetypeFrame: HTMLElement;
+  levelDots: HTMLElement;
   label: HTMLElement;
   cooldownOverlay: HTMLElement;
   chargeOverlay: HTMLElement;
@@ -60,19 +60,11 @@ const SLOT_BASE_BG = 'rgba(18, 18, 30, 0.85)';
 // edge without shifting layout. Resting color is the display-case slate.
 const SLOT_BORDER_IDLE = '#2a364a';
 
-const RARITY_WASH: Record<CardRarity, string> = {
-  COMMON: 'rgba(90, 110, 140, 0.22)',
-  RARE: 'rgba(0, 229, 255, 0.25)',
-  EPIC: 'rgba(191, 0, 255, 0.28)',
-  CHAOTIC: 'rgba(255, 215, 0, 0.32)',
-};
-
-const RARITY_GLYPHS: Record<CardRarity, string> = {
-  COMMON: '◇',
-  RARE: '◈',
-  EPIC: '✦',
-  CHAOTIC: '★',
-};
+// Placeholder rank cap until the upgrade/leveling system exists. Every equipped
+// spell currently renders at rank 1; swap this read for a real rank field on the
+// ability once leveling lands.
+const MAX_SPELL_RANK = 5;
+const PLACEHOLDER_SPELL_RANK = 1;
 
 function abilityHasWhileHeldReflectWithCap(ability: AbilitySchema): boolean {
   for (const node of ability.triggers ?? []) {
@@ -283,14 +275,14 @@ export class ActionBarHUD {
     style.textContent = `
       @keyframes slotAimPulse {
         from {
-          box-shadow: inset 0 0 12px color-mix(in srgb, var(--rarity-color, #00e5ff) 35%, transparent),
-            0 0 8px color-mix(in srgb, var(--rarity-color, #00e5ff) 45%, transparent);
-          border-color: color-mix(in srgb, var(--rarity-color, #00e5ff) 75%, transparent);
+          box-shadow: inset 0 0 12px color-mix(in srgb, var(--archetype-color, #00e5ff) 35%, transparent),
+            0 0 8px color-mix(in srgb, var(--archetype-color, #00e5ff) 45%, transparent);
+          border-color: color-mix(in srgb, var(--archetype-color, #00e5ff) 75%, transparent);
         }
         to {
-          box-shadow: inset 0 0 20px color-mix(in srgb, var(--rarity-color, #00e5ff) 55%, transparent),
-            0 0 18px color-mix(in srgb, var(--rarity-color, #00e5ff) 85%, transparent);
-          border-color: var(--rarity-color, #00e5ff);
+          box-shadow: inset 0 0 20px color-mix(in srgb, var(--archetype-color, #00e5ff) 55%, transparent),
+            0 0 18px color-mix(in srgb, var(--archetype-color, #00e5ff) 85%, transparent);
+          border-color: var(--archetype-color, #00e5ff);
         }
       }
       .slot-aiming {
@@ -348,11 +340,16 @@ export class ActionBarHUD {
       background: ${accent.bg}; padding: 1px 3px; border-radius: 4px;
     `;
 
-    const rarityGlyph = document.createElement('div');
-    rarityGlyph.className = 'action-slot-rarity-glyph-plate';
+    const archetypeFrame = document.createElement('div');
+    archetypeFrame.className = 'action-slot-archetype-frame';
 
-    const rarityFrame = document.createElement('div');
-    rarityFrame.className = 'action-slot-rarity-frame';
+    const levelDots = document.createElement('div');
+    levelDots.className = 'action-slot-level-dots';
+    for (let i = 0; i < MAX_SPELL_RANK; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'action-slot-level-dot';
+      levelDots.appendChild(dot);
+    }
 
     const label = document.createElement('div');
     label.textContent = '+ Assign';
@@ -425,10 +422,10 @@ export class ActionBarHUD {
     `;
 
     root.appendChild(iconContainer);
-    root.appendChild(rarityFrame);
+    root.appendChild(archetypeFrame);
     headerRow.appendChild(badge);
     root.appendChild(headerRow);
-    root.appendChild(rarityGlyph);
+    root.appendChild(levelDots);
     root.appendChild(label);
     root.appendChild(cooldownOverlay);
     root.appendChild(chargeOverlay);
@@ -506,8 +503,8 @@ export class ActionBarHUD {
       slotIndex,
       slotKey: key,
       iconContainer,
-      rarityGlyph,
-      rarityFrame,
+      archetypeFrame,
+      levelDots,
       label,
       cooldownOverlay,
       chargeOverlay,
@@ -534,28 +531,31 @@ export class ActionBarHUD {
     slot.lastIconStyle = nextStyle;
 
     if (ability) {
-      const rarity = resolveSpellRarity(ability);
+      const archColor = getArchetypeColor(ability.archetype, ability.visuals?.color);
       slot.iconContainer.appendChild(generateSpellIcon(ability, 64));
-      slot.label.textContent = ability.name;
-      slot.label.style.color = '#ccc';
+      slot.label.style.display = 'none';
       slot.root.dataset.hasAbility = 'true';
       slot.root.dataset.equippedSpellId = ability.id;
-      slot.root.dataset.rarity = rarity.toLowerCase();
-      slot.rarityGlyph.className = `action-slot-rarity-glyph-plate pip-${rarity.toLowerCase()}`;
-      slot.rarityGlyph.textContent = RARITY_GLYPHS[rarity];
+      slot.root.style.setProperty('--archetype-color', archColor);
       slot.root.style.background =
-        `radial-gradient(circle at 50% 100%, ${RARITY_WASH[rarity]} 0%, transparent 70%), ${SLOT_BASE_BG}`;
-      slot.root.style.borderColor = SLOT_BORDER_IDLE;
+        `radial-gradient(circle at 50% 100%, ${hexToRgba(archColor, 0.22)} 0%, transparent 70%), ${SLOT_BASE_BG}`;
+      slot.root.style.borderColor = archColor;
       slot.root.draggable = true;
       slot.root.style.boxShadow = 'none';
+
+      // Placeholder rank display until the upgrade/leveling system exists —
+      // every equipped spell shows PLACEHOLDER_SPELL_RANK of MAX_SPELL_RANK.
+      const dots = slot.levelDots.children;
+      for (let i = 0; i < dots.length; i++) {
+        dots[i].classList.toggle('is-filled', i < PLACEHOLDER_SPELL_RANK);
+      }
     } else {
       slot.label.textContent = '+ Assign';
       slot.label.style.color = '#666';
+      slot.label.style.display = 'block';
       slot.root.dataset.hasAbility = 'false';
       delete slot.root.dataset.equippedSpellId;
-      delete slot.root.dataset.rarity;
-      slot.rarityGlyph.className = 'action-slot-rarity-glyph-plate';
-      slot.rarityGlyph.textContent = '';
+      slot.root.style.removeProperty('--archetype-color');
       slot.root.style.background = SLOT_BASE_BG;
       slot.root.style.borderColor = SLOT_BORDER_IDLE;
       slot.root.draggable = false;
@@ -776,7 +776,10 @@ export class ActionBarHUD {
       }
 
       if (this.aimingSlotIndex !== i) {
-        slot.root.style.borderColor = SLOT_BORDER_IDLE;
+        slot.root.style.borderColor =
+          slot.root.dataset.hasAbility === 'true'
+            ? slot.root.style.getPropertyValue('--archetype-color') || SLOT_BORDER_IDLE
+            : SLOT_BORDER_IDLE;
         slot.root.style.boxShadow = 'none';
       }
     }

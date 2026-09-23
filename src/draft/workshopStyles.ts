@@ -1663,8 +1663,7 @@ export function injectStyles(): void {
         linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
     }
 
-    .tile-rarity-notch,
-    .action-slot-rarity-glyph-plate {
+    .tile-rarity-notch {
       position: absolute;
       top: 0;
       right: 0;
@@ -1677,10 +1676,6 @@ export function injectStyles(): void {
       background: rgba(8, 12, 24, 0.92);
       border-left: 1px solid #2a364a;
       border-bottom: 1px solid #2a364a;
-    }
-
-    .action-slot-rarity-glyph-plate:empty {
-      display: none;
     }
 
     .pip-common { color: #8a9bb8; }
@@ -1868,27 +1863,7 @@ export function injectStyles(): void {
       backdrop-filter: none !important;
     }
 
-    #action-bar-hud .action-slot[data-rarity='common'] {
-      --rarity-color: #5a6e8c;
-      --rarity-glow: transparent;
-    }
-
-    #action-bar-hud .action-slot[data-rarity='rare'] {
-      --rarity-color: #00e5ff;
-      --rarity-glow: rgba(0, 229, 255, 0.30);
-    }
-
-    #action-bar-hud .action-slot[data-rarity='epic'] {
-      --rarity-color: #bf00ff;
-      --rarity-glow: rgba(191, 0, 255, 0.45);
-    }
-
-    #action-bar-hud .action-slot[data-rarity='chaotic'] {
-      --rarity-color: #ffd700;
-      --rarity-glow: rgba(255, 215, 0, 0.50);
-    }
-
-    .action-slot-rarity-frame {
+    .action-slot-archetype-frame {
       position: absolute;
       inset: 0;
       z-index: 2;
@@ -1899,12 +1874,36 @@ export function injectStyles(): void {
       box-shadow: none;
     }
 
-    .action-slot[data-rarity] .action-slot-rarity-frame {
+    .action-slot[data-has-ability='true'] .action-slot-archetype-frame {
       display: block;
     }
 
-    html[data-cheap-ui='1'] .action-slot-rarity-frame {
+    html[data-cheap-ui='1'] .action-slot-archetype-frame {
       box-shadow: none;
+    }
+
+    .action-slot-level-dots {
+      position: absolute;
+      bottom: 3px; left: 0; right: 0; z-index: 3;
+      display: none;
+      align-items: center; justify-content: center; gap: 3px;
+      pointer-events: none;
+    }
+
+    .action-slot[data-has-ability='true'] .action-slot-level-dots {
+      display: flex;
+    }
+
+    .action-slot-level-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: rgba(139, 148, 158, 0.25);
+      border: 1px solid rgba(139, 148, 158, 0.45);
+    }
+
+    .action-slot-level-dot.is-filled {
+      background: #cbd5e1;
+      border-color: #e2e8f0;
+      box-shadow: 0 0 3px rgba(226, 232, 240, 0.6);
     }
 
     .evolution-tree-host {
