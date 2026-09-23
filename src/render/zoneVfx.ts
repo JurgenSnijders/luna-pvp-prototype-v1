@@ -2,7 +2,7 @@ import type { SpatialZone } from '../entities/SpatialZone';
 import { Vector2D } from '../math/Vector2D';
 import type { SpellArchetype, VfxLayer } from '../types/schema';
 import { hexToRgb, mixTowardWhite, rgbToHex } from './canvas/glowDisc';
-import { getArchetypeColor } from './canvas/SpellIconGenerator';
+import { getArchetypeColor } from './canvas/archetypeColors';
 
 export type ZoneVfxFamily = 'EMBER' | 'FROST' | 'VOID' | 'ARC' | 'BLOOM' | 'GRIT';
 
