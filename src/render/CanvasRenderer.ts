@@ -305,7 +305,7 @@ export class CanvasRenderer {
 
     drawCombatants(ctx, state, world, alpha, particles);
 
-    drawSummons(ctx, world, alpha);
+    drawSummons(ctx, state, world, alpha);
 
     drawConstraints(ctx, world);
 

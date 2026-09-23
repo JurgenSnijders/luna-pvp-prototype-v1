@@ -239,17 +239,20 @@ function processObstacleDestructions(
 ): void {
   for (const death of world.pendingObstacleDestructions) {
     if (!death.isDestructible) continue;
+    // The renderer already faded an expiring wall out; only a broken one shatters.
+    if (death.cause === 'EXPIRED') continue;
     if (!isInsideHex(death.pos, world.hexCenter, world.hexRadius)) continue;
 
+    const color = getArchetypeColor(death.spawnArchetype, '#aa8844');
     fx.decal(
       death.pos.x,
       death.pos.y,
       death.radius * 1.2,
       'KINETIC_CRATER',
-      '#aa8844',
+      color,
     );
-    fx.ripple(death.pos.x, death.pos.y, 260, 1.0, '#aa8844');
-    interp.particles?.triggerImpactBurst(death.pos, '#aa8844', 'SPARKS', '#ffcc66', 0.8);
+    fx.ripple(death.pos.x, death.pos.y, 260, 1.0, color);
+    interp.particles?.triggerImpactBurst(death.pos, color, 'SPARKS', '#ffffff', 0.8);
 
     if (getGraphicsSettings().dynamicDebris) {
       DebrisManager.getInstance().spawnShatterCluster(

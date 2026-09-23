@@ -13,8 +13,24 @@ import {
   drawWedgeEdges,
   getZoneAgeMs,
 } from './glowDisc';
+import {
+  computeExpiryFade,
+  computeHitFlash,
+  computeSpawnT,
+  drawDeployableFrame,
+  muteDeployableBody,
+  type DeployableBoxShape,
+  type DeployableCircleShape,
+  type DeployableFrameOptions,
+  type DeployableShape,
+} from './deployables';
 import type { CanvasRenderCtx } from './renderCtx';
-import { resolveParryIntent, resolveZoneIntent } from './telegraphIntent';
+import { getArchetypeColor } from './SpellIconGenerator';
+import {
+  resolveDeployableIntent,
+  resolveParryIntent,
+  resolveZoneIntent,
+} from './telegraphIntent';
 
 export interface TimerBarOptions {
   ctx: CanvasRenderingContext2D;
@@ -394,19 +410,6 @@ export function drawTerrainPatches(ctx: CanvasRenderingContext2D, world: Physics
   }
 }
 
-function lerpColor(a: string, b: string, t: number): string {
-  const parse = (hex: string) => {
-    const n = parseInt(hex.replace('#', ''), 16);
-    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-  };
-  const ca = parse(a);
-  const cb = parse(b);
-  const r = Math.round(ca.r + (cb.r - ca.r) * t);
-  const g = Math.round(ca.g + (cb.g - ca.g) * t);
-  const bl = Math.round(ca.b + (cb.b - ca.b) * t);
-  return `rgb(${r},${g},${bl})`;
-}
-
 function getObstacleTopY(obstacle: Obstacle): number {
   const { pos, config } = obstacle;
   if (config.shape === 'CIRCLE') return pos.y - config.width / 2;
@@ -459,140 +462,60 @@ function drawObstacleOverheadBars(
   }
 }
 
-function drawDestructibleMine(
+const STATIC_OBSTACLE_BASE = '#64748b';
+/** Destructible walls sit darker than static terrain so solid geometry reads as denser. */
+const DESTRUCTIBLE_BODY_SHADE = 0.7;
+const STATIC_BODY_SHADE = 0.45;
+
+const obstacleBoxShape: DeployableBoxShape = { kind: 'BOX', halfW: 0, halfH: 0, angle: 0 };
+const obstacleCircleShape: DeployableCircleShape = { kind: 'CIRCLE', radius: 0 };
+const obstacleFrame: DeployableFrameOptions = {
+  x: 0,
+  y: 0,
+  shape: obstacleBoxShape,
+  rim: TELEGRAPH_COLORS.NEUTRAL,
+  body: STATIC_OBSTACLE_BASE,
+  hitFlash: 0,
+  spawnT: 1,
+  fade: 1,
+};
+
+function drawObstacleBody(
   ctx: CanvasRenderingContext2D,
   obstacle: Obstacle,
-  now: number,
+  localEntity: Entity | null,
+  nowMs: number,
 ): void {
   const { pos, config } = obstacle;
-  const radius = config.width / 2;
-  const rimColor = '#aa8844';
-  const pulse = 0.25 + 0.2 * Math.sin(now * 8);
+  const destructible = config.isDestructible === true;
 
-  ctx.setLineDash([4, 6]);
-  ctx.strokeStyle = `rgba(170, 136, 68, ${pulse})`;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
-  grad.addColorStop(0, '#141926');
-  grad.addColorStop(0.7, '#1a2030');
-  grad.addColorStop(1, rimColor);
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = rimColor;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  const maxHealth = config.maxHealth ?? 100;
-  const ratio = Math.max(0, obstacle.health / maxHealth);
-  const pipColor = lerpColor('#ff3366', '#00ff88', ratio);
-  const pipCount = 4;
-  const pipArc = (Math.PI * 2) / pipCount * 0.55;
-  const pipR = radius + 10;
-  for (let i = 0; i < pipCount; i++) {
-    const filled = ratio > (pipCount - 1 - i) / pipCount;
-    if (!filled) continue;
-    const start = -Math.PI / 2 + (Math.PI * 2 * i) / pipCount - pipArc / 2;
-    ctx.strokeStyle = pipColor;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y - 2, pipR, start, start + pipArc);
-    ctx.stroke();
-  }
-
-  const coreAlpha = 0.5 + 0.5 * Math.sin(now * 10);
-  ctx.fillStyle = `rgba(255, 200, 80, ${coreAlpha})`;
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawStaticObstacle(
-  ctx: CanvasRenderingContext2D,
-  obstacle: Obstacle,
-  state: CanvasRenderCtx,
-): void {
-  const { pos, config } = obstacle;
-  const spawnPulse = 0.5 + 0.5 * Math.sin(state.ringRotation * 3 + pos.x * 0.02);
-  ctx.fillStyle = '#64748b';
-  ctx.strokeStyle = `rgba(200, 220, 255, ${0.35 + spawnPulse * 0.4})`;
-  ctx.lineWidth = 2;
-
+  let shape: DeployableShape;
   if (config.shape === 'CIRCLE') {
-    const radius = config.width / 2;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    obstacleCircleShape.radius = config.width / 2;
+    shape = obstacleCircleShape;
   } else {
-    const angle = config.angle ?? 0;
-    const halfW = config.width / 2;
-    const halfH = config.height / 2;
-    ctx.save();
-    ctx.translate(pos.x, pos.y);
-    ctx.rotate(angle);
-    ctx.fillRect(-halfW, -halfH, config.width, config.height);
-    ctx.strokeRect(-halfW, -halfH, config.width, config.height);
-    ctx.restore();
+    obstacleBoxShape.halfW = config.width / 2;
+    obstacleBoxShape.halfH = config.height / 2;
+    obstacleBoxShape.angle = config.angle ?? 0;
+    shape = obstacleBoxShape;
   }
-}
 
-function drawDestructibleBox(
-  ctx: CanvasRenderingContext2D,
-  obstacle: Obstacle,
-  now: number,
-): void {
-  const { pos, config } = obstacle;
-  const angle = config.angle ?? 0;
-  const halfW = config.width / 2;
-  const halfH = config.height / 2;
-  const rimColor = '#aa8844';
-  const pulse = 0.25 + 0.2 * Math.sin(now * 8);
-  const diag = Math.hypot(config.width, config.height) / 2;
-
-  ctx.save();
-  ctx.translate(pos.x, pos.y);
-  ctx.rotate(angle);
-
-  ctx.setLineDash([4, 6]);
-  ctx.strokeStyle = `rgba(170, 136, 68, ${pulse})`;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(0, 0, diag + 6, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  const grad = ctx.createLinearGradient(-halfW, -halfH, halfW, halfH);
-  grad.addColorStop(0, '#1a2030');
-  grad.addColorStop(0.5, '#141926');
-  grad.addColorStop(1, rimColor);
-  ctx.fillStyle = grad;
-  ctx.fillRect(-halfW, -halfH, config.width, config.height);
-  ctx.strokeStyle = rimColor;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(-halfW, -halfH, config.width, config.height);
-
-  const maxHealth = config.maxHealth ?? 100;
-  const ratio = Math.max(0, obstacle.health / maxHealth);
-  const pipColor = lerpColor('#ff3366', '#00ff88', ratio);
-  ctx.strokeStyle = pipColor;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, -halfH - 8, 6, Math.PI * 0.15, Math.PI * 0.15 + Math.PI * ratio);
-  ctx.stroke();
-
-  ctx.fillStyle = `rgba(255, 200, 80, ${0.5 + 0.5 * Math.sin(now * 10)})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  const baseHex = getArchetypeColor(obstacle.spawnArchetype, STATIC_OBSTACLE_BASE);
+  const frame = obstacleFrame;
+  frame.x = pos.x;
+  frame.y = pos.y;
+  frame.shape = shape;
+  frame.rim = TELEGRAPH_COLORS[resolveDeployableIntent(obstacle.ownerId, localEntity)];
+  frame.body = muteDeployableBody(
+    baseHex,
+    destructible ? DESTRUCTIBLE_BODY_SHADE : STATIC_BODY_SHADE,
+  );
+  frame.hitFlash = computeHitFlash(obstacle.lastHitAtMs, nowMs);
+  frame.spawnT = computeSpawnT(obstacle.spawnedAtMs, nowMs);
+  frame.fade = computeExpiryFade(obstacle.remainingDurationMs, config.durationMs);
+  frame.hitX = obstacle.lastHitPoint?.x;
+  frame.hitY = obstacle.lastHitPoint?.y;
+  drawDeployableFrame(ctx, frame);
 }
 
 export function drawObstacles(
@@ -601,19 +524,10 @@ export function drawObstacles(
   world: PhysicsWorld,
 ): void {
   const nowMs = performance.now();
-  const now = nowMs * 0.001;
   for (const obstacle of world.obstacles) {
     if (obstacle.isDead) continue;
+    drawObstacleBody(ctx, obstacle, state.localEntity, nowMs);
     drawObstacleOverheadBars(ctx, obstacle, nowMs);
-    if (obstacle.config.isDestructible) {
-      if (obstacle.config.shape === 'CIRCLE') {
-        drawDestructibleMine(ctx, obstacle, now);
-      } else {
-        drawDestructibleBox(ctx, obstacle, now);
-      }
-    } else {
-      drawStaticObstacle(ctx, obstacle, state);
-    }
   }
 }
 

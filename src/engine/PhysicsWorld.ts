@@ -105,6 +105,14 @@ export interface PendingObstacleDestruction {
   isDestructible: boolean;
   shape: ObstacleShape;
   spawnArchetype?: SpellArchetype;
+  /** Health depleted vs duration ran out. Expiry fades out and does not shatter. */
+  cause: 'BROKEN' | 'EXPIRED';
+}
+
+export interface PendingWallImpact {
+  pos: Vector2D;
+  /** Archetype of the obstacle that was hit. Omitted for arena-edge impacts. */
+  archetype?: SpellArchetype;
 }
 
 export interface GroundImpactEvent {
@@ -177,7 +185,7 @@ export class PhysicsWorld {
 
   pendingHits: PendingHit[] = [];
   pendingExpirations: Projectile[] = [];
-  pendingWallImpacts: Vector2D[] = [];
+  pendingWallImpacts: PendingWallImpact[] = [];
   pendingBounceEvents: Array<{
     proj: Projectile;
     impactSpeed: number;
@@ -1261,7 +1269,7 @@ export class PhysicsWorld {
           makeDebugVector(entity.pos, normal, vImpact, DEBUG_VECTOR_COLORS.COLLISION, 'hex'),
         );
       }
-      this.pendingWallImpacts.push(entity.pos.clone());
+      this.pendingWallImpacts.push({ pos: entity.pos.clone() });
       this.queueSlamEvent(entity, 'WALL', vImpact, normal, entity.pos, hexContactKey);
     }
   }
@@ -1416,7 +1424,10 @@ export class PhysicsWorld {
           const impactSpeed = entity.vel.mag();
           entity.isDead = true;
           entity.expiryReason = 'wall';
-          this.pendingWallImpacts.push(entity.pos.clone());
+          this.pendingWallImpacts.push({
+            pos: entity.pos.clone(),
+            archetype: obstacle.spawnArchetype,
+          });
           if (impactSpeed > SLAM_SPEED_THRESHOLD) {
             this.queueSlamEvent(
               entity,
@@ -1427,7 +1438,7 @@ export class PhysicsWorld {
             );
           }
           if (obstacle.config.isDestructible) {
-            obstacle.takeDamage(OBSTACLE_PROJECTILE_DAMAGE);
+            obstacle.takeDamage(OBSTACLE_PROJECTILE_DAMAGE, entity.pos);
           }
           continue;
         }
@@ -1477,6 +1488,7 @@ export class PhysicsWorld {
         isDestructible: obstacle.config.isDestructible ?? false,
         shape: obstacle.config.shape,
         spawnArchetype: obstacle.spawnArchetype,
+        cause: obstacle.health <= 0 ? 'BROKEN' : 'EXPIRED',
       });
     }
   }

@@ -7,9 +7,23 @@ import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import type { ParticleSystem } from '../ParticleSystem';
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { getActiveColors } from '../../ui/tokens';
+import { TELEGRAPH_COLORS } from './colors';
+import {
+  computeExpiryFade,
+  computeHitFlash,
+  computeSpawnT,
+  drawDeployableFrame,
+  muteDeployableBody,
+  type DeployableBoxShape,
+  type DeployableCircleShape,
+  type DeployableFrameOptions,
+  type DeployableShape,
+} from './deployables';
 import { lerpPos, lerpZ } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
+import { getArchetypeColor } from './SpellIconGenerator';
 import { drawStatusAuras } from './statusAuras';
+import { resolveDeployableIntent } from './telegraphIntent';
 
 const combatantSortScratch: Entity[] = [];
 let lavaSizzleFrame = 0;
@@ -265,52 +279,83 @@ function drawCombatantBody(
 
   ctx.globalAlpha = prevAlpha;
   drawStasisOverlay(ctx, state, entity, physicsPos);
-  drawCastPhaseTelegraph(ctx, entity, physicsPos);
+  drawCastPhaseTelegraph(ctx, entity, physicsPos, entity.id, state.localEntity);
 }
+
+const SUMMON_BODY_SHADE = 0.55;
+const TURRET_BARREL_LEN = 12;
+
+const summonBoxShape: DeployableBoxShape = { kind: 'BOX', halfW: 0, halfH: 0, angle: 0 };
+const summonCircleShape: DeployableCircleShape = { kind: 'CIRCLE', radius: 0 };
+const summonFrame: DeployableFrameOptions = {
+  x: 0,
+  y: 0,
+  shape: summonBoxShape,
+  rim: TELEGRAPH_COLORS.NEUTRAL,
+  body: '#141926',
+  hitFlash: 0,
+  spawnT: 1,
+  fade: 1,
+};
 
 export function drawSummons(
   ctx: CanvasRenderingContext2D,
+  state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
 ): void {
+  const nowMs = performance.now();
   for (const summon of world.summons) {
     if (summon.isDead) continue;
     const pos = lerpPos(summon, alpha);
     const half = summon.config.radius ?? summon.radius;
-    const turretColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#88aa44';
-    const decoyColor = summon.visuals?.color ?? summon.config.visuals?.color ?? '#aa6688';
+    const archetypeHex =
+      summon.visuals?.color ??
+      summon.config.visuals?.color ??
+      getArchetypeColor(summon.spellArchetype);
+    const isTurret = summon.config.actorArchetype === 'TURRET';
+    const fade = computeExpiryFade(summon.remainingDurationMs, summon.config.durationMs);
 
     drawEntityContactShadow(ctx, pos.x, pos.y, half);
 
-    if (summon.config.actorArchetype === 'TURRET') {
-      ctx.save();
-      ctx.translate(pos.x, pos.y);
-      ctx.rotate(summon.facingAngle);
-
-      ctx.fillStyle = turretColor;
-      ctx.fillRect(-half, -half, half * 2, half * 2);
-      ctx.strokeStyle = 'rgba(180, 255, 120, 0.5)';
-      ctx.strokeRect(-half - 2, -half - 2, half * 2 + 4, half * 2 + 4);
-
-      ctx.strokeStyle = turretColor;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(half, 0);
-      ctx.lineTo(half + 12, 0);
-      ctx.stroke();
-
-      ctx.restore();
+    let shape: DeployableShape;
+    if (isTurret) {
+      summonBoxShape.halfW = half;
+      summonBoxShape.halfH = half;
+      summonBoxShape.angle = summon.facingAngle;
+      shape = summonBoxShape;
     } else {
-      ctx.fillStyle = decoyColor;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, half, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 180, 220, 0.55)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      summonCircleShape.radius = half;
+      shape = summonCircleShape;
     }
 
-    drawCastPhaseTelegraph(ctx, summon, pos);
+    const frame = summonFrame;
+    frame.x = pos.x;
+    frame.y = pos.y;
+    frame.shape = shape;
+    frame.rim = TELEGRAPH_COLORS[resolveDeployableIntent(summon.ownerId, state.localEntity)];
+    frame.body = muteDeployableBody(archetypeHex, SUMMON_BODY_SHADE);
+    frame.hitFlash = computeHitFlash(summon.lastHitAtMs, nowMs);
+    frame.spawnT = computeSpawnT(summon.spawnedAtMs, nowMs);
+    frame.fade = fade;
+    drawDeployableFrame(ctx, frame);
+
+    if (isTurret && fade > 0) {
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = prevAlpha * fade;
+      const cos = Math.cos(summon.facingAngle);
+      const sin = Math.sin(summon.facingAngle);
+      ctx.strokeStyle = archetypeHex;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(pos.x + cos * half, pos.y + sin * half);
+      ctx.lineTo(pos.x + cos * (half + TURRET_BARREL_LEN), pos.y + sin * (half + TURRET_BARREL_LEN));
+      ctx.stroke();
+      ctx.globalAlpha = prevAlpha;
+    }
+
+    drawCastPhaseTelegraph(ctx, summon, pos, summon.ownerId, state.localEntity);
   }
 }
 
@@ -318,6 +363,8 @@ function drawCastPhaseTelegraph(
   ctx: CanvasRenderingContext2D,
   entity: Entity,
   pos: Vector2D,
+  ownerId: string,
+  localEntity: Entity | null,
 ): void {
   const phase = entity.activeCastPhase;
   if (!phase || phase.phase !== 'WINDUP') return;
@@ -325,7 +372,8 @@ function drawCastPhaseTelegraph(
   const progress =
     phase.totalMs > 0 ? 1 - phase.remainingMs / phase.totalMs : 1;
   const radius = entity.effectiveRadius + 6 + progress * 8;
-  ctx.strokeStyle = `rgba(255, 210, 90, ${0.35 + progress * 0.45})`;
+  const { r, g, b } = TELEGRAPH_COLORS[resolveDeployableIntent(ownerId, localEntity)];
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.35 + progress * 0.45})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);

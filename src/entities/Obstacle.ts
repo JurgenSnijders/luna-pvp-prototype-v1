@@ -9,6 +9,12 @@ export class Obstacle {
   health: number;
   remainingDurationMs: number;
   spawnArchetype?: SpellArchetype;
+  ownerId?: string;
+  /** `performance.now()` at construction; drives the spawn snap. */
+  spawnedAtMs: number;
+  /** `performance.now()` of the last damaging hit. `0` means never hit. */
+  lastHitAtMs = 0;
+  lastHitPoint?: Vector2D;
   isDead = false;
 
   constructor(pos: Vector2D, config: ObstacleConfig) {
@@ -17,6 +23,7 @@ export class Obstacle {
     this.config = config;
     this.health = config.maxHealth ?? 100;
     this.remainingDurationMs = config.durationMs;
+    this.spawnedAtMs = performance.now();
   }
 
   getCollisionRadius(): number {
@@ -39,9 +46,11 @@ export class Obstacle {
     }
   }
 
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, hitPoint?: Vector2D): void {
     if (!this.config.isDestructible) return;
     this.health -= amount;
+    this.lastHitAtMs = performance.now();
+    if (hitPoint) this.lastHitPoint = hitPoint.clone();
     if (this.health <= 0) {
       this.isDead = true;
     }

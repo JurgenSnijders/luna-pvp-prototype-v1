@@ -520,6 +520,7 @@ export function dispatchAction(
       world.addObstacle(
         Object.assign(new Obstacle(pos, obstacleConfig), {
           spawnArchetype: ctx.ability?.archetype,
+          ownerId: ctx.caster.id,
         }),
       );
       break;
@@ -786,8 +787,13 @@ export function applyModifyStat(
         entity.moveSpeed = apply(entity.moveSpeed);
       }
       break;
-    case 'health':
-      entity.health = Math.max(0, apply(entity.health));
+    case 'health': {
+      const next = Math.max(0, apply(entity.health));
+      if (next < entity.health && entity instanceof Summon) {
+        entity.lastHitAtMs = performance.now();
+      }
+      entity.health = next;
       break;
+    }
   }
 }

@@ -44,6 +44,16 @@ export function resolveZoneIntent(
   }
 }
 
+/** Ownership read for walls, mines and summons: the rim says whose it is. */
+export function resolveDeployableIntent(
+  ownerId: string | undefined,
+  localEntity: Entity | null,
+): TelegraphIntent {
+  if (!ownerId || !localEntity) return withOverride('NEUTRAL');
+  if (isAlliedTo(ownerId, localEntity)) return withOverride('FRIENDLY');
+  return withOverride('HOSTILE');
+}
+
 export function resolveParryIntent(
   overlay: { casterId: string },
   localEntity: Entity | null,

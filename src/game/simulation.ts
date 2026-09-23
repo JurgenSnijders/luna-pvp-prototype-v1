@@ -2,6 +2,7 @@ import {
   getEffectiveFeatureFlags,
 } from '../devtools/graphicsSettings';
 import { adaptiveQuality } from '../render/AdaptiveQuality';
+import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { applyField } from '../primitives/Fields';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import type { GameApp } from './GameApp';
@@ -74,7 +75,8 @@ export function runSimulationStep(app: GameApp, dt: number): void {
   app.interpreter.processLifecycleEvents(app.world, dt);
 
   for (const impact of app.world.pendingWallImpacts) {
-    app.particles.burstSparks(impact, 6, '#ffaa44');
+    const color = impact.archetype ? getArchetypeColor(impact.archetype) : '#ffaa44';
+    app.particles.burstSparks(impact.pos, 6, color);
   }
   for (const entity of app.world.getCombatants()) {
     if (entity.tags.has('in_lava') && Math.random() < 0.2) {

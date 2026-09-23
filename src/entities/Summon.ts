@@ -33,6 +33,10 @@ export class Summon extends Entity {
   spellArchetype?: SpellArchetype;
   abilityName: string;
   facingAngle: number;
+  /** `performance.now()` at construction; drives the spawn snap. */
+  spawnedAtMs: number;
+  /** `performance.now()` of the last damaging hit. `0` means never hit. */
+  lastHitAtMs = 0;
   private pendingPhaseDispatch: (() => void) | null = null;
 
   constructor(
@@ -64,6 +68,7 @@ export class Summon extends Entity {
     this.spellArchetype = options.spellArchetype;
     this.abilityName = options.abilityName ?? '';
     this.facingAngle = 0;
+    this.spawnedAtMs = performance.now();
     this.hitHeight = this.radius * 1.6;
     if (config.anchored !== false) {
       this.z = 0;
@@ -75,6 +80,11 @@ export class Summon extends Entity {
 
   override isImmovable(): boolean {
     return this.config.anchored !== false;
+  }
+
+  override triggerHitFeedback(impactVel: Vector2D, archetype?: SpellArchetype): void {
+    super.triggerHitFeedback(impactVel, archetype);
+    this.lastHitAtMs = performance.now();
   }
 
   getLifeRatio(): number | null {

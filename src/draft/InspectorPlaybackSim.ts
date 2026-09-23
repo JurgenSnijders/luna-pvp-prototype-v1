@@ -10,6 +10,7 @@ import { FIELD_COLORS } from '../render/canvas/colors';
 import { RecordingBackend } from '../render/backends/RecordingBackend';
 import { ParticleSystem } from '../render/ParticleSystem';
 import { resolveRootTrajectory } from '../render/canvas/trajectoryTracer';
+import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { CombatLogger } from '../telemetry/CombatLogger';
 import type { AbilitySchema, ProjectileStyle } from '../types/schema';
 
@@ -214,10 +215,10 @@ function seedImpactsFromEvents(
 
   for (const impact of world.pendingWallImpacts) {
     activeImpacts.push({
-      x: impact.x,
-      y: impact.y,
+      x: impact.pos.x,
+      y: impact.pos.y,
       radius: 6,
-      color: defaultColor,
+      color: impact.archetype ? getArchetypeColor(impact.archetype) : defaultColor,
       age: 0,
     });
   }
