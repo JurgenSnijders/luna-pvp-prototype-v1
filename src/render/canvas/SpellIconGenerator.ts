@@ -5,8 +5,9 @@ import {
 import type { AbilitySchema, ProjectileStyle } from '../../types/schema';
 import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
 import { resolveIconTrajectoryPaths } from './trajectoryTracer';
-import { analyzeSpellIcon, createIconRng } from './spellIconAnalysis';
+import { analyzeSpellIcon, createIconRng, type SpellIconSpec } from './spellIconAnalysis';
 import { drawCornerHint, drawPayloadGlyph, drawPrimaryMark, drawSchemaFlight } from './spellIconMarks';
+import { drawTacticalSubstrate } from './spellIconSubstrate';
 
 export { getArchetypeColor } from './archetypeColors';
 
@@ -146,8 +147,7 @@ function drawIconTrajectoryNetwork(
   return { drew: true };
 }
 
-function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
-  const spec = analyzeSpellIcon(ability);
+function drawSemanticGlyph(ctx: CanvasRenderingContext2D, spec: SpellIconSpec): void {
   const rng = createIconRng(spec.seed);
   if (!drawSchemaFlight(ctx, spec)) {
     drawPrimaryMark(ctx, spec, rng);
@@ -155,8 +155,11 @@ function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema
   drawCornerHint(ctx, spec);
 }
 
-function drawSimulationTrace(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
-  const spec = analyzeSpellIcon(ability);
+function drawSimulationTrace(
+  ctx: CanvasRenderingContext2D,
+  ability: AbilitySchema,
+  spec: SpellIconSpec,
+): void {
   const network = drawIconTrajectoryNetwork(ctx, ability, spec.colors.primary, spec.style);
   if (!network.drew) {
     drawPrimaryMark(ctx, spec, createIconRng(spec.seed));
@@ -184,11 +187,14 @@ export function generateSpellIcon(
   const scale = sizePx / LOGICAL_SIZE;
   ctx.scale(dpr * scale, dpr * scale);
 
+  const analysis = analyzeSpellIcon(ability);
+  drawTacticalSubstrate(ctx, analysis, analysis.colors.primary, dpr);
+
   const style = forcedStyle ?? getIconRenderStyle();
   if (style === 'SIMULATION_TRACE') {
-    drawSimulationTrace(ctx, ability);
+    drawSimulationTrace(ctx, ability, analysis);
   } else {
-    drawSemanticGlyph(ctx, ability);
+    drawSemanticGlyph(ctx, analysis);
   }
 
   return canvas;

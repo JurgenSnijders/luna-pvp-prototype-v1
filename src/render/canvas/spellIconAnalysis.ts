@@ -21,6 +21,13 @@ import {
 
 export type IconRng = () => number;
 
+export type SubstratePatternFamily =
+  | 'BALLISTIC_GRID'
+  | 'POLAR_SONAR'
+  | 'ISOTHERM_CONTOURS'
+  | 'CIRCUIT_BUS'
+  | 'HEX_MATRIX';
+
 export type IconUtility = 'STASIS' | 'STEALTH' | 'MORPH' | 'STAT';
 
 export type IconMark =
@@ -55,6 +62,7 @@ export interface SpellIconSpec {
   colors: SpellIconColors;
   style: ProjectileStyle;
   family: ZoneVfxFamily;
+  patternFamily: SubstratePatternFamily;
   seed: number;
   rarity: CardRarity;
 }
@@ -153,6 +161,35 @@ function sameMark(a: IconMark, b: IconMark): boolean {
   return a.kind === b.kind;
 }
 
+export function resolveSubstratePatternFamily(archetype?: string): SubstratePatternFamily {
+  switch (archetype) {
+    case 'KINETIC':
+    case 'EARTH':
+      return 'BALLISTIC_GRID';
+    case 'AERO':
+    case 'GRAVITY':
+    case 'VOID':
+    case 'CHRONO':
+    case 'PHASE':
+      return 'POLAR_SONAR';
+    case 'FIRE':
+    case 'BLOOD':
+    case 'CHAOS':
+      return 'ISOTHERM_CONTOURS';
+    case 'PLASMA':
+    case 'LIGHTNING':
+    case 'MAGNETIC':
+    case 'SONIC':
+      return 'CIRCUIT_BUS';
+    case 'HOLY':
+    case 'ARCANE':
+    case 'NATURE':
+    case 'TOXIC':
+    default:
+      return 'HEX_MATRIX';
+  }
+}
+
 /** FNV-1a. Same spell id always yields the same icon variation. */
 export function hashIconSeed(id: string): number {
   let h = 2166136261;
@@ -244,6 +281,7 @@ export function analyzeSpellIcon(ability: AbilitySchema): SpellIconSpec {
     colors: { primary: primaryHex, secondary: secondaryHex },
     style,
     family: resolveZoneVfxFamily(archetype),
+    patternFamily: resolveSubstratePatternFamily(archetype),
     seed: hashIconSeed(ability.id),
     rarity: resolveSpellRarity(ability),
   };
