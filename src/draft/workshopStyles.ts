@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v32';
+export const STYLE_ID = 'luna-workshop-styles-v33';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -1641,33 +1641,20 @@ export function injectStyles(): void {
       cursor: grabbing;
     }
 
-    .tile-rarity-notch {
+    .tile-icon-wrap {
       position: absolute;
-      top: 0;
-      right: 0;
-      z-index: 3;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
       pointer-events: none;
-      font-family: ${FONTS.mono};
-      font-size: 11px;
-      line-height: 1;
-      padding: 2px 4px;
-      background: rgba(8, 12, 24, 0.92);
-      border-left: 1px solid #2a364a;
-      border-bottom: 1px solid #2a364a;
     }
 
-    .pip-common { color: #8a9bb8; }
-    .pip-rare { color: #00e5ff; }
-    .pip-epic { color: #bf00ff; }
-    .pip-chaotic { color: #ffd700; }
-
-    .tile-icon-wrap {
-      width: 56px;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: none;
+    .spell-grid-square .spell-tile canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      border-radius: inherit;
     }
 
     .tile-equipped-badge {
