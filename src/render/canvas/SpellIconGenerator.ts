@@ -6,8 +6,7 @@ import type { AbilitySchema, ProjectileStyle } from '../../types/schema';
 import { getIconRenderStyle, type IconRenderStyle } from '../gl/retroVfxConfig';
 import { resolveIconTrajectoryPaths } from './trajectoryTracer';
 import { analyzeSpellIcon, createIconRng } from './spellIconAnalysis';
-import { drawCornerHint, drawPayloadGlyph, drawPrimaryMark } from './spellIconMarks';
-import { drawFamilyMotif } from './spellIconMotifs';
+import { drawCornerHint, drawPayloadGlyph, drawPrimaryMark, drawSchemaFlight } from './spellIconMarks';
 
 export { getArchetypeColor } from './archetypeColors';
 
@@ -125,7 +124,7 @@ function drawIconTrajectoryNetwork(
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.shadowColor = archetypeColor;
-    ctx.shadowBlur = activeRaster.cheapGlow ? 0 : 4;
+    ctx.shadowBlur = 0;
     ctx.beginPath();
     ctx.moveTo(path.points[0].x, path.points[0].y);
     for (let i = 1; i < path.points.length; i++) {
@@ -150,8 +149,9 @@ function drawIconTrajectoryNetwork(
 function drawSemanticGlyph(ctx: CanvasRenderingContext2D, ability: AbilitySchema): void {
   const spec = analyzeSpellIcon(ability);
   const rng = createIconRng(spec.seed);
-  drawFamilyMotif(ctx, spec.family, spec.colors, rng);
-  drawPrimaryMark(ctx, spec, rng);
+  if (!drawSchemaFlight(ctx, spec)) {
+    drawPrimaryMark(ctx, spec, rng);
+  }
   drawCornerHint(ctx, spec);
 }
 

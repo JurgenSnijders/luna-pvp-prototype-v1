@@ -7,7 +7,11 @@ import type {
   SpellIconModifiers,
   SpellIconSpec,
 } from './spellIconAnalysis';
-import type { ProjectileStyle, TrajectoryType } from '../../types/schema';
+import type { EmitterConfig, ProjectileStyle, TrajectoryType } from '../../types/schema';
+import {
+  spreadAnglesForCastShot,
+  type CollectedCastProjectile,
+} from './trajectoryTracer';
 
 const CX = 24;
 const CY = 24;
@@ -30,9 +34,270 @@ function glowStroke(
 ): void {
   ctx.strokeStyle = color;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 6;
+  ctx.shadowBlur = 0;
   draw();
   ctx.shadowBlur = 0;
+}
+
+const FLIGHT_ORIGIN = { x: 12, y: 36 };
+const FLIGHT_TARGET = { x: 36, y: 12 };
+
+function scaleOrbitIconRadius(
+  orbitRadius: number,
+  orbitShots: CollectedCastProjectile[],
+): number {
+  if (orbitShots.length <= 1) return 14;
+  const maxR = Math.max(...orbitShots.map((s) => s.trajectory.orbitRadius ?? 100));
+  return ((orbitRadius ?? 100) / maxR) * 18;
+}
+
+function drawCasterCore(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(color, 0.85);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawSolidOrbBead(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  radius = 4,
+): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(color, 0.9);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawSpearhead(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  heading: number,
+  color: string,
+  length = 8,
+): void {
+  const ux = Math.cos(heading);
+  const uy = Math.sin(heading);
+  const px = -uy;
+  const py = ux;
+  const tipX = x + ux * length * 0.5;
+  const tipY = y + uy * length * 0.5;
+  const baseX = x - ux * length * 0.35;
+  const baseY = y - uy * length * 0.35;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(baseX + px * length * 0.28, baseY + py * length * 0.28);
+  ctx.lineTo(baseX - px * length * 0.28, baseY - py * length * 0.28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(color, 0.9);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawRuneSigilGlyph(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  heading: number,
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(heading);
+  const sq = 5;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.25;
+  ctx.strokeRect(-sq, -sq, sq * 2, sq * 2);
+  ctx.beginPath();
+  ctx.moveTo(0, -sq);
+  ctx.lineTo(sq, 0);
+  ctx.lineTo(0, sq);
+  ctx.lineTo(-sq, 0);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFlightEndpointGlyph(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  style: ProjectileStyle,
+  color: string,
+  heading: number,
+): void {
+  switch (style) {
+    case 'PULSING_ORB':
+      drawSolidOrbBead(ctx, x, y, color, 4);
+      break;
+    case 'RUNE_SIGIL':
+      drawRuneSigilGlyph(ctx, x, y, color, heading);
+      break;
+    case 'PLASMA_TENDRIL':
+      drawSpearhead(ctx, x, y, heading, color);
+      break;
+    default:
+      drawPayloadGlyph(ctx, x, y, style, color, 10, false, heading);
+      break;
+  }
+}
+
+function traceOpenFlightPath(
+  ctx: CanvasRenderingContext2D,
+  trajectoryType: TrajectoryType,
+  origin: { x: number; y: number },
+  target: { x: number; y: number },
+): number {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const heading = Math.atan2(dy, dx);
+  const mx = (origin.x + target.x) / 2;
+  const my = (origin.y + target.y) / 2;
+  const px = -Math.sin(heading);
+  const py = Math.cos(heading);
+
+  ctx.beginPath();
+  ctx.moveTo(origin.x, origin.y);
+  switch (trajectoryType) {
+    case 'HOMING_SLERP':
+      ctx.quadraticCurveTo(mx + px * 10, my + py * 10, target.x, target.y);
+      break;
+    case 'BALLISTIC_ARC':
+      ctx.quadraticCurveTo(mx, my - 14, target.x, target.y);
+      break;
+    default:
+      ctx.lineTo(target.x, target.y);
+      break;
+  }
+  ctx.stroke();
+  return heading;
+}
+
+function spreadEmitterAngles(emitter: EmitterConfig, baseAngle: number): number[] {
+  const count = Math.max(1, Math.min(12, emitter.count));
+  const spreadRad = (emitter.spreadDeg * Math.PI) / 180;
+  const aimOffsetRad = ((emitter.aimOffsetDeg ?? 0) * Math.PI) / 180;
+  const adjustedBase = baseAngle + aimOffsetRad;
+  const angles: number[] = [];
+  for (let i = 0; i < count; i++) {
+    let theta: number;
+    switch (emitter.distribution) {
+      case 'RADIAL':
+        theta = adjustedBase + (i * (Math.PI * 2)) / count;
+        break;
+      case 'RANDOM_CONE':
+        theta =
+          count === 1
+            ? adjustedBase
+            : adjustedBase + (i - (count - 1) / 2) * (spreadRad / Math.max(1, count - 1));
+        break;
+      case 'PARALLEL':
+        theta = adjustedBase;
+        break;
+      case 'FAN':
+      default:
+        if (count === 1) {
+          theta = adjustedBase;
+        } else {
+          theta = adjustedBase - spreadRad / 2 + i * (spreadRad / (count - 1));
+        }
+        break;
+    }
+    angles.push(theta);
+  }
+  return angles;
+}
+
+function drawSchemaOrbits(
+  ctx: CanvasRenderingContext2D,
+  orbitShots: CollectedCastProjectile[],
+  style: ProjectileStyle,
+  colors: SpellIconColors,
+): void {
+  drawCasterCore(ctx, colors.primary);
+  for (const shot of orbitShots) {
+    const radius = scaleOrbitIconRadius(shot.trajectory.orbitRadius ?? 100, orbitShots);
+    ctx.strokeStyle = hexToRgba(colors.primary, 0.75);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(CX, CY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const angles = spreadAnglesForCastShot(shot);
+    for (const angle of angles) {
+      const bx = CX + Math.cos(angle) * radius;
+      const by = CY + Math.sin(angle) * radius;
+      if (style === 'PULSING_ORB') {
+        drawSolidOrbBead(ctx, bx, by, colors.primary, 4);
+      } else {
+        drawPayloadGlyph(ctx, bx, by, style, colors.primary, 8, false, angle + Math.PI / 2);
+      }
+    }
+  }
+}
+
+function drawSchemaOpenShots(
+  ctx: CanvasRenderingContext2D,
+  openShots: CollectedCastProjectile[],
+  style: ProjectileStyle,
+  colors: SpellIconColors,
+): void {
+  const baseDx = FLIGHT_TARGET.x - FLIGHT_ORIGIN.x;
+  const baseDy = FLIGHT_TARGET.y - FLIGHT_ORIGIN.y;
+  const baseAngle = Math.atan2(baseDy, baseDx);
+  const baseLen = Math.hypot(baseDx, baseDy);
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  for (const shot of openShots) {
+    const emitter: EmitterConfig = { ...shot.emitter, aimOffsetDeg: shot.aimOffsetDeg };
+    const emitterAngles = spreadEmitterAngles(emitter, baseAngle);
+    for (const theta of emitterAngles) {
+      const origin = FLIGHT_ORIGIN;
+      const target = {
+        x: origin.x + Math.cos(theta) * baseLen,
+        y: origin.y + Math.sin(theta) * baseLen,
+      };
+
+      ctx.strokeStyle = hexToRgba(colors.primary, 0.8);
+      ctx.lineWidth = 2;
+      const heading = traceOpenFlightPath(ctx, shot.trajectory.type, origin, target);
+      drawFlightEndpointGlyph(ctx, target.x, target.y, style, colors.primary, heading);
+    }
+  }
+}
+
+/** Schema-faithful cast flight art. Returns true when cast shots were drawn. */
+export function drawSchemaFlight(
+  ctx: CanvasRenderingContext2D,
+  spec: SpellIconSpec,
+): boolean {
+  if (spec.castShots.length === 0) return false;
+
+  const orbitShots = spec.castShots.filter((s) => s.trajectory.type === 'ORBIT_ANCHOR');
+  const openShots = spec.castShots.filter((s) => s.trajectory.type !== 'ORBIT_ANCHOR');
+
+  ctx.save();
+  if (orbitShots.length > 0) {
+    drawSchemaOrbits(ctx, orbitShots, spec.style, spec.colors);
+  }
+  if (openShots.length > 0) {
+    drawSchemaOpenShots(ctx, openShots, spec.style, spec.colors);
+  }
+  ctx.restore();
+  return true;
 }
 
 export function drawPayloadGlyph(
@@ -43,6 +308,7 @@ export function drawPayloadGlyph(
   color: string,
   markerSize: number,
   withGlow = true,
+  heading = 0,
 ): void {
   const r = markerSize * 0.5;
   const s = markerSize * 0.8;
@@ -80,15 +346,7 @@ export function drawPayloadGlyph(
       });
       break;
     case 'PULSING_ORB':
-      stroke(() => {
-        ctx.lineWidth = 1.25;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x, y, r * 0.45, 0, Math.PI * 2);
-        ctx.stroke();
-      });
+      drawSolidOrbBead(ctx, x, y, color, Math.max(4, r * 0.85));
       break;
     case 'CHAOS_LIGHTNING':
       stroke(() => {
@@ -114,16 +372,7 @@ export function drawPayloadGlyph(
       });
       break;
     case 'RUNE_SIGIL':
-      stroke(() => {
-        ctx.lineWidth = 1.25;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.stroke();
-        const sq = r * 0.5;
-        ctx.beginPath();
-        ctx.rect(x - sq, y - sq, sq * 2, sq * 2);
-        ctx.stroke();
-      });
+      drawRuneSigilGlyph(ctx, x, y, color, heading);
       break;
     case 'VOID_RIFT':
       stroke(() => {
@@ -150,13 +399,7 @@ export function drawPayloadGlyph(
       });
       break;
     case 'PLASMA_TENDRIL':
-      stroke(() => {
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(x - s * 0.55, y + s * 0.15);
-        ctx.bezierCurveTo(x - s * 0.1, y - s * 0.45, x + s * 0.1, y + s * 0.45, x + s * 0.55, y - s * 0.15);
-        ctx.stroke();
-      });
+      drawSpearhead(ctx, x, y, heading, color, s);
       break;
     default:
       stroke(() => {
@@ -353,27 +596,24 @@ function drawBlink(ctx: CanvasRenderingContext2D, colors: SpellIconColors): void
   }
 }
 
-function drawOrbit(ctx: CanvasRenderingContext2D, style: ProjectileStyle, colors: SpellIconColors, rng: IconRng): void {
-  glowStroke(ctx, colors.primary, () => {
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(CX, CY, 12, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-  const count = 2 + Math.floor(rng() * 2);
-  const spin = rng() * Math.PI * 2;
-  for (let i = 0; i < count; i++) {
-    const a = spin + (Math.PI * 2 * i) / count;
-    drawPayloadGlyph(
-      ctx,
-      CX + Math.cos(a) * 12,
-      CY + Math.sin(a) * 12,
-      style,
-      colors.secondary,
-      7,
-      false,
-    );
+function drawOrbit(
+  ctx: CanvasRenderingContext2D,
+  style: ProjectileStyle,
+  colors: SpellIconColors,
+  _rng: IconRng,
+  orbitShots: CollectedCastProjectile[],
+): void {
+  if (orbitShots.length > 0) {
+    drawSchemaOrbits(ctx, orbitShots, style, colors);
+    return;
   }
+  ctx.strokeStyle = hexToRgba(colors.primary, 0.75);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  drawCasterCore(ctx, colors.primary);
+  drawSolidOrbBead(ctx, CX + 14, CY, colors.primary, 4);
 }
 
 function drawProjectile(
@@ -381,57 +621,23 @@ function drawProjectile(
   style: ProjectileStyle,
   colors: SpellIconColors,
   modifiers: SpellIconModifiers,
+  trajectoryType: TrajectoryType = 'LINEAR',
 ): void {
-  const tail = { x: 12, y: 34 };
-  const head = { x: 32, y: 16 };
-  const dx = head.x - tail.x;
-  const dy = head.y - tail.y;
-  const len = Math.hypot(dx, dy);
-  const ux = dx / len;
-  const uy = dy / len;
-  const px = -uy;
-  const py = ux;
-
   ctx.lineCap = 'round';
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = hexToRgba(colors.primary, 0.55);
-  ctx.beginPath();
-  ctx.moveTo(tail.x, tail.y);
-  if (modifiers.bounce) {
-    const mx = (tail.x + head.x) / 2 + px * 6;
-    const my = (tail.y + head.y) / 2 + py * 6;
-    ctx.lineTo(mx, my);
-  }
-  ctx.lineTo(head.x - ux * 6, head.y - uy * 6);
-  ctx.stroke();
+  ctx.strokeStyle = hexToRgba(colors.primary, 0.8);
+  ctx.lineWidth = 2;
+  const heading = traceOpenFlightPath(ctx, trajectoryType, FLIGHT_ORIGIN, FLIGHT_TARGET);
+  drawFlightEndpointGlyph(ctx, FLIGHT_TARGET.x, FLIGHT_TARGET.y, style, colors.primary, heading);
 
-  const count = modifiers.count;
-  const spread = count === 1 ? 0 : 7;
-  for (let i = 0; i < count; i++) {
-    const offset = (i - (count - 1) / 2) * (spread / Math.max(1, count - 1));
-    const gx = head.x + px * offset;
-    const gy = head.y + py * offset;
-    if (modifiers.pierce) {
-      ctx.strokeStyle = hexToRgba(colors.secondary, 0.8);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(gx - ux * 8, gy - uy * 8);
-      ctx.lineTo(gx + ux * 8, gy + uy * 8);
-      ctx.stroke();
-    }
-    drawPayloadGlyph(ctx, gx, gy, style, colors.primary, 11, true);
-  }
-
-  if (modifiers.child) {
-    drawPayloadGlyph(
-      ctx,
-      head.x + ux * 8,
-      head.y + uy * 8,
-      style,
-      colors.secondary,
-      6,
-      false,
-    );
+  if (modifiers.pierce) {
+    const ux = Math.cos(heading);
+    const uy = Math.sin(heading);
+    ctx.strokeStyle = hexToRgba(colors.secondary, 0.8);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(FLIGHT_TARGET.x - ux * 8, FLIGHT_TARGET.y - uy * 8);
+    ctx.lineTo(FLIGHT_TARGET.x + ux * 8, FLIGHT_TARGET.y + uy * 8);
+    ctx.stroke();
   }
 }
 
@@ -497,6 +703,8 @@ function drawMark(
   style: ProjectileStyle,
   tilt: number,
   rng: IconRng,
+  castShots: CollectedCastProjectile[] = [],
+  trajectoryType?: TrajectoryType,
 ): void {
   ctx.save();
   if (mark.kind !== 'OBSTACLE' && mark.kind !== 'ACTOR') {
@@ -521,10 +729,16 @@ function drawMark(
       drawBlink(ctx, colors);
       break;
     case 'ORBIT':
-      drawOrbit(ctx, style, colors, rng);
+      drawOrbit(
+        ctx,
+        style,
+        colors,
+        rng,
+        castShots.filter((s) => s.trajectory.type === 'ORBIT_ANCHOR'),
+      );
       break;
     case 'PROJECTILE':
-      drawProjectile(ctx, mark.style, colors, modifiers);
+      drawProjectile(ctx, mark.style, colors, modifiers, trajectoryType ?? 'LINEAR');
       break;
     case 'TERRAIN':
       drawTerrain(ctx, colors);
@@ -542,7 +756,17 @@ export function drawPrimaryMark(
   rng: IconRng,
 ): void {
   const tilt = (rng() * 2 - 1) * TILT;
-  drawMark(ctx, spec.primary, spec.colors, spec.modifiers, spec.style, tilt, rng);
+  drawMark(
+    ctx,
+    spec.primary,
+    spec.colors,
+    spec.modifiers,
+    spec.style,
+    tilt,
+    rng,
+    spec.castShots,
+    spec.castShots[0]?.trajectory.type ?? spec.path,
+  );
 }
 
 function drawPathHint(ctx: CanvasRenderingContext2D, path: TrajectoryType): void {
@@ -578,6 +802,7 @@ function drawPathHint(ctx: CanvasRenderingContext2D, path: TrajectoryType): void
 
 /** Travel hint, or a small copy of the secondary mechanic when the spell does not travel. */
 export function drawCornerHint(ctx: CanvasRenderingContext2D, spec: SpellIconSpec): void {
+  if (spec.castShots.length > 0) return;
   ctx.save();
   ctx.globalAlpha *= 0.7;
   if (spec.path) {

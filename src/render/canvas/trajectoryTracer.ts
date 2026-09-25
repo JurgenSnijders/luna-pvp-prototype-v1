@@ -278,6 +278,49 @@ export function collectGroundImpactFieldRadii(ability: AbilitySchema): number[] 
   return radii;
 }
 
+export interface CollectedCastProjectile {
+  trajectory: TrajectoryConfig;
+  emitter: EmitterConfig;
+  aimOffsetDeg: number;
+}
+
+/** Root trajectory plus every top-level ON_CAST SPAWN_PROJECTILE (not nested sub-munitions). */
+export function collectAllCastProjectiles(ability: AbilitySchema): CollectedCastProjectile[] {
+  const results: CollectedCastProjectile[] = [];
+
+  if (ability.trajectory) {
+    results.push({
+      trajectory: ability.trajectory,
+      emitter: DEFAULT_EMITTER,
+      aimOffsetDeg: 0,
+    });
+  }
+
+  const castTrigger = ability.triggers?.find((t) => t.trigger === 'ON_CAST');
+  if (castTrigger?.actions) {
+    for (const action of castTrigger.actions) {
+      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
+        results.push({
+          trajectory: action.projectileTrajectory,
+          emitter: action.emitter ?? DEFAULT_EMITTER,
+          aimOffsetDeg: action.emitter?.aimOffsetDeg ?? 0,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+export function spreadAnglesForCastShot(shot: CollectedCastProjectile): number[] {
+  const baseAngle = shot.trajectory.type === 'ORBIT_ANCHOR' ? 0 : -Math.PI / 4;
+  const emitter: EmitterConfig = {
+    ...shot.emitter,
+    aimOffsetDeg: shot.aimOffsetDeg,
+  };
+  return computeSpreadAngles(emitter, baseAngle);
+}
+
 function findOnCastProjectileConfig(ability: AbilitySchema): LiveCastConfig | null {
   for (const triggerNode of ability.triggers ?? []) {
     if (triggerNode.trigger !== 'ON_CAST') continue;
@@ -690,16 +733,28 @@ export function resolveIconTrajectoryPaths(
     trajectoryType: 'LINEAR',
   };
 
-  const config = resolveLiveCastConfig(ability);
-  if (!config) return emptyResult;
+  const shots = collectAllCastProjectiles(ability);
+  if (shots.length === 0) return emptyResult;
 
-  const canonicalAngle =
-    config.trajectory.type === 'ORBIT_ANCHOR' ? 0 : -Math.PI / 4;
   const originPt = { x: 0, y: 0 };
-  const angles = computeSpreadAngles(config.emitter, canonicalAngle);
-  const rawPaths = angles.map((theta) =>
-    buildPredictivePath(config.trajectory, originPt, theta, 0, 0),
-  );
+  const rawPaths: PredictivePath[] = [];
+  const rawBeads: Point[] = [];
+
+  for (const shot of shots) {
+    const angles = spreadAnglesForCastShot(shot);
+    for (const theta of angles) {
+      const path = buildPredictivePath(shot.trajectory, originPt, theta, 0, 0);
+      rawPaths.push(path);
+      if (path.isClosed && shot.trajectory.type === 'ORBIT_ANCHOR') {
+        const radius = shot.trajectory.orbitRadius ?? 100;
+        rawBeads.push({
+          x: Math.cos(theta) * radius,
+          y: Math.sin(theta) * radius,
+        });
+      }
+    }
+  }
+
   if (rawPaths.length === 0) return emptyResult;
 
   let minX = 0;
@@ -715,6 +770,12 @@ export function resolveIconTrajectoryPaths(
       maxY = Math.max(maxY, p.y);
     }
   }
+  for (const bead of rawBeads) {
+    minX = Math.min(minX, bead.x);
+    minY = Math.min(minY, bead.y);
+    maxX = Math.max(maxX, bead.x);
+    maxY = Math.max(maxY, bead.y);
+  }
 
   const boxW = Math.max(maxX - minX, 1);
   const boxH = Math.max(maxY - minY, 1);
@@ -729,17 +790,21 @@ export function resolveIconTrajectoryPaths(
   }));
 
   const origin = mapIconPoint({ x: 0, y: 0 }, scale, offsetX, offsetY);
-  const endpoints: Point[] = [];
+  const endpoints: Point[] = rawBeads.map((bead) =>
+    mapIconPoint(bead, scale, offsetX, offsetY),
+  );
   for (const path of paths) {
     if (path.isClosed || path.points.length === 0) continue;
     endpoints.push(path.points[path.points.length - 1]);
   }
 
+  const primaryType = shots[0].trajectory.type;
+
   return {
     origin,
     paths,
     endpoints,
-    trajectoryType: config.trajectory.type,
+    trajectoryType: primaryType,
   };
 }
 

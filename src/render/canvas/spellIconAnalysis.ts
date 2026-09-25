@@ -14,6 +14,10 @@ import type {
 import { hexToRgb, mixTowardWhite, rgbToHex } from './glowDisc';
 import { getArchetypeColor } from './archetypeColors';
 import { resolveZoneVfxFamily, type ZoneVfxFamily } from '../zoneVfx';
+import {
+  collectAllCastProjectiles,
+  type CollectedCastProjectile,
+} from './trajectoryTracer';
 
 export type IconRng = () => number;
 
@@ -46,6 +50,7 @@ export interface SpellIconSpec {
   primary: IconMark;
   secondary?: IconMark;
   path?: TrajectoryType;
+  castShots: CollectedCastProjectile[];
   modifiers: SpellIconModifiers;
   colors: SpellIconColors;
   style: ProjectileStyle;
@@ -171,6 +176,7 @@ export function createIconRng(seed: number): IconRng {
 export function analyzeSpellIcon(ability: AbilitySchema): SpellIconSpec {
   const archetype = ability.archetype ?? 'KINETIC';
   const style = ability.visuals?.projectileStyle ?? 'DISC';
+  const castShots = collectAllCastProjectiles(ability);
   const trajectory = resolveIconTrajectory(ability);
   const marks: IconMark[] = [];
 
@@ -196,15 +202,15 @@ export function analyzeSpellIcon(ability: AbilitySchema): SpellIconSpec {
   const primary: IconMark = marks[0] ?? { kind: 'UTILITY', utility: 'STAT' };
   const secondary = marks.find((mark) => mark.kind !== primary.kind);
 
-  const pathHidden = primary.kind === 'BLINK' || primary.kind === 'ORBIT';
+  const pathHidden =
+    castShots.length > 0 ||
+    primary.kind === 'BLINK' ||
+    primary.kind === 'ORBIT';
   const path = trajectory && !pathHidden ? trajectory.type : undefined;
 
-  let count = 1;
+  const count = castShots.reduce((sum, shot) => sum + shot.emitter.count, 0);
   let child = false;
   walkTriggers(ability.triggers ?? [], (node, action) => {
-    if (action.type === 'SPAWN_PROJECTILE' && action.emitter) {
-      count = Math.max(count, action.emitter.count);
-    }
     if (action.type === 'CAST_CHILD_PAYLOAD') child = true;
     if (
       (node.trigger === 'ON_HIT' || node.trigger === 'ON_EXPIRY') &&
@@ -222,14 +228,17 @@ export function analyzeSpellIcon(ability: AbilitySchema): SpellIconSpec {
   const secondaryHex =
     authoredSecondary ?? rgbToHex(mixTowardWhite(hexToRgb(primaryHex), 0.45));
 
+  const pierceTrajectory = castShots[0]?.trajectory ?? trajectory;
+
   return {
     primary,
     secondary,
     path,
+    castShots,
     modifiers: {
-      count: Math.max(1, Math.min(5, count)),
-      pierce: (trajectory?.piercing ?? 0) > 0,
-      bounce: (trajectory?.bounces ?? 0) > 0,
+      count: Math.max(1, count),
+      pierce: (pierceTrajectory?.piercing ?? 0) > 0,
+      bounce: (pierceTrajectory?.bounces ?? 0) > 0,
       child,
     },
     colors: { primary: primaryHex, secondary: secondaryHex },
