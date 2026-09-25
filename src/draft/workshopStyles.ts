@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v31';
+export const STYLE_ID = 'luna-workshop-styles-v32';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -914,7 +914,18 @@ export function injectStyles(): void {
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
       transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
       position: relative;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .forge-card-redesign.forge-card-discarded {
       cursor: pointer;
+    }
+
+    .forge-card-redesign.is-dragging {
+      opacity: 0.55;
+      cursor: grabbing;
     }
 
     .forge-card-redesign:hover {
@@ -1423,6 +1434,13 @@ export function injectStyles(): void {
       color: var(--retro-neon-magenta);
       text-align: center;
       letter-spacing: 0.5px;
+    }
+
+    .forge-claim-btn,
+    .forge-card-footer button {
+      user-select: auto;
+      touch-action: auto;
+      cursor: pointer;
     }
 
     .forge-claim-btn {

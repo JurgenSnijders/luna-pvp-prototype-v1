@@ -19,7 +19,8 @@
     "test:invariants": "tsx scripts/test-physics-invariants.ts",
     "test:fidelity": "tsx scripts/test-synthesizer-fidelity.ts",
     "test:telemetry": "tsx scripts/test-combat-logger.ts",
-    "test:combat-profile": "tsx scripts/test-combat-profile.ts"
+    "test:combat-profile": "tsx scripts/test-combat-profile.ts",
+    "test:spell-drag": "tsx scripts/test-spell-drag.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

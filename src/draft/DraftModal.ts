@@ -91,10 +91,11 @@ import {
 } from '../game/spellRoles';
 import {
   attachDockSlotDrag,
-  attachForgeCardDrag,
+  attachForgeCardPointerDrag,
   attachInventoryDropZone,
   attachVaultCardDrag,
-  readForgeCardDrag,
+  LOADOUT_DROP_PRIORITY,
+  registerSlotDropZone,
 } from '../game/spellDragDrop';
 import { generateSpellIcon, getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import { clampSchemaValues } from '../ai/budget/balance';
@@ -1834,7 +1835,8 @@ export class DraftModal {
         });
       }
 
-      attachInventoryDropZone(slot, key, (e) => this.handleForgeCardDrop(key, e));
+      attachInventoryDropZone(slot, key);
+      registerSlotDropZone(slot, key, LOADOUT_DROP_PRIORITY);
       this.bottomLoadoutBay.appendChild(slot);
     }
   }
@@ -2134,22 +2136,19 @@ export class DraftModal {
     }
   }
 
-  private handleForgeCardDrop(targetSlot: ActionSlotKey, event: DragEvent): void {
+  private handleForgeCardDrop(targetSlot: ActionSlotKey, cardIndex: number): void {
     if (!this.forgeVaultPickerActive) return;
 
-    const payload = readForgeCardDrag(event);
-    if (!payload) return;
-
-    const slotCard = this.activeForgeCardSlots?.[payload.cardIndex]?.card ?? null;
-    const card = slotCard ?? this.getForgePickerCard(payload.cardIndex);
+    const slotCard = this.activeForgeCardSlots?.[cardIndex]?.card ?? null;
+    const card = slotCard ?? this.getForgePickerCard(cardIndex);
     if (!card?.abilityPayload) return;
 
-    if (this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== payload.cardIndex) {
+    if (this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex) {
       return;
     }
 
     if (this.vaultSavedCardIndex === null) {
-      this.saveCardToVault(card, payload.cardIndex);
+      this.saveCardToVault(card, cardIndex);
     }
 
     const spellId = card.abilityPayload?.id;
@@ -2956,7 +2955,7 @@ export class DraftModal {
     mutationSlotEl.className = 'forge-card-mutation-slot';
 
     const glyphFrameEl = document.createElement('div');
-    glyphFrameEl.className = 'forge-card-glyph-frame forge-card-drag-handle is-streaming';
+    glyphFrameEl.className = 'forge-card-glyph-frame is-streaming';
 
     const info = document.createElement('div');
     info.className = 'forge-card-info';
@@ -3032,6 +3031,21 @@ export class DraftModal {
     const repulseVal = repulseItem.querySelector('.telemetry-v');
     const instabilityVal = instabilityItem.querySelector('.telemetry-v');
     const deliveryVal = deliveryItem.querySelector('.telemetry-v');
+
+    attachForgeCardPointerDrag(root, {
+      cardIndex,
+      canStartDrag: () => {
+        const slot = this.activeForgeCardSlots?.[cardIndex];
+        if (!slot?.isSealed) return false;
+        if (this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex) {
+          return false;
+        }
+        return true;
+      },
+      onDrop: (slotKey, droppedCardIndex) => {
+        this.handleForgeCardDrop(slotKey, droppedCardIndex);
+      },
+    });
 
     return {
       cardEl: root,
@@ -3403,12 +3417,6 @@ export class DraftModal {
         : '[CLEAN HIT] Pure Kinetic Force';
 
     this.renderForgeEquippedComparison(slot, card);
-
-    const anotherSaved =
-      this.vaultSavedCardIndex !== null && this.vaultSavedCardIndex !== cardIndex;
-    if (!anotherSaved) {
-      attachForgeCardDrag(slot.glyphFrameEl, cardIndex);
-    }
 
     this.renderForgeCardFooter(slot, cardIndex);
     this.bindForgeCardInteraction(slot);

@@ -9,7 +9,13 @@ import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
 import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
 import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
-import { attachHudSlotDrag, attachInventoryDropZone } from '../game/spellDragDrop';
+import {
+  attachHudSlotDrag,
+  attachInventoryDropZone,
+  HUD_DROP_PRIORITY,
+  registerSlotDropZone,
+  unregisterSlotDropZone,
+} from '../game/spellDragDrop';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   buildSpellTooltipStats,
@@ -190,6 +196,7 @@ export class ActionBarHUD {
   private cachedPlayerRef: Player | null = null;
   private aimingSlotIndex: number | null = null;
   private laptopModeEnabled = false;
+  private hudDropZonesRegistered = false;
 
   constructor(private callbacks: ActionBarHUDCallbacks) {
     injectStyles();
@@ -226,6 +233,7 @@ export class ActionBarHUD {
     document.body.appendChild(this.tooltipEl);
 
     document.body.appendChild(this.root);
+    this.registerHudDropZones();
 
     window.addEventListener('iconstylechanged', () => {
       for (const slot of this.slots) {
@@ -266,10 +274,28 @@ export class ActionBarHUD {
 
   suppress(): void {
     this.root.classList.add('hud-suppressed');
+    this.unregisterHudDropZones();
   }
 
   restore(): void {
     this.root.classList.remove('hud-suppressed');
+    this.registerHudDropZones();
+  }
+
+  private registerHudDropZones(): void {
+    if (this.hudDropZonesRegistered) return;
+    for (const slot of this.slots) {
+      registerSlotDropZone(slot.root, slot.slotKey, HUD_DROP_PRIORITY);
+    }
+    this.hudDropZonesRegistered = true;
+  }
+
+  private unregisterHudDropZones(): void {
+    if (!this.hudDropZonesRegistered) return;
+    for (const slot of this.slots) {
+      unregisterSlotDropZone(slot.root);
+    }
+    this.hudDropZonesRegistered = false;
   }
 
   private injectSuppressionStyles(): void {
