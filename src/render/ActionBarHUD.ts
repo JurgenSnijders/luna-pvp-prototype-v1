@@ -162,18 +162,18 @@ function formatAbilityTooltip(
         <span class="ab-lbl">DAMAGE</span>
       </div>`);
   }
-  if (stats.heal > 0) {
-    impactRows.push(`
-      <div class="ab-stat-row">
-        <span class="ab-val ab-val-heal">${stats.heal}</span>
-        <span class="ab-lbl">HEAL</span>
-      </div>`);
-  }
   if (profile.instabilityYield > 0) {
     impactRows.push(`
       <div class="ab-stat-row">
         <span class="ab-val ab-val-vuln">+${profile.instabilityYield}%</span>
         <span class="ab-lbl">VULNERABILITY</span>
+      </div>`);
+  }
+  if (stats.heal > 0) {
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-heal">${stats.heal}</span>
+        <span class="ab-lbl">HEAL</span>
       </div>`);
   }
   if (stats.burn) {
