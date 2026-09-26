@@ -172,7 +172,7 @@ function formatAbilityTooltip(
   if (stats.heal > 0) {
     impactRows.push(`
       <div class="ab-stat-row">
-        <span class="ab-val ab-val-heal">${stats.heal}</span>
+        <span class="ab-val ab-val-heal">+${stats.heal}</span>
         <span class="ab-lbl">HEAL</span>
       </div>`);
   }
