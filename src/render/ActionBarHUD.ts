@@ -5,7 +5,7 @@ import {
   parryShieldStaminaRatio,
 } from '../engine/PhysicsWorld';
 import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../types/cards';
-import { validateAbilitySchema } from '../types/schema';
+import { validateAbilitySchema, walkActions } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
 import { FONTS } from '../ui/tokens';
 import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
@@ -147,6 +147,17 @@ function formatAbilityTooltip(
     ? `<div class="ab-tooltip-desc">${escapeHtml(description)}</div>`
     : '';
 
+  let targetDrainVal = 0;
+  walkActions(ability, (v) => {
+    if (!v.isPrimary) return;
+    const action = v.action;
+    if (action.type !== 'MODIFY_STAT') return;
+    if (action.stat !== 'health' || action.mode !== 'add' || action.value >= 0) return;
+    if (action.target === 'CASTER' || action.target === 'SELF') return;
+    targetDrainVal += Math.abs(action.value);
+  });
+  targetDrainVal = Math.round(targetDrainVal);
+
   const impactRows: string[] = [];
   if (disp.peakForce > 0) {
     impactRows.push(`
@@ -155,7 +166,7 @@ function formatAbilityTooltip(
         <span class="ab-lbl">KNOCKBACK</span>
         <span class="ab-lethality-badge">${escapeHtml(disp.lethality.label)}</span>
       </div>`);
-  } else if (stats.directDamage > 0) {
+  } else if (stats.directDamage > 0 && targetDrainVal === 0) {
     impactRows.push(`
       <div class="ab-stat-row">
         <span class="ab-val ab-val-dmg">${stats.directDamage}</span>
@@ -174,6 +185,14 @@ function formatAbilityTooltip(
       <div class="ab-stat-row">
         <span class="ab-val ab-val-heal">+${stats.heal}</span>
         <span class="ab-lbl">HEAL</span>
+      </div>`);
+  }
+  if (targetDrainVal > 0) {
+    const drainLabel = stats.heal > 0 ? 'DRAIN' : 'DAMAGE';
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-dmg">-${targetDrainVal}</span>
+        <span class="ab-lbl">${drainLabel}</span>
       </div>`);
   }
   if (stats.burn) {
