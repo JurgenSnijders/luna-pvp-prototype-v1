@@ -7,7 +7,7 @@ import {
 import { ACTION_SLOT_KEYS, type ActionSlotKey } from '../types/cards';
 import { validateAbilitySchema } from '../types/schema';
 import type { AbilitySchema } from '../types/schema';
-import { FONTS, RETRO_COLORS, RETRO_GLOW } from '../ui/tokens';
+import { FONTS } from '../ui/tokens';
 import { injectStyles, showQuickEquipMenu } from '../draft/workshopStyles';
 import {
   attachHudSlotDrag,
@@ -96,19 +96,24 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-const TOOLTIP_VALUE_COLOR = '#e2e8f0';
-const TOOLTIP_HEAL_COLOR = '#4ade80';
-const TOOLTIP_BURN_COLOR = '#fb923c';
-
 function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function tooltipStat(value: string, label: string, valueColor = TOOLTIP_VALUE_COLOR): string {
-  const labelHtml = label
-    ? ` <span style="color:${RETRO_COLORS.textMuted};">${escapeHtml(label)}</span>`
-    : '';
-  return `<span style="white-space:nowrap;"><span style="color:${valueColor}; font-weight:700;">${escapeHtml(value)}</span>${labelHtml}</span>`;
+export function getSpeedReactionTier(speed?: number, trajectoryType?: string): string {
+  if (
+    !speed ||
+    speed <= 0 ||
+    trajectoryType === 'HITSCAN' ||
+    trajectoryType === 'BEAM' ||
+    trajectoryType === 'INSTANT'
+  ) {
+    return 'INSTANT';
+  }
+  if (speed < 200) return 'VERY SLOW';
+  if (speed < 420) return 'SLOW';
+  if (speed < 700) return 'MEDIUM';
+  return 'FAST';
 }
 
 function formatAbilityTooltip(
@@ -120,70 +125,98 @@ function formatAbilityTooltip(
   const profile = computeSpellCombatProfile(ability);
   const stats = buildSpellTooltipStats(ability, profile);
   const disp = profile.displacement;
-  const archetypeLabel = profile.archetype.replace(/_/g, ' ');
+  const delivery = profile.delivery;
+  const archetypeLabel = profile.archetype.replace(/_/g, ' ').toUpperCase();
   const description = ability.description || ability.tagline;
-  const separator = `<span style="color:${RETRO_COLORS.textMuted};"> · </span>`;
+  const cadenceText = formatProfileCadence(profile);
 
-  const hitLines: string[] = [];
+  const header = `
+    <div class="ab-tooltip-header">
+      <div class="ab-tooltip-title-row">
+        <span class="ab-tooltip-title" style="color:${archetypeColor};">${escapeHtml(ability.name)}</span>
+        <span class="ab-tooltip-badge" style="color:${keyColor}; border-color:${keyColor}66; background:${keyColor}26;">${slotKey}</span>
+      </div>
+      <div class="ab-tooltip-subhead">
+        <span class="ab-tooltip-archetype">${escapeHtml(archetypeLabel)}</span>
+        <span> • </span>
+        <span class="ab-tooltip-cadence">${escapeHtml(cadenceText)}</span>
+      </div>
+    </div>`;
+
+  const descBlock = description
+    ? `<div class="ab-tooltip-desc">${escapeHtml(description)}</div>`
+    : '';
+
+  const impactRows: string[] = [];
   if (disp.peakForce > 0) {
-    hitLines.push(
-      `<div style="display:flex; gap:10px; flex-wrap:wrap;">${tooltipStat(String(disp.peakForce), 'FORCE')}<span style="color:${archetypeColor}; font-weight:700;">${escapeHtml(disp.lethality.label)}</span></div>`,
-    );
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-knockback">${disp.peakForce}</span>
+        <span class="ab-lbl">KNOCKBACK</span>
+        <span class="ab-lethality-badge">${escapeHtml(disp.lethality.label)}</span>
+      </div>`);
   } else if (stats.directDamage > 0) {
-    hitLines.push(`<div>${tooltipStat(String(stats.directDamage), 'DMG')}</div>`);
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-dmg">${stats.directDamage}</span>
+        <span class="ab-lbl">DAMAGE</span>
+      </div>`);
+  }
+  if (stats.heal > 0) {
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-heal">${stats.heal}</span>
+        <span class="ab-lbl">HEAL</span>
+      </div>`);
   }
   if (profile.instabilityYield > 0) {
-    hitLines.push(`<div>${tooltipStat(`+${profile.instabilityYield}%`, 'Instability')}</div>`);
-  }
-
-  const delivery = profile.delivery;
-  const deliveryParts: string[] = [];
-  if (delivery.shotCount > 1) deliveryParts.push(tooltipStat(`x${delivery.shotCount}`, ''));
-  if (delivery.range > 0) deliveryParts.push(tooltipStat(String(delivery.range), 'range'));
-  if (delivery.speed > 0) deliveryParts.push(tooltipStat(`${delivery.speed}/s`, ''));
-  if (stats.durationMs !== null) deliveryParts.push(tooltipStat(formatSeconds(stats.durationMs), ''));
-
-  const effectParts: string[] = [];
-  if (stats.heal > 0) {
-    effectParts.push(
-      `<span style="white-space:nowrap;"><span style="color:${RETRO_COLORS.textMuted};">Heal</span> <span style="color:${TOOLTIP_HEAL_COLOR}; font-weight:700;">${stats.heal}</span></span>`,
-    );
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-vuln">+${profile.instabilityYield}%</span>
+        <span class="ab-lbl">VULNERABILITY</span>
+      </div>`);
   }
   if (stats.burn) {
-    const stacks = stats.burn.stacks > 1 ? ` x${stats.burn.stacks}` : '';
-    effectParts.push(
-      `<span style="white-space:nowrap;"><span style="color:${RETRO_COLORS.textMuted};">Burn</span> <span style="color:${TOOLTIP_BURN_COLOR}; font-weight:700;">${formatSeconds(stats.burn.durationMs)}${stacks}</span></span>`,
-    );
+    const stacks =
+      stats.burn.stacks > 1
+        ? `<span class="ab-lbl">x${stats.burn.stacks}</span>`
+        : '';
+    impactRows.push(`
+      <div class="ab-stat-row">
+        <span class="ab-val ab-val-burn">BURN ${formatSeconds(stats.burn.durationMs)}</span>
+        ${stacks}
+      </div>`);
   }
+  const impactBlock =
+    impactRows.length > 0 ? `<div class="ab-tooltip-impact">${impactRows.join('')}</div>` : '';
 
-  const hitBlock =
-    hitLines.length > 0
-      ? `<div style="font-size:${FONTS.size.body}; line-height:1.4; margin-bottom:8px;">${hitLines.join('')}</div>`
-      : '';
-  const deliveryRow =
-    deliveryParts.length > 0
-      ? `<div style="font-size:${FONTS.size.body}; margin-bottom:2px;">${deliveryParts.join(separator)}</div>`
-      : '';
-  const effectsRow =
-    effectParts.length > 0
-      ? `<div style="display:flex; gap:14px; flex-wrap:wrap; font-size:${FONTS.size.body};">${effectParts.join('')}</div>`
-      : '';
-  const detailBlock =
-    deliveryRow || effectsRow ? `<div style="margin-bottom:8px;">${deliveryRow}${effectsRow}</div>` : '';
+  const specCells: string[] = [];
+  if (delivery.shotCount > 1) {
+    specCells.push(`
+      <div class="ab-spec-cell">
+        <span class="ab-spec-val">x${delivery.shotCount}</span>
+        <span class="ab-spec-lbl">SHOTS</span>
+      </div>`);
+  }
+  if (delivery.range > 0) {
+    specCells.push(`
+      <div class="ab-spec-cell">
+        <span class="ab-spec-val">${delivery.range}</span>
+        <span class="ab-spec-lbl">RANGE</span>
+      </div>`);
+  }
+  if (delivery.speed > 0) {
+    const speedTier = getSpeedReactionTier(delivery.speed, delivery.trajectoryType);
+    specCells.push(`
+      <div class="ab-spec-cell">
+        <span class="ab-spec-val">${speedTier}</span>
+        <span class="ab-spec-lbl">SPEED</span>
+      </div>`);
+  }
+  const specsBlock =
+    specCells.length > 0 ? `<div class="ab-tooltip-specs">${specCells.join('')}</div>` : '';
 
-  return `
-    <div style="font-family:${FONTS.mono};">
-    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:2px;">
-      <span style="font-weight:700; font-size:${FONTS.size.md}; color:${archetypeColor};">${escapeHtml(ability.name)}</span>
-      <span style="flex-shrink:0; font-size:${FONTS.size.badge}; font-weight:700; padding:1px 5px; border-radius:4px; background:${keyColor}22; color:${keyColor};">${slotKey}</span>
-    </div>
-    <div style="font-size:${FONTS.size.badge}; font-weight:700; color:${archetypeColor}; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${escapeHtml(archetypeLabel)}</div>
-    ${description ? `<div style="font-size:${FONTS.size.body}; color:#aaa; line-height:1.3; margin-bottom:8px;">${escapeHtml(description)}</div>` : ''}
-    ${hitBlock}
-    ${detailBlock}
-    <div style="font-size:${FONTS.size.badge}; color:${RETRO_COLORS.textMuted};">${escapeHtml(formatProfileCadence(profile))}</div>
-    </div>
-  `;
+  return `${header}${descBlock}${impactBlock}${specsBlock}`;
 }
 
 export class ActionBarHUD {
@@ -220,15 +253,10 @@ export class ActionBarHUD {
     }
 
     this.tooltipEl = document.createElement('div');
+    this.tooltipEl.className = 'ab-tooltip-card';
     this.tooltipEl.style.cssText = `
       position: fixed; display: none; pointer-events: none; z-index: 10050;
-      width: 250px; background: ${RETRO_COLORS.panelBg};
-      border: 1px solid ${RETRO_COLORS.borderSubtle}; border-radius: 4px;
-      padding: 10px 12px;
-      box-shadow: ${RETRO_GLOW.boxCyan};
-      backdrop-filter: blur(8px); font-family: ${FONTS.mono};
-      color: ${RETRO_COLORS.textPrimary}; font-size: ${FONTS.size.body}; line-height: 1.4; opacity: 0;
-      transition: opacity 0.15s ease, transform 0.15s ease;
+      opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease;
     `;
     document.body.appendChild(this.tooltipEl);
 
@@ -616,7 +644,7 @@ export class ActionBarHUD {
 
   private updateTooltipPosition(slotIndex: number): void {
     const rect = this.slots[slotIndex].root.getBoundingClientRect();
-    const tooltipWidth = 250;
+    const tooltipWidth = this.tooltipEl.offsetWidth || 300;
     const gap = 10;
     const left = Math.max(10, Math.min(
       window.innerWidth - tooltipWidth - 10,

@@ -22,7 +22,11 @@ import { CombatLogger } from '../telemetry/CombatLogger';
 import { TelemetryModal } from '../telemetry/TelemetryModal';
 import { GameApp } from './GameApp';
 import { getHexCenter, resize, resetArena, respawnCombatants } from './arena';
-import { markUserZoomOverride } from '../camera/cameraArenaFit';
+import {
+  loadStoredCameraZoom,
+  markUserZoomOverride,
+  saveStoredCameraZoom,
+} from '../camera/cameraArenaFit';
 import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
 import { handleCastInput, cancelPlayerAiming } from './input';
 import { loadInputSettings, subscribeInputSettings } from './inputSettings';
@@ -80,6 +84,12 @@ function init(app: GameApp): void {
   loadEntityShadowConfig();
   app.camera = new Camera2D();
   app.camera.setViewport(window.innerWidth, window.innerHeight);
+  const storedZoom = loadStoredCameraZoom();
+  if (storedZoom !== null) {
+    app.camera.zoom = storedZoom;
+    app.camera.targetZoom = storedZoom;
+    markUserZoomOverride();
+  }
   resize(app);
   window.addEventListener('resize', () => resize(app));
   document.addEventListener('fullscreenchange', () => resize(app));
@@ -412,6 +422,7 @@ function init(app: GameApp): void {
     } else {
       app.camera.setZoom(app.camera.targetZoom + delta);
     }
+    saveStoredCameraZoom(app.camera.targetZoom);
   }, { passive: false });
 
   app.canvas.addEventListener('mousedown', (e) => {

@@ -64,6 +64,7 @@ import {
   clearUserZoomOverride,
   fitArenaToSafeView,
   markUserZoomOverride,
+  saveStoredCameraZoom,
 } from '../../camera/cameraArenaFit';
 import { getSafeViewInsets, isCompactViewport } from '../../ui/viewportLayout';
 import type { InspectorContext } from '../InspectorUI';
@@ -439,6 +440,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     (v) => {
       markUserZoomOverride();
       ctx.camera.setZoom(v);
+      saveStoredCameraZoom(ctx.camera.targetZoom);
     },
     'x',
   );

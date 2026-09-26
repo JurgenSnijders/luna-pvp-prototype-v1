@@ -57,7 +57,7 @@ export const SLOT_ACCENT: Record<ActionSlotKey, string> = {
 
 export const POWER_MAX = 300;
 export const PASSIVE_POWER_MAX = 45;
-export const STYLE_ID = 'luna-workshop-styles-v33';
+export const STYLE_ID = 'luna-workshop-styles-v35';
 
 export const SUGGEST_CHIPS = [
   '+ Bouncing',
@@ -701,6 +701,160 @@ export function injectStyles(): void {
       font-size: 10px;
       line-height: 1.35;
       color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .ab-tooltip-card {
+      min-width: 270px;
+      max-width: 360px;
+      background: rgba(10, 12, 18, 0.95);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      border-radius: 6px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-family: ${FONTS.mono};
+      color: var(--retro-text-primary, #e0f8ff);
+    }
+
+    .ab-tooltip-header {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 6px;
+    }
+
+    .ab-tooltip-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ab-tooltip-title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .ab-tooltip-badge {
+      flex-shrink: 0;
+      background: rgba(0, 229, 255, 0.15);
+      color: #00e5ff;
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 6px;
+    }
+
+    .ab-tooltip-subhead {
+      font-size: 13px;
+      color: #8b9bb4;
+      font-weight: 600;
+    }
+
+    .ab-tooltip-cadence {
+      color: #ffffff;
+    }
+
+    .ab-tooltip-desc {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    .ab-tooltip-impact {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+      padding: 6px 8px;
+    }
+
+    .ab-stat-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .ab-val {
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .ab-lbl {
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 0.5px;
+    }
+
+    .ab-val-knockback {
+      color: #ff5533;
+      text-shadow: 0 0 10px rgba(255, 85, 51, 0.4);
+    }
+
+    .ab-val-heal {
+      color: #33ff77;
+      text-shadow: 0 0 10px rgba(51, 255, 119, 0.4);
+    }
+
+    .ab-val-vuln {
+      color: #ffd700;
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+    }
+
+    .ab-val-dmg {
+      color: #ff3344;
+    }
+
+    .ab-val-burn {
+      color: #fb923c;
+      text-shadow: 0 0 10px rgba(251, 146, 60, 0.35);
+    }
+
+    .ab-lethality-badge {
+      font-size: 12px;
+      font-weight: 700;
+      color: #ff5533;
+      opacity: 0.85;
+    }
+
+    .ab-tooltip-specs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+      gap: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 6px;
+      text-align: center;
+    }
+
+    .ab-spec-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .ab-spec-val {
+      font-size: 14px;
+      font-weight: 800;
+      color: #38bdf8;
+    }
+
+    .ab-spec-lbl {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 0.5px;
     }
 
     .inspector-action-pill {
