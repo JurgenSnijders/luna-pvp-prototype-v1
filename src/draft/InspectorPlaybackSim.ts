@@ -48,11 +48,22 @@ export interface ParticleFrameData {
   alpha: number;
 }
 
+export interface ObstacleFrameData {
+  x: number;
+  y: number;
+  shape: 'BOX' | 'CIRCLE';
+  halfW: number;
+  halfH: number;
+  angle: number;
+  color: string;
+}
+
 export interface PlaybackFrame {
   projectiles: ProjectileFrameData[];
   zones: ZoneFrameData[];
   impacts: ImpactFrameData[];
   particles: ParticleFrameData[];
+  obstacles: ObstacleFrameData[];
 }
 
 export interface PlaybackRecording {
@@ -164,7 +175,35 @@ function snapshotFrame(
     age: impact.age,
   }));
 
-  return { projectiles, zones, impacts, particles: [] };
+  const obstacles: ObstacleFrameData[] = [];
+  for (const obstacle of world.obstacles) {
+    if (obstacle.isDead) continue;
+    const { config, pos } = obstacle;
+    const color = getArchetypeColor(obstacle.spawnArchetype);
+    if (config.shape === 'CIRCLE') {
+      obstacles.push({
+        x: pos.x,
+        y: pos.y,
+        shape: 'CIRCLE',
+        halfW: config.width / 2,
+        halfH: 0,
+        angle: 0,
+        color,
+      });
+    } else {
+      obstacles.push({
+        x: pos.x,
+        y: pos.y,
+        shape: 'BOX',
+        halfW: config.width / 2,
+        halfH: config.height / 2,
+        angle: config.angle ?? 0,
+        color,
+      });
+    }
+  }
+
+  return { projectiles, zones, impacts, particles: [], obstacles };
 }
 
 function snapshotParticles(recordingBackend: RecordingBackend): ParticleFrameData[] {
@@ -174,6 +213,7 @@ function snapshotParticles(recordingBackend: RecordingBackend): ParticleFrameDat
 function hasActiveEntities(world: PhysicsWorld, activeImpacts: ActiveImpact[]): boolean {
   if (world.projectiles.some((p) => !p.isDead)) return true;
   if (world.zones.some((z) => !z.isDead)) return true;
+  if (world.obstacles.some((o) => !o.isDead)) return true;
   if (world.summons.some((s) => !s.isDead)) return true;
   if (activeImpacts.length > 0) return true;
   return false;
@@ -256,6 +296,21 @@ function transformRecording(
   inflate(casterPos.x, casterPos.y, 14);
   inflate(targetPos.x, targetPos.y, 14);
 
+  const inflateObstacle = (obs: ObstacleFrameData): void => {
+    if (obs.shape === 'CIRCLE') {
+      inflate(obs.x, obs.y, obs.halfW);
+      return;
+    }
+    const cos = Math.abs(Math.cos(obs.angle));
+    const sin = Math.abs(Math.sin(obs.angle));
+    const extentX = obs.halfW * cos + obs.halfH * sin;
+    const extentY = obs.halfW * sin + obs.halfH * cos;
+    minX = Math.min(minX, obs.x - extentX);
+    maxX = Math.max(maxX, obs.x + extentX);
+    minY = Math.min(minY, obs.y - extentY);
+    maxY = Math.max(maxY, obs.y + extentY);
+  };
+
   for (const frame of rawFrames) {
     for (const proj of frame.projectiles) {
       inflate(proj.x, proj.y - proj.z * Z_TO_SCREEN, proj.radius);
@@ -263,6 +318,9 @@ function transformRecording(
     }
     for (const zone of frame.zones) {
       inflate(zone.x, zone.y, zone.radius);
+    }
+    for (const obstacle of frame.obstacles) {
+      inflateObstacle(obstacle);
     }
     for (const impact of frame.impacts) {
       inflate(impact.x, impact.y, impact.radius * (1 + impact.age));
@@ -311,6 +369,12 @@ function transformRecording(
       ...particle,
       ...mapPoint(particle.x, particle.y),
       radius: Math.max(1, particle.radius * scale),
+    })),
+    obstacles: frame.obstacles.map((obstacle) => ({
+      ...obstacle,
+      ...mapPoint(obstacle.x, obstacle.y),
+      halfW: obstacle.halfW * scale,
+      halfH: obstacle.halfH * scale,
     })),
   }));
 
@@ -420,7 +484,7 @@ export function recordSpellPlayback(
     const recording = transformRecording(
       rawFrames.length > 0
         ? rawFrames
-        : [{ projectiles: [], zones: [], impacts: [], particles: [] }],
+        : [{ projectiles: [], zones: [], impacts: [], particles: [], obstacles: [] }],
       casterPos,
       targetPos,
       canvasWidth,

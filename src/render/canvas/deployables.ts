@@ -1,5 +1,6 @@
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
 import { hexToRgb, rgbToHex, type Rgb } from './glowDisc';
+import type { ObstacleFrameData } from '../../draft/InspectorPlaybackSim';
 
 export const DEPLOYABLE_SPAWN_SNAP_MS = 120;
 export const DEPLOYABLE_HIT_FLASH_MS = 100;
@@ -175,4 +176,26 @@ export function drawDeployableFrame(
   }
 
   ctx.restore();
+}
+
+/** Tactical Inspector hero-scope obstacle silhouette (canvas-space coordinates). */
+export function drawScopeObstacle(
+  ctx: CanvasRenderingContext2D,
+  obs: ObstacleFrameData,
+): void {
+  const shape: DeployableShape =
+    obs.shape === 'CIRCLE'
+      ? { kind: 'CIRCLE', radius: obs.halfW }
+      : { kind: 'BOX', halfW: obs.halfW, halfH: obs.halfH, angle: obs.angle };
+
+  drawDeployableFrame(ctx, {
+    x: obs.x,
+    y: obs.y,
+    shape,
+    rim: hexToRgb(obs.color),
+    body: muteDeployableBody(obs.color, 0.45),
+    hitFlash: 0,
+    spawnT: 1,
+    fade: 1,
+  });
 }

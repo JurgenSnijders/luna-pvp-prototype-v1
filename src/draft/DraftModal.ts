@@ -103,6 +103,7 @@ import { analyzeSaturation, formatSaturationChips } from '../ai/budget/saturatio
 import { EvolutionStore } from '../game/EvolutionStore';
 import { renderEvolutionTree } from './EvolutionTreePanel';
 import { recordSpellPlayback, type PlaybackRecording } from './InspectorPlaybackSim';
+import { drawScopeObstacle } from '../render/canvas/deployables';
 import { drawScopeProjectile } from '../render/canvas/projectiles';
 import { ActionBarHUD, getSpeedReactionTier } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
@@ -2377,6 +2378,10 @@ export class DraftModal {
 
       for (const zone of frame.zones) {
         this.drawScopeZone(ctx, zone.x, zone.y, zone.radius, zone.color, timestamp);
+      }
+
+      for (const obstacle of frame.obstacles) {
+        drawScopeObstacle(ctx, obstacle);
       }
 
       for (const proj of frame.projectiles) {
