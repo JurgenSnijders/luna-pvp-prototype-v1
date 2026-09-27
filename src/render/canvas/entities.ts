@@ -21,6 +21,7 @@ import {
 } from './deployables';
 import { lerpPos, lerpZ } from './helpers';
 import type { CanvasRenderCtx } from './renderCtx';
+import type { SummonFrameData } from '../../draft/InspectorPlaybackSim';
 import { getArchetypeColor } from './SpellIconGenerator';
 import { drawStatusAuras } from './statusAuras';
 import { resolveDeployableIntent } from './telegraphIntent';
@@ -297,6 +298,34 @@ const summonFrame: DeployableFrameOptions = {
   spawnT: 1,
   fade: 1,
 };
+
+/** Tactical Inspector hero-scope summon silhouette (canvas-space coordinates). */
+export function drawScopeSummon(
+  ctx: CanvasRenderingContext2D,
+  summon: SummonFrameData,
+): void {
+  ctx.save();
+  ctx.translate(summon.x, summon.y);
+  ctx.strokeStyle = summon.color;
+  ctx.fillStyle = summon.color;
+  ctx.globalAlpha = 0.8;
+
+  if (summon.kind === 'DECOY') {
+    ctx.beginPath();
+    ctx.arc(0, 0, summon.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.rotate(summon.facing);
+    ctx.strokeRect(-summon.radius, -summon.radius, summon.radius * 2, summon.radius * 2);
+    ctx.beginPath();
+    ctx.moveTo(summon.radius, 0);
+    ctx.lineTo(summon.radius + TURRET_BARREL_LEN, 0);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
 
 export function drawSummons(
   ctx: CanvasRenderingContext2D,

@@ -58,12 +58,22 @@ export interface ObstacleFrameData {
   color: string;
 }
 
+export interface SummonFrameData {
+  x: number;
+  y: number;
+  radius: number;
+  facing: number;
+  kind: 'TURRET' | 'DECOY';
+  color: string;
+}
+
 export interface PlaybackFrame {
   projectiles: ProjectileFrameData[];
   zones: ZoneFrameData[];
   impacts: ImpactFrameData[];
   particles: ParticleFrameData[];
   obstacles: ObstacleFrameData[];
+  summons: SummonFrameData[];
 }
 
 export interface PlaybackRecording {
@@ -81,6 +91,8 @@ const MAX_FRAMES = 150;
 const IMPACT_LIFETIME_FRAMES = 12;
 const EARLY_EXIT_TAIL_FRAMES = 8;
 const SANDBOX_HEX_RADIUS = 2000;
+const SANDBOX_ACTOR_DEPLOY_DISTANCE = 80;
+const SUMMON_BARREL_LEN = 12;
 
 const recordingCache = new Map<string, PlaybackRecording>();
 
@@ -116,6 +128,16 @@ function applySandboxFields(world: PhysicsWorld, dt: number): void {
       applyField(zone, entity, dt, world);
     }
   }
+}
+
+function spellHasSpawnActor(spell: AbilitySchema): boolean {
+  for (const node of spell.triggers ?? []) {
+    if (node.trigger !== 'ON_CAST') continue;
+    for (const action of node.actions ?? []) {
+      if (action.type === 'SPAWN_ACTOR') return true;
+    }
+  }
+  return false;
 }
 
 function resolveAimConfig(spell: AbilitySchema): { aimAngle: number; targetDistance: number } {
@@ -203,7 +225,23 @@ function snapshotFrame(
     }
   }
 
-  return { projectiles, zones, impacts, particles: [], obstacles };
+  const summons: SummonFrameData[] = [];
+  for (const summon of world.summons) {
+    if (summon.isDead) continue;
+    summons.push({
+      x: summon.pos.x,
+      y: summon.pos.y,
+      radius: summon.config.radius ?? summon.radius,
+      facing: summon.facingAngle,
+      kind: summon.config.actorArchetype,
+      color:
+        summon.visuals?.color ??
+        summon.config.visuals?.color ??
+        getArchetypeColor(summon.spellArchetype),
+    });
+  }
+
+  return { projectiles, zones, impacts, particles: [], obstacles, summons };
 }
 
 function snapshotParticles(recordingBackend: RecordingBackend): ParticleFrameData[] {
@@ -322,6 +360,9 @@ function transformRecording(
     for (const obstacle of frame.obstacles) {
       inflateObstacle(obstacle);
     }
+    for (const summon of frame.summons) {
+      inflate(summon.x, summon.y, summon.radius + SUMMON_BARREL_LEN);
+    }
     for (const impact of frame.impacts) {
       inflate(impact.x, impact.y, impact.radius * (1 + impact.age));
     }
@@ -376,6 +417,11 @@ function transformRecording(
       halfW: obstacle.halfW * scale,
       halfH: obstacle.halfH * scale,
     })),
+    summons: frame.summons.map((summon) => ({
+      ...summon,
+      ...mapPoint(summon.x, summon.y),
+      radius: summon.radius * scale,
+    })),
   }));
 
   return {
@@ -413,6 +459,16 @@ function runSandboxSimulation(spell: AbilitySchema): {
   dummy.tags.add('kinematic');
   world.addDummy(dummy);
 
+  const deployActorNearCaster =
+    !isGroundTarget && spellHasSpawnActor(spell);
+  const aimPoint = deployActorNearCaster
+    ? caster.pos.add(
+        (heading.magSq() > 0.01 ? heading : Vector2D.fromAngle(aimAngle)).normalize().scale(
+          SANDBOX_ACTOR_DEPLOY_DISTANCE,
+        ),
+      )
+    : targetPos.clone();
+
   const recordingBackend = new RecordingBackend();
   const particles = ParticleSystem.fromBackend(recordingBackend);
   const interp = new Interpreter();
@@ -422,7 +478,7 @@ function runSandboxSimulation(spell: AbilitySchema): {
     {
       origin: caster.pos.clone(),
       heading,
-      aimPoint: targetPos.clone(),
+      aimPoint,
       caster,
       depth: 0,
       ability: spell,
@@ -484,7 +540,7 @@ export function recordSpellPlayback(
     const recording = transformRecording(
       rawFrames.length > 0
         ? rawFrames
-        : [{ projectiles: [], zones: [], impacts: [], particles: [], obstacles: [] }],
+        : [{ projectiles: [], zones: [], impacts: [], particles: [], obstacles: [], summons: [] }],
       casterPos,
       targetPos,
       canvasWidth,
