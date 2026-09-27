@@ -20,6 +20,7 @@ import { SpellInventoryManager } from '../game/SpellInventory';
 import {
   buildSpellTooltipStats,
   computeSpellCombatProfile,
+  extractHealthPolarityStats,
   formatProfileCadence,
 } from '../primitives/combatProfile';
 import { generateSpellIcon, getArchetypeColor, hexToRgba } from './canvas/SpellIconGenerator';
@@ -147,16 +148,7 @@ function formatAbilityTooltip(
     ? `<div class="ab-tooltip-desc">${escapeHtml(description)}</div>`
     : '';
 
-  let targetDrainVal = 0;
-  walkActions(ability, (v) => {
-    if (!v.isPrimary) return;
-    const action = v.action;
-    if (action.type !== 'MODIFY_STAT') return;
-    if (action.stat !== 'health' || action.mode !== 'add' || action.value >= 0) return;
-    if (action.target === 'CASTER' || action.target === 'SELF') return;
-    targetDrainVal += Math.abs(action.value);
-  });
-  targetDrainVal = Math.round(targetDrainVal);
+  const { targetDrain: targetDrainVal } = extractHealthPolarityStats(ability, profile);
 
   const impactRows: string[] = [];
   if (disp.peakForce > 0) {

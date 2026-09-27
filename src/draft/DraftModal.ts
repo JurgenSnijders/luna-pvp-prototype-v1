@@ -26,20 +26,20 @@ import {
 import type {
   AbilitySchema,
   ActionPayload,
-  EmitterConfig,
   SpellArchetype,
-  TrajectoryConfig,
   TriggerNode,
 } from '../types/schema';
 import { walkActions } from '../types/schema';
 import {
   compareCombatProfiles,
   computeSpellCombatProfile,
+  extractHealthPolarityStats,
   formatCombatStatDiff,
   formatProfileCadence,
   polarityCssClass,
   ringOutTierBadgeClass,
   type CombatProfileDiff,
+  type DeliveryProfile,
   type KineticLethalityProfile,
   type MechanicDiffChip,
   type MetricDelta,
@@ -104,15 +104,10 @@ import { EvolutionStore } from '../game/EvolutionStore';
 import { renderEvolutionTree } from './EvolutionTreePanel';
 import { recordSpellPlayback, type PlaybackRecording } from './InspectorPlaybackSim';
 import { drawScopeProjectile } from '../render/canvas/projectiles';
-import { ActionBarHUD } from '../render/ActionBarHUD';
+import { ActionBarHUD, getSpeedReactionTier } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
 type WorkshopTab = 'VAULT' | 'FORGE' | 'TREE';
-
-interface DisplayTrajectory {
-  trajectory?: TrajectoryConfig;
-  emitter?: EmitterConfig;
-}
 
 const ARCHETYPE_DESCRIPTIONS: Partial<Record<SpellArchetype, string>> = {
   KINETIC: 'Reduces target linear drag by 80%. Hits cause extreme sliding across arena and lava.',
@@ -155,7 +150,7 @@ export function calculateCombatProfile(telemetry: SpellTelemetry): CombatImpactP
   const controlPct = total > 0 ? 100 - launchPct - instabilityPct : 34;
 
   let dominantRole = 'BALANCED ASSAULT';
-  if (launchPct >= 50) dominantRole = 'HEAVY LAUNCH';
+  if (launchPct >= 50) dominantRole = 'HEAVY KNOCKBACK';
   else if (instabilityPct >= 50) dominantRole = 'VULNERABILITY SPIKE';
   else if (controlPct >= 40) dominantRole = 'CROWD CONTROL';
 
@@ -289,26 +284,20 @@ const SCOPE_WIDTH = 240;
 const SCOPE_HEIGHT = 120;
 
 export interface ScopeHudData {
-  channels: string;
-  velocity: string;
-  spread: string;
-  collision: string;
+  channels: string | null;
+  velocity: string | null;
+  spread: string | null;
+  collision: string | null;
 }
 
-export function extractScopeHudData(spell: AbilitySchema): ScopeHudData {
-  const { trajectory, emitter } = resolveDisplayTrajectory(spell);
-  const count = emitter?.count ?? 1;
-  const speed = Math.round(trajectory?.speed ?? 400);
-  const spread =
-    emitter?.distribution === 'PARALLEL'
-      ? 'RAD: PARALLEL'
-      : `RAD: ${emitter?.spreadDeg ?? 0}°`;
-  const collision = (trajectory?.piercing ?? 0) > 0 ? 'MODE: PIERCE' : 'MODE: IMPACT';
+export function extractScopeHudData(delivery: DeliveryProfile): ScopeHudData {
+  const deliveryType = formatEnumLabel(delivery.trajectoryType);
+  const collision = delivery.piercing ? `${deliveryType} PIERCE` : deliveryType;
 
   return {
-    channels: `CH: ${count.toString().padStart(2, '0')}`,
-    velocity: `VEL: ${speed}`,
-    spread,
+    channels: delivery.shotCount > 1 ? `SHOTS x${delivery.shotCount}` : null,
+    velocity: `SPEED ${getSpeedReactionTier(delivery.speed, delivery.trajectoryType)}`,
+    spread: delivery.range > 0 ? `RANGE ${delivery.range}` : null,
     collision,
   };
 }
@@ -318,6 +307,38 @@ function buildScopeCornerHud(text: string, position: string): HTMLElement {
   el.className = `scope-corner-hud ${position}`;
   el.textContent = text;
   return el;
+}
+
+function appendScopeCornerHuds(heroWrap: HTMLElement, scopeHud: ScopeHudData): void {
+  if (scopeHud.channels) {
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.channels, 'top-left'));
+  }
+  if (scopeHud.velocity) {
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.velocity, 'top-right'));
+  }
+  if (scopeHud.spread) {
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.spread, 'bottom-left'));
+  }
+  if (scopeHud.collision) {
+    heroWrap.appendChild(buildScopeCornerHud(scopeHud.collision, 'bottom-right'));
+  }
+}
+
+function formatInspectorDeliverySpecs(delivery: DeliveryProfile): string {
+  const parts: string[] = [];
+  if (delivery.shotCount > 1) {
+    parts.push(`x${delivery.shotCount} SHOTS`);
+  }
+  if (delivery.range > 0) {
+    parts.push(`${delivery.range} RANGE`);
+  }
+  if (delivery.speed > 0) {
+    parts.push(`${getSpeedReactionTier(delivery.speed, delivery.trajectoryType)} SPEED`);
+  }
+  if (parts.length > 0) {
+    return parts.join(' · ');
+  }
+  return formatEnumLabel(delivery.trajectoryType);
 }
 
 function formatEnumLabel(value: string): string {
@@ -338,8 +359,8 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
     accentColor: '#ffaa00',
     getDescription: (a) =>
       a.type === 'APPLY_IMPULSE'
-        ? `Delivers ${a.baseForce ?? 400} physical impulse force on impact, pushing targets backward.`
-        : 'Delivers physical impulse force on impact, pushing targets backward.',
+        ? `Delivers ${a.baseForce ?? 400} knockback on impact, pushing targets backward.`
+        : 'Delivers knockback on impact, pushing targets backward.',
   },
   RADIAL_IMPULSE: {
     label: '💥 RADIAL SHOCKWAVE',
@@ -356,8 +377,8 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
     accentColor: '#ff4400',
     getDescription: (a) =>
       a.type === 'ADD_INSTABILITY'
-        ? `Inflicts +${a.amount ?? 15}% instability, drastically magnifying future launch distance.`
-        : 'Inflicts instability, magnifying future launch distance.',
+        ? `Inflicts +${a.amount ?? 15}% vulnerability, drastically magnifying future launch distance.`
+        : 'Inflicts vulnerability, magnifying future launch distance.',
   },
   SPAWN_PROJECTILE: {
     label: '🎯 BALLISTIC',
@@ -438,7 +459,7 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
     accentColor: '#ff0055',
     getDescription: (a) =>
       a.type === 'MODIFY_STAT'
-        ? `Depletes ${Math.abs(a.value ?? 10)} target health on impact.`
+        ? `Depletes -${Math.abs(a.value ?? 10)} target health on impact.`
         : 'Depletes target health.',
   },
   MODIFY_STAT_HEAL: {
@@ -447,7 +468,7 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
     accentColor: '#44ff88',
     getDescription: (a) =>
       a.type === 'MODIFY_STAT'
-        ? `Restores ${a.value ?? 10} health points to the target.`
+        ? `Restores +${a.value ?? 10} health points to the target.`
         : 'Restores health points.',
   },
   MODIFY_STAT_moveSpeed: {
@@ -478,13 +499,13 @@ const SEMANTIC_ACTION_REGISTRY: Record<string, SemanticActionDef> = {
         : 'Changes target linear drag.',
   },
   MODIFY_STAT_instabilityPct: {
-    label: '⚡ INSTABILITY',
+    label: '⚡ VULNERABILITY',
     category: 'CONTROL',
     accentColor: '#ff4400',
     getDescription: (a) =>
       a.type === 'MODIFY_STAT'
-        ? `Directly shifts instability (${a.mode} ${a.value}).`
-        : 'Directly shifts instability.',
+        ? `Directly shifts vulnerability (${a.mode} ${a.value}).`
+        : 'Directly shifts vulnerability.',
   },
   APPLY_STASIS: {
     label: '❄️ STASIS',
@@ -641,7 +662,7 @@ function formatInspectorPeakForce(profile: SpellCombatProfile): string {
   const tag = profile.displacement.primaryTag;
   const maxTravelPx = profile.displacement.lethality.maxTravelPx;
   if (tag === 'NONE' || tag === 'MIXED' || force === 0) {
-    return `${force} Force`;
+    return `${force}`;
   }
   return `${force} [${tag}] (~${maxTravelPx}px)`;
 }
@@ -686,46 +707,6 @@ function walkTriggers(
     }
     if (node.children) walkTriggers(node.children, visit);
   }
-}
-
-function emitterHasSpread(emitter: EmitterConfig): boolean {
-  return (
-    emitter.count > 1 ||
-    emitter.spreadDeg > 0 ||
-    (emitter.aimOffsetDeg !== undefined && emitter.aimOffsetDeg !== 0)
-  );
-}
-
-function resolveDisplayTrajectory(ability: AbilitySchema): DisplayTrajectory {
-  let onCast: DisplayTrajectory | null = null;
-
-  for (const triggerNode of ability.triggers ?? []) {
-    if (triggerNode.trigger !== 'ON_CAST') continue;
-    for (const action of triggerNode.actions ?? []) {
-      if (action.type === 'SPAWN_PROJECTILE' && action.projectileTrajectory) {
-        onCast = {
-          trajectory: action.projectileTrajectory,
-          emitter: action.emitter,
-        };
-        break;
-      }
-      if (action.type === 'CAST_CHILD_PAYLOAD' && action.payload?.trajectory) {
-        return { trajectory: action.payload.trajectory };
-      }
-    }
-    if (onCast) break;
-  }
-
-  if (onCast?.emitter && emitterHasSpread(onCast.emitter)) {
-    return onCast;
-  }
-  if (!ability.trajectory && onCast) {
-    return onCast;
-  }
-  if (ability.trajectory) {
-    return { trajectory: ability.trajectory, emitter: onCast?.emitter };
-  }
-  return onCast ?? {};
 }
 
 function formatCooldown(ms: number): string {
@@ -1250,10 +1231,14 @@ export class DraftModal {
     container.innerHTML = '';
 
     const archetypeColor = getArchetypeColor(spell.archetype, spell.visuals?.color);
+    const combatProfile = computeSpellCombatProfile(spell);
     const heroWrap = document.createElement('div');
     heroWrap.className = 'inspector-hero-wrap';
     heroWrap.style.borderColor = archetypeColor;
     heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
+
+    const scopeHud = extractScopeHudData(combatProfile.delivery);
+    appendScopeCornerHuds(heroWrap, scopeHud);
 
     const scopeCanvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio || 1;
@@ -1532,11 +1517,8 @@ export class DraftModal {
       heroWrap.style.boxShadow = `inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px ${archetypeColor}44`;
     }
 
-    const scopeHud = extractScopeHudData(spell);
-    heroWrap.appendChild(buildScopeCornerHud(scopeHud.channels, 'top-left'));
-    heroWrap.appendChild(buildScopeCornerHud(scopeHud.velocity, 'top-right'));
-    heroWrap.appendChild(buildScopeCornerHud(scopeHud.spread, 'bottom-left'));
-    heroWrap.appendChild(buildScopeCornerHud(scopeHud.collision, 'bottom-right'));
+    const scopeHud = extractScopeHudData(combatProfile.delivery);
+    appendScopeCornerHuds(heroWrap, scopeHud);
 
     const scopeCanvas = document.createElement('canvas');
     const dpr = window.devicePixelRatio || 1;
@@ -1598,7 +1580,7 @@ export class DraftModal {
     const inspectorBaseline = this.resolveInspectorBaseline(spell);
     const telemetryBlock = inspectorBaseline
       ? this.buildInspectorComparisonDrawer(spell, inspectorBaseline)
-      : this.buildInspectorTelemetryGrid(telemetry, combatProfile);
+      : this.buildInspectorTelemetryGrid(spell, combatProfile);
 
     const profileCard = this.buildImpactProfileCard(profile);
 
@@ -2620,47 +2602,61 @@ export class DraftModal {
   }
 
   private buildInspectorTelemetryGrid(
-    telemetry: SpellTelemetry,
+    spell: AbilitySchema,
     combatProfile: SpellCombatProfile,
   ): HTMLElement {
     const telemetryGrid = document.createElement('div');
     telemetryGrid.className = 'inspector-telemetry-grid';
 
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('COOLDOWN', telemetry.cooldownSec),
+      this.buildInspectorTelemetryCell('CADENCE', formatProfileCadence(combatProfile)),
     );
     telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('RECOIL', `${telemetry.recoilKick} px/s`),
+      this.buildInspectorTelemetryCell('RECOIL', `${combatProfile.recoilKick} px/s`),
     );
 
-    const repulseVal = document.createElement('span');
-    repulseVal.className = 'telemetry-value val-repulse';
-    repulseVal.textContent = `${telemetry.repulseForce} Force`;
-    const repulseCell = this.buildInspectorTelemetryCell('REPULSE FORCE', repulseVal);
-    if (combatProfile.displacement.peakForce > 0) {
-      appendLethalityToRepulseCell(repulseCell, combatProfile.displacement.lethality);
+    const peakForce = combatProfile.displacement.peakForce;
+    if (peakForce > 0) {
+      const knockbackVal = document.createElement('span');
+      knockbackVal.className = 'telemetry-value val-repulse';
+      knockbackVal.textContent = `${peakForce}`;
+      const knockbackCell = this.buildInspectorTelemetryCell('KNOCKBACK', knockbackVal);
+      appendLethalityToRepulseCell(knockbackCell, combatProfile.displacement.lethality);
+      telemetryGrid.appendChild(knockbackCell);
     }
-    telemetryGrid.appendChild(repulseCell);
 
-    const instabilityVal = document.createElement('span');
-    instabilityVal.className = 'telemetry-value val-instability';
-    instabilityVal.textContent = `+${telemetry.instabilityYield}% Yield`;
-    telemetryGrid.appendChild(
-      this.buildInspectorTelemetryCell('INSTABILITY', instabilityVal),
-    );
-
-    if (telemetry.directDamage > 0) {
+    const instabilityYield = combatProfile.instabilityYield;
+    if (instabilityYield > 0) {
+      const vulnerabilityVal = document.createElement('span');
+      vulnerabilityVal.className = 'telemetry-value val-instability';
+      vulnerabilityVal.textContent = `+${instabilityYield}%`;
       telemetryGrid.appendChild(
-        this.buildInspectorTelemetryCell(
-          'DIRECT DAMAGE',
-          `${telemetry.directDamage} HP`,
-        ),
+        this.buildInspectorTelemetryCell('VULNERABILITY', vulnerabilityVal),
+      );
+    }
+
+    const polarity = extractHealthPolarityStats(spell, combatProfile);
+    const hasKnockback = peakForce > 0;
+
+    if (polarity.heal > 0) {
+      telemetryGrid.appendChild(
+        this.buildInspectorTelemetryCell('HEAL', `+${polarity.heal}`),
+      );
+    }
+    if (polarity.targetDrain > 0) {
+      const drainLabel = polarity.heal > 0 ? 'DRAIN' : 'DAMAGE';
+      telemetryGrid.appendChild(
+        this.buildInspectorTelemetryCell(drainLabel, `-${polarity.targetDrain}`),
+      );
+    } else if (!hasKnockback && polarity.directDamage > 0) {
+      telemetryGrid.appendChild(
+        this.buildInspectorTelemetryCell('DAMAGE', `${polarity.directDamage}`),
       );
     }
 
     const deliveryVal = document.createElement('span');
     deliveryVal.className = 'telemetry-value val-delivery';
-    deliveryVal.textContent = telemetry.deliveryText;
+    deliveryVal.textContent = formatInspectorDeliverySpecs(combatProfile.delivery);
     telemetryGrid.appendChild(
       this.buildInspectorTelemetryCell('DELIVERY SPECS', deliveryVal, true),
     );
@@ -2747,27 +2743,43 @@ export class DraftModal {
       ),
     );
 
-    const forceDelta =
-      diff.displacementDirectionMatch ? diff.peakDisplacement : undefined;
-    rows.appendChild(
-      this.buildInspectorComparisonRow(
-        'PEAK FORCE',
-        formatInspectorPeakForce(inspectedProfile),
-        formatInspectorPeakForce(baselineProfile),
-        forceDelta,
-        'val-repulse',
-      ),
+    const inspectedPolarity = extractHealthPolarityStats(spell, inspectedProfile);
+    const baselinePolarity = extractHealthPolarityStats(
+      context.baseline,
+      baselineProfile,
     );
 
-    rows.appendChild(
-      this.buildInspectorComparisonRow(
-        'INSTABILITY',
-        formatInspectorInstability(inspectedProfile),
-        formatInspectorInstability(baselineProfile),
-        diff.instabilityYield,
-        'val-instability',
-      ),
-    );
+    if (
+      inspectedProfile.displacement.peakForce > 0 ||
+      baselineProfile.displacement.peakForce > 0
+    ) {
+      const forceDelta =
+        diff.displacementDirectionMatch ? diff.peakDisplacement : undefined;
+      rows.appendChild(
+        this.buildInspectorComparisonRow(
+          'KNOCKBACK',
+          formatInspectorPeakForce(inspectedProfile),
+          formatInspectorPeakForce(baselineProfile),
+          forceDelta,
+          'val-repulse',
+        ),
+      );
+    }
+
+    if (
+      inspectedProfile.instabilityYield > 0 ||
+      baselineProfile.instabilityYield > 0
+    ) {
+      rows.appendChild(
+        this.buildInspectorComparisonRow(
+          'VULNERABILITY',
+          formatInspectorInstability(inspectedProfile),
+          formatInspectorInstability(baselineProfile),
+          diff.instabilityYield,
+          'val-instability',
+        ),
+      );
+    }
 
     rows.appendChild(
       this.buildInspectorComparisonRow(
@@ -2778,12 +2790,38 @@ export class DraftModal {
       ),
     );
 
-    if (inspectedProfile.directDamage > 0 || baselineProfile.directDamage > 0) {
+    if (inspectedPolarity.heal > 0 || baselinePolarity.heal > 0) {
       rows.appendChild(
         this.buildInspectorComparisonRow(
-          'DIRECT DMG',
-          `${inspectedProfile.directDamage} HP`,
-          `${baselineProfile.directDamage} HP`,
+          'HEAL',
+          inspectedPolarity.heal > 0 ? `+${inspectedPolarity.heal}` : '—',
+          baselinePolarity.heal > 0 ? `+${baselinePolarity.heal}` : '—',
+          undefined,
+        ),
+      );
+    }
+
+    if (inspectedPolarity.targetDrain > 0 || baselinePolarity.targetDrain > 0) {
+      const drainLabel =
+        inspectedPolarity.heal > 0 || baselinePolarity.heal > 0 ? 'DRAIN' : 'DAMAGE';
+      rows.appendChild(
+        this.buildInspectorComparisonRow(
+          drainLabel,
+          inspectedPolarity.targetDrain > 0 ? `-${inspectedPolarity.targetDrain}` : '—',
+          baselinePolarity.targetDrain > 0 ? `-${baselinePolarity.targetDrain}` : '—',
+          undefined,
+        ),
+      );
+    } else if (
+      inspectedProfile.displacement.peakForce === 0 &&
+      baselineProfile.displacement.peakForce === 0 &&
+      (inspectedPolarity.directDamage > 0 || baselinePolarity.directDamage > 0)
+    ) {
+      rows.appendChild(
+        this.buildInspectorComparisonRow(
+          'DAMAGE',
+          inspectedPolarity.directDamage > 0 ? `${inspectedPolarity.directDamage}` : '—',
+          baselinePolarity.directDamage > 0 ? `${baselinePolarity.directDamage}` : '—',
           diff.directDamage,
         ),
       );
@@ -2800,10 +2838,11 @@ export class DraftModal {
       drawer.appendChild(chipsRow);
     }
 
-    if (inspectedProfile.delivery.summary) {
+    const deliveryText = formatInspectorDeliverySpecs(inspectedProfile.delivery);
+    if (deliveryText) {
       const delivery = document.createElement('div');
       delivery.className = 'inspector-comparison-delivery';
-      delivery.textContent = inspectedProfile.delivery.summary;
+      delivery.textContent = deliveryText;
       drawer.appendChild(delivery);
     }
 
@@ -2876,8 +2915,8 @@ export class DraftModal {
     legend.className = 'impact-gauge-legend';
 
     const legendItems = [
-      { color: '#ffaa00', label: 'Launch', pct: profile.launchPct },
-      { color: '#ff4400', label: 'Instability', pct: profile.instabilityPct },
+      { color: '#ffaa00', label: 'Knockback', pct: profile.launchPct },
+      { color: '#ff4400', label: 'Vulnerability', pct: profile.instabilityPct },
       { color: '#00e5ff', label: 'Control', pct: profile.controlPct },
     ];
 

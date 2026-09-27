@@ -808,11 +808,48 @@ export interface SpellTooltipStats {
   directDamage: number;
 }
 
+export interface HealthPolarityStats {
+  heal: number;
+  targetDrain: number;
+  directDamage: number;
+}
+
+export function extractHealthPolarityStats(
+  ability: AbilitySchema,
+  profile?: SpellCombatProfile,
+): HealthPolarityStats {
+  let heal = 0;
+  let targetDrain = 0;
+
+  walkActions(ability, (v) => {
+    if (!v.isPrimary) return;
+    const action = v.action;
+    if (action.type !== 'MODIFY_STAT') return;
+    if (action.stat !== 'health' || action.mode !== 'add') return;
+    if (action.value > 0) {
+      heal += action.value;
+      return;
+    }
+    if (action.value < 0 && action.target !== 'CASTER' && action.target !== 'SELF') {
+      targetDrain += Math.abs(action.value);
+    }
+  });
+
+  const resolvedProfile = profile ?? computeSpellCombatProfile(ability);
+  const directDamage = resolvedProfile.directDamage > 0 ? resolvedProfile.directDamage : 0;
+
+  return {
+    heal: Math.round(heal),
+    targetDrain: Math.round(targetDrain),
+    directDamage,
+  };
+}
+
 export function buildSpellTooltipStats(
   ability: AbilitySchema,
   profile: SpellCombatProfile,
 ): SpellTooltipStats {
-  let heal = 0;
+  const polarity = extractHealthPolarityStats(ability, profile);
   let burn: SpellTooltipBurn | null = null;
   let durationMs: number | null = null;
 
@@ -825,9 +862,6 @@ export function buildSpellTooltipStats(
     const action = v.action;
     switch (action.type) {
       case 'MODIFY_STAT':
-        if (v.isPrimary && action.stat === 'health' && action.value > 0) {
-          heal += action.value;
-        }
         break;
       case 'APPLY_STATUS':
         if (action.archetype === 'FIRE') {
@@ -858,10 +892,10 @@ export function buildSpellTooltipStats(
   });
 
   return {
-    heal: Math.round(heal),
+    heal: polarity.heal,
     burn,
     durationMs,
-    directDamage: profile.directDamage > 0 ? profile.directDamage : 0,
+    directDamage: polarity.directDamage,
   };
 }
 
