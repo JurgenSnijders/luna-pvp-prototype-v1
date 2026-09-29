@@ -62,6 +62,7 @@ import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { loadImpactIntensityTuning } from '../render/gl/impactIntensity';
 import { applyViewportLayout } from '../ui/viewportLayout';
 import { lerpPos } from '../render/canvas/helpers';
+import { installBrowserHelpKeyBlock } from './blockBrowserHelpKey';
 
 function syncWebGLBackground(app: GameApp): void {
   const flags = getEffectiveFeatureFlags();
@@ -76,6 +77,7 @@ function syncWebGLBackground(app: GameApp): void {
 }
 
 function init(app: GameApp): void {
+  installBrowserHelpKeyBlock();
   loadHitFeedbackConfig();
   loadImpactIntensityTuning();
   loadAudioSettings();
