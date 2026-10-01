@@ -1,5 +1,7 @@
+import type { CombatEventType, PassiveHook } from './combatEvents';
+import { COMBAT_EVENT_TYPES } from './combatEvents';
 import type { AbilitySchema } from './schema';
-import { validateAbilitySchema } from './schema';
+import { validateAbilitySchema, validateActionPayload } from './schema';
 
 export type CardRarity = 'COMMON' | 'RARE' | 'EPIC' | 'CHAOTIC';
 export type CardType = 'ACTIVE_ABILITY' | 'PASSIVE_UPGRADE';
@@ -13,9 +15,10 @@ export type PassiveStat =
 export type PassiveOp = 'ADD' | 'MULTIPLY';
 
 export interface PassiveModifierPayload {
-  stat: PassiveStat;
-  op: PassiveOp;
-  value: number;
+  stat?: PassiveStat;
+  op?: PassiveOp;
+  value?: number;
+  hooks?: PassiveHook[];
 }
 
 export type SkillCategory = 'PRIMARY' | 'SECONDARY' | 'UTILITY' | 'ULTIMATE' | 'MOBILITY';
@@ -134,16 +137,57 @@ function isNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
+function validatePassiveHook(val: unknown): PassiveHook | null {
+  if (!isObject(val)) return null;
+  if (!isString(val.on) || !COMBAT_EVENT_TYPES.has(val.on)) return null;
+  if (!Array.isArray(val.actions)) return null;
+
+  const actions = [];
+  for (const raw of val.actions) {
+    const validated = validateActionPayload(raw);
+    if (validated) actions.push(validated);
+  }
+  if (actions.length === 0) return null;
+
+  return {
+    on: val.on as CombatEventType,
+    actions,
+  };
+}
+
 export function validatePassiveModifier(val: unknown): PassiveModifierPayload | null {
   if (!isObject(val)) return null;
-  if (!isString(val.stat) || !PASSIVE_STATS.has(val.stat)) return null;
-  if (!isString(val.op) || !PASSIVE_OPS.has(val.op)) return null;
-  if (!isNumber(val.value)) return null;
-  return {
-    stat: val.stat as PassiveStat,
-    op: val.op as PassiveOp,
-    value: val.value,
-  };
+
+  const mod: PassiveModifierPayload = {};
+  let hasContent = false;
+
+  const hasStatTriple =
+    isString(val.stat) &&
+    PASSIVE_STATS.has(val.stat) &&
+    isString(val.op) &&
+    PASSIVE_OPS.has(val.op) &&
+    isNumber(val.value);
+
+  if (hasStatTriple) {
+    mod.stat = val.stat as PassiveStat;
+    mod.op = val.op as PassiveOp;
+    mod.value = val.value as number;
+    hasContent = true;
+  }
+
+  if (Array.isArray(val.hooks)) {
+    const hooks: PassiveHook[] = [];
+    for (const raw of val.hooks) {
+      const hook = validatePassiveHook(raw);
+      if (hook) hooks.push(hook);
+    }
+    if (hooks.length > 0) {
+      mod.hooks = hooks;
+      hasContent = true;
+    }
+  }
+
+  return hasContent ? mod : null;
 }
 
 export function validateDraftCard(val: unknown): DraftCard | null {
@@ -183,9 +227,9 @@ export function validateDraftCard(val: unknown): DraftCard | null {
     const passives: PassiveModifierPayload[] = [];
     for (const p of val.passivePayload) {
       const mod = validatePassiveModifier(p);
-      if (!mod) return null;
-      passives.push(mod);
+      if (mod) passives.push(mod);
     }
+    if (passives.length === 0) return null;
     card.passivePayload = passives;
   }
 

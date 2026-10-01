@@ -120,6 +120,10 @@ export function balancePassiveModifiers(
   return modifiers.slice(0, 3).map((mod) => {
     const m = { ...mod };
 
+    if (m.stat === undefined || m.op === undefined || m.value === undefined) {
+      return m;
+    }
+
     if (m.op === 'MULTIPLY') {
       m.value = Math.max(0.5, Math.min(1.5, m.value));
     }

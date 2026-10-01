@@ -36,6 +36,7 @@ import {
   Z_EPSILON,
 } from './verticalConstants';
 import { bandsOverlap } from './elevation';
+import type { CombatEvent } from '../types/combatEvents';
 
 const obstacleEntityScratch: Entity[] = [];
 
@@ -204,6 +205,7 @@ export class PhysicsWorld {
   combatVisualEvents: CombatVisualEvent[] = [];
   hitMarkerEvents: HitMarkerEvent[] = [];
   parryShieldOverlays: ParryShieldOverlay[] = [];
+  pendingCombatEvents: CombatEvent[] = [];
 
   /** Pair keys that already emitted ON_RAM for the current continuous contact. */
   private ramContactPairs = new Set<string>();
@@ -635,6 +637,10 @@ export class PhysicsWorld {
     return results;
   }
 
+  pushCombatEvent(event: CombatEvent): void {
+    this.pendingCombatEvents.push(event);
+  }
+
   clearEventQueues(): void {
     this.pendingHits = [];
     this.pendingExpirations = [];
@@ -645,6 +651,7 @@ export class PhysicsWorld {
     this.pendingGroundImpacts = [];
     this.pendingSlamEvents = [];
     this.pendingObstacleDestructions = [];
+    this.pendingCombatEvents = [];
     this.combatVisualEvents = [];
     this.hitMarkerEvents = [];
     this.parryShieldOverlays = [];

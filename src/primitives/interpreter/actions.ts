@@ -483,6 +483,12 @@ export function dispatchAction(
       if (t instanceof Projectile) {
         reflectProjectile(t, ctx.caster.id, { parryCenter: t.pos, parryRadius: t.radius });
         emitDeflected(t);
+        world.pushCombatEvent({
+          type: 'PARRY_SUCCEEDED',
+          actorId: ctx.caster.id,
+          pos: { x: t.pos.x, y: t.pos.y },
+          magnitude: 1,
+        });
         break;
       }
 
@@ -682,6 +688,14 @@ export function scanReflectProjectilesInWedge(
       targetId: options.targetId,
     });
     reflected++;
+  }
+  if (reflected > 0) {
+    world.pushCombatEvent({
+      type: 'PARRY_SUCCEEDED',
+      actorId: casterId,
+      pos: { x: center.pos.x, y: center.pos.y },
+      magnitude: reflected,
+    });
   }
   return reflected;
 }

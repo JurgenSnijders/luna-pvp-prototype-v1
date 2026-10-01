@@ -58,12 +58,18 @@ Each DraftCard must have:
 - rarity: "COMMON" | "RARE" | "EPIC" | "CHAOTIC"
 - type: "PASSIVE_UPGRADE"
 - budgetCost: number
-- passivePayload: array of { stat, op, value }
+- passivePayload: array of stat modifiers and/or hook entries
 
 Keep description fields concise (1 sentence, under 80 characters). Prioritize valid JSON schema over prose.
 
+Stat modifier entry: { stat, op, value }
 Passive stats: MOVE_SPEED, ACCELERATION, LINEAR_DRAG, MASS, KNOCKBACK_RESISTANCE, COOLDOWN_REDUCTION_PCT
 Passive ops: ADD, MULTIPLY
+
+Hook entry (optional, can combine with stat on same object or be hook-only): { hooks: [{ on, actions }] }
+Hook events (on): PARRY_SUCCEEDED, ENTITY_RAMMED, ENTITY_SLAMMED
+Hook actions must use existing action types and may target only CASTER or SELF (never TARGET).
+Example heal-on-parry: { hooks: [{ on: "PARRY_SUCCEEDED", actions: [{ type: "MODIFY_STAT", stat: "health", value: 10, mode: "add", target: "CASTER" }] }] }
 
 Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 

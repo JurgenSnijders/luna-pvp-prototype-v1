@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { applyHitExpiryOverlapRepair, repairAbilitySemantics } from '../src/ai/budget/repair';
 import { PRESETS, KINETIC_RECIPES } from '../src/devtools/Presets';
+import { validateDraftCard, validatePassiveModifier } from '../src/types/cards';
 import type { AbilitySchema, ActionPayload, TriggerNode, ValidationIssue } from '../src/types/schema';
 import { validateAbilitySchema, walkActions } from '../src/types/schema';
 import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
@@ -942,9 +943,69 @@ function runSpellGraphRoundTripAssertions(): string[] {
   return failures;
 }
 
+function runPassiveHookValidationAssertions(): string[] {
+  const failures: string[] = [];
+
+  const mod = validatePassiveModifier({
+    hooks: [
+      {
+        on: 'PARRY_SUCCEEDED',
+        actions: [
+          { type: 'MODIFY_STAT', stat: 'health', value: 10, mode: 'add', target: 'CASTER' },
+        ],
+      },
+      {
+        on: 'ON_UNKNOWN_EVENT',
+        actions: [
+          { type: 'MODIFY_STAT', stat: 'health', value: 99, mode: 'add', target: 'CASTER' },
+        ],
+      },
+    ],
+  });
+
+  if (!mod?.hooks || mod.hooks.length !== 1) {
+    failures.push('passive hook validation: expected valid heal hook with unknown hook dropped');
+  } else if (mod.hooks[0].on !== 'PARRY_SUCCEEDED') {
+    failures.push('passive hook validation: kept hook is not PARRY_SUCCEEDED');
+  }
+
+  const card = validateDraftCard({
+    id: 'trickster',
+    title: 'Trickster',
+    tagline: 'Parry heal',
+    description: 'Heals when you parry.',
+    type: 'PASSIVE_UPGRADE',
+    passivePayload: [
+      {
+        hooks: [
+          {
+            on: 'PARRY_SUCCEEDED',
+            actions: [
+              { type: 'MODIFY_STAT', stat: 'health', value: 10, mode: 'add', target: 'CASTER' },
+            ],
+          },
+          {
+            on: 'NOT_A_REAL_EVENT',
+            actions: [
+              { type: 'MODIFY_STAT', stat: 'health', value: 99, mode: 'add', target: 'CASTER' },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  if (!card?.passivePayload || card.passivePayload.length !== 1) {
+    failures.push('passive card validation: expected card with one hook-only payload entry');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
+    ...runPassiveHookValidationAssertions(),
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
     ...runShieldRepairAssertions(),

@@ -5,6 +5,7 @@ import { simplifyPath, toCasterLocalFrame } from '../primitives/drawnPath';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
+import type { PassiveHook } from '../types/combatEvents';
 import { ACTION_SLOT_INDEX, ACTION_SLOT_KEYS } from '../types/cards';
 import { SpellInventoryManager, type LoadoutChangedDetail } from '../game/SpellInventory';
 import {
@@ -109,6 +110,7 @@ export class Player extends Entity {
   cooldownTimersMs: NumberSlotTuple;
   slotCooldownTotalsMs: NumberSlotTuple;
   passives: PassiveModifierPayload[];
+  passiveHooks: PassiveHook[];
   cooldownReductionPct: number;
   /** Mandatory casting lockout shared across all slots, started on every successful cast. */
   globalCooldownTimerMs: number;
@@ -145,6 +147,7 @@ export class Player extends Entity {
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
     this.passives = [];
+    this.passiveHooks = [];
     this.cooldownReductionPct = 0;
     this.globalCooldownTimerMs = 0;
     this.inputMove = Vector2D.zero();
@@ -689,6 +692,14 @@ export class Player extends Entity {
 
   applyPassiveModifier(mod: PassiveModifierPayload): void {
     this.passives.push(mod);
+
+    if (mod.hooks) {
+      this.passiveHooks.push(...mod.hooks);
+    }
+
+    if (mod.stat === undefined || mod.op === undefined || mod.value === undefined) {
+      return;
+    }
 
     switch (mod.stat) {
       case 'MOVE_SPEED':

@@ -47,6 +47,7 @@ import type { Interpreter } from './Interpreter';
 import { MAX_DEPTH } from './constants';
 import { safeNormalize, secondaryColor, trailColor, getActionPriority } from './helpers';
 import type { TriggerHost } from './TriggerHost';
+import { drainCombatMailbox } from './combatMailbox';
 import { evaluateConditions } from './conditions';
 import { dispatchActions, dispatchTriggerNode } from './triggers';
 import {
@@ -789,6 +790,13 @@ export function processLifecycleEvents(
     if (event.rammer.isDead || event.target.isDead) continue;
 
     const contact = event.rammer.pos.add(event.target.pos).scale(0.5);
+    world.pushCombatEvent({
+      type: 'ENTITY_RAMMED',
+      actorId: event.rammer.id,
+      otherId: event.target.id,
+      pos: { x: contact.x, y: contact.y },
+      magnitude: event.closingSpeed,
+    });
     const ramColor = '#ff8866';
     const sparkCount = Math.max(3, Math.min(10, Math.round(event.closingSpeed / 80)));
     interp.particles?.burstSparks(contact, sparkCount, ramColor);
@@ -832,6 +840,13 @@ export function processLifecycleEvents(
 
   for (const event of world.pendingSlamEvents) {
     if (event.entity.isDead && !(event.entity instanceof Projectile)) continue;
+
+    world.pushCombatEvent({
+      type: 'ENTITY_SLAMMED',
+      actorId: event.entity.id,
+      pos: { x: event.pos.x, y: event.pos.y },
+      magnitude: event.impactSpeed,
+    });
 
     const slamColor =
       event.surface === 'GROUND'
@@ -1101,6 +1116,7 @@ export function processLifecycleEvents(
   processLavaHazardTicks(world, dt);
   processZoneParticleTicks(interp, world);
   processStatusParticleTicks(interp, world);
+  drainCombatMailbox(interp, world);
 }
 
 export function updateTrajectories(

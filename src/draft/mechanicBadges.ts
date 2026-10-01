@@ -162,10 +162,18 @@ export function extractMechanicBadges(
   }
 
   if (card.type === 'PASSIVE_UPGRADE' && card.passivePayload) {
-    return card.passivePayload.map((mod) => {
-      const sign = mod.op === 'MULTIPLY' ? `${Math.round((mod.value - 1) * 100)}%` : `+${mod.value}`;
-      return { label: `[${mod.stat} ${sign}]`, kind: 'trigger' as const };
-    });
+    const badges: { label: string; kind: BadgeKind }[] = [];
+    for (const mod of card.passivePayload) {
+      if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
+        const sign =
+          mod.op === 'MULTIPLY' ? `${Math.round((mod.value - 1) * 100)}%` : `+${mod.value}`;
+        badges.push({ label: `[${mod.stat} ${sign}]`, kind: 'trigger' });
+      }
+      for (const hook of mod.hooks ?? []) {
+        badges.push({ label: `[on ${hook.on}]`, kind: 'trigger' });
+      }
+    }
+    return badges;
   }
 
   return [];

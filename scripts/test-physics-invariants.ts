@@ -38,6 +38,7 @@ import { Vector2D } from '../src/math/Vector2D';
 import { applyField } from '../src/primitives/Fields';
 import { dispatchAction } from '../src/primitives/interpreter/actions';
 import { Interpreter } from '../src/primitives/Interpreter';
+import { drainCombatMailbox } from '../src/primitives/interpreter/combatMailbox';
 import {
   HEADLESS_LIFECYCLE_FX,
   processLifecycleEvents,
@@ -1272,6 +1273,117 @@ function assertAngularHitRegions(): { pass: boolean; reason: string } {
     pass: true,
     reason: `arc front=${arc.frontAccel.toFixed(0)} behind=${arc.behindAccel.toFixed(0)}; full behind=${full.behindAccel.toFixed(0)}`,
   };
+}
+
+const PARRY_HEAL_HOOK = {
+  on: 'PARRY_SUCCEEDED' as const,
+  actions: [
+    {
+      type: 'MODIFY_STAT' as const,
+      stat: 'health' as const,
+      value: 10,
+      mode: 'add' as const,
+      target: 'CASTER' as const,
+    },
+  ],
+};
+
+/** Passive PARRY_SUCCEEDED hook heals once per reflect scan, not per projectile. */
+function assertParryPassiveHookHealOnce(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const caster = new Player(new Vector2D(0, 0));
+  caster.facingAngle = 0;
+  caster.id = 'parry_heal_caster';
+  caster.passiveHooks = [PARRY_HEAL_HOOK];
+  world.addPlayer(caster);
+
+  const enemyId = 'parry_heal_enemy';
+  const traj = { type: 'LINEAR' as const, speed: 200 };
+  const frontA = new Projectile(new Vector2D(50, 0), traj, enemyId, Math.PI, new Map());
+  const frontB = new Projectile(new Vector2D(55, 5), traj, enemyId, Math.PI, new Map());
+  world.addProjectile(frontA);
+  world.addProjectile(frontB);
+
+  const health0 = caster.health;
+  const interp = new Interpreter();
+  dispatchAction(
+    interp,
+    {
+      type: 'REFLECT_PROJECTILES',
+      target: 'CASTER',
+      radius: 150,
+      arcDeg: 120,
+      arcFacing: 'CASTER_FACING',
+    },
+    {
+      origin: caster.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster,
+      depth: 0,
+    },
+    world,
+  );
+
+  if (world.pendingCombatEvents.length !== 1) {
+    return {
+      pass: false,
+      reason: `expected one PARRY_SUCCEEDED event, got ${world.pendingCombatEvents.length}`,
+    };
+  }
+
+  processLifecycleEvents(interp, world, 1 / 60, HEADLESS_LIFECYCLE_FX);
+
+  const delta = caster.health - health0;
+  if (delta !== 10) {
+    return { pass: false, reason: `expected +10 health once, got +${delta}` };
+  }
+
+  return { pass: true, reason: 'two reflected projectiles emit one heal hook dispatch' };
+}
+
+/** Events pushed during drain land in the next drain pass. */
+function assertDeferredCombatMailbox(): { pass: boolean; reason: string } {
+  const world = new PhysicsWorld(Vector2D.zero(), 800);
+  const caster = new Player(new Vector2D(0, 0));
+  caster.id = 'defer_caster';
+  caster.facingAngle = 0;
+  caster.passiveHooks = [PARRY_HEAL_HOOK];
+  world.addPlayer(caster);
+
+  const interp = new Interpreter();
+  const health0 = caster.health;
+
+  world.pushCombatEvent({
+    type: 'PARRY_SUCCEEDED',
+    actorId: caster.id,
+    pos: { x: 0, y: 0 },
+    magnitude: 1,
+  });
+
+  drainCombatMailbox(interp, world);
+  if (caster.health !== health0 + 10) {
+    return {
+      pass: false,
+      reason: `first drain expected +10, got +${caster.health - health0}`,
+    };
+  }
+
+  world.pushCombatEvent({
+    type: 'PARRY_SUCCEEDED',
+    actorId: caster.id,
+    pos: { x: 0, y: 0 },
+    magnitude: 1,
+  });
+  drainCombatMailbox(interp, world);
+  if (caster.health !== health0 + 20) {
+    return {
+      pass: false,
+      reason: `second drain expected +20 total, got +${caster.health - health0}`,
+    };
+  }
+
+  return { pass: true, reason: 'combat mailbox drains one batch per pass' };
 }
 
 /** Directional parry — 90° CASTER_FACING reflects front projectile only. */
@@ -4580,6 +4692,18 @@ function run(): void {
   console.log(`${directionalParryTag} Directional parry`);
   console.log(`  ${DIM}${directionalParry.reason}${RESET}`);
   if (directionalParry.pass) passed++;
+
+  const parryPassiveHeal = assertParryPassiveHookHealOnce();
+  const parryPassiveHealTag = parryPassiveHeal.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${parryPassiveHealTag} Parry passive hook heal once`);
+  console.log(`  ${DIM}${parryPassiveHeal.reason}${RESET}`);
+  if (parryPassiveHeal.pass) passed++;
+
+  const deferredMailbox = assertDeferredCombatMailbox();
+  const deferredMailboxTag = deferredMailbox.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${deferredMailboxTag} Deferred combat mailbox`);
+  console.log(`  ${DIM}${deferredMailbox.reason}${RESET}`);
+  if (deferredMailbox.pass) passed++;
 
   const parryDuration = assertParryDurationWindow();
   const parryDurationTag = parryDuration.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
