@@ -16,6 +16,7 @@ export {
 export { normalizeAbilityPayload, normalizeActionPayload } from './schema/normalize';
 export { validateAbilitySchema } from './schema/validators/ability';
 export { validateActionPayload } from './schema/validators/action';
+export { validateTriggerNode } from './schema/validators/trigger';
 export type { ValidationIssue } from './schema/validators/helpers';
 export { walkActions, walkActionList, walkTriggerNodes } from './schema/walk';
 export type { ActionHost, ActionVisit, ActionVisitor } from './schema/walk';

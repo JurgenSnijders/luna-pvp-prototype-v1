@@ -1386,6 +1386,166 @@ function assertDeferredCombatMailbox(): { pass: boolean; reason: string } {
   return { pass: true, reason: 'combat mailbox drains one batch per pass' };
 }
 
+const SPLICE_LINEAR_SPELL: AbilitySchema = {
+  id: 'test_splice_linear',
+  name: 'Splice Linear',
+  archetype: 'KINETIC',
+  cooldownMs: 1000,
+  recoilKick: 0,
+  visuals: DEFAULT_VISUALS,
+  trajectory: { type: 'LINEAR', speed: 400, maxRange: 500 },
+  triggers: [],
+};
+
+/** Equip-time ADD_BOUNCE compiles onto getAbility, not getBaseAbility; cast spawns bouncesRemaining. */
+function assertEquipTimeSpliceCompile(): { pass: boolean; reason: string } {
+  const player = new Player(new Vector2D(0, 0));
+  player.setAbility(0, SPLICE_LINEAR_SPELL);
+  player.applyPassiveModifier({
+    splices: [{ operation: { type: 'ADD_BOUNCE', amount: 1 } }],
+  });
+
+  const compiled = player.getAbility(0);
+  const base = player.getBaseAbility(0);
+  if (!compiled || !base) {
+    return { pass: false, reason: 'missing compiled or base ability after equip' };
+  }
+  if (compiled.trajectory?.bounces !== 1) {
+    return {
+      pass: false,
+      reason: `compiled bounces expected 1, got ${compiled.trajectory?.bounces ?? 'none'}`,
+    };
+  }
+  if (base.trajectory?.bounces !== undefined) {
+    return { pass: false, reason: 'base ability should not gain bounces from splice' };
+  }
+
+  const world = new PhysicsWorld(Vector2D.zero(), 2000);
+  player.id = 'splice_caster';
+  world.addPlayer(player);
+  const interp = new Interpreter();
+  interp.executeAbility(
+    compiled,
+    {
+      origin: player.pos.clone(),
+      heading: Vector2D.fromAngle(0),
+      aimPoint: new Vector2D(500, 0),
+      caster: player,
+      depth: 0,
+      ability: compiled,
+    },
+    world,
+  );
+  interp.updateTrajectories(world, 1 / 60);
+  const proj = world.projectiles.find((p) => !p.isDead);
+  if (!proj || proj.bouncesRemaining < 1) {
+    return {
+      pass: false,
+      reason: `projectile bouncesRemaining expected >= 1, got ${proj?.bouncesRemaining ?? 'no projectile'}`,
+    };
+  }
+
+  return { pass: true, reason: 'compiled bounce splice; projectile bouncesRemaining >= 1' };
+}
+
+/** Field-only spells ignore ADD_BOUNCE / ADD_PIERCE splices (no trajectory injection). */
+function assertFieldOnlySpliceDropped(): { pass: boolean; reason: string } {
+  const player = new Player(new Vector2D(0, 0));
+  player.setAbility(0, ORBITING_HALOS);
+  player.applyPassiveModifier({
+    splices: [
+      { operation: { type: 'ADD_BOUNCE', amount: 2 } },
+      { operation: { type: 'ADD_PIERCE', amount: 2 } },
+    ],
+  });
+
+  const compiled = player.getAbility(0);
+  if (!compiled) {
+    return { pass: false, reason: 'compiled ability missing after field-only splice' };
+  }
+  if (compiled.trajectory) {
+    return { pass: false, reason: 'field-only spell gained trajectory from bounce/pierce splice' };
+  }
+
+  return { pass: true, reason: 'field-only spell unchanged after bounce/pierce splices' };
+}
+
+/** targetArchetype filter skips mismatched slots. */
+function assertSpliceArchetypeFilter(): { pass: boolean; reason: string } {
+  const player = new Player(new Vector2D(0, 0));
+  player.setAbility(0, SPLICE_LINEAR_SPELL);
+  player.applyPassiveModifier({
+    splices: [
+      {
+        operation: { type: 'ADD_BOUNCE', amount: 1 },
+        targetArchetype: 'FROST',
+      },
+    ],
+  });
+
+  const compiled = player.getAbility(0);
+  if (!compiled) {
+    return { pass: false, reason: 'compiled ability missing after archetype-filtered splice' };
+  }
+  if (compiled.trajectory?.bounces !== undefined) {
+    return {
+      pass: false,
+      reason: `FROST-targeted splice changed KINETIC spell (bounces=${compiled.trajectory.bounces})`,
+    };
+  }
+
+  return { pass: true, reason: 'FROST splice skipped KINETIC slot' };
+}
+
+/** removePassiveAt restores compiled slots to authored bases. */
+function assertSpliceRollback(): { pass: boolean; reason: string } {
+  const player = new Player(new Vector2D(0, 0));
+  player.setAbility(0, SPLICE_LINEAR_SPELL);
+  player.applyPassiveModifier({
+    splices: [{ operation: { type: 'ADD_BOUNCE', amount: 1 } }],
+  });
+
+  const compiledBefore = player.getAbility(0);
+  if (compiledBefore?.trajectory?.bounces !== 1) {
+    return { pass: false, reason: 'bounce splice did not compile before rollback' };
+  }
+
+  player.removePassiveAt(0);
+  const compiledAfter = player.getAbility(0);
+  const base = player.getBaseAbility(0);
+  if (!compiledAfter || !base) {
+    return { pass: false, reason: 'missing compiled or base after rollback' };
+  }
+  if (JSON.stringify(compiledAfter) !== JSON.stringify(base)) {
+    return { pass: false, reason: 'compiled slot did not match base after removePassiveAt' };
+  }
+
+  return { pass: true, reason: 'removePassiveAt restored compiled to base' };
+}
+
+/** Inspector reads base; action bar uses compiled getAbility. */
+function assertSpliceReadSurfaces(): { pass: boolean; reason: string } {
+  const player = new Player(new Vector2D(0, 0));
+  player.setAbility(0, SPLICE_LINEAR_SPELL);
+  player.applyPassiveModifier({
+    splices: [{ operation: { type: 'ADD_PIERCE', amount: 1 } }],
+  });
+
+  const tooltipSource = player.getAbility(0);
+  const inspectorSource = player.getBaseAbility(0);
+  if (!tooltipSource || !inspectorSource) {
+    return { pass: false, reason: 'missing compiled or base for read-surface check' };
+  }
+  if ((tooltipSource.trajectory?.piercing ?? 0) < 1) {
+    return { pass: false, reason: 'getAbility (tooltip) should expose compiled pierce splice' };
+  }
+  if ((inspectorSource.trajectory?.piercing ?? 0) > 0) {
+    return { pass: false, reason: 'getBaseAbility (inspector) should stay authored without pierce' };
+  }
+
+  return { pass: true, reason: 'getAbility compiled; getBaseAbility authored' };
+}
+
 /** Directional parry — 90° CASTER_FACING reflects front projectile only. */
 function assertDirectionalParry(): { pass: boolean; reason: string } {
   const world = new PhysicsWorld(Vector2D.zero(), 800);
@@ -4704,6 +4864,36 @@ function run(): void {
   console.log(`${deferredMailboxTag} Deferred combat mailbox`);
   console.log(`  ${DIM}${deferredMailbox.reason}${RESET}`);
   if (deferredMailbox.pass) passed++;
+
+  const equipSplice = assertEquipTimeSpliceCompile();
+  const equipSpliceTag = equipSplice.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${equipSpliceTag} Equip-time bounce splice compile`);
+  console.log(`  ${DIM}${equipSplice.reason}${RESET}`);
+  if (equipSplice.pass) passed++;
+
+  const fieldSpliceDrop = assertFieldOnlySpliceDropped();
+  const fieldSpliceDropTag = fieldSpliceDrop.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${fieldSpliceDropTag} Field-only splice drop`);
+  console.log(`  ${DIM}${fieldSpliceDrop.reason}${RESET}`);
+  if (fieldSpliceDrop.pass) passed++;
+
+  const archetypeSplice = assertSpliceArchetypeFilter();
+  const archetypeSpliceTag = archetypeSplice.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${archetypeSpliceTag} Splice archetype filter`);
+  console.log(`  ${DIM}${archetypeSplice.reason}${RESET}`);
+  if (archetypeSplice.pass) passed++;
+
+  const spliceRollback = assertSpliceRollback();
+  const spliceRollbackTag = spliceRollback.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${spliceRollbackTag} Splice rollback`);
+  console.log(`  ${DIM}${spliceRollback.reason}${RESET}`);
+  if (spliceRollback.pass) passed++;
+
+  const spliceReadSurfaces = assertSpliceReadSurfaces();
+  const spliceReadSurfacesTag = spliceReadSurfaces.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;
+  console.log(`${spliceReadSurfacesTag} Splice read surfaces`);
+  console.log(`  ${DIM}${spliceReadSurfaces.reason}${RESET}`);
+  if (spliceReadSurfaces.pass) passed++;
 
   const parryDuration = assertParryDurationWindow();
   const parryDurationTag = parryDuration.pass ? `${GREEN}[PASS]${RESET}` : `${RED}[FAIL]${RESET}`;

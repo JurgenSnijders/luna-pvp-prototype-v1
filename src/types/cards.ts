@@ -1,7 +1,8 @@
-import type { CombatEventType, PassiveHook } from './combatEvents';
-import { COMBAT_EVENT_TYPES } from './combatEvents';
-import type { AbilitySchema } from './schema';
-import { validateAbilitySchema, validateActionPayload } from './schema';
+import type { CombatEventType, PassiveHook, PassiveSplice, SpliceOperation } from './combatEvents';
+import { COMBAT_EVENT_TYPES, SPLICE_OPERATION_TYPES } from './combatEvents';
+import type { AbilitySchema, SpellArchetype } from './schema';
+import { SPELL_ARCHETYPE_SET } from './schema';
+import { validateAbilitySchema, validateActionPayload, validateTriggerNode } from './schema';
 
 export type CardRarity = 'COMMON' | 'RARE' | 'EPIC' | 'CHAOTIC';
 export type CardType = 'ACTIVE_ABILITY' | 'PASSIVE_UPGRADE';
@@ -19,6 +20,7 @@ export interface PassiveModifierPayload {
   op?: PassiveOp;
   value?: number;
   hooks?: PassiveHook[];
+  splices?: PassiveSplice[];
 }
 
 export type SkillCategory = 'PRIMARY' | 'SECONDARY' | 'UTILITY' | 'ULTIMATE' | 'MOBILITY';
@@ -155,6 +157,43 @@ function validatePassiveHook(val: unknown): PassiveHook | null {
   };
 }
 
+function validateSpliceOperation(val: unknown): SpliceOperation | null {
+  if (!isObject(val)) return null;
+  if (!isString(val.type) || !SPLICE_OPERATION_TYPES.has(val.type)) return null;
+
+  switch (val.type) {
+    case 'APPEND_TRIGGER': {
+      if (!isObject(val.node)) return null;
+      const node = validateTriggerNode(val.node);
+      if (!node) return null;
+      return { type: 'APPEND_TRIGGER', node };
+    }
+    case 'ADD_BOUNCE':
+    case 'ADD_PIERCE': {
+      if (!isNumber(val.amount) || val.amount <= 0) return null;
+      return { type: val.type, amount: val.amount };
+    }
+    default:
+      return null;
+  }
+}
+
+function validatePassiveSplice(val: unknown): PassiveSplice | null {
+  if (!isObject(val)) return null;
+  if (!isObject(val.operation)) return null;
+
+  const operation = validateSpliceOperation(val.operation);
+  if (!operation) return null;
+
+  const splice: PassiveSplice = { operation };
+  if (val.targetArchetype !== undefined) {
+    const archetypeRaw = isString(val.targetArchetype) ? val.targetArchetype.toUpperCase() : '';
+    if (!SPELL_ARCHETYPE_SET.has(archetypeRaw)) return null;
+    splice.targetArchetype = archetypeRaw as SpellArchetype;
+  }
+  return splice;
+}
+
 export function validatePassiveModifier(val: unknown): PassiveModifierPayload | null {
   if (!isObject(val)) return null;
 
@@ -183,6 +222,18 @@ export function validatePassiveModifier(val: unknown): PassiveModifierPayload | 
     }
     if (hooks.length > 0) {
       mod.hooks = hooks;
+      hasContent = true;
+    }
+  }
+
+  if (Array.isArray(val.splices)) {
+    const splices: PassiveSplice[] = [];
+    for (const raw of val.splices) {
+      const splice = validatePassiveSplice(raw);
+      if (splice) splices.push(splice);
+    }
+    if (splices.length > 0) {
+      mod.splices = splices;
       hasContent = true;
     }
   }

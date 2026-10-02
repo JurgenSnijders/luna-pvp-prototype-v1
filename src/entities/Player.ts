@@ -7,6 +7,7 @@ import type { ExecutionOverrides } from '../types/triggerContext';
 import type { PassiveModifierPayload } from '../types/cards';
 import type { PassiveHook } from '../types/combatEvents';
 import { ACTION_SLOT_INDEX, ACTION_SLOT_KEYS } from '../types/cards';
+import { applySplicesToAbility } from '../game/applyAbilitySplices';
 import { SpellInventoryManager, type LoadoutChangedDetail } from '../game/SpellInventory';
 import {
   classifyAimingMode,
@@ -106,6 +107,8 @@ export class Player extends Entity {
   inputSmoothingMs: number;
   smoothedInputMove: Vector2D;
   facingAngle: number;
+  /** Authored spell per slot; splices compile into `abilities`. */
+  abilityBases: AbilitySlotTuple;
   abilities: AbilitySlotTuple;
   cooldownTimersMs: NumberSlotTuple;
   slotCooldownTotalsMs: NumberSlotTuple;
@@ -143,6 +146,7 @@ export class Player extends Entity {
     this.inputSmoothingMs = 0;
     this.smoothedInputMove = Vector2D.zero();
     this.facingAngle = 0;
+    this.abilityBases = [null, null, null, null, null];
     this.abilities = [null, null, null, null, null];
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
@@ -172,9 +176,25 @@ export class Player extends Entity {
     this.slotResources[slotIndex] = res;
   }
 
+  private recompileSlot(slotIndex: number): void {
+    const base = this.abilityBases[slotIndex];
+    if (!base) {
+      this.abilities[slotIndex] = null;
+      return;
+    }
+    this.abilities[slotIndex] = applySplicesToAbility(base, this.passives);
+  }
+
+  recompileLoadout(): void {
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      this.recompileSlot(i);
+    }
+  }
+
   setAbility(slotIndex: number, ability: AbilitySchema | null): void {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return;
-    this.abilities[slotIndex] = ability;
+    this.abilityBases[slotIndex] = ability ? structuredClone(ability) : null;
+    this.recompileSlot(slotIndex);
     this.cooldownTimersMs[slotIndex] = 0;
     this.slotCooldownTotalsMs[slotIndex] = 0;
     this.initSlotResourceState(slotIndex);
@@ -183,6 +203,11 @@ export class Player extends Entity {
   getAbility(slotIndex: number): AbilitySchema | null {
     if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return null;
     return this.abilities[slotIndex];
+  }
+
+  getBaseAbility(slotIndex: number): AbilitySchema | null {
+    if (slotIndex < 0 || slotIndex >= SLOT_COUNT) return null;
+    return this.abilityBases[slotIndex];
   }
 
   applyEquippedLoadout(): void {
@@ -690,6 +715,18 @@ export class Player extends Entity {
     return Math.max(0, this.slotResources[slotIndex].lockoutTimerMs);
   }
 
+  removePassiveAt(index: number): void {
+    if (index < 0 || index >= this.passives.length) return;
+    this.passives.splice(index, 1);
+    this.passiveHooks = [];
+    for (const passive of this.passives) {
+      if (passive.hooks) {
+        this.passiveHooks.push(...passive.hooks);
+      }
+    }
+    this.recompileLoadout();
+  }
+
   applyPassiveModifier(mod: PassiveModifierPayload): void {
     this.passives.push(mod);
 
@@ -697,11 +734,8 @@ export class Player extends Entity {
       this.passiveHooks.push(...mod.hooks);
     }
 
-    if (mod.stat === undefined || mod.op === undefined || mod.value === undefined) {
-      return;
-    }
-
-    switch (mod.stat) {
+    if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
+      switch (mod.stat) {
       case 'MOVE_SPEED':
         if (mod.op === 'ADD') this.moveSpeed += mod.value;
         else this.moveSpeed *= mod.value;
@@ -738,7 +772,10 @@ export class Player extends Entity {
         else this.cooldownReductionPct *= mod.value;
         this.cooldownReductionPct = Math.max(0, Math.min(50, this.cooldownReductionPct));
         break;
+      }
     }
+
+    this.recompileLoadout();
   }
 
   applyMovementProfile(profile: MovementProfile): void {

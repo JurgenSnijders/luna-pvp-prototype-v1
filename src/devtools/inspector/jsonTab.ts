@@ -26,7 +26,7 @@ function getSlotIndex(slotSelect: HTMLSelectElement): number {
 
 function slotLabel(ctx: InspectorContext, slotIndex: number): string {
   const key = ACTION_SLOT_KEYS[slotIndex];
-  const ability = ctx.player.getAbility(slotIndex);
+  const ability = ctx.player.getBaseAbility(slotIndex);
   return ability ? `${key} — ${ability.name}` : `${key} — (empty)`;
 }
 
@@ -50,7 +50,7 @@ function loadSlotIntoEditor(
   jsonTextarea: HTMLTextAreaElement,
   refs: JsonTabRefs,
 ): void {
-  const ability = ctx.player.getAbility(slotIndex);
+  const ability = ctx.player.getBaseAbility(slotIndex);
   jsonTextarea.value = ability ? JSON.stringify(structuredClone(ability), null, 2) : '';
   showJsonError(refs, '');
 }

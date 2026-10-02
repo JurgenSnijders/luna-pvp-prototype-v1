@@ -1002,10 +1002,49 @@ function runPassiveHookValidationAssertions(): string[] {
   return failures;
 }
 
+function runPassiveSpliceValidationAssertions(): string[] {
+  const failures: string[] = [];
+
+  const mod = validatePassiveModifier({
+    splices: [
+      { operation: { type: 'ADD_BOUNCE', amount: 1 } },
+      { operation: { type: 'NOT_A_REAL_OP', amount: 1 } },
+    ],
+  });
+
+  if (!mod?.splices || mod.splices.length !== 1) {
+    failures.push('passive splice validation: expected valid ADD_BOUNCE with unknown op dropped');
+  } else if (mod.splices[0].operation.type !== 'ADD_BOUNCE') {
+    failures.push('passive splice validation: kept splice is not ADD_BOUNCE');
+  }
+
+  const badAmount = validatePassiveModifier({
+    splices: [{ operation: { type: 'ADD_PIERCE', amount: 0 } }],
+  });
+  if (badAmount?.splices) {
+    failures.push('passive splice validation: non-positive pierce amount should be dropped');
+  }
+
+  const badArchetype = validatePassiveModifier({
+    splices: [
+      {
+        operation: { type: 'ADD_BOUNCE', amount: 1 },
+        targetArchetype: 'NOT_REAL',
+      },
+    ],
+  });
+  if (badArchetype?.splices) {
+    failures.push('passive splice validation: unknown targetArchetype should drop splice');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
     ...runPassiveHookValidationAssertions(),
+    ...runPassiveSpliceValidationAssertions(),
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
     ...runShieldRepairAssertions(),
