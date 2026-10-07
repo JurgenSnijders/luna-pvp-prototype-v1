@@ -1060,20 +1060,101 @@ export function injectStyles(): void {
       cursor: grab;
     }
 
-    .passive-tile.passive-tile-has-icon::before,
-    .passive-slot.passive-slot-has-icon::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, rgba(10, 12, 20, 0.4) 0%, rgba(10, 12, 20, 0.88) 100%);
-      pointer-events: none;
-      z-index: 1;
+    .passive-tile-art {
+      padding: 0;
     }
 
-    .passive-tile.passive-tile-has-icon > *,
-    .passive-slot.passive-slot-has-icon > * {
-      position: relative;
-      z-index: 2;
+    .passive-tile-art-bg {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    .passive-tile-text {
+      padding: 4px;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 2px;
+    }
+
+    .passive-tile-text .spell-tile-title {
+      font-family: ${FONTS.mono};
+      font-size: 9px;
+      font-weight: bold;
+      line-height: 1.1;
+      color: var(--retro-text-primary, #d8e8f0);
+      text-align: center;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      flex-shrink: 0;
+    }
+
+    .passive-tile-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      justify-content: center;
+      overflow: hidden;
+      max-height: 28px;
+      flex-shrink: 1;
+    }
+
+    .passive-tile-badges span {
+      font-size: 7px !important;
+      padding: 1px 3px !important;
+      line-height: 1.1 !important;
+    }
+
+    .passive-tile-generate-btn {
+      margin-top: auto;
+      width: 100%;
+      padding: 2px 0;
+      font-family: ${FONTS.mono};
+      font-size: 7px;
+      line-height: 1.2;
+      color: var(--retro-neon-cyan, #00e5ff);
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-radius: 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .passive-tile-generate-btn:hover:not(:disabled) {
+      background: rgba(0, 229, 255, 0.18);
+      border-color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .passive-tile-generate-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .passive-slot-art {
+      padding: 0;
+    }
+
+    .passive-slot-art-bg {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      transform: rotate(-45deg) scale(1.42);
+    }
+
+    .passive-slot-art .passive-slot-title,
+    .passive-slot-art .passive-slot-detail,
+    .passive-slot-art .passive-slot-badge {
+      display: none;
     }
 
     .passive-tile.is-dragging {

@@ -82,7 +82,7 @@ import { PassiveInventoryManager } from '../game/PassiveInventory';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import { renderPassiveDiagnostics } from './PassiveDiagnostics';
 import { renderPassiveEquipBar } from './PassiveEquipBar';
-import { attachPassiveVaultDrag } from './passiveDragDrop';
+import { renderPassiveGridTile } from './passiveGridTile';
 import {
   getSpellRoleLabel,
   getVaultSortLabel,
@@ -1402,12 +1402,6 @@ export class DraftModal {
     this.passiveGrid.innerHTML = '';
 
     const cards = PassiveInventoryManager.getAll();
-    const loadout = this.callbacks.getLoadout();
-    const equippedTitles = new Set(
-      (loadout.passiveLabels ?? [])
-        .filter((label): label is PassiveSlotLabel => label !== null && label !== undefined)
-        .map((label) => label.title),
-    );
 
     if (cards.length === 0) {
       const empty = document.createElement('div');
@@ -1422,59 +1416,14 @@ export class DraftModal {
     }
 
     for (const card of cards) {
-      const tile = document.createElement('div');
-      tile.className = 'spell-tile passive-tile';
-      if (card.id === this.selectedPassiveId) {
-        tile.classList.add('tile-selected');
-      }
-
-      const rarityColor = RARITY_COLORS[card.rarity];
-      tile.style.borderColor = rarityColor;
-      tile.style.boxShadow = `0 0 12px ${hexToRgba(rarityColor, 0.35)}`;
-
-      const iconData = card.passivePayload?.find((mod) => mod.iconData)?.iconData;
-      if (iconData) {
-        tile.classList.add('passive-tile-has-icon');
-        tile.style.backgroundImage = `url("${iconData}")`;
-        tile.style.backgroundSize = 'cover';
-        tile.style.backgroundPosition = 'center';
-      }
-
-      const title = document.createElement('div');
-      title.className = 'spell-tile-title';
-      title.textContent = card.title;
-
-      const tagline = document.createElement('div');
-      tagline.className = 'spell-tile-tagline';
-      tagline.textContent = card.tagline;
-
-      const desc = document.createElement('div');
-      desc.className = 'spell-tile-desc';
-      desc.textContent = card.description;
-
-      const badges = document.createElement('div');
-      badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;';
-      this.appendCardMechanicBadges(badges, card);
-
-      tile.appendChild(title);
-      tile.appendChild(tagline);
-      tile.appendChild(desc);
-      tile.appendChild(badges);
-      tile.appendChild(renderPowerBar(card.budgetCost, card.rarity, true));
-
-      if (equippedTitles.has(card.title)) {
-        const equippedBadge = document.createElement('div');
-        equippedBadge.textContent = 'EQUIPPED';
-        equippedBadge.style.cssText = `margin-top:6px;font-size:${FONTS.size.sm};color:${RETRO_COLORS.neonCyan};`;
-        tile.appendChild(equippedBadge);
-      }
-
-      tile.addEventListener('click', () => {
-        this.selectedPassiveId = card.id;
-        this.renderPassivesGrid();
+      const tile = renderPassiveGridTile(card, {
+        selected: card.id === this.selectedPassiveId,
+        rarityColor: RARITY_COLORS[card.rarity],
+        onSelect: () => {
+          this.selectedPassiveId = card.id;
+          this.renderPassivesGrid();
+        },
       });
-
-      attachPassiveVaultDrag(tile, card.id);
       this.passiveGrid.appendChild(tile);
     }
   }

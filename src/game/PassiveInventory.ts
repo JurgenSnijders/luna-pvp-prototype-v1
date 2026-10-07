@@ -175,6 +175,17 @@ class PassiveInventoryStore {
       .map((id) => this.cards.get(id))
       .filter((card): card is DraftCard => card !== undefined);
   }
+
+  requestIconGeneration(cardId: string): void {
+    this.initialize();
+    const card = this.cards.get(cardId);
+    if (!card) return;
+    this.schedulePassiveIconGeneration(card);
+  }
+
+  isIconGenerationPending(cardId: string): boolean {
+    return this.pendingIconGeneration.has(cardId);
+  }
 }
 
 export const PassiveInventoryManager = new PassiveInventoryStore();

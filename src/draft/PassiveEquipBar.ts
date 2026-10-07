@@ -56,21 +56,22 @@ export function renderPassiveEquipBar(
 
       const iconData = resolvePassiveIconData(mod, label);
       if (iconData) {
-        slot.classList.add('passive-slot-has-icon');
-        slot.style.backgroundImage = `url("${iconData}")`;
-        slot.style.backgroundSize = 'cover';
-        slot.style.backgroundPosition = 'center';
+        slot.classList.add('passive-slot-art');
+        const bg = document.createElement('div');
+        bg.className = 'passive-slot-art-bg';
+        bg.style.backgroundImage = `url("${iconData}")`;
+        slot.appendChild(bg);
+      } else {
+        const title = document.createElement('span');
+        title.className = 'passive-slot-title';
+        title.textContent = label?.title ?? summarizePassive(mod);
+        slot.appendChild(title);
+
+        const detail = document.createElement('span');
+        detail.className = 'passive-slot-detail';
+        detail.textContent = label?.tagline ?? summarizePassive(mod);
+        slot.appendChild(detail);
       }
-
-      const title = document.createElement('span');
-      title.className = 'passive-slot-title';
-      title.textContent = label?.title ?? summarizePassive(mod);
-      slot.appendChild(title);
-
-      const detail = document.createElement('span');
-      detail.className = 'passive-slot-detail';
-      detail.textContent = label?.tagline ?? summarizePassive(mod);
-      slot.appendChild(detail);
 
       slot.addEventListener('contextmenu', (event) => {
         event.preventDefault();
