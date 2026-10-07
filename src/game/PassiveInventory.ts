@@ -1,5 +1,6 @@
 import { generateOfflinePassives } from '../ai/synthesizer/offline/forge';
 import { generatePassiveIcon } from '../services/imageSynthesizer';
+import type { CombatEventType } from '../types/combatEvents';
 import type { DraftCard, PassiveModifierPayload } from '../types/cards';
 import { validateDraftCard } from '../types/cards';
 
@@ -13,27 +14,52 @@ function passiveHasIconData(card: DraftCard): boolean {
   return card.passivePayload?.some((mod) => Boolean(mod.iconData)) ?? false;
 }
 
-function summarizePassiveModifiers(passives: PassiveModifierPayload[]): string {
-  const parts: string[] = [];
+const STAT_THEME_WORDS: Record<string, string> = {
+  MOVE_SPEED: 'speed',
+  ACCELERATION: 'acceleration',
+  LINEAR_DRAG: 'drag',
+  MASS: 'mass',
+  KNOCKBACK_RESISTANCE: 'stability',
+  COOLDOWN_REDUCTION_PCT: 'cooldown',
+};
+
+const HOOK_THEME_WORDS: Record<CombatEventType, string> = {
+  PARRY_SUCCEEDED: 'parry',
+  ENTITY_RAMMED: 'ram',
+  ENTITY_SLAMMED: 'slam',
+};
+
+const SPLICE_THEME_WORDS: Record<string, string> = {
+  ADD_BOUNCE: 'bounce',
+  ADD_PIERCE: 'pierce',
+  APPEND_TRIGGER: 'trigger',
+};
+
+function extractPassiveIconTheme(passives: PassiveModifierPayload[]): string {
+  const themes = new Set<string>();
+
   for (const mod of passives) {
-    if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
-      parts.push(`${mod.stat} ${mod.op} ${mod.value}`);
+    if (mod.stat !== undefined) {
+      const word = STAT_THEME_WORDS[mod.stat];
+      if (word) themes.add(word);
     }
-    const hookCount = mod.hooks?.length ?? 0;
-    if (hookCount > 0) {
-      parts.push(`${hookCount} combat hook${hookCount === 1 ? '' : 's'}`);
+
+    for (const hook of mod.hooks ?? []) {
+      const word = HOOK_THEME_WORDS[hook.on];
+      if (word) themes.add(word);
     }
-    const spliceCount = mod.splices?.length ?? 0;
-    if (spliceCount > 0) {
-      parts.push(`${spliceCount} ability splice${spliceCount === 1 ? '' : 's'}`);
+
+    for (const splice of mod.splices ?? []) {
+      const word = SPLICE_THEME_WORDS[splice.operation.type];
+      if (word) themes.add(word);
     }
   }
-  return parts.length > 0 ? parts.join('; ') : 'passive augment';
+
+  return themes.size > 0 ? [...themes].join(', ') : 'energy';
 }
 
-function buildPassiveIconDescription(card: DraftCard): string {
-  const mechanics = card.passivePayload ? summarizePassiveModifiers(card.passivePayload) : '';
-  return mechanics ? `${card.description} (${mechanics})` : card.description;
+function buildPassiveIconTheme(card: DraftCard): string {
+  return card.passivePayload ? extractPassiveIconTheme(card.passivePayload) : 'energy';
 }
 
 class PassiveInventoryStore {
@@ -110,9 +136,9 @@ class PassiveInventoryStore {
     if (this.pendingIconGeneration.has(card.id)) return;
 
     this.pendingIconGeneration.add(card.id);
-    const description = buildPassiveIconDescription(card);
+    const theme = buildPassiveIconTheme(card);
 
-    generatePassiveIcon(card.title, description)
+    generatePassiveIcon(card.title, card.description, theme)
       .then((iconData) => {
         this.stampIconData(card.id, iconData);
       })

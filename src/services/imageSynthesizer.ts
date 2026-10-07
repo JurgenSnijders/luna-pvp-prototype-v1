@@ -22,8 +22,13 @@ interface GeminiGenerateContentResponse {
   error?: { message?: string };
 }
 
-function buildPassiveIconPrompt(cardName: string, description: string): string {
-  return `1980s retro sci-fi pixel art icon, dark background, glowing neon, representing ${cardName}: ${description}. High contrast, hardware augment aesthetic, flat diorama perspective.`;
+function buildPassiveIconPrompt(cardName: string, description: string, theme: string): string {
+  return [
+    `Centered retro-futuristic sci-fi emblem, a single glowing energy glyph representing ${cardName}. Theme: ${theme}. Flavor: ${description}.`,
+    'Subject isolated in the middle. Deep dark void background #0a0a12, borderless, ample empty space around the edges.',
+    '1980s dark arcade vector art, glowing neon accents, sharp silhouette, game ability icon.',
+    'DO NOT include: text, words, letters, numbers, typography, user interface, UI, buttons, card borders, frames, rectangular outlines, stat boxes, mockup.',
+  ].join(' ');
 }
 
 function extractImageDataUrl(response: GeminiGenerateContentResponse): string | null {
@@ -41,7 +46,11 @@ function extractImageDataUrl(response: GeminiGenerateContentResponse): string | 
   return null;
 }
 
-export async function generatePassiveIcon(cardName: string, description: string): Promise<string> {
+export async function generatePassiveIcon(
+  cardName: string,
+  description: string,
+  theme: string,
+): Promise<string> {
   const settings = getAiSettings();
   const apiKey = settings.apiKey.trim();
   if (!apiKey) {
@@ -50,7 +59,7 @@ export async function generatePassiveIcon(cardName: string, description: string)
 
   const baseUrl = settings.baseUrl.replace(/\/+$/, '');
   const endpoint = `${baseUrl}/models/${IMAGE_MODEL}:generateContent`;
-  const prompt = buildPassiveIconPrompt(cardName, description);
+  const prompt = buildPassiveIconPrompt(cardName, description, theme);
 
   const response = await fetch(endpoint, {
     method: 'POST',

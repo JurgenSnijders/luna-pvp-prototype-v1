@@ -1065,7 +1065,7 @@ export function injectStyles(): void {
       content: '';
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.6);
+      background: linear-gradient(180deg, rgba(10, 12, 20, 0.4) 0%, rgba(10, 12, 20, 0.88) 100%);
       pointer-events: none;
       z-index: 1;
     }
