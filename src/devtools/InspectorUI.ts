@@ -277,6 +277,6 @@ export class InspectorUI {
       refs.slots[i].textContent = `${ACTION_SLOT_KEYS[i]}: ${name} (${status})`;
     }
 
-    refs.passives.textContent = `Passives: ${p.passives.length}`;
+    refs.passives.textContent = `Passives: ${p.passives.filter((mod) => mod !== null).length}/5`;
   }
 }

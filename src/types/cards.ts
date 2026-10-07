@@ -104,6 +104,21 @@ export interface DraftSelection {
   slot: SlotType;
 }
 
+export const PASSIVE_SLOT_COUNT = 5;
+
+export type PassiveSlotTuple = [
+  PassiveModifierPayload | null,
+  PassiveModifierPayload | null,
+  PassiveModifierPayload | null,
+  PassiveModifierPayload | null,
+  PassiveModifierPayload | null,
+];
+
+export interface PassiveSlotLabel {
+  title: string;
+  tagline: string;
+}
+
 export interface PlayerLoadout {
   abilities: [
     AbilitySchema | null,
@@ -112,7 +127,8 @@ export interface PlayerLoadout {
     AbilitySchema | null,
     AbilitySchema | null,
   ];
-  passives: PassiveModifierPayload[];
+  passives: PassiveSlotTuple;
+  passiveLabels?: Array<PassiveSlotLabel | null>;
 }
 
 const RARITIES: ReadonlySet<string> = new Set(['COMMON', 'RARE', 'EPIC', 'CHAOTIC']);

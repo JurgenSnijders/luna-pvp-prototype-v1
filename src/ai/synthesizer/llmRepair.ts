@@ -1,5 +1,7 @@
 import { sanitizeAbilitySchema } from '../BudgetEngine';
 import type { CardRarity, SkillCategory } from '../../types/cards';
+import { validatePassiveModifier } from '../../types/cards';
+import { COMBAT_EVENT_TYPES } from '../../types/combatEvents';
 import type { TriggerNode } from '../../types/schema';
 import { TRAJECTORY_TYPES } from '../../types/schema/constants';
 import {
@@ -8,6 +10,7 @@ import {
   normalizeActionPayload,
   TRIGGER_TYPES,
   validateAbilitySchema,
+  validateActionPayload,
 } from '../../types/schema';
 
 export function diagnoseDraftCardsValidation(val: unknown): string[] {
@@ -88,12 +91,234 @@ export function diagnoseDraftCardsValidation(val: unknown): string[] {
       }
     }
 
-    if (c.type === 'PASSIVE_UPGRADE' && !Array.isArray(c.passivePayload)) {
-      reasons.push(`card[${i}]:missing_passivePayload`);
+    if (c.type === 'PASSIVE_UPGRADE') {
+      reasons.push(...diagnosePassivePayload(i, c.passivePayload));
     }
   });
 
   return reasons;
+}
+
+const PASSIVE_STAT_SET = new Set([
+  'MOVE_SPEED',
+  'ACCELERATION',
+  'LINEAR_DRAG',
+  'MASS',
+  'KNOCKBACK_RESISTANCE',
+  'COOLDOWN_REDUCTION_PCT',
+]);
+const PASSIVE_OP_SET = new Set(['ADD', 'MULTIPLY']);
+const PASSIVE_FALLBACK_MODIFIER = { stat: 'MOVE_SPEED', op: 'ADD', value: 10 };
+
+function normalizePassiveStat(raw: string): string | null {
+  const compact = raw.trim().toUpperCase().replace(/[\s-]+/g, '_');
+  const aliasMap: Record<string, string> = {
+    MOVE_SPEED: 'MOVE_SPEED',
+    MOVESPEED: 'MOVE_SPEED',
+    SPEED: 'MOVE_SPEED',
+    ACCELERATION: 'ACCELERATION',
+    ACCEL: 'ACCELERATION',
+    LINEAR_DRAG: 'LINEAR_DRAG',
+    LINEARDRAG: 'LINEAR_DRAG',
+    DRAG: 'LINEAR_DRAG',
+    MASS: 'MASS',
+    KNOCKBACK_RESISTANCE: 'KNOCKBACK_RESISTANCE',
+    KNOCKBACK: 'KNOCKBACK_RESISTANCE',
+    COOLDOWN_REDUCTION_PCT: 'COOLDOWN_REDUCTION_PCT',
+    CDR: 'COOLDOWN_REDUCTION_PCT',
+    COOLDOWN: 'COOLDOWN_REDUCTION_PCT',
+  };
+  const normalized = aliasMap[compact] ?? compact;
+  return PASSIVE_STAT_SET.has(normalized) ? normalized : null;
+}
+
+function normalizePassiveOp(raw: string): 'ADD' | 'MULTIPLY' | null {
+  const compact = raw.trim().toUpperCase();
+  const aliasMap: Record<string, 'ADD' | 'MULTIPLY'> = {
+    ADD: 'ADD',
+    PLUS: 'ADD',
+    INCREASE: 'ADD',
+    MULTIPLY: 'MULTIPLY',
+    MUL: 'MULTIPLY',
+    MULT: 'MULTIPLY',
+  };
+  if (aliasMap[compact]) return aliasMap[compact];
+  return compact === 'ADD' || compact === 'MULTIPLY' ? compact : null;
+}
+
+function diagnosePassivePayload(cardIndex: number, passivePayload: unknown): string[] {
+  const reasons: string[] = [];
+  if (!Array.isArray(passivePayload)) {
+    reasons.push(`card[${cardIndex}]:missing_passivePayload`);
+    return reasons;
+  }
+  if (passivePayload.length === 0) {
+    reasons.push(`card[${cardIndex}]:passive:empty_array`);
+    return reasons;
+  }
+
+  let anyValid = false;
+  passivePayload.forEach((raw, pi) => {
+    if (raw === null || typeof raw !== 'object') {
+      reasons.push(`card[${cardIndex}]:passive[${pi}]:not_object`);
+      return;
+    }
+    const p = raw as Record<string, unknown>;
+
+    if (p.stat !== undefined || p.op !== undefined || p.value !== undefined) {
+      const statRaw = typeof p.stat === 'string' ? p.stat : String(p.stat);
+      if (!normalizePassiveStat(statRaw)) {
+        reasons.push(`card[${cardIndex}]:passive[${pi}]:bad_stat=${String(p.stat)}`);
+      }
+      const opRaw = typeof p.op === 'string' ? p.op : String(p.op);
+      if (!normalizePassiveOp(opRaw)) {
+        reasons.push(`card[${cardIndex}]:passive[${pi}]:bad_op=${String(p.op)}`);
+      }
+      if (typeof p.value !== 'number' || !Number.isFinite(p.value)) {
+        reasons.push(`card[${cardIndex}]:passive[${pi}]:bad_value=${String(p.value)}`);
+      }
+    }
+
+    if (Array.isArray(p.hooks)) {
+      p.hooks.forEach((hook, hi) => {
+        if (hook === null || typeof hook !== 'object') {
+          reasons.push(`card[${cardIndex}]:passive[${pi}]:hook[${hi}]:not_object`);
+          return;
+        }
+        const h = hook as Record<string, unknown>;
+        const onVal = typeof h.on === 'string' ? h.on : typeof h.trigger === 'string' ? h.trigger : null;
+        if (!onVal || !COMBAT_EVENT_TYPES.has(onVal.toUpperCase())) {
+          reasons.push(`card[${cardIndex}]:passive[${pi}]:hook[${hi}]:bad_on=${String(onVal)}`);
+        }
+        if (!Array.isArray(h.actions)) {
+          reasons.push(`card[${cardIndex}]:passive[${pi}]:hook[${hi}]:missing_actions`);
+        } else {
+          let validActionCount = 0;
+          h.actions.forEach((action, ai) => {
+            if (!validateActionPayload(action)) {
+              reasons.push(
+                `card[${cardIndex}]:passive[${pi}]:hook[${hi}]:action[${ai}]:invalid`,
+              );
+            } else {
+              validActionCount++;
+            }
+          });
+          if (h.actions.length > 0 && validActionCount === 0) {
+            reasons.push(`card[${cardIndex}]:passive[${pi}]:hook[${hi}]:actions_all_invalid`);
+          }
+        }
+      });
+    }
+
+    if (p.operation !== undefined && !Array.isArray(p.splices)) {
+      reasons.push(`card[${cardIndex}]:passive[${pi}]:splice_missing_wrapper`);
+    }
+    if (Array.isArray(p.splices)) {
+      p.splices.forEach((splice, si) => {
+        if (splice === null || typeof splice !== 'object') {
+          reasons.push(`card[${cardIndex}]:passive[${pi}]:splice[${si}]:not_object`);
+          return;
+        }
+        const s = splice as Record<string, unknown>;
+        if (s.operation === null || typeof s.operation !== 'object') {
+          reasons.push(`card[${cardIndex}]:passive[${pi}]:splice[${si}]:missing_operation`);
+        }
+      });
+    }
+
+    if (validatePassiveModifier(raw)) anyValid = true;
+  });
+
+  if (!anyValid) {
+    reasons.push(`card[${cardIndex}]:passive_all_invalid`);
+  }
+
+  return reasons;
+}
+
+function repairPassiveModifier(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const obj = { ...(raw as Record<string, unknown>) };
+
+  if (
+    obj.operation !== undefined &&
+    !Array.isArray(obj.splices) &&
+    typeof obj.operation === 'object' &&
+    obj.operation !== null
+  ) {
+    const spliceEntry: Record<string, unknown> = { operation: obj.operation };
+    if (obj.targetArchetype !== undefined) spliceEntry.targetArchetype = obj.targetArchetype;
+    delete obj.operation;
+    delete obj.targetArchetype;
+    obj.splices = [spliceEntry];
+  }
+
+  if (typeof obj.stat === 'string') {
+    const normalized = normalizePassiveStat(obj.stat);
+    if (normalized) obj.stat = normalized;
+  }
+  if (typeof obj.op === 'string') {
+    const normalized = normalizePassiveOp(obj.op);
+    if (normalized) obj.op = normalized;
+  }
+  if (obj.value !== undefined) {
+    obj.value = ensureFiniteNumber(obj.value, 0);
+  }
+
+  if (Array.isArray(obj.splices)) {
+    obj.splices = obj.splices.map((splice) => {
+      if (splice === null || typeof splice !== 'object') return splice;
+      const s = { ...(splice as Record<string, unknown>) };
+      if (typeof s.targetArchetype === 'string') {
+        s.targetArchetype = s.targetArchetype.toUpperCase();
+      }
+      if (s.operation !== null && typeof s.operation === 'object') {
+        const op = { ...(s.operation as Record<string, unknown>) };
+        if (typeof op.type === 'string') op.type = op.type.toUpperCase();
+        coerceNumericFields(op, ['amount']);
+        s.operation = op;
+      }
+      return s;
+    });
+  }
+
+  if (Array.isArray(obj.hooks)) {
+    obj.hooks = obj.hooks.map((hook) => {
+      if (hook === null || typeof hook !== 'object') return hook;
+      const h = { ...(hook as Record<string, unknown>) };
+      if (h.on === undefined && typeof h.trigger === 'string') {
+        h.on = h.trigger;
+        delete h.trigger;
+      }
+      if (typeof h.on === 'string') h.on = h.on.toUpperCase();
+      if (Array.isArray(h.actions)) {
+        h.actions = h.actions
+          .map(repairActionPayload)
+          .filter((action) => {
+            if (action === null || typeof action !== 'object') return false;
+            const type = (action as Record<string, unknown>).type;
+            return typeof type === 'string' && ACTION_TYPES.has(type);
+          });
+      }
+      return h;
+    });
+  }
+
+  return obj;
+}
+
+function repairPassivePayload(passivePayload: unknown): unknown[] {
+  if (!Array.isArray(passivePayload)) {
+    return [PASSIVE_FALLBACK_MODIFIER];
+  }
+
+  const repairedMods: unknown[] = [];
+  for (const raw of passivePayload) {
+    const repaired = repairPassiveModifier(raw);
+    if (validatePassiveModifier(repaired)) repairedMods.push(repaired);
+  }
+
+  return repairedMods.length > 0 ? repairedMods : [PASSIVE_FALLBACK_MODIFIER];
 }
 
 function diagnoseAbilityPayload(payload: unknown, cardIndex: number): string[] {
@@ -804,6 +1029,9 @@ function repairDraftCard(card: unknown, index = 0): unknown {
       description || undefined,
     );
   }
+  if (obj.type === 'PASSIVE_UPGRADE') {
+    obj.passivePayload = repairPassivePayload(obj.passivePayload);
+  }
   return obj;
 }
 
@@ -820,7 +1048,10 @@ export function summarizeValidationFailure(diagnosis: string[], normalizedDiagno
       r.includes('invalid=') ||
       r.includes('uses_on_key') ||
       r.includes('metadata_invalid') ||
-      r.includes('missing_actions'),
+      r.includes('missing_actions') ||
+      r.includes('passive[') ||
+      r.includes('passive_all_invalid') ||
+      r.includes('passive:'),
   );
   const nonGeneric = detailed.length > 0
     ? detailed

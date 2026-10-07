@@ -4,9 +4,17 @@ import type { MovementProfile } from '../devtools/movementSettings';
 import { simplifyPath, toCasterLocalFrame } from '../primitives/drawnPath';
 import type { AbilitySchema, InputProfile } from '../types/schema';
 import type { ExecutionOverrides } from '../types/triggerContext';
-import type { PassiveModifierPayload } from '../types/cards';
+import type {
+  PassiveModifierPayload,
+  PassiveSlotLabel,
+  PassiveSlotTuple,
+} from '../types/cards';
 import type { PassiveHook } from '../types/combatEvents';
-import { ACTION_SLOT_INDEX, ACTION_SLOT_KEYS } from '../types/cards';
+import {
+  ACTION_SLOT_INDEX,
+  ACTION_SLOT_KEYS,
+  PASSIVE_SLOT_COUNT,
+} from '../types/cards';
 import { applySplicesToAbility } from '../game/applyAbilitySplices';
 import { SpellInventoryManager, type LoadoutChangedDetail } from '../game/SpellInventory';
 import {
@@ -112,9 +120,15 @@ export class Player extends Entity {
   abilities: AbilitySlotTuple;
   cooldownTimersMs: NumberSlotTuple;
   slotCooldownTotalsMs: NumberSlotTuple;
-  passives: PassiveModifierPayload[];
+  passives: PassiveSlotTuple;
+  passiveLabels: Array<PassiveSlotLabel | null>;
   passiveHooks: PassiveHook[];
   cooldownReductionPct: number;
+  private baselineMoveSpeed: number;
+  private baselineAcceleration: number;
+  private baselineLinearDrag: number;
+  private baselineMass: number;
+  private baselineKnockbackResistance: number;
   /** Mandatory casting lockout shared across all slots, started on every successful cast. */
   globalCooldownTimerMs: number;
 
@@ -150,9 +164,15 @@ export class Player extends Entity {
     this.abilities = [null, null, null, null, null];
     this.cooldownTimersMs = [0, 0, 0, 0, 0];
     this.slotCooldownTotalsMs = [0, 0, 0, 0, 0];
-    this.passives = [];
+    this.passives = [null, null, null, null, null];
+    this.passiveLabels = [null, null, null, null, null];
     this.passiveHooks = [];
     this.cooldownReductionPct = 0;
+    this.baselineMoveSpeed = this.baseMoveSpeed;
+    this.baselineAcceleration = this.baseAcceleration;
+    this.baselineLinearDrag = this.baseLinearDrag;
+    this.baselineMass = this.mass;
+    this.baselineKnockbackResistance = this.knockbackResistance;
     this.globalCooldownTimerMs = 0;
     this.inputMove = Vector2D.zero();
     this.aimTarget = pos.add(Vector2D.fromAngle(0, 100));
@@ -182,7 +202,10 @@ export class Player extends Entity {
       this.abilities[slotIndex] = null;
       return;
     }
-    this.abilities[slotIndex] = applySplicesToAbility(base, this.passives);
+    const equippedPassives = this.passives.filter(
+      (mod): mod is PassiveModifierPayload => mod !== null,
+    );
+    this.abilities[slotIndex] = applySplicesToAbility(base, equippedPassives);
   }
 
   recompileLoadout(): void {
@@ -715,63 +738,112 @@ export class Player extends Entity {
     return Math.max(0, this.slotResources[slotIndex].lockoutTimerMs);
   }
 
-  removePassiveAt(index: number): void {
-    if (index < 0 || index >= this.passives.length) return;
-    this.passives.splice(index, 1);
-    this.passiveHooks = [];
-    for (const passive of this.passives) {
-      if (passive.hooks) {
-        this.passiveHooks.push(...passive.hooks);
-      }
+  findFirstEmptyPassiveSlot(): number | null {
+    for (let i = 0; i < PASSIVE_SLOT_COUNT; i++) {
+      if (this.passives[i] === null) return i;
     }
-    this.recompileLoadout();
+    return null;
+  }
+
+  equipPassive(
+    slotIndex: number,
+    payload: PassiveModifierPayload,
+    label?: PassiveSlotLabel,
+  ): void {
+    if (slotIndex < 0 || slotIndex >= PASSIVE_SLOT_COUNT) return;
+    this.passives[slotIndex] = structuredClone(payload);
+    this.passiveLabels[slotIndex] = label ? { ...label } : null;
+    this.rebuildPassiveEffects();
+    this.dispatchPassiveLoadoutChanged();
+  }
+
+  unequipPassive(slotIndex: number): void {
+    if (slotIndex < 0 || slotIndex >= PASSIVE_SLOT_COUNT) return;
+    if (this.passives[slotIndex] === null) return;
+    this.passives[slotIndex] = null;
+    this.passiveLabels[slotIndex] = null;
+    this.rebuildPassiveEffects();
+    this.dispatchPassiveLoadoutChanged();
+  }
+
+  removePassiveAt(index: number): void {
+    this.unequipPassive(index);
   }
 
   applyPassiveModifier(mod: PassiveModifierPayload): void {
-    this.passives.push(mod);
+    const slot = this.findFirstEmptyPassiveSlot();
+    if (slot === null) return;
+    this.equipPassive(slot, mod);
+  }
 
-    if (mod.hooks) {
-      this.passiveHooks.push(...mod.hooks);
-    }
+  private dispatchPassiveLoadoutChanged(): void {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('passiveloadoutchanged'));
+  }
 
-    if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
-      switch (mod.stat) {
-      case 'MOVE_SPEED':
-        if (mod.op === 'ADD') this.moveSpeed += mod.value;
-        else this.moveSpeed *= mod.value;
-        this.moveSpeed = Math.max(100, Math.min(700, this.moveSpeed));
-        break;
-      case 'ACCELERATION':
-        if (mod.op === 'ADD') this.baseAcceleration += mod.value;
-        else this.baseAcceleration *= mod.value;
-        this.baseAcceleration = Math.max(400, Math.min(3000, this.baseAcceleration));
-        break;
-      case 'LINEAR_DRAG':
-        if (mod.op === 'ADD') {
-          this.baseLinearDrag += mod.value;
-          this.linearDrag = this.baseLinearDrag;
-        } else {
-          this.baseLinearDrag *= mod.value;
-          this.linearDrag = this.baseLinearDrag;
-        }
-        this.baseLinearDrag = Math.max(0.2, Math.min(3.0, this.baseLinearDrag));
+  private resetStatsFromBaselines(): void {
+    this.moveSpeed = this.baselineMoveSpeed;
+    this.baseMoveSpeed = this.baselineMoveSpeed;
+    this.baseAcceleration = this.baselineAcceleration;
+    this.baseLinearDrag = this.baselineLinearDrag;
+    this.linearDrag = this.baselineLinearDrag;
+    this.mass = this.baselineMass;
+    this.knockbackResistance = this.baselineKnockbackResistance;
+    this.cooldownReductionPct = 0;
+  }
+
+  private applyPassiveStatModifier(mod: PassiveModifierPayload): void {
+    if (mod.stat === undefined || mod.op === undefined || mod.value === undefined) return;
+
+    switch (mod.stat) {
+    case 'MOVE_SPEED':
+      if (mod.op === 'ADD') this.moveSpeed += mod.value;
+      else this.moveSpeed *= mod.value;
+      this.moveSpeed = Math.max(100, Math.min(700, this.moveSpeed));
+      break;
+    case 'ACCELERATION':
+      if (mod.op === 'ADD') this.baseAcceleration += mod.value;
+      else this.baseAcceleration *= mod.value;
+      this.baseAcceleration = Math.max(400, Math.min(3000, this.baseAcceleration));
+      break;
+    case 'LINEAR_DRAG':
+      if (mod.op === 'ADD') {
+        this.baseLinearDrag += mod.value;
         this.linearDrag = this.baseLinearDrag;
-        break;
-      case 'MASS':
-        if (mod.op === 'ADD') this.mass += mod.value;
-        else this.mass *= mod.value;
-        this.mass = Math.max(0.4, Math.min(3.0, this.mass));
-        break;
-      case 'KNOCKBACK_RESISTANCE':
-        if (mod.op === 'ADD') this.knockbackResistance += mod.value;
-        else this.knockbackResistance *= mod.value;
-        this.knockbackResistance = Math.max(0, Math.min(0.75, this.knockbackResistance));
-        break;
-      case 'COOLDOWN_REDUCTION_PCT':
-        if (mod.op === 'ADD') this.cooldownReductionPct += mod.value;
-        else this.cooldownReductionPct *= mod.value;
-        this.cooldownReductionPct = Math.max(0, Math.min(50, this.cooldownReductionPct));
-        break;
+      } else {
+        this.baseLinearDrag *= mod.value;
+        this.linearDrag = this.baseLinearDrag;
+      }
+      this.baseLinearDrag = Math.max(0.2, Math.min(3.0, this.baseLinearDrag));
+      this.linearDrag = this.baseLinearDrag;
+      break;
+    case 'MASS':
+      if (mod.op === 'ADD') this.mass += mod.value;
+      else this.mass *= mod.value;
+      this.mass = Math.max(0.4, Math.min(3.0, this.mass));
+      break;
+    case 'KNOCKBACK_RESISTANCE':
+      if (mod.op === 'ADD') this.knockbackResistance += mod.value;
+      else this.knockbackResistance *= mod.value;
+      this.knockbackResistance = Math.max(0, Math.min(0.75, this.knockbackResistance));
+      break;
+    case 'COOLDOWN_REDUCTION_PCT':
+      if (mod.op === 'ADD') this.cooldownReductionPct += mod.value;
+      else this.cooldownReductionPct *= mod.value;
+      this.cooldownReductionPct = Math.max(0, Math.min(50, this.cooldownReductionPct));
+      break;
+    }
+  }
+
+  private rebuildPassiveEffects(): void {
+    this.resetStatsFromBaselines();
+    this.passiveHooks = [];
+
+    for (const passive of this.passives) {
+      if (!passive) continue;
+      this.applyPassiveStatModifier(passive);
+      if (passive.hooks) {
+        this.passiveHooks.push(...passive.hooks);
       }
     }
 
@@ -794,6 +866,12 @@ export class Player extends Entity {
     this.stopThreshold = profile.stopThreshold;
     this.inputSmoothingMs = profile.inputSmoothingMs;
     this.smoothedInputMove = Vector2D.zero();
+    this.baselineMoveSpeed = profile.moveSpeed;
+    this.baselineAcceleration = profile.accel;
+    this.baselineLinearDrag = profile.linearDrag;
+    this.baselineMass = profile.mass;
+    this.baselineKnockbackResistance = profile.knockbackResistance;
+    this.rebuildPassiveEffects();
   }
 
   getEffectiveCooldown(baseMs: number): number {

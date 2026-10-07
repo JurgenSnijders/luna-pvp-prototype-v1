@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeAbilitySchema, schemaHasApplyImpulse, schemaHasFanEmitter, schemaHasImpulseDirection, scoreAbilitySchema } from '../src/ai/BudgetEngine';
 import { applyHitExpiryOverlapRepair, repairAbilitySemantics } from '../src/ai/budget/repair';
 import { PRESETS, KINETIC_RECIPES } from '../src/devtools/Presets';
-import { validateDraftCard, validatePassiveModifier } from '../src/types/cards';
+import { diagnoseDraftCardsValidation, normalizeLLMResponse } from '../src/ai/synthesizer/llmRepair';
+import { validateDraftCard, validateDraftCards, validatePassiveModifier } from '../src/types/cards';
 import type { AbilitySchema, ActionPayload, TriggerNode, ValidationIssue } from '../src/types/schema';
 import { validateAbilitySchema, walkActions } from '../src/types/schema';
 import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
@@ -1040,11 +1041,130 @@ function runPassiveSpliceValidationAssertions(): string[] {
   return failures;
 }
 
+function runPassiveRepairAssertions(): string[] {
+  const failures: string[] = [];
+
+  const llmShape = {
+    cards: [
+      {
+        id: 'swift',
+        title: 'Swift Stride',
+        tagline: 'Fleet feet',
+        description: 'Move faster in combat.',
+        rarity: 'COMMON',
+        type: 'PASSIVE_UPGRADE',
+        budgetCost: 15,
+        passivePayload: [{ stat: 'move_speed', op: 'add', value: 15 }],
+      },
+      {
+        id: 'bouncer',
+        title: 'Ricochet',
+        tagline: 'Extra bounce',
+        description: 'Kinetic spells gain a ground bounce.',
+        rarity: 'RARE',
+        type: 'PASSIVE_UPGRADE',
+        budgetCost: 20,
+        passivePayload: [
+          { operation: { type: 'ADD_BOUNCE', amount: 1 }, targetArchetype: 'KINETIC' },
+        ],
+      },
+      {
+        id: 'parry-heal',
+        title: 'Riposte',
+        tagline: 'Parry heal',
+        description: 'Heals when you parry.',
+        rarity: 'EPIC',
+        type: 'PASSIVE_UPGRADE',
+        budgetCost: 25,
+        passivePayload: [
+          {
+            hooks: [
+              {
+                on: 'PARRY_SUCCEEDED',
+                actions: [
+                  { type: 'MODIFY_STAT', stat: 'health', value: 10, mode: 'ADD', target: 'CASTER' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const normalized = normalizeLLMResponse(llmShape);
+  const validated = validateDraftCards(normalized);
+  if (!validated || validated.length !== 3) {
+    failures.push('passive repair: expected 3 validated cards after normalizeLLMResponse');
+  } else {
+    if (validated[0].passivePayload?.[0]?.stat !== 'MOVE_SPEED') {
+      failures.push('passive repair: expected MOVE_SPEED stat alias repair');
+    }
+    if (!validated[1].passivePayload?.[0]?.splices?.[0]?.operation) {
+      failures.push('passive repair: expected top-level operation wrapped into splices');
+    }
+    if (!validated[2].passivePayload?.[0]?.hooks?.[0]?.actions?.length) {
+      failures.push('passive repair: expected hook actions repaired from mode ADD');
+    }
+  }
+
+  const nonsenseShape = {
+    cards: [
+      {
+        id: 'fallback',
+        title: 'Fallback',
+        tagline: 'Safe default',
+        description: 'Still draftable when modifiers are nonsense.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ stat: 'not_a_stat', op: 'nope', value: 'bad' }],
+      },
+      {
+        id: 'fallback-2',
+        title: 'Fallback Two',
+        tagline: 'Also safe',
+        description: 'Second card with invalid payload.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ hooks: [{ on: 'NOT_REAL', actions: [] }] }],
+      },
+      {
+        id: 'fallback-3',
+        title: 'Fallback Three',
+        tagline: 'Third safe',
+        description: 'Third card missing passivePayload entirely.',
+        type: 'PASSIVE_UPGRADE',
+      },
+    ],
+  };
+
+  const nonsenseNormalized = normalizeLLMResponse(nonsenseShape);
+  const nonsenseValidated = validateDraftCards(nonsenseNormalized);
+  if (!nonsenseValidated || nonsenseValidated.length !== 3) {
+    failures.push('passive repair: expected fallback modifiers to salvage nonsense cards');
+  } else if (
+    nonsenseValidated.every(
+      (card) =>
+        card.passivePayload?.length === 1 &&
+        card.passivePayload[0].stat === 'MOVE_SPEED' &&
+        card.passivePayload[0].op === 'ADD',
+    ) === false
+  ) {
+    failures.push('passive repair: expected MOVE_SPEED/ADD fallback on each nonsense card');
+  }
+
+  const diagnosis = diagnoseDraftCardsValidation(llmShape);
+  if (!diagnosis.some((reason) => reason.includes('passive['))) {
+    failures.push('passive diagnosis: expected passive[ reasons on unrepaired lowercase-stat payload');
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
     ...runPassiveHookValidationAssertions(),
     ...runPassiveSpliceValidationAssertions(),
+    ...runPassiveRepairAssertions(),
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
     ...runShieldRepairAssertions(),

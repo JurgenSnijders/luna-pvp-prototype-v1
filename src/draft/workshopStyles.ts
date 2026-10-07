@@ -984,6 +984,94 @@ export function injectStyles(): void {
       pointer-events: none;
     }
 
+    .passive-equip-bay {
+      gap: 14px;
+    }
+
+    .passive-slot {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px;
+      background: rgba(8, 10, 20, 0.85);
+      border: 1px dashed rgba(0, 229, 255, 0.28);
+      transform: rotate(45deg);
+      transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+      cursor: pointer;
+    }
+
+    .passive-slot > * {
+      transform: rotate(-45deg);
+    }
+
+    .passive-slot:hover,
+    .passive-slot.passive-slot-drop-hover {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+    }
+
+    .passive-slot-filled {
+      border-style: solid;
+      border-color: rgba(167, 139, 250, 0.55);
+      background: rgba(24, 16, 40, 0.9);
+    }
+
+    .passive-slot-badge {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-family: ${FONTS.mono};
+      font-size: 10px;
+      color: var(--retro-text-muted, #6d8896);
+      pointer-events: none;
+    }
+
+    .passive-slot-title {
+      font-family: ${FONTS.mono};
+      font-size: 10px;
+      font-weight: bold;
+      color: #e8d8ff;
+      text-align: center;
+      line-height: 1.15;
+      max-width: 58px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .passive-slot-detail {
+      font-family: ${FONTS.mono};
+      font-size: 9px;
+      color: var(--retro-text-muted, #8aa0ad);
+      text-align: center;
+      line-height: 1.1;
+      max-width: 58px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .passive-tile {
+      cursor: grab;
+    }
+
+    .passive-tile.is-dragging {
+      opacity: 0.55;
+      cursor: grabbing;
+    }
+
+    .passive-diagnostics-panel {
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 6px;
+      background: rgba(6, 9, 18, 0.85);
+      box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+    }
+
     .bottom-slot-name {
       position: absolute;
       bottom: 2px;

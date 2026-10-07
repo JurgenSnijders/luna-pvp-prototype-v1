@@ -74,7 +74,7 @@ Example heal-on-parry: { hooks: [{ on: "PARRY_SUCCEEDED", actions: [{ type: "MOD
 Splice entry (optional, can combine with stats/hooks or be splice-only): { splices: [{ operation, targetArchetype? }] }
 Splice operations edit the equipped spell root schema only: ADD_BOUNCE (ground bounces on the root projectile), ADD_PIERCE, APPEND_TRIGGER (adds a root trigger node).
 targetArchetype is optional; when set, the splice applies only to spells with that archetype.
-Example extra bounce on kinetic spells: { "operation": { "type": "ADD_BOUNCE", "amount": 1 }, "targetArchetype": "KINETIC" }
+Example extra bounce on kinetic spells: { "splices": [{ "operation": { "type": "ADD_BOUNCE", "amount": 1 }, "targetArchetype": "KINETIC" }] }
 
 Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 

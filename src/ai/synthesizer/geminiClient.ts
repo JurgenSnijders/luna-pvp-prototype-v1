@@ -47,7 +47,7 @@ function loadoutSummary(loadout: PlayerLoadout): string {
 - Q: ${loadout.abilities[2]?.name ?? 'Empty'}
 - E: ${loadout.abilities[3]?.name ?? 'Empty'}
 - SPACE: ${loadout.abilities[4]?.name ?? 'Empty'}
-- Passives: ${loadout.passives.length}`;
+- Passives: ${loadout.passives.filter((mod) => mod !== null).length}/5`;
 }
 
 export interface NativeGeminiResult {

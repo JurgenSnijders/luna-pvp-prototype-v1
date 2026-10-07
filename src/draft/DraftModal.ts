@@ -13,6 +13,8 @@ import type {
   DraftCard,
   DraftSelection,
   EvolutionContext,
+  PassiveModifierPayload,
+  PassiveSlotLabel,
   PlayerLoadout,
   SkillCategory,
 } from '../types/cards';
@@ -76,7 +78,11 @@ import {
 } from './workshopStyles';
 
 export { normalizeForgeTierRarity, resolveSpellRarity } from './workshopStyles';
+import { PassiveInventoryManager } from '../game/PassiveInventory';
 import { SpellInventoryManager } from '../game/SpellInventory';
+import { renderPassiveDiagnostics } from './PassiveDiagnostics';
+import { renderPassiveEquipBar } from './PassiveEquipBar';
+import { attachPassiveVaultDrag } from './passiveDragDrop';
 import {
   getSpellRoleLabel,
   getVaultSortLabel,
@@ -109,7 +115,7 @@ import { drawScopeProjectile } from '../render/canvas/projectiles';
 import { ActionBarHUD, getSpeedReactionTier } from '../render/ActionBarHUD';
 import { FONTS, RETRO_COLORS, retroPanelStyle } from '../ui/tokens';
 
-type WorkshopTab = 'VAULT' | 'FORGE' | 'TREE';
+type WorkshopTab = 'VAULT' | 'PASSIVES' | 'FORGE' | 'TREE';
 
 const ARCHETYPE_DESCRIPTIONS: Partial<Record<SpellArchetype, string>> = {
   KINETIC: 'Reduces target linear drag by 80%. Hits cause extreme sliding across arena and lava.',
@@ -717,6 +723,12 @@ function formatCooldown(ms: number): string {
 
 export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
+  equipPassive: (
+    slotIndex: number,
+    payload: PassiveModifierPayload,
+    label?: PassiveSlotLabel,
+  ) => void;
+  unequipPassive: (slotIndex: number) => void;
   onEquip: (selection: DraftSelection) => void;
   onStoreSpell: (ability: AbilitySchema) => AbilitySchema;
   onOpenChange: (open: boolean) => void;
@@ -732,15 +744,18 @@ export class DraftModal {
   private bottomLoadoutBay!: HTMLElement;
   private workspaceContent!: HTMLElement;
   private vaultRoot!: HTMLElement;
+  private passivesRoot!: HTMLElement;
   private forgeRoot!: HTMLElement;
   private treeRoot!: HTMLElement;
   private vaultTabBtn!: HTMLButtonElement;
+  private passivesTabBtn!: HTMLButtonElement;
   private forgeTabBtn!: HTMLButtonElement;
   private vaultSearchInput!: HTMLInputElement;
   private vaultSortSelect!: HTMLSelectElement;
   private vaultRoleFilterRow!: HTMLElement;
   private vaultMetaFilterRow!: HTMLElement;
   private spellGrid!: HTMLElement;
+  private passiveGrid!: HTMLElement;
   private modeRow: HTMLElement;
   private categoryRow: HTMLElement;
   private evolutionBanner: HTMLElement;
@@ -788,6 +803,8 @@ export class DraftModal {
   private vaultRoleFilters = new Set<SpellRole>();
   private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
+  private passivesBuilt = false;
+  private selectedPassiveId: string | null = null;
   private forgeVaultPickerActive = false;
   private vaultSavedCardIndex: number | null = null;
   private selectedSpellId: string | null = null;
@@ -809,6 +826,19 @@ export class DraftModal {
     if (this.activeTab === 'VAULT') {
       this.renderVaultGrid();
       this.renderTacticalInspector();
+    }
+  };
+  private readonly onPassiveLoadoutChanged = (): void => {
+    if (!this.open_) return;
+    this.renderBottomLoadoutBay();
+    if (this.activeTab === 'PASSIVES') {
+      this.renderPassivesGrid();
+      this.renderTacticalInspector();
+    }
+  };
+  private readonly onPassiveInventoryUpdated = (): void => {
+    if (this.open_ && this.activeTab === 'PASSIVES') {
+      this.renderPassivesGrid();
     }
   };
   constructor(private callbacks: DraftModalCallbacks) {
@@ -851,6 +881,12 @@ export class DraftModal {
     this.vaultTabBtn.textContent = 'SPELL VAULT';
     this.vaultTabBtn.onclick = () => this.setActiveTab('VAULT');
 
+    this.passivesTabBtn = document.createElement('button');
+    this.passivesTabBtn.type = 'button';
+    this.passivesTabBtn.className = 'workspace-tab';
+    this.passivesTabBtn.textContent = 'PASSIVES';
+    this.passivesTabBtn.onclick = () => this.setActiveTab('PASSIVES');
+
     this.forgeTabBtn = document.createElement('button');
     this.forgeTabBtn.type = 'button';
     this.forgeTabBtn.className = 'workspace-tab';
@@ -861,6 +897,7 @@ export class DraftModal {
     tabGroup.className = 'workspace-tabs';
     tabGroup.style.cssText = 'margin-bottom:0;border-bottom:none;padding-bottom:0;flex-shrink:0;';
     tabGroup.appendChild(this.vaultTabBtn);
+    tabGroup.appendChild(this.passivesTabBtn);
     tabGroup.appendChild(this.forgeTabBtn);
 
     this.apiStatusPill = document.createElement('div');
@@ -974,6 +1011,10 @@ export class DraftModal {
     this.vaultRoot = document.createElement('div');
     this.vaultRoot.className = 'vault-root';
 
+    this.passivesRoot = document.createElement('div');
+    this.passivesRoot.className = 'passives-root';
+    this.passivesRoot.style.display = 'none';
+
     this.treeRoot = document.createElement('div');
     this.treeRoot.className = 'evolution-tree-host';
     this.treeRoot.style.display = 'none';
@@ -981,6 +1022,7 @@ export class DraftModal {
     this.workspaceContent = document.createElement('div');
     this.workspaceContent.className = 'workspace-content';
     this.workspaceContent.appendChild(this.vaultRoot);
+    this.workspaceContent.appendChild(this.passivesRoot);
     this.workspaceContent.appendChild(this.forgeRoot);
     this.workspaceContent.appendChild(this.treeRoot);
 
@@ -1012,6 +1054,8 @@ export class DraftModal {
 
     window.addEventListener('inventoryupdated', this.onInventoryUpdated);
     window.addEventListener('loadoutchanged', this.onLoadoutChanged);
+    window.addEventListener('passiveloadoutchanged', this.onPassiveLoadoutChanged);
+    window.addEventListener('passiveinventoryupdated', this.onPassiveInventoryUpdated);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.open_) this.close();
     });
@@ -1144,8 +1188,10 @@ export class DraftModal {
 
   private syncTabChrome(): void {
     this.vaultTabBtn.classList.toggle('active', this.activeTab === 'VAULT');
+    this.passivesTabBtn.classList.toggle('active', this.activeTab === 'PASSIVES');
     this.forgeTabBtn.classList.toggle('active', this.activeTab === 'FORGE');
     this.vaultRoot.style.display = this.activeTab === 'VAULT' ? 'block' : 'none';
+    this.passivesRoot.style.display = this.activeTab === 'PASSIVES' ? 'block' : 'none';
     this.forgeRoot.style.display = this.activeTab === 'FORGE' ? 'flex' : 'none';
     this.treeRoot.style.display = this.activeTab === 'TREE' ? 'flex' : 'none';
     this.inspectorPane.style.display = this.activeTab === 'TREE' ? 'none' : '';
@@ -1166,7 +1212,7 @@ export class DraftModal {
     if (tab === 'FORGE') {
       this.promptInput.focus();
     }
-    if (tab === 'VAULT') {
+    if (tab === 'VAULT' || tab === 'PASSIVES') {
       this.renderTacticalInspector();
     }
   }
@@ -1174,6 +1220,10 @@ export class DraftModal {
   private renderWorkspace(): void {
     if (this.activeTab === 'VAULT') {
       this.renderVaultGrid();
+      return;
+    }
+    if (this.activeTab === 'PASSIVES') {
+      this.renderPassivesGrid();
       return;
     }
     if (this.activeTab === 'TREE') {
@@ -1327,6 +1377,98 @@ export class DraftModal {
     this.spellGrid = document.createElement('div');
     this.spellGrid.className = 'spell-grid-square';
     this.vaultRoot.appendChild(this.spellGrid);
+  }
+
+  private buildPassives(): void {
+    if (this.passivesBuilt) return;
+    this.passivesBuilt = true;
+
+    const header = document.createElement('div');
+    header.className = 'vault-toolbar';
+    const title = document.createElement('div');
+    title.textContent = 'Passive Mutation Cards';
+    title.style.cssText = `font-size:${FONTS.size.body};color:${RETRO_COLORS.textMuted};`;
+    header.appendChild(title);
+    this.passivesRoot.appendChild(header);
+
+    this.passiveGrid = document.createElement('div');
+    this.passiveGrid.className = 'spell-grid-square';
+    this.passivesRoot.appendChild(this.passiveGrid);
+  }
+
+  private renderPassivesGrid(): void {
+    this.buildPassives();
+    PassiveInventoryManager.initialize();
+    this.passiveGrid.innerHTML = '';
+
+    const cards = PassiveInventoryManager.getAll();
+    const loadout = this.callbacks.getLoadout();
+    const equippedTitles = new Set(
+      (loadout.passiveLabels ?? [])
+        .filter((label): label is PassiveSlotLabel => label !== null && label !== undefined)
+        .map((label) => label.title),
+    );
+
+    if (cards.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = 'No passive cards in inventory.';
+      empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};grid-column:1/-1;`;
+      this.passiveGrid.appendChild(empty);
+      return;
+    }
+
+    if (!this.selectedPassiveId || !cards.some((card) => card.id === this.selectedPassiveId)) {
+      this.selectedPassiveId = cards[0]?.id ?? null;
+    }
+
+    for (const card of cards) {
+      const tile = document.createElement('div');
+      tile.className = 'spell-tile passive-tile';
+      if (card.id === this.selectedPassiveId) {
+        tile.classList.add('tile-selected');
+      }
+
+      const rarityColor = RARITY_COLORS[card.rarity];
+      tile.style.borderColor = rarityColor;
+      tile.style.boxShadow = `0 0 12px ${hexToRgba(rarityColor, 0.35)}`;
+
+      const title = document.createElement('div');
+      title.className = 'spell-tile-title';
+      title.textContent = card.title;
+
+      const tagline = document.createElement('div');
+      tagline.className = 'spell-tile-tagline';
+      tagline.textContent = card.tagline;
+
+      const desc = document.createElement('div');
+      desc.className = 'spell-tile-desc';
+      desc.textContent = card.description;
+
+      const badges = document.createElement('div');
+      badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;';
+      this.appendCardMechanicBadges(badges, card);
+
+      tile.appendChild(title);
+      tile.appendChild(tagline);
+      tile.appendChild(desc);
+      tile.appendChild(badges);
+      tile.appendChild(renderPowerBar(card.budgetCost, card.rarity, true));
+
+      if (equippedTitles.has(card.title)) {
+        const equippedBadge = document.createElement('div');
+        equippedBadge.textContent = 'EQUIPPED';
+        equippedBadge.style.cssText = `margin-top:6px;font-size:${FONTS.size.sm};color:${RETRO_COLORS.neonCyan};`;
+        tile.appendChild(equippedBadge);
+      }
+
+      tile.addEventListener('click', () => {
+        this.selectedPassiveId = card.id;
+        this.renderPassivesGrid();
+      });
+
+      attachPassiveVaultDrag(tile, card.id);
+      this.passiveGrid.appendChild(tile);
+    }
   }
 
   private buildVaultFilterChips(): void {
@@ -1484,6 +1626,11 @@ export class DraftModal {
   private renderTacticalInspector(explicitSpell?: AbilitySchema | null): void {
     this.stopHeroScopeAnimation();
     this.inspectorPane.innerHTML = '';
+
+    if (this.activeTab === 'PASSIVES') {
+      renderPassiveDiagnostics(this.inspectorPane);
+      return;
+    }
 
     let spell: AbilitySchema | null = explicitSpell ?? this.activeTransientSpell ?? null;
     if (!spell && this.activeTab === 'VAULT') {
@@ -1772,6 +1919,24 @@ export class DraftModal {
 
   private renderBottomLoadoutBay(): void {
     this.bottomLoadoutBay.innerHTML = '';
+
+    if (this.activeTab === 'PASSIVES') {
+      const loadout = this.callbacks.getLoadout();
+      renderPassiveEquipBar(
+        this.bottomLoadoutBay,
+        {
+          passives: loadout.passives,
+          labels: loadout.passiveLabels ?? [null, null, null, null, null],
+        },
+        {
+          equipPassive: (index, payload, label) =>
+            this.callbacks.equipPassive(index, payload, label),
+          unequipPassive: (index) => this.callbacks.unequipPassive(index),
+        },
+      );
+      return;
+    }
+
     const equipped = SpellInventoryManager.getEquippedAbilities();
     const loadout = SpellInventoryManager.getLoadout();
 

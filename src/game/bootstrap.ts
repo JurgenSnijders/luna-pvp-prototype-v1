@@ -31,6 +31,7 @@ import { isCameraInputBlocked, updatePlayerAimFromScreen } from './cameraInput';
 import { handleCastInput, cancelPlayerAiming } from './input';
 import { loadInputSettings, subscribeInputSettings } from './inputSettings';
 import { assignDefaultLoadout, storeForgedSpell } from './loadout';
+import { PassiveInventoryManager } from './PassiveInventory';
 import { SpellInventoryManager } from './SpellInventory';
 import { ACTION_SLOT_KEYS } from '../types/cards';
 import {
@@ -99,6 +100,7 @@ function init(app: GameApp): void {
   applyInstabilitySettings();
 
   SpellInventoryManager.initialize();
+  PassiveInventoryManager.initialize();
 
   const center = getHexCenter();
   const hexRadius = getStoredHexRadius();
@@ -209,7 +211,14 @@ function init(app: GameApp): void {
     getLoadout: () => ({
       abilities: [...app.player.abilities],
       passives: app.player.passives,
+      passiveLabels: app.player.passiveLabels,
     }),
+    equipPassive: (slotIndex, payload, label) => {
+      app.player.equipPassive(slotIndex, payload, label);
+    },
+    unequipPassive: (slotIndex) => {
+      app.player.unequipPassive(slotIndex);
+    },
     onEquip: (selection) => handleEquip(app, selection),
     onStoreSpell: (ability) => storeForgedSpell(app, ability),
     onOpenChange: (open) => {

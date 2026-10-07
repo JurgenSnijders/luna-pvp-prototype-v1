@@ -3,6 +3,7 @@ import { balanceAbilitySchema, sanitizeAbilitySchema } from '../ai/BudgetEngine'
 import { PRESETS } from '../devtools/Presets';
 import { DEFAULT_STARTER_PRESET_NAMES } from '../devtools/presetPacks/core';
 import { Player } from '../entities/Player';
+import { PassiveInventoryManager } from './PassiveInventory';
 import { SpellInventoryManager } from './SpellInventory';
 import {
   ACTION_SLOT_INDEX,
@@ -62,8 +63,11 @@ export function applyDraftSelection(app: GameApp, target: Player, selection: Dra
   const { card, slot } = selection;
 
   if (slot === 'PASSIVE' && card.passivePayload) {
+    PassiveInventoryManager.add(card);
     for (const mod of card.passivePayload) {
-      target.applyPassiveModifier(mod);
+      const emptySlot = target.findFirstEmptyPassiveSlot();
+      if (emptySlot === null) break;
+      target.equipPassive(emptySlot, mod, { title: card.title, tagline: card.tagline });
     }
     return;
   }
