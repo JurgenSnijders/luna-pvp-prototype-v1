@@ -21,6 +21,7 @@ export interface PassiveModifierPayload {
   value?: number;
   hooks?: PassiveHook[];
   splices?: PassiveSplice[];
+  iconData?: string;
 }
 
 export type SkillCategory = 'PRIMARY' | 'SECONDARY' | 'UTILITY' | 'ULTIMATE' | 'MOBILITY';
@@ -252,6 +253,10 @@ export function validatePassiveModifier(val: unknown): PassiveModifierPayload | 
       mod.splices = splices;
       hasContent = true;
     }
+  }
+
+  if (hasContent && isString(val.iconData) && val.iconData.length > 0) {
+    mod.iconData = val.iconData;
   }
 
   return hasContent ? mod : null;

@@ -837,9 +837,9 @@ export class DraftModal {
     }
   };
   private readonly onPassiveInventoryUpdated = (): void => {
-    if (this.open_ && this.activeTab === 'PASSIVES') {
-      this.renderPassivesGrid();
-    }
+    if (!this.open_ || this.activeTab !== 'PASSIVES') return;
+    this.renderPassivesGrid();
+    this.renderBottomLoadoutBay();
   };
   constructor(private callbacks: DraftModalCallbacks) {
     injectStyles();
@@ -1431,6 +1431,14 @@ export class DraftModal {
       const rarityColor = RARITY_COLORS[card.rarity];
       tile.style.borderColor = rarityColor;
       tile.style.boxShadow = `0 0 12px ${hexToRgba(rarityColor, 0.35)}`;
+
+      const iconData = card.passivePayload?.find((mod) => mod.iconData)?.iconData;
+      if (iconData) {
+        tile.classList.add('passive-tile-has-icon');
+        tile.style.backgroundImage = `url("${iconData}")`;
+        tile.style.backgroundSize = 'cover';
+        tile.style.backgroundPosition = 'center';
+      }
 
       const title = document.createElement('div');
       title.className = 'spell-tile-title';

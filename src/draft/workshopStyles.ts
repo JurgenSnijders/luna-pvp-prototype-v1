@@ -1060,6 +1060,22 @@ export function injectStyles(): void {
       cursor: grab;
     }
 
+    .passive-tile.passive-tile-has-icon::before,
+    .passive-slot.passive-slot-has-icon::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .passive-tile.passive-tile-has-icon > *,
+    .passive-slot.passive-slot-has-icon > * {
+      position: relative;
+      z-index: 2;
+    }
+
     .passive-tile.is-dragging {
       opacity: 0.55;
       cursor: grabbing;

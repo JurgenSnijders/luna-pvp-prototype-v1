@@ -1,5 +1,6 @@
 import { generateOfflinePassives } from '../ai/synthesizer/offline/forge';
-import type { DraftCard } from '../types/cards';
+import { generatePassiveIcon } from '../services/imageSynthesizer';
+import type { DraftCard, PassiveModifierPayload } from '../types/cards';
 import { validateDraftCard } from '../types/cards';
 
 const STORAGE_KEY = 'passives_inventory_v1';
@@ -8,10 +9,38 @@ function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
+function passiveHasIconData(card: DraftCard): boolean {
+  return card.passivePayload?.some((mod) => Boolean(mod.iconData)) ?? false;
+}
+
+function summarizePassiveModifiers(passives: PassiveModifierPayload[]): string {
+  const parts: string[] = [];
+  for (const mod of passives) {
+    if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
+      parts.push(`${mod.stat} ${mod.op} ${mod.value}`);
+    }
+    const hookCount = mod.hooks?.length ?? 0;
+    if (hookCount > 0) {
+      parts.push(`${hookCount} combat hook${hookCount === 1 ? '' : 's'}`);
+    }
+    const spliceCount = mod.splices?.length ?? 0;
+    if (spliceCount > 0) {
+      parts.push(`${spliceCount} ability splice${spliceCount === 1 ? '' : 's'}`);
+    }
+  }
+  return parts.length > 0 ? parts.join('; ') : 'passive augment';
+}
+
+function buildPassiveIconDescription(card: DraftCard): string {
+  const mechanics = card.passivePayload ? summarizePassiveModifiers(card.passivePayload) : '';
+  return mechanics ? `${card.description} (${mechanics})` : card.description;
+}
+
 class PassiveInventoryStore {
   private cards = new Map<string, DraftCard>();
   private insertionOrder: string[] = [];
   private initialized = false;
+  private pendingIconGeneration = new Set<string>();
 
   initialize(): void {
     if (this.initialized) return;
@@ -52,12 +81,47 @@ class PassiveInventoryStore {
     const payload = this.insertionOrder
       .map((id) => this.cards.get(id))
       .filter((card): card is DraftCard => card !== undefined);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.error('[PassiveInventory] Failed to persist inventory (quota exceeded?)', err);
+    }
   }
 
   private dispatchUpdated(): void {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(new CustomEvent('passiveinventoryupdated'));
+  }
+
+  private stampIconData(cardId: string, iconData: string): void {
+    const card = this.cards.get(cardId);
+    if (!card?.passivePayload || passiveHasIconData(card)) return;
+
+    for (const mod of card.passivePayload) {
+      mod.iconData = iconData;
+    }
+    this.persist();
+    this.dispatchUpdated();
+  }
+
+  private schedulePassiveIconGeneration(card: DraftCard): void {
+    if (!canUseStorage()) return;
+    if (passiveHasIconData(card)) return;
+    if (this.pendingIconGeneration.has(card.id)) return;
+
+    this.pendingIconGeneration.add(card.id);
+    const description = buildPassiveIconDescription(card);
+
+    generatePassiveIcon(card.title, description)
+      .then((iconData) => {
+        this.stampIconData(card.id, iconData);
+      })
+      .catch((err) => {
+        console.error(`[PassiveInventory] Icon generation failed for "${card.title}"`, err);
+      })
+      .finally(() => {
+        this.pendingIconGeneration.delete(card.id);
+      });
   }
 
   add(card: DraftCard): DraftCard {
@@ -70,6 +134,7 @@ class PassiveInventoryStore {
     this.insertionOrder.push(stored.id);
     this.persist();
     this.dispatchUpdated();
+    this.schedulePassiveIconGeneration(stored);
     return stored;
   }
 
