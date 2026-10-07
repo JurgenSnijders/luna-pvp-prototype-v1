@@ -1628,7 +1628,7 @@ export class DraftModal {
     this.inspectorPane.innerHTML = '';
 
     if (this.activeTab === 'PASSIVES') {
-      renderPassiveDiagnostics(this.inspectorPane);
+      renderPassiveDiagnostics(this.inspectorPane, this.callbacks.getLoadout().passives);
       return;
     }
 

@@ -1066,10 +1066,102 @@ export function injectStyles(): void {
     }
 
     .passive-diagnostics-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px;
+      height: 100%;
       border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
       border-radius: 6px;
       background: rgba(6, 9, 18, 0.85);
       box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+      color: var(--retro-text-primary, #d8e8f0);
+      font-family: ${FONTS.mono};
+      overflow-y: auto;
+    }
+
+    .passive-diagnostics-heading {
+      margin: 0;
+      font-size: ${FONTS.size.lg};
+      letter-spacing: 0.04em;
+      color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .passive-diagnostics-empty {
+      margin: 0;
+      font-size: ${FONTS.size.body};
+      line-height: 1.5;
+      color: var(--retro-text-muted, #6d8896);
+      letter-spacing: 0.06em;
+    }
+
+    .passive-diagnostics-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .passive-diagnostics-section-title {
+      margin: 0;
+      font-size: ${FONTS.size.sm};
+      letter-spacing: 0.08em;
+      color: var(--retro-text-muted, #6d8896);
+      text-transform: uppercase;
+    }
+
+    .passive-diagnostics-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .passive-diagnostics-row {
+      font-size: ${FONTS.size.body};
+      line-height: 1.4;
+      color: var(--retro-text-primary, #d8e8f0);
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .passive-diagnostics-gain {
+      color: #6ee7b7;
+    }
+
+    .passive-diagnostics-loss {
+      color: #f87171;
+    }
+
+    .passive-diagnostics-neutral {
+      color: var(--retro-text-primary, #d8e8f0);
+    }
+
+    .passive-diagnostics-hook {
+      color: #c4b5fd;
+    }
+
+    .passive-diagnostics-splice {
+      color: var(--retro-text-primary, #d8e8f0);
+    }
+
+    .passive-diagnostics-archetype {
+      font-size: ${FONTS.size.sm};
+      font-weight: bold;
+      letter-spacing: 0.04em;
+      border: 1px solid currentColor;
+      border-radius: 3px;
+      padding: 1px 5px;
+      flex-shrink: 0;
+    }
+
+    .passive-diagnostics-archetype-universal {
+      color: var(--retro-text-muted, #6d8896);
+      border-color: rgba(109, 136, 150, 0.45);
+    }
+
+    .passive-diagnostics-detail {
+      color: var(--retro-text-primary, #d8e8f0);
     }
 
     .bottom-slot-name {
