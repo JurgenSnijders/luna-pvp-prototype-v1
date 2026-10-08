@@ -80,7 +80,7 @@ import {
 export { normalizeForgeTierRarity, resolveSpellRarity } from './workshopStyles';
 import { PassiveInventoryManager } from '../game/PassiveInventory';
 import { SpellInventoryManager } from '../game/SpellInventory';
-import { renderPassiveDiagnostics } from './PassiveDiagnostics';
+import { renderPassiveDiagnostics, renderPassiveInspector } from './PassiveDiagnostics';
 import { renderPassiveEquipBar } from './PassiveEquipBar';
 import { renderPassiveGridTile } from './passiveGridTile';
 import {
@@ -805,6 +805,7 @@ export class DraftModal {
   private vaultBuilt = false;
   private passivesBuilt = false;
   private selectedPassiveId: string | null = null;
+  private hoveredPassiveId: string | null = null;
   private forgeVaultPickerActive = false;
   private vaultSavedCardIndex: number | null = null;
   private selectedSpellId: string | null = null;
@@ -840,6 +841,7 @@ export class DraftModal {
     if (!this.open_ || this.activeTab !== 'PASSIVES') return;
     this.renderPassivesGrid();
     this.renderBottomLoadoutBay();
+    this.renderTacticalInspector();
   };
   constructor(private callbacks: DraftModalCallbacks) {
     injectStyles();
@@ -1207,6 +1209,9 @@ export class DraftModal {
     if (tab === 'VAULT') {
       this.clearForgeTransientState();
     }
+    if (tab !== 'PASSIVES') {
+      this.hoveredPassiveId = null;
+    }
     this.activeTab = tab;
     this.refreshUI();
     if (tab === 'FORGE') {
@@ -1424,8 +1429,21 @@ export class DraftModal {
           this.renderPassivesGrid();
         },
       });
+
+      tile.addEventListener('mouseenter', () => {
+        this.hoveredPassiveId = card.id;
+        this.renderTacticalInspector();
+      });
+
+      tile.addEventListener('mouseleave', () => {
+        this.hoveredPassiveId = null;
+        this.renderTacticalInspector();
+      });
+
       this.passiveGrid.appendChild(tile);
     }
+
+    this.renderTacticalInspector();
   }
 
   private buildVaultFilterChips(): void {
@@ -1585,6 +1603,14 @@ export class DraftModal {
     this.inspectorPane.innerHTML = '';
 
     if (this.activeTab === 'PASSIVES') {
+      const activePassiveId = this.hoveredPassiveId ?? this.selectedPassiveId;
+      if (activePassiveId) {
+        const card = PassiveInventoryManager.get(activePassiveId);
+        if (card) {
+          renderPassiveInspector(this.inspectorPane, card);
+          return;
+        }
+      }
       renderPassiveDiagnostics(this.inspectorPane, this.callbacks.getLoadout().passives);
       return;
     }

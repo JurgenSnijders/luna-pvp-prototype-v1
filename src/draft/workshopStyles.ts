@@ -1184,6 +1184,14 @@ export function injectStyles(): void {
       color: var(--retro-neon-cyan, #00e5ff);
     }
 
+    .passive-inspector-flavor {
+      margin: 0 0 12px;
+      font-size: ${FONTS.size.body};
+      line-height: 1.5;
+      color: var(--retro-text-muted, #6d8896);
+      font-style: italic;
+    }
+
     .passive-diagnostics-empty {
       margin: 0;
       font-size: ${FONTS.size.body};

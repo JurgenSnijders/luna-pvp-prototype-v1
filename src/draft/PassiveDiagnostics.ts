@@ -1,5 +1,6 @@
 import { getArchetypeColor } from '../render/canvas/archetypeColors';
 import type {
+  DraftCard,
   PassiveModifierPayload,
   PassiveOp,
   PassiveSlotTuple,
@@ -169,6 +170,26 @@ function formatSpliceLines(group: ArchetypeSpliceGroup): string[] {
   return lines;
 }
 
+function formatSingleSpliceLine(splice: PassiveSplice): string {
+  const op = splice.operation;
+  switch (op.type) {
+    case 'ADD_BOUNCE':
+      return `+${op.amount} BOUNCE${op.amount === 1 ? '' : 'S'}`;
+    case 'ADD_PIERCE':
+      return `+${op.amount} PIERCE`;
+    case 'APPEND_TRIGGER':
+      return `APPEND: ${op.node.trigger}`;
+  }
+}
+
+function collectCardSplices(mods: PassiveModifierPayload[]): PassiveSplice[] {
+  const splices: PassiveSplice[] = [];
+  for (const mod of mods) {
+    if (mod.splices) splices.push(...mod.splices);
+  }
+  return splices;
+}
+
 function createSection(title: string): { section: HTMLElement; list: HTMLElement } {
   const section = document.createElement('section');
   section.className = 'passive-diagnostics-section';
@@ -269,6 +290,71 @@ export function renderPassiveDiagnostics(
       for (const line of formatSpliceLines(group)) {
         appendRow(list, line, 'passive-diagnostics-splice', group.archetype);
       }
+    }
+    panel.appendChild(section);
+  }
+
+  container.appendChild(panel);
+}
+
+export function renderPassiveInspector(container: HTMLElement, card: DraftCard): void {
+  container.innerHTML = '';
+
+  const panel = document.createElement('div');
+  panel.className = 'passive-diagnostics-panel';
+
+  const heading = document.createElement('h2');
+  heading.className = 'passive-diagnostics-heading';
+  heading.textContent = card.title;
+  panel.appendChild(heading);
+
+  const flavorParts: string[] = [];
+  if (card.tagline) flavorParts.push(card.tagline);
+  if (card.description && card.description !== card.tagline) {
+    flavorParts.push(card.description);
+  }
+  if (flavorParts.length > 0) {
+    const flavor = document.createElement('p');
+    flavor.className = 'passive-inspector-flavor';
+    flavor.textContent = flavorParts.join(' — ');
+    panel.appendChild(flavor);
+  }
+
+  const mods = card.passivePayload ?? [];
+  const stats = aggregatePassiveStats(mods);
+  const hooks = collectPassiveHooks(mods);
+  const splices = collectCardSplices(mods);
+
+  if (stats.length === 0 && hooks.length === 0 && splices.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'passive-diagnostics-empty';
+    empty.textContent = 'NO MODIFIERS';
+    panel.appendChild(empty);
+    container.appendChild(panel);
+    return;
+  }
+
+  if (stats.length > 0) {
+    const { section, list } = createSection('STAT MODIFIERS');
+    for (const entry of stats) {
+      appendRow(list, formatStatLine(entry), `passive-diagnostics-${statPolarityClass(entry)}`);
+    }
+    panel.appendChild(section);
+  }
+
+  if (hooks.length > 0) {
+    const { section, list } = createSection('ACTIVE ENGINE HOOKS');
+    for (const hook of hooks) {
+      appendRow(list, formatHookLine(hook), 'passive-diagnostics-hook');
+    }
+    panel.appendChild(section);
+  }
+
+  if (splices.length > 0) {
+    const { section, list } = createSection('CARD SPLICES');
+    for (const splice of splices) {
+      const archetype = splice.targetArchetype ?? 'UNIVERSAL';
+      appendRow(list, formatSingleSpliceLine(splice), 'passive-diagnostics-splice', archetype);
     }
     panel.appendChild(section);
   }
