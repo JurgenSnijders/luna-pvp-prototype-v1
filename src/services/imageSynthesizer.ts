@@ -22,11 +22,9 @@ interface GeminiGenerateContentResponse {
   error?: { message?: string };
 }
 
-function buildPassiveIconPrompt(cardName: string, description: string, theme: string): string {
+function buildPassiveIconPrompt(cardName: string, description: string, _theme: string): string {
   return [
-    `Centered retro-futuristic sci-fi emblem, a single glowing energy glyph representing ${cardName}. Theme: ${theme}. Flavor: ${description}.`,
-    'Subject isolated in the middle. Deep dark void background #0a0a12, borderless, ample empty space around the edges.',
-    '1980s dark arcade vector art, glowing neon accents, sharp silhouette, game ability icon.',
+    `High-fantasy MMORPG ability icon, vibrant hand-painted digital art style similar to World of Warcraft or League of Legends. Subject: ${cardName}. Flavor context: ${description}. Fullscreen composition, edge-to-edge artwork, highly detailed, dynamic lighting.`,
     'DO NOT include: text, words, letters, numbers, typography, user interface, UI, buttons, card borders, frames, rectangular outlines, stat boxes, mockup.',
   ].join(' ');
 }

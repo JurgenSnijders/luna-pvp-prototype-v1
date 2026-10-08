@@ -984,41 +984,34 @@ export function injectStyles(): void {
       pointer-events: none;
     }
 
-    .passive-equip-bay {
-      gap: 14px;
-    }
-
     .passive-slot {
       position: relative;
-      width: 72px;
-      height: 72px;
+      width: 64px;
+      height: 64px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 2px;
-      padding: 6px;
-      background: rgba(8, 10, 20, 0.85);
-      border: 1px dashed rgba(0, 229, 255, 0.28);
-      transform: rotate(45deg);
+      padding: 4px;
+      overflow: hidden;
+      background: var(--retro-panel-bg, rgba(8, 10, 20, 0.85));
+      border: 1px solid var(--retro-border-subtle, rgba(0, 229, 255, 0.2));
+      border-radius: 4px;
       transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
       cursor: pointer;
     }
 
-    .passive-slot > * {
-      transform: rotate(-45deg);
+    .passive-slot:hover {
+      border-color: var(--retro-neon-cyan, #00e5ff);
+      transform: translateY(-2px);
     }
 
-    .passive-slot:hover,
     .passive-slot.passive-slot-drop-hover {
       border-color: var(--retro-neon-cyan, #00e5ff);
-      box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
-    }
-
-    .passive-slot-filled {
-      border-style: solid;
-      border-color: rgba(167, 139, 250, 0.55);
-      background: rgba(24, 16, 40, 0.9);
+      box-shadow: var(--retro-glow-cyan, 0 0 8px rgba(0, 229, 255, 0.6));
+      background: rgba(0, 229, 255, 0.1);
+      transform: scale(1.05);
     }
 
     .passive-slot-badge {
@@ -1038,7 +1031,7 @@ export function injectStyles(): void {
       color: #e8d8ff;
       text-align: center;
       line-height: 1.15;
-      max-width: 58px;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1050,7 +1043,7 @@ export function injectStyles(): void {
       color: var(--retro-text-muted, #8aa0ad);
       text-align: center;
       line-height: 1.1;
-      max-width: 58px;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1147,8 +1140,8 @@ export function injectStyles(): void {
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
+      border-radius: inherit;
       pointer-events: none;
-      transform: rotate(-45deg) scale(1.42);
     }
 
     .passive-slot-art .passive-slot-title,
@@ -2257,7 +2250,8 @@ export function injectStyles(): void {
       .bottom-loadout-bay {
         padding: 4px 8px;
       }
-      .bottom-slot {
+      .bottom-slot,
+      .passive-slot {
         width: 56px;
         height: 56px;
       }
