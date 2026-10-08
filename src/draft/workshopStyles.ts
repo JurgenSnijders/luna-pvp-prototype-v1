@@ -1037,6 +1037,7 @@ export function injectStyles(): void {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      pointer-events: none;
     }
 
     .passive-slot-detail {
@@ -1049,6 +1050,7 @@ export function injectStyles(): void {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      pointer-events: none;
     }
 
     .passive-tile {
