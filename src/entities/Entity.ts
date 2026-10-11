@@ -1,5 +1,6 @@
 import { Vector2D } from '../math/Vector2D';
 import type { PhysicsWorld } from '../engine/PhysicsWorld';
+import type { TransformSlotMirror } from '../sim/ecs/slots';
 import { AIR_DRAG, HAZARD_CLEARANCE_Z } from '../engine/verticalConstants';
 import { getArchetypeColor } from '../render/canvas/SpellIconGenerator';
 import type {
@@ -43,6 +44,10 @@ export class Entity {
   static knockbackScaleRef = 100;
 
   id: string;
+  /** Index into the owning world's transform slot buffer, or -1 when unslotted. */
+  slotIndex = -1;
+  /** Set when slotted; used for render interpolation without a PhysicsWorld reference. */
+  slotMirror: TransformSlotMirror | null = null;
   pos: Vector2D;
   prevPos: Vector2D;
   vel: Vector2D;

@@ -66,6 +66,27 @@ export class Vector2D {
     return this.scale(1 / m);
   }
 
+  normalizeMut(): this {
+    const m = this.mag();
+    if (m === 0) {
+      this.x = 0;
+      this.y = 0;
+      return this;
+    }
+    this.x /= m;
+    this.y /= m;
+    return this;
+  }
+
+  /** Writes `v` rotated by `radians` into `out` without allocating. */
+  static rotateInto(out: Vector2D, v: Vector2D, radians: number): Vector2D {
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    out.x = v.x * cos - v.y * sin;
+    out.y = v.x * sin + v.y * cos;
+    return out;
+  }
+
   dot(v: Vector2D): number {
     return this.x * v.x + this.y * v.y;
   }

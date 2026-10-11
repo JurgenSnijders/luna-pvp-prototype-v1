@@ -37,8 +37,32 @@ import {
 } from './verticalConstants';
 import { bandsOverlap } from './elevation';
 import type { CombatEvent } from '../types/combatEvents';
+import { TransformSlotMirror } from '../sim/ecs/slots';
 
 const obstacleEntityScratch: Entity[] = [];
+
+const circlePairScratch = {
+  delta: new Vector2D(0, 0),
+  normal: new Vector2D(0, 0),
+  relVel: new Vector2D(0, 0),
+  relDisp: new Vector2D(0, 0),
+  impulse: new Vector2D(0, 0),
+  tmp: new Vector2D(0, 0),
+  contact: new Vector2D(0, 0),
+};
+
+const obstacleScratch = {
+  rel: new Vector2D(0, 0),
+  local: new Vector2D(0, 0),
+  closest: new Vector2D(0, 0),
+  diff: new Vector2D(0, 0),
+  localNormal: new Vector2D(0, 0),
+  worldNormal: new Vector2D(0, 0),
+  penetrationNormal: new Vector2D(0, 0),
+};
+
+const impulseScratch = new Vector2D(0, 0);
+const knockDirScratch = new Vector2D(0, 0);
 
 export const MAX_ENTITIES = 512;
 export const BASELINE_INSTABILITY_ON_HIT = 10;
@@ -218,6 +242,8 @@ export class PhysicsWorld {
   private entityRegistry = new Map<string, Entity>();
   private combatantRadius: number = DEFAULT_COMBATANT_RADIUS;
 
+  readonly transformSlots = new TransformSlotMirror();
+
   debugPhysicsEnabled = false;
   debugVectors: DebugForceVector[] = [];
   collisionRestitution = DEFAULT_COLLISION_RESTITUTION;
@@ -301,11 +327,40 @@ export class PhysicsWorld {
     return this.entityRegistry.get(id) ?? null;
   }
 
+  private acquireEntitySlot(entity: Entity): void {
+    if (entity.slotIndex >= 0) return;
+    const slot = this.transformSlots.acquire();
+    if (slot < 0) return;
+    entity.slotIndex = slot;
+    entity.slotMirror = this.transformSlots;
+    this.transformSlots.writeEntity(entity, slot);
+  }
+
+  private releaseEntitySlot(entity: Entity): void {
+    if (entity.slotIndex < 0) return;
+    this.transformSlots.release(entity.slotIndex);
+    entity.slotIndex = -1;
+    entity.slotMirror = null;
+  }
+
+  private publishTransformSlots(): void {
+    const publish = (entity: Entity): void => {
+      if (entity.isDead || entity.slotIndex < 0) return;
+      this.transformSlots.writeEntity(entity, entity.slotIndex);
+    };
+    for (const entity of this.players) publish(entity);
+    for (const entity of this.dummies) publish(entity);
+    for (const entity of this.summons) publish(entity);
+    for (const entity of this.projectiles) publish(entity);
+    for (const entity of this.zones) publish(entity);
+  }
+
   addPlayer(player: Player): void {
     if (!this.canAddEntity()) return;
     player.radius = this.combatantRadius;
     this.players.push(player);
     this.entityRegistry.set(player.id, player);
+    this.acquireEntitySlot(player);
     this.refreshCombatantsCache();
   }
 
@@ -314,6 +369,7 @@ export class PhysicsWorld {
     dummy.radius = this.combatantRadius;
     this.dummies.push(dummy);
     this.entityRegistry.set(dummy.id, dummy);
+    this.acquireEntitySlot(dummy);
     this.refreshCombatantsCache();
   }
 
@@ -321,6 +377,7 @@ export class PhysicsWorld {
     if (!this.canAddEntity()) return false;
     this.summons.push(summon);
     this.entityRegistry.set(summon.id, summon);
+    this.acquireEntitySlot(summon);
     this.refreshCombatantsCache();
     return true;
   }
@@ -329,12 +386,14 @@ export class PhysicsWorld {
     if (!this.canAddEntity()) return false;
     this.projectiles.push(projectile);
     this.entityRegistry.set(projectile.id, projectile);
+    this.acquireEntitySlot(projectile);
     return true;
   }
 
   addZone(zone: SpatialZone): boolean {
     if (!this.canAddEntity()) return false;
     this.zones.push(zone);
+    this.acquireEntitySlot(zone);
     return true;
   }
 
@@ -467,9 +526,7 @@ export class PhysicsWorld {
 
   private applyVelocityImpulse(entity: Entity, impulse: Vector2D): void {
     if (entity.isMovementDisabled()) {
-      entity.stashedMomentum = entity.stashedMomentum.add(
-        impulse.scale(entity.forceAccumulatorScale),
-      );
+      entity.stashedMomentum.addScaledMut(impulse, entity.forceAccumulatorScale);
       if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
         this.recordDebugVector(
           makeDebugVector(entity.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
@@ -477,7 +534,7 @@ export class PhysicsWorld {
       }
       return;
     }
-    entity.vel = entity.vel.add(impulse);
+    entity.vel.addMut(impulse);
     if (this.debugPhysicsEnabled && impulse.magSq() > 0) {
       this.recordDebugVector(
         makeDebugVector(entity.pos, impulse, impulse.mag(), DEBUG_VECTOR_COLORS.IMPULSE),
@@ -490,9 +547,12 @@ export class PhysicsWorld {
     target: Entity,
     closingSpeed: number,
   ): { J: number; knockDir: Vector2D; reducedMass: number } {
-    const knockDelta = target.pos.sub(rammer.pos);
-    const knockDir =
-      knockDelta.magSq() > 0 ? knockDelta.normalize() : Vector2D.fromAngle(0);
+    knockDirScratch.copyFrom(target.pos).subMut(rammer.pos);
+    if (knockDirScratch.magSq() > 0) {
+      knockDirScratch.normalizeMut();
+    } else {
+      knockDirScratch.set(1, 0);
+    }
 
     const reducedMass =
       (rammer.effectiveMass * target.effectiveMass) /
@@ -503,11 +563,12 @@ export class PhysicsWorld {
     const targetVelBefore = vecTelemetry(target.vel);
     const instabBefore = target.instabilityPct;
 
-    this.applyVelocityImpulse(target, knockDir.scale(J / target.effectiveMass));
-    this.applyVelocityImpulse(
-      rammer,
-      knockDir.scale(-(J * RAMMING_RECOIL_FACTOR) / rammer.effectiveMass),
-    );
+    impulseScratch.copyFrom(knockDirScratch).scaleMut(J / target.effectiveMass);
+    this.applyVelocityImpulse(target, impulseScratch);
+    impulseScratch
+      .copyFrom(knockDirScratch)
+      .scaleMut(-(J * RAMMING_RECOIL_FACTOR) / rammer.effectiveMass);
+    this.applyVelocityImpulse(rammer, impulseScratch);
 
     const rammingInstability = Math.min(
       RAMMING_INSTABILITY_CAP,
@@ -520,7 +581,7 @@ export class PhysicsWorld {
       rammerId: rammer.id,
       targetId: target.id,
       relativeVelocityNormal: closingSpeed,
-      collisionNormal: vecTelemetry(knockDir),
+      collisionNormal: vecTelemetry(knockDirScratch),
       impulseMagnitude: J,
       reducedMass,
       rammerVelBefore,
@@ -531,7 +592,7 @@ export class PhysicsWorld {
       targetInstabTotal: target.instabilityPct,
     });
 
-    return { J, knockDir, reducedMass };
+    return { J, knockDir: knockDirScratch.clone(), reducedMass };
   }
 
   private applySlamInstability(entity: Entity, impactSpeed: number): number {
@@ -600,12 +661,13 @@ export class PhysicsWorld {
         makeDebugVector(entity.pos, normal, bounceMag, DEBUG_VECTOR_COLORS.COLLISION, 'bounce'),
       );
     }
-    entity.vel = entity.vel.sub(normal.scale((1 + this.collisionRestitution) * vn));
+    impulseScratch.copyFrom(normal).scaleMut((1 + this.collisionRestitution) * vn);
+    entity.vel.subMut(impulseScratch);
     const bounce = entity.getEffectiveBounciness();
     if (bounce !== 1) {
       const vnOut = entity.vel.dot(normal);
       if (vnOut > 0) {
-        entity.vel = entity.vel.add(normal.scale(vnOut * (bounce - 1)));
+        entity.vel.addScaledMut(normal, vnOut * (bounce - 1));
       }
     }
   }
@@ -905,6 +967,7 @@ export class PhysicsWorld {
     this.resolveHexBoundaries(dt);
     this.resolveProjectileHits();
     this.collectExpirations();
+    this.publishTransformSlots();
     this.pruneDead();
   }
 
@@ -1136,8 +1199,8 @@ export class PhysicsWorld {
       return;
     }
 
-    const delta = b.pos.sub(a.pos);
-    const dist = delta.mag();
+    circlePairScratch.delta.copyFrom(b.pos).subMut(a.pos);
+    const dist = circlePairScratch.delta.mag();
     const minDist = a.effectiveRadius + b.effectiveRadius;
 
     if (dist >= minDist) {
@@ -1146,30 +1209,40 @@ export class PhysicsWorld {
       return;
     }
 
-    const normal = dist === 0 ? Vector2D.fromAngle(0) : delta.scale(1 / dist);
+    if (dist === 0) {
+      circlePairScratch.normal.set(1, 0);
+    } else {
+      circlePairScratch.normal.copyFrom(circlePairScratch.delta).scaleMut(1 / dist);
+    }
+    const normal = circlePairScratch.normal;
     const overlap = minDist - dist;
     const totalMass = a.effectiveMass + b.effectiveMass;
     const aRatio = b.effectiveMass / totalMass;
     const bRatio = a.effectiveMass / totalMass;
 
     if (!aStasis && !a.isImmovable()) {
-      a.pos = a.pos.sub(normal.scale(overlap * aRatio));
+      a.pos.addScaledMut(normal, -overlap * aRatio);
     }
     if (!bStasis && !b.isImmovable()) {
-      b.pos = b.pos.add(normal.scale(overlap * bRatio));
+      b.pos.addScaledMut(normal, overlap * bRatio);
     }
 
-    const relativeVel = b.vel.sub(a.vel);
-    const velAlongNormal = relativeVel.dot(normal);
+    circlePairScratch.relVel.copyFrom(b.vel).subMut(a.vel);
+    const velAlongNormal = circlePairScratch.relVel.dot(normal);
 
     if (velAlongNormal > 0) return;
 
     const closingSpeed = -velAlongNormal;
-    const relDisp = a.pos.sub(a.prevPos).sub(b.pos.sub(b.prevPos));
-    const approachSpeed = Math.max(closingSpeed, dt > 0 ? relDisp.dot(normal) / dt : closingSpeed);
+    circlePairScratch.relDisp.copyFrom(a.pos).subMut(a.prevPos);
+    circlePairScratch.tmp.copyFrom(b.pos).subMut(b.prevPos);
+    circlePairScratch.relDisp.subMut(circlePairScratch.tmp);
+    const approachSpeed = Math.max(
+      closingSpeed,
+      dt > 0 ? circlePairScratch.relDisp.dot(normal) / dt : closingSpeed,
+    );
     if (approachSpeed > RAMMING_SPEED_THRESHOLD) {
       const aApproach = a.vel.dot(normal);
-      const bApproach = b.vel.dot(normal.scale(-1));
+      const bApproach = -b.vel.dot(normal);
       const rammer = aApproach >= bApproach ? a : b;
       const target = rammer === a ? b : a;
       const { J, knockDir } = this.applyRammingImpulse(rammer, target, approachSpeed);
@@ -1184,9 +1257,15 @@ export class PhysicsWorld {
         });
       }
       if (this.debugPhysicsEnabled && J > 0) {
-        const contact = rammer.pos.add(target.pos).scale(0.5);
+        circlePairScratch.contact.copyFrom(rammer.pos).addMut(target.pos).scaleMut(0.5);
         this.recordDebugVector(
-          makeDebugVector(contact, knockDir, J, DEBUG_VECTOR_COLORS.COLLISION, 'ram'),
+          makeDebugVector(
+            circlePairScratch.contact,
+            knockDir,
+            J,
+            DEBUG_VECTOR_COLORS.COLLISION,
+            'ram',
+          ),
         );
       }
       return;
@@ -1195,13 +1274,14 @@ export class PhysicsWorld {
     const impulseMag =
       (-(1 + this.collisionRestitution) * velAlongNormal) /
       (1 / a.effectiveMass + 1 / b.effectiveMass);
-    const impulse = normal.scale(impulseMag);
 
     if (!aStasis && !a.isImmovable()) {
-      a.vel = a.vel.sub(impulse.scale(1 / a.effectiveMass));
+      circlePairScratch.impulse.copyFrom(normal).scaleMut(impulseMag / a.effectiveMass);
+      a.vel.subMut(circlePairScratch.impulse);
     }
     if (!bStasis && !b.isImmovable()) {
-      b.vel = b.vel.add(impulse.scale(1 / b.effectiveMass));
+      circlePairScratch.impulse.copyFrom(normal).scaleMut(impulseMag / b.effectiveMass);
+      b.vel.addMut(circlePairScratch.impulse);
     }
 
     if (this.debugPhysicsEnabled && impulseMag > 0) {
@@ -1214,10 +1294,11 @@ export class PhysicsWorld {
           'circle',
         ),
       );
+      circlePairScratch.tmp.copyFrom(normal).scaleMut(-1);
       this.recordDebugVector(
         makeDebugVector(
           a.pos,
-          normal.scale(-1),
+          circlePairScratch.tmp,
           impulseMag / a.effectiveMass,
           DEBUG_VECTOR_COLORS.COLLISION,
           'circle',
@@ -1305,9 +1386,10 @@ export class PhysicsWorld {
   }
 
   private toObstacleLocal(worldPos: Vector2D, obstacle: Obstacle): Vector2D {
-    const rel = worldPos.sub(obstacle.pos);
+    obstacleScratch.rel.copyFrom(worldPos).subMut(obstacle.pos);
     const angle = obstacle.config.angle ?? 0;
-    return rel.rotate(-angle);
+    Vector2D.rotateInto(obstacleScratch.local, obstacleScratch.rel, -angle);
+    return obstacleScratch.local;
   }
 
   private circleObstaclePenetration(
@@ -1315,18 +1397,22 @@ export class PhysicsWorld {
     obstacle: Obstacle,
   ): PenetrationResult | null {
     const radius = obstacle.config.width / 2;
-    const delta = entity.pos.sub(obstacle.pos);
-    const dist = delta.mag();
+    circlePairScratch.delta.copyFrom(entity.pos).subMut(obstacle.pos);
+    const dist = circlePairScratch.delta.mag();
     const entityRadius = entity.effectiveRadius;
     const minDist = entityRadius + radius;
 
     if (dist >= minDist) return null;
 
     if (dist > 0.0001) {
-      return { normal: delta.scale(1 / dist), depth: minDist - dist };
+      obstacleScratch.penetrationNormal
+        .copyFrom(circlePairScratch.delta)
+        .scaleMut(1 / dist);
+      return { normal: obstacleScratch.penetrationNormal, depth: minDist - dist };
     }
 
-    return { normal: Vector2D.fromAngle(0), depth: minDist };
+    obstacleScratch.penetrationNormal.set(1, 0);
+    return { normal: obstacleScratch.penetrationNormal, depth: minDist };
   }
 
   private boxObstaclePenetration(
@@ -1339,19 +1425,18 @@ export class PhysicsWorld {
 
     const closestX = Math.max(-halfW, Math.min(halfW, local.x));
     const closestY = Math.max(-halfH, Math.min(halfH, local.y));
-    const closest = new Vector2D(closestX, closestY);
+    obstacleScratch.closest.set(closestX, closestY);
 
-    const diff = local.sub(closest);
-    const dist = diff.mag();
+    obstacleScratch.diff.copyFrom(local).subMut(obstacleScratch.closest);
+    const dist = obstacleScratch.diff.mag();
     const entityRadius = entity.effectiveRadius;
 
     if (dist >= entityRadius) return null;
 
-    let localNormal: Vector2D;
     let depth: number;
 
     if (dist > 0.0001) {
-      localNormal = diff.scale(1 / dist);
+      obstacleScratch.localNormal.copyFrom(obstacleScratch.diff).scaleMut(1 / dist);
       depth = entityRadius - dist;
     } else {
       const penLeft = entityRadius + (local.x + halfW);
@@ -1361,23 +1446,27 @@ export class PhysicsWorld {
       const minPen = Math.min(penLeft, penRight, penTop, penBottom);
 
       if (minPen === penLeft) {
-        localNormal = new Vector2D(-1, 0);
+        obstacleScratch.localNormal.set(-1, 0);
         depth = penLeft;
       } else if (minPen === penRight) {
-        localNormal = new Vector2D(1, 0);
+        obstacleScratch.localNormal.set(1, 0);
         depth = penRight;
       } else if (minPen === penTop) {
-        localNormal = new Vector2D(0, -1);
+        obstacleScratch.localNormal.set(0, -1);
         depth = penTop;
       } else {
-        localNormal = new Vector2D(0, 1);
+        obstacleScratch.localNormal.set(0, 1);
         depth = penBottom;
       }
     }
 
     const angle = obstacle.config.angle ?? 0;
-    const worldNormal = localNormal.rotate(angle);
-    return { normal: worldNormal, depth };
+    Vector2D.rotateInto(
+      obstacleScratch.worldNormal,
+      obstacleScratch.localNormal,
+      angle,
+    );
+    return { normal: obstacleScratch.worldNormal, depth };
   }
 
   private getObstaclePenetration(
@@ -1451,13 +1540,13 @@ export class PhysicsWorld {
         }
 
         if (entity.isMovementDisabled()) {
-          entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
+          entity.pos.addScaledMut(penetration.normal, penetration.depth);
           continue;
         }
 
-        const vImpact = entity.vel.dot(penetration.normal.scale(-1));
+        const vImpact = -entity.vel.dot(penetration.normal);
         const velBefore = entity.vel.clone();
-        entity.pos = entity.pos.add(penetration.normal.scale(penetration.depth));
+        entity.pos.addScaledMut(penetration.normal, penetration.depth);
 
         if (vImpact > SLAM_SPEED_THRESHOLD) {
           const instabDelta = this.applySlamInstability(entity, vImpact);
@@ -1600,6 +1689,7 @@ export class PhysicsWorld {
       if (!this.dummies[read].isDead) {
         this.dummies[write++] = this.dummies[read];
       } else {
+        this.releaseEntitySlot(this.dummies[read]);
         this.entityRegistry.delete(this.dummies[read].id);
         pruned = true;
       }
@@ -1614,6 +1704,7 @@ export class PhysicsWorld {
       if (!this.summons[read].isDead) {
         this.summons[write++] = this.summons[read];
       } else {
+        this.releaseEntitySlot(this.summons[read]);
         this.entityRegistry.delete(this.summons[read].id);
         pruned = true;
       }
@@ -1628,6 +1719,7 @@ export class PhysicsWorld {
       if (!this.projectiles[read].isDead) {
         this.projectiles[write++] = this.projectiles[read];
       } else {
+        this.releaseEntitySlot(this.projectiles[read]);
         this.entityRegistry.delete(this.projectiles[read].id);
         pruned = true;
       }
@@ -1642,6 +1734,7 @@ export class PhysicsWorld {
       if (!this.zones[read].isDead) {
         this.zones[write++] = this.zones[read];
       } else {
+        this.releaseEntitySlot(this.zones[read]);
         this.entityRegistry.delete(this.zones[read].id);
         pruned = true;
       }
@@ -1658,12 +1751,15 @@ export class PhysicsWorld {
 
   clearProjectilesAndZones(): void {
     for (const projectile of this.projectiles) {
+      this.releaseEntitySlot(projectile);
       this.entityRegistry.delete(projectile.id);
     }
     for (const zone of this.zones) {
+      this.releaseEntitySlot(zone);
       this.entityRegistry.delete(zone.id);
     }
     for (const summon of this.summons) {
+      this.releaseEntitySlot(summon);
       this.entityRegistry.delete(summon.id);
     }
     this.projectiles = [];

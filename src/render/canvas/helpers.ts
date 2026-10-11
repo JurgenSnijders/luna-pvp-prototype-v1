@@ -1,10 +1,10 @@
 import type { Entity } from '../../entities/Entity';
-import { Vector2D } from '../../math/Vector2D';
+import { lerpEntityPos, lerpEntityZ } from '../../sim/ecs/slots';
 
-export function lerpPos(entity: Entity, alpha: number): Vector2D {
-  return entity.prevPos.lerp(entity.pos, alpha);
+export function lerpPos(entity: Entity, alpha: number) {
+  return lerpEntityPos(entity, alpha);
 }
 
 export function lerpZ(entity: Entity, alpha: number): number {
-  return entity.prevZ + (entity.z - entity.prevZ) * alpha;
+  return lerpEntityZ(entity, alpha);
 }
