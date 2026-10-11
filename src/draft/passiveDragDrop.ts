@@ -135,7 +135,7 @@ export function resolvePassiveDragPayload(raw: string): PassiveDragPayload | nul
 export interface PassiveEquipCallbacks {
   equipPassive: (
     slotIndex: number,
-    payload: PassiveModifierPayload,
+    payload: PassiveModifierPayload[],
     label?: PassiveSlotLabel,
   ) => void;
   unequipPassive: (slotIndex: number) => void;
@@ -156,7 +156,7 @@ function swapPassiveSlots(
 
   const sourceMod = state.passives[sourceIndex];
   const sourceLabel = state.labels[sourceIndex];
-  if (!sourceMod) return;
+  if (!sourceMod || sourceMod.length === 0) return;
 
   const targetMod = state.passives[targetIndex];
   const targetLabel = state.labels[targetIndex];
@@ -184,11 +184,11 @@ function equipFromVault(
   callbacks: PassiveEquipCallbacks,
 ): void {
   const card = PassiveInventoryManager.get(cardId);
-  const mod = card?.passivePayload?.[0];
-  if (!mod) return;
+  const mods = card?.passivePayload;
+  if (!mods || mods.length === 0) return;
   callbacks.equipPassive(
     targetIndex,
-    mod,
+    mods,
     card ? { title: card.title, tagline: card.tagline } : undefined,
   );
 }

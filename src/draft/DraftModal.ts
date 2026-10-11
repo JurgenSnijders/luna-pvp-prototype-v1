@@ -726,7 +726,7 @@ export interface DraftModalCallbacks {
   getLoadout: () => PlayerLoadout;
   equipPassive: (
     slotIndex: number,
-    payload: PassiveModifierPayload,
+    payload: PassiveModifierPayload[],
     label?: PassiveSlotLabel,
   ) => void;
   unequipPassive: (slotIndex: number) => void;

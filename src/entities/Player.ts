@@ -202,9 +202,10 @@ export class Player extends Entity {
       this.abilities[slotIndex] = null;
       return;
     }
-    const equippedPassives = this.passives.filter(
-      (mod): mod is PassiveModifierPayload => mod !== null,
-    );
+    const equippedPassives: PassiveModifierPayload[] = [];
+    for (const slotMods of this.passives) {
+      if (slotMods) equippedPassives.push(...slotMods);
+    }
     this.abilities[slotIndex] = applySplicesToAbility(base, equippedPassives);
   }
 
@@ -747,10 +748,11 @@ export class Player extends Entity {
 
   equipPassive(
     slotIndex: number,
-    payload: PassiveModifierPayload,
+    payload: PassiveModifierPayload[],
     label?: PassiveSlotLabel,
   ): void {
     if (slotIndex < 0 || slotIndex >= PASSIVE_SLOT_COUNT) return;
+    if (payload.length === 0) return;
     this.passives[slotIndex] = structuredClone(payload);
     this.passiveLabels[slotIndex] = label ? { ...label } : null;
     this.rebuildPassiveEffects();
@@ -773,7 +775,7 @@ export class Player extends Entity {
   applyPassiveModifier(mod: PassiveModifierPayload): void {
     const slot = this.findFirstEmptyPassiveSlot();
     if (slot === null) return;
-    this.equipPassive(slot, mod);
+    this.equipPassive(slot, [mod]);
   }
 
   private dispatchPassiveLoadoutChanged(): void {
@@ -839,11 +841,13 @@ export class Player extends Entity {
     this.resetStatsFromBaselines();
     this.passiveHooks = [];
 
-    for (const passive of this.passives) {
-      if (!passive) continue;
-      this.applyPassiveStatModifier(passive);
-      if (passive.hooks) {
-        this.passiveHooks.push(...passive.hooks);
+    for (const slotMods of this.passives) {
+      if (!slotMods) continue;
+      for (const mod of slotMods) {
+        this.applyPassiveStatModifier(mod);
+        if (mod.hooks) {
+          this.passiveHooks.push(...mod.hooks);
+        }
       }
     }
 

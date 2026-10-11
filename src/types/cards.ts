@@ -108,11 +108,11 @@ export interface DraftSelection {
 export const PASSIVE_SLOT_COUNT = 5;
 
 export type PassiveSlotTuple = [
-  PassiveModifierPayload | null,
-  PassiveModifierPayload | null,
-  PassiveModifierPayload | null,
-  PassiveModifierPayload | null,
-  PassiveModifierPayload | null,
+  PassiveModifierPayload[] | null,
+  PassiveModifierPayload[] | null,
+  PassiveModifierPayload[] | null,
+  PassiveModifierPayload[] | null,
+  PassiveModifierPayload[] | null,
 ];
 
 export interface PassiveSlotLabel {

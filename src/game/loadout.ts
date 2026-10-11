@@ -64,10 +64,12 @@ export function applyDraftSelection(app: GameApp, target: Player, selection: Dra
 
   if (slot === 'PASSIVE' && card.passivePayload) {
     PassiveInventoryManager.add(card);
-    for (const mod of card.passivePayload) {
-      const emptySlot = target.findFirstEmptyPassiveSlot();
-      if (emptySlot === null) break;
-      target.equipPassive(emptySlot, mod, { title: card.title, tagline: card.tagline });
+    const emptySlot = target.findFirstEmptyPassiveSlot();
+    if (emptySlot !== null) {
+      target.equipPassive(emptySlot, card.passivePayload, {
+        title: card.title,
+        tagline: card.tagline,
+      });
     }
     return;
   }

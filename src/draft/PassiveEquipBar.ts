@@ -19,11 +19,19 @@ function summarizePassive(mod: PassiveModifierPayload): string {
   return parts.length > 0 ? parts.join(', ') : 'Passive augment';
 }
 
+function summarizePassiveSlot(mods: PassiveModifierPayload[]): string {
+  const parts = mods.map((mod) => summarizePassive(mod)).filter((line) => line !== 'Passive augment');
+  if (parts.length === 0) return 'Passive augment';
+  if (parts.length <= 2) return parts.join(', ');
+  return `${mods.length} modifiers`;
+}
+
 function resolvePassiveIconData(
-  mod: PassiveModifierPayload,
+  mods: PassiveModifierPayload[],
   label: PassiveSlotLabel | null,
 ): string | undefined {
-  if (mod.iconData) return mod.iconData;
+  const fromMods = mods.find((mod) => mod.iconData)?.iconData;
+  if (fromMods) return fromMods;
   if (!label?.title) return undefined;
   const inventoryCard = PassiveInventoryManager.getAll().find((card) => card.title === label.title);
   return inventoryCard?.passivePayload?.find((entry) => entry.iconData)?.iconData;
@@ -67,7 +75,7 @@ export function renderPassiveEquipBar(
   const barState = { passives: state.passives, labels: state.labels };
 
   for (let index = 0; index < PASSIVE_SLOT_COUNT; index++) {
-    const mod = state.passives[index];
+    const slotMods = state.passives[index];
     const label = state.labels[index];
 
     const slot = document.createElement('div');
@@ -79,10 +87,10 @@ export function renderPassiveEquipBar(
     badge.textContent = `P${index + 1}`;
     slot.appendChild(badge);
 
-    if (mod) {
+    if (slotMods && slotMods.length > 0) {
       slot.classList.add('passive-slot-filled');
 
-      const iconData = resolvePassiveIconData(mod, label);
+      const iconData = resolvePassiveIconData(slotMods, label);
       if (iconData) {
         slot.classList.add('passive-slot-art');
         const bg = document.createElement('div');
@@ -92,12 +100,12 @@ export function renderPassiveEquipBar(
       } else {
         const title = document.createElement('span');
         title.className = 'passive-slot-title';
-        title.textContent = label?.title ?? summarizePassive(mod);
+        title.textContent = label?.title ?? summarizePassiveSlot(slotMods);
         slot.appendChild(title);
 
         const detail = document.createElement('span');
         detail.className = 'passive-slot-detail';
-        detail.textContent = label?.tagline ?? summarizePassive(mod);
+        detail.textContent = label?.tagline ?? summarizePassiveSlot(slotMods);
         slot.appendChild(detail);
       }
 

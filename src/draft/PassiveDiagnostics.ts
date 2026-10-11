@@ -88,7 +88,11 @@ export function formatPassiveSpliceLine(splice: PassiveSplice): string {
 }
 
 function collectEquippedPassives(passives: PassiveSlotTuple): PassiveModifierPayload[] {
-  return passives.filter((mod): mod is PassiveModifierPayload => mod !== null);
+  const equipped: PassiveModifierPayload[] = [];
+  for (const slotMods of passives) {
+    if (slotMods) equipped.push(...slotMods);
+  }
+  return equipped;
 }
 
 export function aggregatePassiveStats(

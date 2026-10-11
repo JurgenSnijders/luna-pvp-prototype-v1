@@ -53,24 +53,26 @@ function activeSlotLabel(
   return `[${key}] ${name} (${variant})`;
 }
 
-function passiveLabel(passive: PassiveModifierPayload, index: number): string {
-  const prefix = `[PASSIVE ${index + 1}]`;
-  if (
-    passive.stat !== undefined &&
-    passive.op !== undefined &&
-    passive.value !== undefined
-  ) {
-    return `${prefix} ${passive.stat} ${passive.op} ${passive.value}`;
+function passiveModifierSummary(mod: PassiveModifierPayload): string {
+  if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
+    return `${mod.stat} ${mod.op} ${mod.value}`;
   }
-  const hookCount = passive.hooks?.length ?? 0;
-  const spliceCount = passive.splices?.length ?? 0;
+  const hookCount = mod.hooks?.length ?? 0;
+  const spliceCount = mod.splices?.length ?? 0;
   if (hookCount > 0 || spliceCount > 0) {
     const parts: string[] = [];
     if (hookCount > 0) parts.push(`${hookCount} hook${hookCount === 1 ? '' : 's'}`);
     if (spliceCount > 0) parts.push(`${spliceCount} splice${spliceCount === 1 ? '' : 's'}`);
-    return `${prefix} ${parts.join(', ')}`;
+    return parts.join(', ');
   }
-  return prefix;
+  return '';
+}
+
+function passiveLabel(slotMods: PassiveModifierPayload[], index: number): string {
+  const prefix = `[PASSIVE ${index + 1}]`;
+  const summaries = slotMods.map(passiveModifierSummary).filter(Boolean);
+  if (summaries.length === 0) return prefix;
+  return `${prefix} ${summaries.join('; ')}`;
 }
 
 function appendOption(
@@ -108,15 +110,15 @@ function refreshInspectorOptions(ctx: InspectorContext, slotSelect: HTMLSelectEl
   passiveGroup.label = 'Passives';
   const passives = ctx.player.passives;
   const equippedPassiveIndices = passives
-    .map((mod, index) => (mod ? index : -1))
+    .map((slotMods, index) => (slotMods && slotMods.length > 0 ? index : -1))
     .filter((index) => index >= 0);
   if (equippedPassiveIndices.length === 0) {
     appendOption(passiveGroup, 'passive:none', '(none equipped)', true);
   } else {
     for (const i of equippedPassiveIndices) {
-      const mod = passives[i];
-      if (!mod) continue;
-      appendOption(passiveGroup, `passive:${i}`, passiveLabel(mod, i));
+      const slotMods = passives[i];
+      if (!slotMods || slotMods.length === 0) continue;
+      appendOption(passiveGroup, `passive:${i}`, passiveLabel(slotMods, i));
     }
   }
   slotSelect.appendChild(passiveGroup);
