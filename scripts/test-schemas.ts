@@ -9,6 +9,8 @@ import { validateDraftCard, validateDraftCards, validatePassiveModifier } from '
 import type { AbilitySchema, ActionPayload, TriggerNode, ValidationIssue } from '../src/types/schema';
 import { validateAbilitySchema, walkActions } from '../src/types/schema';
 import { extractMechanicBadgesFromAbility } from '../src/draft/mechanicBadges';
+import { formatPassiveSpliceLine } from '../src/draft/PassiveDiagnostics';
+import type { PassiveSplice } from '../src/types/combatEvents';
 import {
   abilityGraphFromSchema,
   buildSpellGraphDisplay,
@@ -1302,12 +1304,49 @@ function runPassiveRepairAssertions(): string[] {
   return failures;
 }
 
+function runPassiveSpliceCopyAssertions(): string[] {
+  const failures: string[] = [];
+
+  const shardBurst: PassiveSplice = {
+    operation: {
+      type: 'APPEND_TRIGGER',
+      node: {
+        trigger: 'ON_HIT',
+        actions: [
+          {
+            type: 'SPAWN_PROJECTILE',
+            projectileTrajectory: { type: 'LINEAR', speed: 380, maxRange: 280 },
+            emitter: { count: 5, spreadDeg: 50, distribution: 'FAN' },
+          },
+        ],
+      },
+    },
+    targetArchetype: 'KINETIC',
+  };
+
+  const line = formatPassiveSpliceLine(shardBurst);
+  if (line !== 'On impact, split into 5') {
+    failures.push(`passive splice copy: expected "On impact, split into 5", got "${line}"`);
+  }
+  if (line.includes('APPEND') || line.includes('ON_HIT')) {
+    failures.push('passive splice copy: line should not contain APPEND or ON_HIT');
+  }
+
+  const bounceLine = formatPassiveSpliceLine({ operation: { type: 'ADD_BOUNCE', amount: 1 } });
+  if (bounceLine !== '+1 bounce') {
+    failures.push(`passive splice copy: expected "+1 bounce", got "${bounceLine}"`);
+  }
+
+  return failures;
+}
+
 function run(): void {
   const scores: Record<string, number> = {};
   const failures: string[] = [
     ...runPassiveHookValidationAssertions(),
     ...runPassiveSpliceValidationAssertions(),
     ...runPassiveRepairAssertions(),
+    ...runPassiveSpliceCopyAssertions(),
     ...runDisplacementAssertions(),
     ...runSemanticRepairAssertions(),
     ...runShieldRepairAssertions(),

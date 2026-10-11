@@ -29,7 +29,62 @@ interface ArchetypeSpliceGroup {
   archetype: SpellArchetype | 'UNIVERSAL';
   bounces: number;
   pierce: number;
-  appendTriggers: string[];
+  effectLines: string[];
+}
+
+const TRIGGER_WHEN: Record<string, string> = {
+  ON_HIT: 'On impact',
+  ON_EXPIRY: 'On timeout',
+  ON_BOUNCE: 'On bounce',
+  ON_AIR_APEX: 'At apex',
+  ON_CAST: 'On cast',
+  ON_HIT_WALL: 'On wall hit',
+  ON_GROUND_SLAM: 'On slam',
+  ON_TICK: 'While active',
+};
+
+function formatTriggerWhen(trigger: string): string {
+  if (TRIGGER_WHEN[trigger]) return TRIGGER_WHEN[trigger];
+  const lower = trigger.replace(/_/g, ' ').toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function formatSpliceActionPhrase(action: ActionPayload): string {
+  switch (action.type) {
+    case 'SPAWN_PROJECTILE': {
+      const count = action.emitter?.count ?? 1;
+      if (count > 1) return `split into ${count}`;
+      return 'fire a projectile';
+    }
+    case 'SPAWN_FIELD':
+      return action.field.fieldType.replace(/_/g, ' ').toLowerCase();
+    case 'APPLY_IMPULSE':
+      return 'knockback';
+    case 'APPLY_STASIS':
+      return 'stasis';
+    case 'ADD_INSTABILITY':
+      return 'vulnerability';
+    case 'MODIFY_STAT':
+      return 'stat change';
+    default:
+      return action.type.replace(/_/g, ' ').toLowerCase();
+  }
+}
+
+export function formatPassiveSpliceLine(splice: PassiveSplice): string {
+  const op = splice.operation;
+  switch (op.type) {
+    case 'ADD_BOUNCE':
+      return `+${op.amount} bounce${op.amount === 1 ? '' : 's'}`;
+    case 'ADD_PIERCE':
+      return `+${op.amount} pierce${op.amount === 1 ? '' : 's'}`;
+    case 'APPEND_TRIGGER': {
+      const when = formatTriggerWhen(op.node.trigger);
+      const effects = op.node.actions.map(formatSpliceActionPhrase).filter(Boolean);
+      const effectText = effects.length > 0 ? effects.join(' and ') : 'trigger effect';
+      return `${when}, ${effectText}`;
+    }
+  }
 }
 
 function collectEquippedPassives(passives: PassiveSlotTuple): PassiveModifierPayload[] {
@@ -81,7 +136,7 @@ export function aggregatePassiveSplices(
       archetype,
       bounces: 0,
       pierce: 0,
-      appendTriggers: [],
+      effectLines: [],
     };
     groups.set(key, created);
     return created;
@@ -113,7 +168,7 @@ function applySpliceToGroup(group: ArchetypeSpliceGroup, splice: PassiveSplice):
       group.pierce += op.amount;
       break;
     case 'APPEND_TRIGGER':
-      group.appendTriggers.push(op.node.trigger);
+      group.effectLines.push(formatPassiveSpliceLine(splice));
       break;
   }
 }
@@ -159,27 +214,13 @@ function formatHookLine(hook: PassiveHook): string {
 function formatSpliceLines(group: ArchetypeSpliceGroup): string[] {
   const lines: string[] = [];
   if (group.bounces > 0) {
-    lines.push(`+${group.bounces} BOUNCE${group.bounces === 1 ? '' : 'S'}`);
+    lines.push(`+${group.bounces} bounce${group.bounces === 1 ? '' : 's'}`);
   }
   if (group.pierce > 0) {
-    lines.push(`+${group.pierce} PIERCE`);
+    lines.push(`+${group.pierce} pierce${group.pierce === 1 ? '' : 's'}`);
   }
-  for (const trigger of group.appendTriggers) {
-    lines.push(`APPEND: ${trigger}`);
-  }
+  lines.push(...group.effectLines);
   return lines;
-}
-
-function formatSingleSpliceLine(splice: PassiveSplice): string {
-  const op = splice.operation;
-  switch (op.type) {
-    case 'ADD_BOUNCE':
-      return `+${op.amount} BOUNCE${op.amount === 1 ? '' : 'S'}`;
-    case 'ADD_PIERCE':
-      return `+${op.amount} PIERCE`;
-    case 'APPEND_TRIGGER':
-      return `APPEND: ${op.node.trigger}`;
-  }
 }
 
 function collectCardSplices(mods: PassiveModifierPayload[]): PassiveSplice[] {
@@ -285,7 +326,7 @@ export function renderPassiveDiagnostics(
   }
 
   if (splices.length > 0) {
-    const { section, list } = createSection('LOADOUT SPLICES');
+    const { section, list } = createSection('Spell edits');
     for (const group of splices) {
       for (const line of formatSpliceLines(group)) {
         appendRow(list, line, 'passive-diagnostics-splice', group.archetype);
@@ -363,10 +404,10 @@ export function renderPassiveInspector(container: HTMLElement, card: DraftCard):
   }
 
   if (splices.length > 0) {
-    const { section, list } = createSection('CARD SPLICES');
+    const { section, list } = createSection('Spell edits');
     for (const splice of splices) {
       const archetype = splice.targetArchetype ?? 'UNIVERSAL';
-      appendRow(list, formatSingleSpliceLine(splice), 'passive-diagnostics-splice', archetype);
+      appendRow(list, formatPassiveSpliceLine(splice), 'passive-diagnostics-splice', archetype);
     }
     panel.appendChild(section);
   }
