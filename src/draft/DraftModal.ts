@@ -805,7 +805,7 @@ export class DraftModal {
   private vaultMetaFilters = new Set<VaultMetaFilter>();
   private vaultBuilt = false;
   private passivesBuilt = false;
-  private selectedPassiveId: string | null = null;
+  private passivesRootClickBound = false;
   private hoveredPassiveId: string | null = null;
   private forgeVaultPickerActive = false;
   private vaultSavedCardIndex: number | null = null;
@@ -1403,14 +1403,22 @@ export class DraftModal {
     header.appendChild(title);
     this.passivesRoot.appendChild(header);
 
+    if (!this.passivesRootClickBound) {
+      this.passivesRootClickBound = true;
+      this.passivesRoot.addEventListener('click', () => {
+        this.clearPassiveInspectorFocus();
+      });
+    }
+
     this.passiveGrid = document.createElement('div');
     this.passiveGrid.className = 'spell-grid-square';
-    this.passiveGrid.addEventListener('click', () => {
-      if (this.selectedPassiveId === null) return;
-      this.selectedPassiveId = null;
-      this.renderPassivesGrid();
-    });
     this.passivesRoot.appendChild(this.passiveGrid);
+  }
+
+  private clearPassiveInspectorFocus(): void {
+    if (this.hoveredPassiveId === null) return;
+    this.hoveredPassiveId = null;
+    this.renderPassivesGrid();
   }
 
   private renderPassivesGrid(): void {
@@ -1429,13 +1437,6 @@ export class DraftModal {
       return;
     }
 
-    if (
-      this.selectedPassiveId !== null &&
-      !cards.some((card) => card.id === this.selectedPassiveId)
-    ) {
-      this.selectedPassiveId = null;
-    }
-
     const passiveLabels = this.callbacks.getLoadout().passiveLabels ?? [
       null,
       null,
@@ -1446,14 +1447,8 @@ export class DraftModal {
 
     for (const card of cards) {
       const tile = renderPassiveGridTile(card, {
-        selected: card.id === this.selectedPassiveId,
         rarityColor: RARITY_COLORS[card.rarity],
         passiveLabels,
-        onSelect: () => {
-          this.selectedPassiveId =
-            card.id === this.selectedPassiveId ? null : card.id;
-          this.renderPassivesGrid();
-        },
       });
 
       tile.addEventListener('mouseenter', () => {
@@ -1629,7 +1624,7 @@ export class DraftModal {
     this.inspectorPane.innerHTML = '';
 
     if (this.activeTab === 'PASSIVES') {
-      const activePassiveId = this.hoveredPassiveId ?? this.selectedPassiveId;
+      const activePassiveId = this.hoveredPassiveId;
       if (activePassiveId) {
         const card = PassiveInventoryManager.get(activePassiveId);
         if (card) {

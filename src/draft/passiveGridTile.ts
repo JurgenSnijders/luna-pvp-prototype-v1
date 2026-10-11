@@ -4,10 +4,8 @@ import { extractMechanicBadges, renderBadge } from './mechanicBadges';
 import { attachPassiveVaultDrag } from './passiveDragDrop';
 
 export interface PassiveGridTileOptions {
-  selected: boolean;
   rarityColor: string;
   passiveLabels: Array<PassiveSlotLabel | null>;
-  onSelect: () => void;
 }
 
 function isCardEquipped(card: DraftCard, passiveLabels: Array<PassiveSlotLabel | null>): boolean {
@@ -68,9 +66,6 @@ function renderTextTile(tile: HTMLElement, card: DraftCard): void {
 export function renderPassiveGridTile(card: DraftCard, options: PassiveGridTileOptions): HTMLElement {
   const tile = document.createElement('div');
   tile.className = 'spell-tile passive-tile';
-  if (options.selected) {
-    tile.classList.add('tile-selected');
-  }
   if (isCardEquipped(card, options.passiveLabels)) {
     tile.classList.add('is-equipped');
     const eqTag = document.createElement('span');
@@ -89,10 +84,6 @@ export function renderPassiveGridTile(card: DraftCard, options: PassiveGridTileO
     renderTextTile(tile, card);
   }
 
-  tile.addEventListener('click', (event) => {
-    event.stopPropagation();
-    options.onSelect();
-  });
   attachPassiveVaultDrag(tile, card.id);
   return tile;
 }
