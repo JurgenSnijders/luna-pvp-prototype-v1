@@ -347,7 +347,7 @@ export class ActionBarHUD {
       }
       #action-bar-hud.hud-suppressed {
         opacity: 0;
-        pointer-events: none;
+        pointer-events: none !important;
         transform: translateX(-50%) translateY(24px);
       }
       html[data-viewport-profile='compact'] .action-slot-assign-label,
