@@ -82,6 +82,7 @@ import { PassiveInventoryManager } from '../game/PassiveInventory';
 import { SpellInventoryManager } from '../game/SpellInventory';
 import { renderPassiveDiagnostics, renderPassiveInspector } from './PassiveDiagnostics';
 import { renderPassiveEquipBar } from './PassiveEquipBar';
+import { attachPassiveSlotUnequipZone } from './passiveDragDrop';
 import { renderPassiveGridTile } from './passiveGridTile';
 import {
   getSpellRoleLabel,
@@ -1054,6 +1055,12 @@ export class DraftModal {
     this.overlay.appendChild(this.panel);
     document.body.appendChild(this.overlay);
 
+    attachPassiveSlotUnequipZone(this.overlay, {
+      equipPassive: (index, payload, label) =>
+        this.callbacks.equipPassive(index, payload, label),
+      unequipPassive: (index) => this.callbacks.unequipPassive(index),
+    });
+
     window.addEventListener('inventoryupdated', this.onInventoryUpdated);
     window.addEventListener('loadoutchanged', this.onLoadoutChanged);
     window.addEventListener('passiveloadoutchanged', this.onPassiveLoadoutChanged);
@@ -1420,10 +1427,19 @@ export class DraftModal {
       this.selectedPassiveId = cards[0]?.id ?? null;
     }
 
+    const passiveLabels = this.callbacks.getLoadout().passiveLabels ?? [
+      null,
+      null,
+      null,
+      null,
+      null,
+    ];
+
     for (const card of cards) {
       const tile = renderPassiveGridTile(card, {
         selected: card.id === this.selectedPassiveId,
         rarityColor: RARITY_COLORS[card.rarity],
+        passiveLabels,
         onSelect: () => {
           this.selectedPassiveId = card.id;
           this.renderPassivesGrid();

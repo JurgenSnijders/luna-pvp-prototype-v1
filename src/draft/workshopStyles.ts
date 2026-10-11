@@ -1153,9 +1153,70 @@ export function injectStyles(): void {
       display: none;
     }
 
+    .passive-slot-clear-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      z-index: 4;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      line-height: 1;
+      font-family: ${FONTS.mono};
+      font-size: 14px;
+      font-weight: bold;
+      color: #fcd34d;
+      background: rgba(8, 10, 20, 0.88);
+      border: 1px solid rgba(245, 158, 11, 0.55);
+      border-radius: 2px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .passive-slot-clear-btn:hover {
+      color: #fff;
+      background: rgba(180, 50, 50, 0.9);
+      border-color: rgba(248, 113, 113, 0.8);
+    }
+
+    .passive-slot-filled.is-dragging {
+      opacity: 0.55;
+      cursor: grabbing;
+    }
+
     .passive-tile.is-dragging {
       opacity: 0.55;
       cursor: grabbing;
+    }
+
+    .spell-grid-square > .passive-tile.is-equipped {
+      border-color: rgba(167, 139, 250, 0.95) !important;
+      box-shadow: 0 0 14px rgba(167, 139, 250, 0.55), inset 0 0 8px rgba(167, 139, 250, 0.15) !important;
+    }
+
+    .spell-grid-square > .passive-tile.is-equipped.tile-selected {
+      border-color: rgba(200, 180, 255, 1) !important;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.35), 0 0 14px rgba(167, 139, 250, 0.6) !important;
+    }
+
+    .passive-tile-equipped-tag {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      z-index: 3;
+      font-family: ${FONTS.mono};
+      font-size: 8px;
+      font-weight: bold;
+      line-height: 1;
+      padding: 2px 3px;
+      border-radius: 2px;
+      color: #e8d8ff;
+      background: rgba(88, 28, 135, 0.85);
+      border: 1px solid rgba(167, 139, 250, 0.7);
+      pointer-events: none;
+      letter-spacing: 0.04em;
     }
 
     .passive-diagnostics-panel {
@@ -1178,6 +1239,18 @@ export function injectStyles(): void {
       font-size: ${FONTS.size.lg};
       letter-spacing: 0.04em;
       color: var(--retro-neon-cyan, #00e5ff);
+    }
+
+    .passive-inspector-art {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      border: 1px solid rgba(167, 139, 250, 0.45);
+      box-shadow: 0 0 16px rgba(167, 139, 250, 0.25);
+      flex-shrink: 0;
     }
 
     .passive-inspector-flavor {

@@ -1,12 +1,21 @@
-import type { PassiveModifierPayload, PassiveSlotLabel } from '../types/cards';
+import type {
+  PassiveModifierPayload,
+  PassiveSlotLabel,
+  PassiveSlotTuple,
+} from '../types/cards';
 import { PassiveInventoryManager } from '../game/PassiveInventory';
 
-export type PassiveDragSource = 'PASSIVE_VAULT';
-
-export interface PassiveDragPayload {
-  source: PassiveDragSource;
+export type PassiveVaultDragPayload = {
+  source: 'PASSIVE_VAULT';
   cardId: string;
-}
+};
+
+export type PassiveSlotDragPayload = {
+  source: 'PASSIVE_SLOT';
+  sourceSlotIndex: number;
+};
+
+export type PassiveDragPayload = PassiveVaultDragPayload | PassiveSlotDragPayload;
 
 let activePassiveDrag: PassiveDragPayload | null = null;
 
@@ -79,6 +88,11 @@ function setPassiveDragImage(source: HTMLElement, event: DragEvent): void {
   dataTransfer.setDragImage(blank, 0, 0);
 }
 
+function passiveDragDropEffect(payload: PassiveDragPayload | null): 'copy' | 'move' | 'none' {
+  if (!payload) return 'none';
+  return payload.source === 'PASSIVE_VAULT' ? 'copy' : 'move';
+}
+
 export function setActivePassiveDrag(payload: PassiveDragPayload | null): void {
   activePassiveDrag = payload;
 }
@@ -97,9 +111,18 @@ export function parsePassiveDragPayload(raw: string): PassiveDragPayload | null 
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
     const obj = parsed as Record<string, unknown>;
-    if (obj.source !== 'PASSIVE_VAULT') return null;
-    if (typeof obj.cardId !== 'string' || !obj.cardId.trim()) return null;
-    return { source: 'PASSIVE_VAULT', cardId: obj.cardId };
+    if (obj.source === 'PASSIVE_VAULT') {
+      if (typeof obj.cardId !== 'string' || !obj.cardId.trim()) return null;
+      return { source: 'PASSIVE_VAULT', cardId: obj.cardId };
+    }
+    if (obj.source === 'PASSIVE_SLOT') {
+      if (typeof obj.sourceSlotIndex !== 'number' || !Number.isInteger(obj.sourceSlotIndex)) {
+        return null;
+      }
+      if (obj.sourceSlotIndex < 0) return null;
+      return { source: 'PASSIVE_SLOT', sourceSlotIndex: obj.sourceSlotIndex };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -118,10 +141,62 @@ export interface PassiveEquipCallbacks {
   unequipPassive: (slotIndex: number) => void;
 }
 
+export interface PassiveEquipBarDragState {
+  passives: PassiveSlotTuple;
+  labels: Array<PassiveSlotLabel | null>;
+}
+
+function swapPassiveSlots(
+  sourceIndex: number,
+  targetIndex: number,
+  state: PassiveEquipBarDragState,
+  callbacks: PassiveEquipCallbacks,
+): void {
+  if (sourceIndex === targetIndex) return;
+
+  const sourceMod = state.passives[sourceIndex];
+  const sourceLabel = state.labels[sourceIndex];
+  if (!sourceMod) return;
+
+  const targetMod = state.passives[targetIndex];
+  const targetLabel = state.labels[targetIndex];
+
+  callbacks.equipPassive(
+    targetIndex,
+    sourceMod,
+    sourceLabel ? { ...sourceLabel } : undefined,
+  );
+
+  if (targetMod) {
+    callbacks.equipPassive(
+      sourceIndex,
+      targetMod,
+      targetLabel ? { ...targetLabel } : undefined,
+    );
+  } else {
+    callbacks.unequipPassive(sourceIndex);
+  }
+}
+
+function equipFromVault(
+  targetIndex: number,
+  cardId: string,
+  callbacks: PassiveEquipCallbacks,
+): void {
+  const card = PassiveInventoryManager.get(cardId);
+  const mod = card?.passivePayload?.[0];
+  if (!mod) return;
+  callbacks.equipPassive(
+    targetIndex,
+    mod,
+    card ? { title: card.title, tagline: card.tagline } : undefined,
+  );
+}
+
 export function attachPassiveVaultDrag(tile: HTMLElement, cardId: string): void {
   tile.draggable = true;
   tile.addEventListener('dragstart', (event) => {
-    const payload: PassiveDragPayload = { source: 'PASSIVE_VAULT', cardId };
+    const payload: PassiveVaultDragPayload = { source: 'PASSIVE_VAULT', cardId };
     setActivePassiveDrag(payload);
     const serialized = serializePassiveDragPayload(payload);
     event.dataTransfer?.setData('text/plain', serialized);
@@ -137,15 +212,43 @@ export function attachPassiveVaultDrag(tile: HTMLElement, cardId: string): void 
   });
 }
 
+export function attachPassiveSlotDrag(
+  slot: HTMLElement,
+  sourceSlotIndex: number,
+): void {
+  slot.draggable = true;
+  slot.addEventListener('dragstart', (event) => {
+    const payload: PassiveSlotDragPayload = {
+      source: 'PASSIVE_SLOT',
+      sourceSlotIndex,
+    };
+    setActivePassiveDrag(payload);
+    const serialized = serializePassiveDragPayload(payload);
+    event.dataTransfer?.setData('text/plain', serialized);
+    event.dataTransfer?.setData('application/x-luna-passive', serialized);
+    event.dataTransfer!.effectAllowed = 'move';
+    setPassiveDragImage(slot, event);
+    slot.classList.add('is-dragging');
+  });
+  slot.addEventListener('dragend', () => {
+    setActivePassiveDrag(null);
+    clearPassiveDragGhost();
+    slot.classList.remove('is-dragging');
+  });
+}
+
 export function attachPassiveSlotDrop(
   slot: HTMLElement,
   slotIndex: number,
+  barState: PassiveEquipBarDragState,
   callbacks: PassiveEquipCallbacks,
 ): void {
   slot.addEventListener('dragenter', (event) => {
+    const active = getActivePassiveDrag();
+    if (!active) return;
     event.preventDefault();
     if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'copy';
+      event.dataTransfer.dropEffect = passiveDragDropEffect(active);
     }
     const related = event.relatedTarget as Node | null;
     if (related && slot.contains(related)) return;
@@ -153,9 +256,11 @@ export function attachPassiveSlotDrop(
   });
 
   slot.addEventListener('dragover', (event) => {
+    const active = getActivePassiveDrag();
+    if (!active) return;
     event.preventDefault();
     if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'copy';
+      event.dataTransfer.dropEffect = passiveDragDropEffect(active);
     }
   });
 
@@ -167,6 +272,7 @@ export function attachPassiveSlotDrop(
 
   slot.addEventListener('drop', (event) => {
     event.preventDefault();
+    event.stopPropagation();
     slot.classList.remove('passive-slot-drop-hover');
     const raw =
       event.dataTransfer?.getData('application/x-luna-passive') ||
@@ -174,9 +280,54 @@ export function attachPassiveSlotDrop(
       '';
     const payload = resolvePassiveDragPayload(raw);
     if (!payload) return;
-    const card = PassiveInventoryManager.get(payload.cardId);
-    const mod = card?.passivePayload?.[0];
-    if (!mod) return;
-    callbacks.equipPassive(slotIndex, mod, card ? { title: card.title, tagline: card.tagline } : undefined);
+
+    if (payload.source === 'PASSIVE_VAULT') {
+      equipFromVault(slotIndex, payload.cardId, callbacks);
+      return;
+    }
+
+    swapPassiveSlots(payload.sourceSlotIndex, slotIndex, barState, callbacks);
   });
+}
+
+/** Unequip when a slot-originated drag is dropped outside equip slots. */
+export function attachPassiveSlotUnequipZone(
+  element: HTMLElement,
+  callbacks: PassiveEquipCallbacks,
+): void {
+  const onDragEnter = (event: DragEvent): void => {
+    const active = getActivePassiveDrag();
+    if (active?.source !== 'PASSIVE_SLOT') return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const onDragOver = (event: DragEvent): void => {
+    const active = getActivePassiveDrag();
+    if (active?.source !== 'PASSIVE_SLOT') return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const onDrop = (event: DragEvent): void => {
+    const active = getActivePassiveDrag();
+    if (active?.source !== 'PASSIVE_SLOT') return;
+    const target = event.target as Node | null;
+    if (target && (target as Element).closest?.('.passive-slot')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks.unequipPassive(active.sourceSlotIndex);
+    setActivePassiveDrag(null);
+    clearPassiveDragGhost();
+  };
+
+  element.addEventListener('dragenter', onDragEnter, true);
+  element.addEventListener('dragover', onDragOver, true);
+  element.addEventListener('drop', onDrop);
 }

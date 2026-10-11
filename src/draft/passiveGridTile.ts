@@ -1,12 +1,17 @@
 import { PassiveInventoryManager } from '../game/PassiveInventory';
-import type { DraftCard } from '../types/cards';
+import type { DraftCard, PassiveSlotLabel } from '../types/cards';
 import { extractMechanicBadges, renderBadge } from './mechanicBadges';
 import { attachPassiveVaultDrag } from './passiveDragDrop';
 
 export interface PassiveGridTileOptions {
   selected: boolean;
   rarityColor: string;
+  passiveLabels: Array<PassiveSlotLabel | null>;
   onSelect: () => void;
+}
+
+function isCardEquipped(card: DraftCard, passiveLabels: Array<PassiveSlotLabel | null>): boolean {
+  return passiveLabels.some((label) => label?.title === card.title);
 }
 
 function getPassiveIconData(card: DraftCard): string | undefined {
@@ -65,6 +70,13 @@ export function renderPassiveGridTile(card: DraftCard, options: PassiveGridTileO
   tile.className = 'spell-tile passive-tile';
   if (options.selected) {
     tile.classList.add('tile-selected');
+  }
+  if (isCardEquipped(card, options.passiveLabels)) {
+    tile.classList.add('is-equipped');
+    const eqTag = document.createElement('span');
+    eqTag.className = 'passive-tile-equipped-tag';
+    eqTag.textContent = 'EQ';
+    tile.appendChild(eqTag);
   }
 
   tile.style.borderColor = options.rarityColor;

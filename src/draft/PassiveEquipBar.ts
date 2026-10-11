@@ -1,7 +1,11 @@
 import type { PassiveModifierPayload, PassiveSlotLabel, PassiveSlotTuple } from '../types/cards';
 import { PASSIVE_SLOT_COUNT } from '../types/cards';
 import { PassiveInventoryManager } from '../game/PassiveInventory';
-import { attachPassiveSlotDrop, type PassiveEquipCallbacks } from './passiveDragDrop';
+import {
+  attachPassiveSlotDrag,
+  attachPassiveSlotDrop,
+  type PassiveEquipCallbacks,
+} from './passiveDragDrop';
 
 function summarizePassive(mod: PassiveModifierPayload): string {
   if (mod.stat !== undefined && mod.op !== undefined && mod.value !== undefined) {
@@ -25,6 +29,28 @@ function resolvePassiveIconData(
   return inventoryCard?.passivePayload?.find((entry) => entry.iconData)?.iconData;
 }
 
+function appendPassiveSlotClearButton(
+  slot: HTMLElement,
+  slotIndex: number,
+  callbacks: PassiveEquipCallbacks,
+): void {
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'passive-slot-clear-btn';
+  clearBtn.setAttribute('aria-label', 'Unequip passive');
+  clearBtn.textContent = '×';
+  clearBtn.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  clearBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks.unequipPassive(slotIndex);
+  });
+  slot.appendChild(clearBtn);
+}
+
 export interface PassiveEquipBarState {
   passives: PassiveSlotTuple;
   labels: Array<PassiveSlotLabel | null>;
@@ -37,6 +63,8 @@ export function renderPassiveEquipBar(
 ): void {
   container.innerHTML = '';
   container.className = 'bottom-loadout-bay passive-equip-bay';
+
+  const barState = { passives: state.passives, labels: state.labels };
 
   for (let index = 0; index < PASSIVE_SLOT_COUNT; index++) {
     const mod = state.passives[index];
@@ -73,13 +101,16 @@ export function renderPassiveEquipBar(
         slot.appendChild(detail);
       }
 
+      appendPassiveSlotClearButton(slot, index, callbacks);
+      attachPassiveSlotDrag(slot, index);
+
       slot.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         callbacks.unequipPassive(index);
       });
     }
 
-    attachPassiveSlotDrop(slot, index, callbacks);
+    attachPassiveSlotDrop(slot, index, barState, callbacks);
     container.appendChild(slot);
   }
 }

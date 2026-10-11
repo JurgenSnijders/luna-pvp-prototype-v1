@@ -297,11 +297,23 @@ export function renderPassiveDiagnostics(
   container.appendChild(panel);
 }
 
+function getPassiveCardIconData(card: DraftCard): string | undefined {
+  return card.passivePayload?.find((mod) => mod.iconData)?.iconData;
+}
+
 export function renderPassiveInspector(container: HTMLElement, card: DraftCard): void {
   container.innerHTML = '';
 
   const panel = document.createElement('div');
   panel.className = 'passive-diagnostics-panel';
+
+  const iconData = getPassiveCardIconData(card);
+  if (iconData) {
+    const art = document.createElement('div');
+    art.className = 'passive-inspector-art';
+    art.style.backgroundImage = `url("${iconData}")`;
+    panel.appendChild(art);
+  }
 
   const heading = document.createElement('h2');
   heading.className = 'passive-diagnostics-heading';
