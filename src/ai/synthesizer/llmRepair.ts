@@ -276,9 +276,24 @@ function repairPassiveModifier(raw: unknown): unknown {
         const op = { ...(s.operation as Record<string, unknown>) };
         if (typeof op.type === 'string') op.type = op.type.toUpperCase();
         coerceNumericFields(op, ['amount']);
+        if (op.type === 'APPEND_TRIGGER') {
+          op.node = repairTriggerNode(op.node);
+        }
         s.operation = op;
       }
       return s;
+    });
+    obj.splices = (obj.splices as unknown[]).filter((splice) => {
+      if (splice === null || typeof splice !== 'object') return false;
+      const s = splice as Record<string, unknown>;
+      const operation = s.operation;
+      if (operation === null || typeof operation !== 'object') return true;
+      const op = operation as Record<string, unknown>;
+      if (op.type !== 'APPEND_TRIGGER') return true;
+      const node = op.node;
+      if (node === null || typeof node !== 'object') return false;
+      const actions = (node as Record<string, unknown>).actions;
+      return Array.isArray(actions) && actions.length > 0;
     });
   }
 
@@ -318,7 +333,7 @@ function repairPassivePayload(passivePayload: unknown): unknown[] {
     if (validatePassiveModifier(repaired)) repairedMods.push(repaired);
   }
 
-  return repairedMods.length > 0 ? repairedMods : [PASSIVE_FALLBACK_MODIFIER];
+  return repairedMods;
 }
 
 function diagnoseAbilityPayload(payload: unknown, cardIndex: number): string[] {

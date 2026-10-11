@@ -1111,23 +1111,23 @@ function runPassiveRepairAssertions(): string[] {
   const nonsenseShape = {
     cards: [
       {
-        id: 'fallback',
-        title: 'Fallback',
-        tagline: 'Safe default',
-        description: 'Still draftable when modifiers are nonsense.',
+        id: 'bad-stat',
+        title: 'Bad Stat',
+        tagline: 'Invalid',
+        description: 'Nonsense stat triple.',
         type: 'PASSIVE_UPGRADE',
         passivePayload: [{ stat: 'not_a_stat', op: 'nope', value: 'bad' }],
       },
       {
-        id: 'fallback-2',
-        title: 'Fallback Two',
-        tagline: 'Also safe',
-        description: 'Second card with invalid payload.',
+        id: 'bad-hook',
+        title: 'Bad Hook',
+        tagline: 'Invalid',
+        description: 'Unknown combat hook.',
         type: 'PASSIVE_UPGRADE',
         passivePayload: [{ hooks: [{ on: 'NOT_REAL', actions: [] }] }],
       },
       {
-        id: 'fallback-3',
+        id: 'fallback-missing',
         title: 'Fallback Three',
         tagline: 'Third safe',
         description: 'Third card missing passivePayload entirely.',
@@ -1137,18 +1137,161 @@ function runPassiveRepairAssertions(): string[] {
   };
 
   const nonsenseNormalized = normalizeLLMResponse(nonsenseShape);
-  const nonsenseValidated = validateDraftCards(nonsenseNormalized);
-  if (!nonsenseValidated || nonsenseValidated.length !== 3) {
-    failures.push('passive repair: expected fallback modifiers to salvage nonsense cards');
-  } else if (
-    nonsenseValidated.every(
+  const nonsenseCards = (nonsenseNormalized as { cards: unknown[] }).cards;
+  const badStatCard = validateDraftCard(nonsenseCards[0]);
+  if (badStatCard !== null) {
+    failures.push('passive repair: bad stat card should fail validation (empty passivePayload)');
+  }
+  const badHookCard = validateDraftCard(nonsenseCards[1]);
+  if (badHookCard !== null) {
+    failures.push('passive repair: bad hook card should fail validation (empty passivePayload)');
+  }
+  const missingPayloadNormalized = normalizeLLMResponse({
+    cards: [nonsenseShape.cards[2], nonsenseShape.cards[2], nonsenseShape.cards[2]],
+  });
+  const missingPayloadValidated = validateDraftCards(missingPayloadNormalized);
+  if (
+    !missingPayloadValidated ||
+    missingPayloadValidated.length !== 3 ||
+    !missingPayloadValidated.every(
       (card) =>
         card.passivePayload?.length === 1 &&
         card.passivePayload[0].stat === 'MOVE_SPEED' &&
-        card.passivePayload[0].op === 'ADD',
-    ) === false
+        card.passivePayload[0].op === 'ADD' &&
+        card.passivePayload[0].value === 10,
+    )
   ) {
-    failures.push('passive repair: expected MOVE_SPEED/ADD fallback on each nonsense card');
+    failures.push(
+      'passive repair: missing passivePayload should still salvage to MOVE_SPEED/ADD/10',
+    );
+  }
+  const nonsenseValidated = validateDraftCards(nonsenseNormalized);
+  if (nonsenseValidated !== null) {
+    failures.push('passive repair: mixed nonsense trio should fail validateDraftCards');
+  }
+
+  const splitNearMissShape = {
+    cards: [
+      {
+        id: 'shard-lattice',
+        title: 'Shard Lattice',
+        tagline: 'Impact split',
+        description: 'Kinetic projectiles split into five on impact.',
+        type: 'PASSIVE_UPGRADE',
+        budgetCost: 20,
+        passivePayload: [
+          {
+            splices: [
+              {
+                operation: {
+                  type: 'APPEND_TRIGGER',
+                  node: {
+                    trigger: 'ON_HIT',
+                    actions: [
+                      {
+                        type: 'SPAWN_PROJECTILE',
+                        emitter: { count: 5, spreadDeg: 50, pattern: 'FAN' },
+                        trajectory: { type: 'LINEAR', speed: 380, maxRange: 280 },
+                      },
+                    ],
+                  },
+                },
+                targetArchetype: 'KINETIC',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'pad-2',
+        title: 'Pad Two',
+        tagline: 'Pad',
+        description: 'Padding card two.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ stat: 'MASS', op: 'ADD', value: 0.1 }],
+      },
+      {
+        id: 'pad-3',
+        title: 'Pad Three',
+        tagline: 'Pad',
+        description: 'Padding card three.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ stat: 'MASS', op: 'ADD', value: 0.1 }],
+      },
+    ],
+  };
+
+  const splitNormalized = normalizeLLMResponse(splitNearMissShape);
+  const splitValidated = validateDraftCards(splitNormalized);
+  const splitMod = splitValidated?.[0]?.passivePayload?.[0];
+  const splitOp = splitMod?.splices?.[0]?.operation;
+  if (
+    !splitValidated ||
+    splitMod?.stat !== undefined ||
+    splitOp?.type !== 'APPEND_TRIGGER' ||
+    splitOp.node.trigger !== 'ON_HIT'
+  ) {
+    failures.push('passive repair: near-miss split splice should validate without MOVE_SPEED stat');
+  } else {
+    const spawn = splitOp.node.actions.find((a) => a.type === 'SPAWN_PROJECTILE');
+    if (!spawn || spawn.type !== 'SPAWN_PROJECTILE') {
+      failures.push('passive repair: split splice missing SPAWN_PROJECTILE action');
+    } else {
+      if (spawn.emitter?.distribution !== 'FAN' || spawn.emitter?.count !== 5) {
+        failures.push('passive repair: split emitter pattern/count not repaired');
+      }
+      if (spawn.projectileTrajectory?.type !== 'LINEAR') {
+        failures.push('passive repair: split trajectory alias not repaired to projectileTrajectory');
+      }
+    }
+  }
+
+  const unsalvageableShape = {
+    cards: [
+      {
+        id: 'bad-trigger',
+        title: 'Bad Trigger',
+        tagline: 'No actions',
+        description: 'Invalid trigger type only.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [
+          {
+            splices: [
+              {
+                operation: {
+                  type: 'APPEND_TRIGGER',
+                  node: { trigger: 'NOT_A_TRIGGER', actions: [] },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'pad-b-2',
+        title: 'Pad B2',
+        tagline: 'Pad',
+        description: 'Pad.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ stat: 'MASS', op: 'ADD', value: 0.1 }],
+      },
+      {
+        id: 'pad-b-3',
+        title: 'Pad B3',
+        tagline: 'Pad',
+        description: 'Pad.',
+        type: 'PASSIVE_UPGRADE',
+        passivePayload: [{ stat: 'MASS', op: 'ADD', value: 0.1 }],
+      },
+    ],
+  };
+
+  const unsalvageableNormalized = normalizeLLMResponse(unsalvageableShape);
+  const unsalvageableCard = validateDraftCard(
+    (unsalvageableNormalized as { cards: unknown[] }).cards[0],
+  );
+  if (unsalvageableCard !== null) {
+    failures.push('passive repair: unsalvageable APPEND_TRIGGER should fail card validation');
   }
 
   const diagnosis = diagnoseDraftCardsValidation(llmShape);

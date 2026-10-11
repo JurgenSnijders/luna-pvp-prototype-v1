@@ -483,7 +483,7 @@ async function callPassiveLLM(
 
   const result = await postNativeGemini(systemPrompt, userPrompt, settings, {
     timeoutMs: 8000,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 2048,
     logTag: '[draft]',
     signal: options?.signal,
     onChunk: options?.onChunk,

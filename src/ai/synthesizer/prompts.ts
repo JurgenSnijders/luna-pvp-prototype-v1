@@ -76,6 +76,14 @@ Splice operations edit the equipped spell root schema only: ADD_BOUNCE (ground b
 targetArchetype is optional; when set, the splice applies only to spells with that archetype.
 Example extra bounce on kinetic spells: { "splices": [{ "operation": { "type": "ADD_BOUNCE", "amount": 1 }, "targetArchetype": "KINETIC" }] }
 
+Projectile verbs (split, shatter, on impact, on hit) MUST be splices, NOT hooks. hooks[].on is ONLY PARRY_SUCCEEDED, ENTITY_RAMMED, or ENTITY_SLAMMED — never ON_HIT or projectile triggers.
+Do NOT add a stat triple unless the player prompt explicitly asks for a stat buff.
+APPEND_TRIGGER splices arm the equipped spell's root projectile trajectory only.
+Child SPAWN_PROJECTILE from a split must omit triggers (no recursive splits).
+
+Example kinetic split on impact (copy this shape for split/shatter passives):
+{ "splices": [{ "operation": { "type": "APPEND_TRIGGER", "node": { "trigger": "ON_HIT", "actions": [{ "type": "SPAWN_PROJECTILE", "emitter": { "count": 5, "spreadDeg": 50, "distribution": "FAN" }, "projectileTrajectory": { "type": "LINEAR", "speed": 380, "maxRange": 280 } }] } }, "targetArchetype": "KINETIC" }] }
+
 Return exactly 3 distinct PASSIVE_UPGRADE cards.`;
 
 const CATEGORY_DESIGN_FLAVOR = `Category design flavor:
