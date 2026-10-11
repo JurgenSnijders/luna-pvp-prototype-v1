@@ -89,7 +89,10 @@ export function renderPassiveGridTile(card: DraftCard, options: PassiveGridTileO
     renderTextTile(tile, card);
   }
 
-  tile.addEventListener('click', options.onSelect);
+  tile.addEventListener('click', (event) => {
+    event.stopPropagation();
+    options.onSelect();
+  });
   attachPassiveVaultDrag(tile, card.id);
   return tile;
 }

@@ -1405,6 +1405,11 @@ export class DraftModal {
 
     this.passiveGrid = document.createElement('div');
     this.passiveGrid.className = 'spell-grid-square';
+    this.passiveGrid.addEventListener('click', () => {
+      if (this.selectedPassiveId === null) return;
+      this.selectedPassiveId = null;
+      this.renderPassivesGrid();
+    });
     this.passivesRoot.appendChild(this.passiveGrid);
   }
 
@@ -1420,11 +1425,15 @@ export class DraftModal {
       empty.textContent = 'No passive cards in inventory.';
       empty.style.cssText = `padding:24px;text-align:center;color:${RETRO_COLORS.textMuted};font-size:${FONTS.size.body};grid-column:1/-1;`;
       this.passiveGrid.appendChild(empty);
+      this.renderTacticalInspector();
       return;
     }
 
-    if (!this.selectedPassiveId || !cards.some((card) => card.id === this.selectedPassiveId)) {
-      this.selectedPassiveId = cards[0]?.id ?? null;
+    if (
+      this.selectedPassiveId !== null &&
+      !cards.some((card) => card.id === this.selectedPassiveId)
+    ) {
+      this.selectedPassiveId = null;
     }
 
     const passiveLabels = this.callbacks.getLoadout().passiveLabels ?? [
@@ -1441,7 +1450,8 @@ export class DraftModal {
         rarityColor: RARITY_COLORS[card.rarity],
         passiveLabels,
         onSelect: () => {
-          this.selectedPassiveId = card.id;
+          this.selectedPassiveId =
+            card.id === this.selectedPassiveId ? null : card.id;
           this.renderPassivesGrid();
         },
       });
