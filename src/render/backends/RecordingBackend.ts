@@ -73,6 +73,8 @@ export class RecordingBackend implements ParticleBackend {
       liveParticles: this.getLiveParticleCount(),
       livePrimitives: 0,
       liveRibbons: 0,
+      liveLights: 0,
+      shadowedLights: 0,
       drawCalls: 0,
       instanceCount: 0,
       uploadBytes: 0,
@@ -95,6 +97,14 @@ export class RecordingBackend implements ParticleBackend {
   supportsRibbons(): boolean {
     return false;
   }
+
+  supportsLights(): boolean {
+    return false;
+  }
+
+  pushFrameLight(): void {}
+
+  pushTimedLight(): void {}
 
   ribbonPush(
     _id: string,

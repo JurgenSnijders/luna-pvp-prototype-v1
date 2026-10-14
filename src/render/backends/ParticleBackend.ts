@@ -8,6 +8,8 @@ export interface VfxCounters {
   liveParticles: number;
   livePrimitives: number;
   liveRibbons: number;
+  liveLights: number;
+  shadowedLights: number;
   drawCalls: number;
   instanceCount: number;
   uploadBytes: number;
@@ -25,6 +27,26 @@ export interface ParticleBackend {
   getLiveParticleCount(): number;
   getLivePrimitiveCount(): number;
   supportsRibbons(): boolean;
+  supportsLights(): boolean;
+  pushFrameLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+  ): void;
+  pushTimedLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+    lifeMs: number,
+  ): void;
   destroy(): void;
 
   spawnDisc(

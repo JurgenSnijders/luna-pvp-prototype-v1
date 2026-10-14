@@ -12,6 +12,12 @@ import {
   markUserZoomOverride,
 } from '../src/camera/cameraArenaFit';
 import { Camera2D } from '../src/camera/Camera2D';
+import {
+  circleShadow,
+  selectShadowCasters,
+  shadowVolumeVerts,
+} from '../src/render/shadowGeometry';
+import type { Light } from '../src/render/LightLayer';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_PATH = join(__dirname, 'render-helpers.snapshot.json');
@@ -137,6 +143,75 @@ function run(): void {
     failures.push('fitArenaToSafeView force should record lastFitZoom');
   }
 
+  const shadowBuf = new Float32Array(128);
+  const light = { x: 0, y: 0, radius: 200 };
+  const occ = { kind: 'CIRCLE' as const, x: 80, y: 0, r: 12 };
+  const end = circleShadow(light, occ, shadowBuf, 0);
+  if (end !== 12) {
+    failures.push(`circleShadow: expected 12 floats, got ${end}`);
+  }
+  for (let i = 0; i < end; i += 2) {
+    const d = Math.hypot(shadowBuf[i], shadowBuf[i + 1]);
+    if (d < occ.r - 0.5) {
+      failures.push('circleShadow: vertex closer than occluder radius');
+      break;
+    }
+  }
+  const inside = circleShadow(light, { kind: 'CIRCLE', x: 0, y: 0, r: 20 }, shadowBuf, 0);
+  if (inside !== 0) {
+    failures.push('circleShadow: light inside circle should emit 0 floats');
+  }
+  const far = circleShadow(light, { kind: 'CIRCLE', x: 500, y: 0, r: 10 }, shadowBuf, 0);
+  if (far !== 0) {
+    failures.push('circleShadow: out-of-range occluder should emit 0 floats');
+  }
+  const boxEnd = shadowVolumeVerts(
+    light,
+    { kind: 'BOX', x: 60, y: 10, hw: 20, hh: 10, angle: 0.2 },
+    shadowBuf,
+    0,
+  );
+  if (boxEnd <= 0) {
+    failures.push('boxShadow: expected non-zero vertex count');
+  }
+  const lights: Light[] = [
+    {
+      x: 0,
+      y: 0,
+      radius: 100,
+      r: 1,
+      g: 1,
+      b: 1,
+      intensity: 2,
+      born: 0,
+      lifeMs: 0,
+      falloff: 2,
+      fade: 1,
+    },
+    {
+      x: 200,
+      y: 200,
+      radius: 50,
+      r: 1,
+      g: 1,
+      b: 1,
+      intensity: 1,
+      born: 0,
+      lifeMs: 0,
+      falloff: 2,
+      fade: 1,
+    },
+  ];
+  const occluders = [{ kind: 'CIRCLE' as const, x: 40, y: 0, r: 8 }];
+  const casters = selectShadowCasters(lights, occluders, 4);
+  if (casters.length !== 1 || casters[0] !== 0) {
+    failures.push('selectShadowCasters: expected only light 0 to cast');
+  }
+  const castersMax = selectShadowCasters(lights, [], 4);
+  if (castersMax.length !== 0) {
+    failures.push('selectShadowCasters: expected none without occluders');
+  }
+
   if (failures.length > 0) {
     console.error('test:render  FAIL');
     for (const msg of failures) console.error(`  ${msg}`);
@@ -147,7 +222,8 @@ function run(): void {
     Object.keys(snapshot.instabilityColors).length +
     Object.keys(snapshot.healthBarColors).length +
     1 +
-    Object.keys(snapshot.spawnAtBudget).length;
+    Object.keys(snapshot.spawnAtBudget).length +
+    6;
   console.log(`test:render  OK  ${checkCount} render helper checks passed`);
 }
 

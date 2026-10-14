@@ -9,6 +9,8 @@ import {
   getGraphicsSettings,
   getPostEffectUserEnabled,
   getTierLimits,
+  isLightingActive,
+  isShadowsActive,
   parseGraphicsSettings,
   saveGraphicsSettings,
   seedEffectiveTierForTests,
@@ -422,11 +424,61 @@ function run(): void {
   if (getTierLimits().maxRibbons !== 0) {
     failures.push(`VFX LOW: maxRibbons should be 0, got ${getTierLimits().maxRibbons}`);
   }
+  if (getTierLimits().maxLights !== 0 || getTierLimits().lightmapScale !== 0) {
+    failures.push(
+      `VFX LOW: maxLights/lightmapScale should be 0, got ${getTierLimits().maxLights} / ${getTierLimits().lightmapScale}`,
+    );
+  }
+  if (isLightingActive()) {
+    failures.push('VFX LOW: isLightingActive should be false');
+  }
   applyVfxPreset('HIGH');
   if (getTierLimits().maxRibbons !== 48 || getTierLimits().ribbonPointLifetimeMs !== 260) {
     failures.push(
       `VFX HIGH: expected 48 ribbons / 260ms, got ${getTierLimits().maxRibbons} / ${getTierLimits().ribbonPointLifetimeMs}`,
     );
+  }
+  if (getTierLimits().maxLights !== 64 || getTierLimits().lightmapScale !== 0.5) {
+    failures.push(
+      `VFX HIGH: expected 64 lights / 0.5 scale, got ${getTierLimits().maxLights} / ${getTierLimits().lightmapScale}`,
+    );
+  }
+  if (getTierLimits().maxShadowedLights !== 8) {
+    failures.push(
+      `VFX HIGH: maxShadowedLights should be 8, got ${getTierLimits().maxShadowedLights}`,
+    );
+  }
+
+  resetGraphicsState();
+  saveGraphicsSettings({ ...getGraphicsSettings(), lighting: false });
+  if (isShadowsActive()) {
+    failures.push('isShadowsActive should be false when lighting is off');
+  }
+  resetGraphicsState();
+
+  const parsedLighting = parseGraphicsSettings({
+    ambient: 0.05,
+    lightIntensity: 9,
+    lavaGlow: -1,
+    lightTint: 2,
+    shadowStrength: 2,
+    shadowSoftness: -1,
+  });
+  if (
+    parsedLighting.ambient !== 0.2 ||
+    parsedLighting.lightIntensity !== 3 ||
+    parsedLighting.lavaGlow !== 0 ||
+    parsedLighting.lightTint !== 1 ||
+    parsedLighting.shadowStrength !== 1 ||
+    parsedLighting.shadowSoftness !== 0
+  ) {
+    failures.push('parseGraphicsSettings: lighting clamps failed');
+  }
+
+  resetGraphicsState();
+  applyVfxPreset('LOW');
+  if (getTierLimits().maxShadowedLights !== 0) {
+    failures.push(`VFX LOW: maxShadowedLights should be 0, got ${getTierLimits().maxShadowedLights}`);
   }
 
   if (failures.length > 0) {

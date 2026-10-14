@@ -61,6 +61,14 @@ export interface GraphicsSettings {
   bloomKnee: number;
   hdr: boolean;
   emissiveScale: number;
+  lighting: boolean;
+  ambient: number;
+  lightIntensity: number;
+  lavaGlow: number;
+  lightTint: number;
+  shadows: boolean;
+  shadowStrength: number;
+  shadowSoftness: number;
   arcadeBezel: boolean;
   /** 0 = screen-locked, 1 = world-locked camera follow for the void/star layer. */
   bgParallaxVoid: number;
@@ -95,6 +103,14 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   bloomKnee: 0.3,
   hdr: true,
   emissiveScale: 1,
+  lighting: true,
+  ambient: 0.72,
+  lightIntensity: 1,
+  lavaGlow: 1,
+  lightTint: 0.35,
+  shadows: true,
+  shadowStrength: 0.85,
+  shadowSoftness: 0.5,
   arcadeBezel: true,
   bgParallaxVoid: 0.18,
   bgLavaScrollSpeed: 0.18,
@@ -114,6 +130,9 @@ export interface TierLimits {
   groundDecals: boolean;
   maxRibbons: number;
   ribbonPointLifetimeMs: number;
+  maxLights: number;
+  lightmapScale: number;
+  maxShadowedLights: number;
   /** Multiplier applied after DPR cap (internal resolution). */
   renderScale: number;
   /** Max CSS-pixel edge for canvas backing stores; 0 = unlimited. */
@@ -201,6 +220,22 @@ interface VfxTierLimits {
   groundDecals: boolean;
   maxRibbons: number;
   ribbonPointLifetimeMs: number;
+  maxLights: number;
+  lightmapScale: number;
+  maxShadowedLights: number;
+}
+
+export interface EffectiveLightingSettings {
+  enabled: boolean;
+  ambient: number;
+  lightIntensity: number;
+  lavaGlow: number;
+  lightTint: number;
+  lightmapScale: number;
+  shadows: boolean;
+  shadowStrength: number;
+  shadowSoftness: number;
+  maxShadowedLights: number;
 }
 
 const PERF_TIER_LIMITS: Record<FixedQualityTier, PerfTierLimits> = {
@@ -250,6 +285,9 @@ const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
     groundDecals: false,
     maxRibbons: 0,
     ribbonPointLifetimeMs: 0,
+    maxLights: 0,
+    lightmapScale: 0,
+    maxShadowedLights: 0,
   },
   MEDIUM: {
     particleBudget: 4096,
@@ -258,6 +296,9 @@ const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
     groundDecals: true,
     maxRibbons: 16,
     ribbonPointLifetimeMs: 180,
+    maxLights: 32,
+    lightmapScale: 0.25,
+    maxShadowedLights: 4,
   },
   HIGH: {
     particleBudget: 16384,
@@ -266,6 +307,9 @@ const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
     groundDecals: true,
     maxRibbons: 48,
     ribbonPointLifetimeMs: 260,
+    maxLights: 64,
+    lightmapScale: 0.5,
+    maxShadowedLights: 8,
   },
   ULTRA: {
     particleBudget: 65536,
@@ -274,6 +318,9 @@ const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
     groundDecals: true,
     maxRibbons: 64,
     ribbonPointLifetimeMs: 320,
+    maxLights: 128,
+    lightmapScale: 0.5,
+    maxShadowedLights: 16,
   },
 };
 
@@ -400,6 +447,44 @@ export function isHdrActive(): boolean {
 export function getEffectiveEmissiveScale(): number {
   if (!isHdrActive()) return 1;
   return clampRange(getGraphicsSettings().emissiveScale, 0.25, 3);
+}
+
+/** Dynamic lights are tier-gated and require the user toggle. */
+export function isLightingActive(): boolean {
+  if (!getGraphicsSettings().lighting) return false;
+  if (getEffectiveTier() === 'LOW') return false;
+  return getTierLimits().maxLights > 0;
+}
+
+export function isShadowsActive(): boolean {
+  if (!isLightingActive()) return false;
+  if (!getGraphicsSettings().shadows) return false;
+  return getTierLimits().maxShadowedLights > 0;
+}
+
+export function getShadowBlurPasses(softness: number): number {
+  if (softness <= 0) return 0;
+  if (getEffectiveTier() === 'ULTRA' && softness > 0.25) return 2;
+  return 1;
+}
+
+export function getEffectiveLightingSettings(): EffectiveLightingSettings {
+  const s = getGraphicsSettings();
+  const limits = getTierLimits();
+  const enabled = isLightingActive();
+  const shadows = isShadowsActive();
+  return {
+    enabled,
+    ambient: enabled ? clampRange(s.ambient, 0.2, 1) : 1,
+    lightIntensity: enabled ? clampRange(s.lightIntensity, 0, 3) : 0,
+    lavaGlow: enabled ? clampRange(s.lavaGlow, 0, 3) : 0,
+    lightTint: enabled ? clampRange(s.lightTint, 0, 1) : 0,
+    lightmapScale: enabled ? limits.lightmapScale : 0,
+    shadows,
+    shadowStrength: shadows ? clampRange(s.shadowStrength, 0, 1) : 0,
+    shadowSoftness: shadows ? clampRange(s.shadowSoftness, 0, 1) : 0,
+    maxShadowedLights: shadows ? limits.maxShadowedLights : 0,
+  };
 }
 
 export function areGroundDecalsEnabled(): boolean {
@@ -790,6 +875,30 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
       parsed.emissiveScale ?? DEFAULT_GRAPHICS_SETTINGS.emissiveScale,
       0.25,
       3,
+    ),
+    lighting: typeof parsed.lighting === 'boolean'
+      ? parsed.lighting
+      : DEFAULT_GRAPHICS_SETTINGS.lighting,
+    ambient: clampRange(parsed.ambient ?? DEFAULT_GRAPHICS_SETTINGS.ambient, 0.2, 1),
+    lightIntensity: clampRange(
+      parsed.lightIntensity ?? DEFAULT_GRAPHICS_SETTINGS.lightIntensity,
+      0,
+      3,
+    ),
+    lavaGlow: clampRange(parsed.lavaGlow ?? DEFAULT_GRAPHICS_SETTINGS.lavaGlow, 0, 3),
+    lightTint: clampRange(parsed.lightTint ?? DEFAULT_GRAPHICS_SETTINGS.lightTint, 0, 1),
+    shadows: typeof parsed.shadows === 'boolean'
+      ? parsed.shadows
+      : DEFAULT_GRAPHICS_SETTINGS.shadows,
+    shadowStrength: clampRange(
+      parsed.shadowStrength ?? DEFAULT_GRAPHICS_SETTINGS.shadowStrength,
+      0,
+      1,
+    ),
+    shadowSoftness: clampRange(
+      parsed.shadowSoftness ?? DEFAULT_GRAPHICS_SETTINGS.shadowSoftness,
+      0,
+      1,
     ),
     arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
     bgParallaxVoid: clampUnit(

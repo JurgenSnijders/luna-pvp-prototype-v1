@@ -103,6 +103,22 @@ export class ParticleSystem {
     this.director.ribbonPush(id, pos, color, width, intensity, pointLifetimeMs);
   }
 
+  supportsLights(): boolean {
+    return this.director.supportsLights();
+  }
+
+  pushFrameLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+  ): void {
+    this.director.pushFrameLight(x, y, radius, r, g, b, intensity);
+  }
+
   ember(pos: Vector2D): void {
     this.director.ember(pos);
   }

@@ -71,11 +71,35 @@ precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_world;
 uniform sampler2D u_vfx;
+uniform sampler2D u_light;
+uniform float u_ambient;
+uniform float u_useLighting;
 out vec4 fragColor;
 void main() {
   vec4 world = texture(u_world, v_texCoord);
   vec4 vfx = texture(u_vfx, v_texCoord);
-  fragColor = vec4(world.rgb * (1.0 - vfx.a) + vfx.rgb, 1.0);
+  float lit = u_useLighting > 0.5
+    ? u_ambient + min(length(texture(u_light, v_texCoord).rgb), 4.0)
+    : 1.0;
+  fragColor = vec4(world.rgb * lit * (1.0 - vfx.a) + vfx.rgb, 1.0);
+}
+`;
+
+/** Darkens the world on the transparent VFX canvas when CRT is off. */
+export const LIGHT_OVERLAY_SHADER = `#version 300 es
+precision mediump float;
+precision mediump sampler2D;
+in vec2 v_texCoord;
+uniform sampler2D u_light;
+uniform float u_ambient;
+uniform float u_tintStrength;
+out vec4 fragColor;
+void main() {
+  vec3 L = texture(u_light, v_texCoord).rgb;
+  float sum = u_ambient + min(length(L), 1.0);
+  float alpha = 1.0 - clamp(sum, 0.0, 1.0);
+  vec3 tint = L * u_tintStrength;
+  fragColor = vec4(tint, alpha);
 }
 `;
 

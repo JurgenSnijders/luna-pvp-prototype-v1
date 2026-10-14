@@ -5,6 +5,9 @@ export interface FramebufferTarget {
   height: number;
   /** True when the color attachment is RGBA16F and renderable. */
   hdr: boolean;
+  stencilRb?: WebGLRenderbuffer;
+  /** True when DEPTH24_STENCIL8 is attached and framebuffer-complete. */
+  stencil: boolean;
 }
 
 /**
@@ -61,11 +64,34 @@ function allocateColorTexture(
 function attachFramebuffer(
   gl: WebGL2RenderingContext,
   texture: WebGLTexture,
-): WebGLFramebuffer {
+  width: number,
+  height: number,
+  stencil = false,
+): { fbo: WebGLFramebuffer; stencilRb: WebGLRenderbuffer | null; stencilOk: boolean } {
   const fbo = gl.createFramebuffer()!;
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-  return fbo;
+  let stencilRb: WebGLRenderbuffer | null = null;
+  let stencilOk = false;
+  if (stencil) {
+    stencilRb = gl.createRenderbuffer()!;
+    gl.bindRenderbuffer(gl.RENDERBUFFER, stencilRb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, width, height);
+    gl.framebufferRenderbuffer(
+      gl.FRAMEBUFFER,
+      gl.DEPTH_STENCIL_ATTACHMENT,
+      gl.RENDERBUFFER,
+      stencilRb,
+    );
+    stencilOk = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    if (!stencilOk) {
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, null);
+      gl.deleteRenderbuffer(stencilRb);
+      stencilRb = null;
+    }
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  }
+  return { fbo, stencilRb, stencilOk };
 }
 
 export function createFramebuffer(
@@ -73,21 +99,31 @@ export function createFramebuffer(
   width: number,
   height: number,
   hdr = false,
+  stencil = false,
 ): FramebufferTarget {
   let useHdr = hdr;
   let texture = allocateColorTexture(gl, width, height, useHdr);
-  let fbo = attachFramebuffer(gl, texture);
+  let attached = attachFramebuffer(gl, texture, width, height, stencil);
   if (useHdr && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fbo);
+    gl.deleteFramebuffer(attached.fbo);
+    if (attached.stencilRb) gl.deleteRenderbuffer(attached.stencilRb);
     gl.deleteTexture(texture);
     useHdr = false;
     texture = allocateColorTexture(gl, width, height, false);
-    fbo = attachFramebuffer(gl, texture);
+    attached = attachFramebuffer(gl, texture, width, height, stencil);
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.bindTexture(gl.TEXTURE_2D, null);
-  return { fbo, texture, width, height, hdr: useHdr };
+  return {
+    fbo: attached.fbo,
+    texture,
+    width,
+    height,
+    hdr: useHdr,
+    stencilRb: attached.stencilRb ?? undefined,
+    stencil: attached.stencilOk,
+  };
 }
 
 export function resizeFramebuffer(
@@ -99,6 +135,11 @@ export function resizeFramebuffer(
   if (target.width === width && target.height === height) return;
   target.width = width;
   target.height = height;
+  if (target.stencilRb) {
+    gl.bindRenderbuffer(gl.RENDERBUFFER, target.stencilRb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, width, height);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+  }
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
   if (target.hdr) {
     gl.texImage2D(

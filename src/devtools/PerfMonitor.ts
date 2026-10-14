@@ -47,6 +47,8 @@ export interface PerfSnapshot {
   liveParticles: number;
   livePrimitives: number;
   liveRibbons: number;
+  liveLights: number;
+  shadowedLights: number;
   drawCalls: number;
   instanceCount: number;
   uploadBytes: number;
@@ -69,6 +71,8 @@ export class PerfMonitor {
   private liveParticles = 0;
   private livePrimitives = 0;
   private liveRibbons = 0;
+  private liveLights = 0;
+  private shadowedLights = 0;
   private drawCalls = 0;
   private instanceCount = 0;
   private uploadBytes = 0;
@@ -157,6 +161,8 @@ export class PerfMonitor {
     liveParticles?: number;
     livePrimitives?: number;
     liveRibbons?: number;
+    liveLights?: number;
+    shadowedLights?: number;
     drawCalls?: number;
     instanceCount?: number;
     uploadBytes?: number;
@@ -165,6 +171,8 @@ export class PerfMonitor {
     if (counters.liveParticles !== undefined) this.liveParticles = counters.liveParticles;
     if (counters.livePrimitives !== undefined) this.livePrimitives = counters.livePrimitives;
     if (counters.liveRibbons !== undefined) this.liveRibbons = counters.liveRibbons;
+    if (counters.liveLights !== undefined) this.liveLights = counters.liveLights;
+    if (counters.shadowedLights !== undefined) this.shadowedLights = counters.shadowedLights;
     if (counters.drawCalls !== undefined) this.drawCalls = counters.drawCalls;
     if (counters.instanceCount !== undefined) this.instanceCount = counters.instanceCount;
     if (counters.uploadBytes !== undefined) this.uploadBytes = counters.uploadBytes;
@@ -187,6 +195,8 @@ export class PerfMonitor {
       liveParticles: this.liveParticles,
       livePrimitives: this.livePrimitives,
       liveRibbons: this.liveRibbons,
+      liveLights: this.liveLights,
+      shadowedLights: this.shadowedLights,
       drawCalls: this.drawCalls,
       instanceCount: this.instanceCount,
       uploadBytes: this.uploadBytes,
@@ -211,7 +221,7 @@ export class PerfMonitor {
     const lines = [
       `FPS ~${s.fps.toFixed(0)}`,
       `sim ${s.simMs.toFixed(2)}ms  render ${s.renderMs.toFixed(2)}ms  gpu ${s.gpuMs.toFixed(2)}ms`,
-      `particles ${s.liveParticles}  primitives ${s.livePrimitives}  ribbons ${s.liveRibbons}`,
+      `particles ${s.liveParticles}  primitives ${s.livePrimitives}  ribbons ${s.liveRibbons}  lights ${s.liveLights} (shadowed ${s.shadowedLights})`,
       `HDR ${s.hdrActive ? 'on' : 'off'}`,
       `draws ${s.drawCalls}  instances ${s.instanceCount}  upload ${(s.uploadBytes / 1024).toFixed(1)}KB`,
     ];

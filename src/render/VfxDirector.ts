@@ -161,6 +161,36 @@ export class VfxDirector {
   ): void {
     this.backend.ribbonPush(id, pos, color, width, intensity, pointLifetimeMs);
   }
+
+  supportsLights(): boolean {
+    return this.backend.supportsLights();
+  }
+
+  pushFrameLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+  ): void {
+    this.backend.pushFrameLight(x, y, radius, r, g, b, intensity);
+  }
+
+  pushTimedLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+    lifeMs: number,
+  ): void {
+    this.backend.pushTimedLight(x, y, radius, r, g, b, intensity, lifeMs);
+  }
+
   ember(pos: Vector2D): void {
     this.backend.ember(pos);
   }

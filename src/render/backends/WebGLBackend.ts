@@ -1,13 +1,23 @@
 import type { CameraView } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../../types/schema';
-import { getEffectiveCrtSettings, getTierLimits, isHdrActive } from '../../devtools/graphicsSettings';
+import {
+  getEffectiveCrtSettings,
+  getEffectiveLightingSettings,
+  getShadowBlurPasses,
+  getTierLimits,
+  isHdrActive,
+} from '../../devtools/graphicsSettings';
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
 import { PostFX } from '../gl/PostFX';
 import { reactiveFx } from '../gl/reactiveFx';
 import { RibbonRenderer } from '../gl/RibbonRenderer';
+import { computeLightScissor, LightRenderer } from '../gl/LightRenderer';
+import { ShadowRenderer } from '../gl/ShadowRenderer';
+import { selectShadowCasters } from '../shadowGeometry';
 import { PrimitiveLayer } from '../PrimitiveLayer';
+import { LightLayer } from '../LightLayer';
 import { RibbonLayer } from '../RibbonLayer';
 import {
   type ParticleBackend,
@@ -50,6 +60,8 @@ const EMPTY_COUNTERS: VfxCounters = {
   liveParticles: 0,
   livePrimitives: 0,
   liveRibbons: 0,
+  liveLights: 0,
+  shadowedLights: 0,
   drawCalls: 0,
   instanceCount: 0,
   uploadBytes: 0,
@@ -61,9 +73,14 @@ export class WebGLBackend implements ParticleBackend {
   private particles: SimParticle[] = [];
   private renderer: InstancedQuadRenderer;
   private ribbonRenderer: RibbonRenderer;
+  private lightRenderer: LightRenderer;
+  private shadowRenderer: ShadowRenderer;
   private postFx: PostFX;
+  private lightPackOrder: number[] = [];
+  private shadowCasterIndices: number[] = [];
   private primitives: PrimitiveLayer;
   private ribbons: RibbonLayer;
+  private lights: LightLayer;
   private elapsed = 0;
   private lastRenderTime = 0;
   private prevCamX = 0;
@@ -78,9 +95,12 @@ export class WebGLBackend implements ParticleBackend {
   ) {
     this.renderer = new InstancedQuadRenderer(gl);
     this.ribbonRenderer = new RibbonRenderer(gl);
+    this.lightRenderer = new LightRenderer(gl);
+    this.shadowRenderer = new ShadowRenderer(gl);
     this.postFx = new PostFX(gl);
     this.primitives = new PrimitiveLayer();
     this.ribbons = new RibbonLayer();
+    this.lights = new LightLayer();
   }
 
   private spawnCtx(): WebGLSpawnCtx {
@@ -89,6 +109,21 @@ export class WebGLBackend implements ParticleBackend {
       primitives: this.primitives,
       spawnParticle: (p, priority) => this.spawnParticle(p, priority),
       canSpawn: (priority) => this.canSpawn(priority),
+      light: (x, y, color, radius, intensity, lifeMs) => {
+        if (!this.supportsLights()) return;
+        const [r, g, b] = parseColor(color);
+        this.lights.pushTimedLight(
+          x,
+          y,
+          radius,
+          r,
+          g,
+          b,
+          intensity,
+          lifeMs,
+          performance.now(),
+        );
+      },
     };
   }
 
@@ -97,6 +132,8 @@ export class WebGLBackend implements ParticleBackend {
     if (!gl) return;
     this.renderer.rebuild();
     this.ribbonRenderer.rebuild();
+    this.lightRenderer.rebuild();
+    this.shadowRenderer.rebuild();
     this.postFx.rebuild();
   }
 
@@ -110,6 +147,7 @@ export class WebGLBackend implements ParticleBackend {
     this.particles = integrateParticles(this.particles, dt);
     this.primitives.update(dt);
     this.ribbons.update(this.elapsed);
+    this.lights.update(performance.now());
 
     const data = this.renderer.getInstanceData();
 
@@ -141,7 +179,15 @@ export class WebGLBackend implements ParticleBackend {
     const bufferH = gl.drawingBufferHeight;
     const limits = getTierLimits();
     const crt = getEffectiveCrtSettings();
-    this.postFx.resize(bufferW, bufferH, limits.bloomResolution, isHdrActive());
+    const lightingSettings = getEffectiveLightingSettings();
+    this.postFx.resize(
+      bufferW,
+      bufferH,
+      limits.bloomResolution,
+      isHdrActive(),
+      lightingSettings.lightmapScale,
+      lightingSettings.shadows,
+    );
     this.postFx.beginScene();
 
     gl.enable(gl.BLEND);
@@ -154,6 +200,154 @@ export class WebGLBackend implements ParticleBackend {
       this.elapsed,
     );
 
+    let lightStats = { drawCalls: 0, vertexCount: 0, uploadBytes: 0 };
+    let shadowStats = { drawCalls: 0, vertexCount: 0, uploadBytes: 0 };
+    let shadowedLights = 0;
+    const lightTarget = lightingSettings.enabled ? this.postFx.beginLights() : null;
+    if (lightTarget) {
+      const activeLights = this.lights.getActive();
+      const occluders = view.occluders ?? [];
+      const shadowsOn =
+        lightingSettings.shadows &&
+        this.postFx.supportsShadows() &&
+        occluders.length > 0;
+
+      this.lightRenderer.drawLava(
+        width,
+        height,
+        view,
+        lightTarget.width,
+        lightTarget.height,
+      );
+
+      const packOrder = this.lightPackOrder;
+      packOrder.length = 0;
+      const casterIndices = this.shadowCasterIndices;
+      casterIndices.length = 0;
+
+      if (shadowsOn) {
+        selectShadowCasters(
+          activeLights,
+          occluders,
+          lightingSettings.maxShadowedLights,
+          casterIndices,
+        );
+        shadowedLights = casterIndices.length;
+        const casterSet = new Set(casterIndices);
+        packOrder.push(...casterIndices);
+        for (let i = 0; i < activeLights.length; i++) {
+          if (!casterSet.has(i)) packOrder.push(i);
+        }
+      } else {
+        for (let i = 0; i < activeLights.length; i++) packOrder.push(i);
+      }
+
+      const packedSlots = this.lightRenderer.pack(activeLights, packOrder);
+
+      if (shadowsOn && shadowedLights > 0) {
+        const penumbra = 1 - lightingSettings.shadowStrength;
+        for (let slot = 0; slot < shadowedLights; slot++) {
+          const light = activeLights[casterIndices[slot]];
+          const scissor = computeLightScissor(
+            light,
+            view,
+            lightTarget.width,
+            lightTarget.height,
+            width,
+            height,
+          );
+          gl.enable(gl.SCISSOR_TEST);
+          gl.scissor(scissor.x, scissor.y, scissor.w, scissor.h);
+          gl.clear(gl.STENCIL_BUFFER_BIT);
+
+          gl.colorMask(false, false, false, false);
+          gl.enable(gl.STENCIL_TEST);
+          gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+          gl.stencilOp(gl.REPLACE, gl.REPLACE, gl.REPLACE);
+          const vol = this.shadowRenderer.drawVolumes(
+            light,
+            occluders,
+            view,
+            lightTarget.width,
+            lightTarget.height,
+            width,
+            height,
+          );
+          shadowStats.drawCalls += vol.drawCalls;
+          shadowStats.vertexCount += vol.vertexCount;
+          shadowStats.uploadBytes += vol.uploadBytes;
+
+          gl.colorMask(true, true, true, true);
+          gl.stencilFunc(gl.EQUAL, 0, 0xff);
+          gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+          const lit = this.lightRenderer.drawRange(
+            slot,
+            1,
+            1,
+            view,
+            lightTarget.width,
+            lightTarget.height,
+            width,
+            height,
+          );
+          lightStats.drawCalls += lit.drawCalls;
+
+          if (penumbra > 0.001) {
+            gl.stencilFunc(gl.EQUAL, 1, 0xff);
+            const umbra = this.lightRenderer.drawRange(
+              slot,
+              1,
+              penumbra,
+              view,
+              lightTarget.width,
+              lightTarget.height,
+              width,
+              height,
+            );
+            lightStats.drawCalls += umbra.drawCalls;
+          }
+          gl.disable(gl.SCISSOR_TEST);
+        }
+        gl.disable(gl.STENCIL_TEST);
+        if (packedSlots > shadowedLights) {
+          const rest = this.lightRenderer.drawRange(
+            shadowedLights,
+            packedSlots - shadowedLights,
+            1,
+            view,
+            lightTarget.width,
+            lightTarget.height,
+            width,
+            height,
+          );
+          lightStats.drawCalls += rest.drawCalls;
+        }
+      } else if (packedSlots > 0) {
+        const all = this.lightRenderer.drawRange(
+          0,
+          packedSlots,
+          1,
+          view,
+          lightTarget.width,
+          lightTarget.height,
+          width,
+          height,
+        );
+        lightStats = all;
+      }
+
+      const blurPasses = getShadowBlurPasses(lightingSettings.shadowSoftness);
+      this.postFx.softenLights(blurPasses);
+      gl.disable(gl.SCISSOR_TEST);
+    }
+    this.lights.clearFrameLights();
+
+    const postFxLighting = {
+      enabled: lightingSettings.enabled,
+      ambient: lightingSettings.ambient,
+      tintStrength: lightingSettings.lightTint,
+    };
+
     const chroma = limits.bloomPasses >= 2 && limits.refraction ? 0.002 : 0;
     this.postFx.endSceneAndComposite(
       limits.bloomPasses,
@@ -164,6 +358,7 @@ export class WebGLBackend implements ParticleBackend {
       bufferW,
       bufferH,
       crt.webglCrt,
+      postFxLighting,
     );
 
     const worldCanvas = crt.webglCrt
@@ -245,6 +440,7 @@ export class WebGLBackend implements ParticleBackend {
         width,
         height,
         view,
+        postFxLighting,
       );
 
       this.prevCamX = view.camX;
@@ -258,9 +454,14 @@ export class WebGLBackend implements ParticleBackend {
       liveParticles: this.particles.length,
       livePrimitives: this.primitives.getActive().length,
       liveRibbons: this.ribbons.getCount(),
+      liveLights: this.lights.getCount(),
+      shadowedLights,
       drawCalls:
         stats.drawCalls +
         ribbonStats.drawCalls +
+        lightStats.drawCalls +
+        shadowStats.drawCalls +
+        (lightTarget ? 1 : 0) +
         (limits.bloomPasses > 0 ? 3 : 0) +
         (crt.persistence.enabled ? 1 : 0) +
         (crt.retro.enabled ? 1 : 0) +
@@ -273,7 +474,11 @@ export class WebGLBackend implements ParticleBackend {
             : 1
           : 0),
       instanceCount: stats.instanceCount,
-      uploadBytes: stats.uploadBytes + ribbonStats.uploadBytes,
+      uploadBytes:
+        stats.uploadBytes +
+        ribbonStats.uploadBytes +
+        lightStats.uploadBytes +
+        shadowStats.uploadBytes,
       hdrActive: this.postFx.isHdr(),
     };
   }
@@ -293,10 +498,52 @@ export class WebGLBackend implements ParticleBackend {
   destroy(): void {
     this.particles = [];
     this.ribbons.clear();
+    this.lights.clearAll();
   }
 
   supportsRibbons(): boolean {
     return getTierLimits().maxRibbons > 0;
+  }
+
+  supportsLights(): boolean {
+    return getTierLimits().maxLights > 0;
+  }
+
+  pushFrameLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+  ): void {
+    if (!this.supportsLights()) return;
+    this.lights.pushFrameLight(x, y, radius, r, g, b, intensity);
+  }
+
+  pushTimedLight(
+    x: number,
+    y: number,
+    radius: number,
+    r: number,
+    g: number,
+    b: number,
+    intensity: number,
+    lifeMs: number,
+  ): void {
+    if (!this.supportsLights()) return;
+    this.lights.pushTimedLight(
+      x,
+      y,
+      radius,
+      r,
+      g,
+      b,
+      intensity,
+      lifeMs,
+      performance.now(),
+    );
   }
 
   ribbonPush(

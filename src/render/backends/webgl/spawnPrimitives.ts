@@ -17,6 +17,14 @@ export interface WebGLSpawnCtx {
   spawnParticle: (p: SimParticle, priority: SpawnPriority) => void;
   canSpawn: (priority: SpawnPriority) => boolean;
   emissiveMul?: number;
+  light?: (
+    x: number,
+    y: number,
+    color: string,
+    radius: number,
+    intensity: number,
+    lifeMs: number,
+  ) => void;
 }
 
 export function spawnDisc(
@@ -201,6 +209,7 @@ export function spawnFlash(
 ): void {
   if (!ctx.canSpawn(priority)) return;
   const [r, g, b] = parseColor(color);
+  const hot = intensity * (ctx.emissiveMul ?? 1);
   ctx.primitives.spawnFlash(
     pos.x,
     pos.y,
@@ -210,8 +219,10 @@ export function spawnFlash(
     b,
     alpha,
     life,
-    intensity * (ctx.emissiveMul ?? 1),
+    hot,
   );
+  const lifeMs = Math.min(220, Math.max(140, life * 1000 + 80));
+  ctx.light?.(pos.x, pos.y, color, size * 4, hot, lifeMs);
 }
 
 export function burstSparks(

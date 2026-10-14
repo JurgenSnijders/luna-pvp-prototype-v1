@@ -4,6 +4,7 @@ import {
   COMPOSITE_SHADER,
   CRT_SHADER,
   FULLSCREEN_VERTEX,
+  LIGHT_OVERLAY_SHADER,
   OPAQUE_COMPOSITE_SHADER,
   PERSISTENCE_SHADER,
   REACTIVE_SHADER,
@@ -29,6 +30,12 @@ import {
   resizeFramebuffer,
   type FramebufferTarget,
 } from './framebuffers';
+
+export interface PostFxLighting {
+  enabled: boolean;
+  ambient: number;
+  tintStrength: number;
+}
 
 export interface CrtPresentParams {
   scanline: number;
@@ -89,6 +96,7 @@ export class PostFX {
   private blurProgram: WebGLProgram;
   private compositeProgram: WebGLProgram;
   private opaqueCompositeProgram: WebGLProgram;
+  private lightOverlayProgram: WebGLProgram;
   private crtProgram: WebGLProgram;
   private persistProgram: WebGLProgram;
   private retroProgram: WebGLProgram;
@@ -107,6 +115,11 @@ export class PostFX {
   private persistValid = false;
   private retroFbo: FramebufferTarget | null = null;
   private reactiveFbo: FramebufferTarget | null = null;
+  private lightFbo: FramebufferTarget | null = null;
+  private lightFboB: FramebufferTarget | null = null;
+  private lightScale = 0;
+  private lightStencilRequested = false;
+  private lightOutputTexture: WebGLTexture | null = null;
   private lutTexture: WebGLTexture | null = null;
   private lutId = -1;
   private paletteUniformData = new Float32Array(16 * 3);
@@ -126,6 +139,7 @@ export class PostFX {
     const fsB = compileShader(gl, gl.FRAGMENT_SHADER, BLUR_SHADER);
     const fsC = compileShader(gl, gl.FRAGMENT_SHADER, COMPOSITE_SHADER);
     const fsOpaque = compileShader(gl, gl.FRAGMENT_SHADER, OPAQUE_COMPOSITE_SHADER);
+    const fsLightOverlay = compileShader(gl, gl.FRAGMENT_SHADER, LIGHT_OVERLAY_SHADER);
     const fsCrt = compileShader(gl, gl.FRAGMENT_SHADER, CRT_SHADER);
     const fsPersist = compileShader(gl, gl.FRAGMENT_SHADER, PERSISTENCE_SHADER);
     const fsRetro = compileShader(gl, gl.FRAGMENT_SHADER, RETRO_SHADER);
@@ -136,6 +150,7 @@ export class PostFX {
     this.blurProgram = linkProgram(gl, vs, fsB);
     this.compositeProgram = linkProgram(gl, vs, fsC);
     this.opaqueCompositeProgram = linkProgram(gl, vs, fsOpaque);
+    this.lightOverlayProgram = linkProgram(gl, vs, fsLightOverlay);
     this.crtProgram = linkProgram(gl, vs, fsCrt);
     this.persistProgram = linkProgram(gl, vs, fsPersist);
     this.retroProgram = linkProgram(gl, vs, fsRetro);
@@ -147,6 +162,7 @@ export class PostFX {
     gl.deleteShader(fsB);
     gl.deleteShader(fsC);
     gl.deleteShader(fsOpaque);
+    gl.deleteShader(fsLightOverlay);
     gl.deleteShader(fsCrt);
     gl.deleteShader(fsPersist);
     gl.deleteShader(fsRetro);
@@ -166,6 +182,13 @@ export class PostFX {
     this.lutId = -1;
   }
 
+  private releaseFramebufferTarget(target: FramebufferTarget): void {
+    const gl = this.gl;
+    gl.deleteFramebuffer(target.fbo);
+    gl.deleteTexture(target.texture);
+    if (target.stencilRb) gl.deleteRenderbuffer(target.stencilRb);
+  }
+
   private destroyFbos(): void {
     const gl = this.gl;
     for (const fbo of [
@@ -178,10 +201,11 @@ export class PostFX {
       this.persistFboB,
       this.retroFbo,
       this.reactiveFbo,
+      this.lightFbo,
+      this.lightFboB,
     ]) {
       if (!fbo) continue;
-      gl.deleteFramebuffer(fbo.fbo);
-      gl.deleteTexture(fbo.texture);
+      this.releaseFramebufferTarget(fbo);
     }
     this.sceneFbo = null;
     this.hdrActive = false;
@@ -194,6 +218,11 @@ export class PostFX {
     this.persistIndex = 0;
     this.retroFbo = null;
     this.reactiveFbo = null;
+    this.lightFbo = null;
+    this.lightFboB = null;
+    this.lightScale = 0;
+    this.lightStencilRequested = false;
+    this.lightOutputTexture = null;
     if (this.worldTexture) {
       gl.deleteTexture(this.worldTexture);
       this.worldTexture = null;
@@ -211,14 +240,36 @@ export class PostFX {
     return this.hdrActive;
   }
 
-  resize(width: number, height: number, bloomRes = 0.5, hdr = false): void {
+  resize(
+    width: number,
+    height: number,
+    bloomRes = 0.5,
+    hdr = false,
+    lightmapScale = 0,
+    lightStencil = false,
+  ): void {
     if (hdr !== this.hdrRequested) {
       this.hdrRequested = hdr;
       this.destroyFbos();
       this.width = 0;
       this.height = 0;
     }
-    if (width === this.width && height === this.height && this.sceneFbo) return;
+    if (lightmapScale !== this.lightScale || lightStencil !== this.lightStencilRequested) {
+      this.lightScale = lightmapScale;
+      this.lightStencilRequested = lightStencil;
+      if (this.lightFbo) {
+        this.releaseFramebufferTarget(this.lightFbo);
+        this.lightFbo = null;
+      }
+      if (this.lightFboB) {
+        this.releaseFramebufferTarget(this.lightFboB);
+        this.lightFboB = null;
+      }
+    }
+    if (width === this.width && height === this.height && this.sceneFbo) {
+      this.ensureLightFbo(width, height, lightmapScale, lightStencil);
+      return;
+    }
     this.width = width;
     this.height = height;
     this.persistValid = false;
@@ -249,6 +300,103 @@ export class PostFX {
     if (this.reactiveFbo) {
       resizeFramebuffer(this.gl, this.reactiveFbo, width, height);
     }
+    this.ensureLightFbo(width, height, lightmapScale, lightStencil);
+  }
+
+  private ensureLightFbo(
+    width: number,
+    height: number,
+    lightmapScale: number,
+    stencil: boolean,
+  ): void {
+    if (lightmapScale <= 0) {
+      if (this.lightFbo) {
+        this.releaseFramebufferTarget(this.lightFbo);
+        this.lightFbo = null;
+      }
+      if (this.lightFboB) {
+        this.releaseFramebufferTarget(this.lightFboB);
+        this.lightFboB = null;
+      }
+      return;
+    }
+    const lw = Math.max(1, Math.floor(width * lightmapScale));
+    const lh = Math.max(1, Math.floor(height * lightmapScale));
+    const useHdr = this.hdrActive || this.hdrRequested;
+    if (!this.lightFbo) {
+      this.lightFbo = createFramebuffer(this.gl, lw, lh, useHdr, stencil);
+    } else {
+      resizeFramebuffer(this.gl, this.lightFbo, lw, lh);
+    }
+  }
+
+  supportsShadows(): boolean {
+    return this.lightFbo?.stencil === true;
+  }
+
+  beginLights(): { width: number; height: number } | null {
+    if (!this.lightFbo) return null;
+    const gl = this.gl;
+    this.lightOutputTexture = null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightFbo.fbo);
+    gl.viewport(0, 0, this.lightFbo.width, this.lightFbo.height);
+    gl.disable(gl.BLEND);
+    gl.clearColor(0, 0, 0, 0);
+    const clearMask = gl.COLOR_BUFFER_BIT | (this.lightFbo.stencil ? gl.STENCIL_BUFFER_BIT : 0);
+    gl.clear(clearMask);
+    return { width: this.lightFbo.width, height: this.lightFbo.height };
+  }
+
+  softenLights(passes: number): void {
+    if (!this.lightFbo || passes <= 0) return;
+    const useHdr = this.lightFbo.hdr;
+    if (!this.lightFboB) {
+      this.lightFboB = createFramebuffer(
+        this.gl,
+        this.lightFbo.width,
+        this.lightFbo.height,
+        useHdr,
+        false,
+      );
+    } else {
+      resizeFramebuffer(this.gl, this.lightFboB, this.lightFbo.width, this.lightFbo.height);
+    }
+    const gl = this.gl;
+    gl.disable(gl.BLEND);
+    gl.disable(gl.STENCIL_TEST);
+    gl.disable(gl.SCISSOR_TEST);
+    for (let p = 0; p < passes; p++) {
+      this.blurPass(this.lightFbo!.texture, this.lightFboB!, true);
+      this.blurPass(this.lightFboB!.texture, this.lightFbo!, false);
+    }
+    this.lightOutputTexture = this.lightFbo.texture;
+  }
+
+  getLightTexture(): WebGLTexture | null {
+    return this.lightOutputTexture ?? this.lightFbo?.texture ?? null;
+  }
+
+  private bindLightingUniforms(
+    program: WebGLProgram,
+    lighting: PostFxLighting,
+    lightTex: WebGLTexture | null,
+  ): void {
+    const gl = this.gl;
+    const enabled = lighting.enabled && lightTex !== null;
+    const locLight = this.uniform(program, 'u_light');
+    if (locLight) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, enabled ? lightTex : this.sceneFbo!.texture);
+      gl.uniform1i(locLight, 2);
+    }
+    const locAmbient = this.uniform(program, 'u_ambient');
+    if (locAmbient) {
+      gl.uniform1f(locAmbient, enabled ? lighting.ambient : 1);
+    }
+    const locUse = this.uniform(program, 'u_useLighting');
+    if (locUse) {
+      gl.uniform1f(locUse, enabled ? 1 : 0);
+    }
   }
 
   beginScene(): void {
@@ -272,17 +420,36 @@ export class PostFX {
     bufferWidth: number,
     bufferHeight: number,
     crtIntermediate: boolean,
+    lighting: PostFxLighting,
   ): void {
     if (crtIntermediate) return;
 
     const gl = this.gl;
+    const lightTex = this.getLightTexture();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
     gl.disable(gl.BLEND);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    if (lighting.enabled && lightTex) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.useProgram(this.lightOverlayProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, lightTex);
+      gl.uniform1i(this.uniform(this.lightOverlayProgram, 'u_light')!, 0);
+      gl.uniform1f(this.uniform(this.lightOverlayProgram, 'u_ambient')!, lighting.ambient);
+      gl.uniform1f(
+        this.uniform(this.lightOverlayProgram, 'u_tintStrength')!,
+        lighting.tintStrength,
+      );
+      this.drawFullscreen();
+    }
+
     if (bloomPasses <= 0) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       this.blit(this.sceneFbo!.texture);
       return;
     }
@@ -291,6 +458,8 @@ export class PostFX {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.compositeProgram);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
@@ -318,6 +487,7 @@ export class PostFX {
     effectWidth: number,
     effectHeight: number,
     view: CameraView,
+    lighting: PostFxLighting,
   ): void {
     const gl = this.gl;
     this.ensureWorldTexture(worldCanvas.width, worldCanvas.height);
@@ -337,6 +507,11 @@ export class PostFX {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
     gl.uniform1i(this.uniform(this.opaqueCompositeProgram, 'u_vfx')!, 1);
+    this.bindLightingUniforms(
+      this.opaqueCompositeProgram,
+      lighting,
+      this.getLightTexture(),
+    );
     this.drawFullscreen();
 
     let sourceTex = target.texture;

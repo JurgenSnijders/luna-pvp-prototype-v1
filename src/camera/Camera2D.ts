@@ -33,6 +33,8 @@ export interface StreakBody {
   up?: number;
 }
 
+import type { ShadowOccluder } from '../render/shadowGeometry';
+
 export interface CameraView {
   camX: number;
   camY: number;
@@ -43,6 +45,7 @@ export interface CameraView {
   hexCenterY?: number;
   hexRadius?: number;
   streakBodies?: StreakBody[];
+  occluders?: ShadowOccluder[];
 }
 
 export class Camera2D {

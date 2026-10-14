@@ -50,7 +50,15 @@ import {
   getStoredCombatantRadius,
   getStoredHexRadius,
 } from './settings';
-import { subscribeGraphicsSettings, getEffectiveCrtSettings, getEffectiveFeatureFlags, isCheapUi } from '../devtools/graphicsSettings';
+import {
+  subscribeGraphicsSettings,
+  getEffectiveCrtSettings,
+  getEffectiveFeatureFlags,
+  isCheapUi,
+  isShadowsActive,
+} from '../devtools/graphicsSettings';
+import { collectShadowOccluders } from '../render/lightOccluders';
+import type { ShadowOccluder } from '../render/shadowGeometry';
 import { adaptiveQuality } from '../render/AdaptiveQuality';
 import { streakTargetFiltersEntities, streakTargetNeedsExtract } from '../render/gl/postEffects';
 import { BackgroundRenderer, createBackgroundCanvas } from '../render/gl/BackgroundRenderer';
@@ -63,7 +71,11 @@ import { loadHitFeedbackConfig } from '../render/hitFeedbackConfig';
 import { loadImpactIntensityTuning } from '../render/gl/impactIntensity';
 import { applyViewportLayout } from '../ui/viewportLayout';
 import { lerpPos } from '../render/canvas/helpers';
+import { parseColor } from '../render/backends/ParticleBackend';
+import { emissiveMultiplier } from '../render/emissive';
 import { installBrowserHelpKeyBlock } from './blockBrowserHelpKey';
+
+const shadowOccluderScratch: ShadowOccluder[] = [];
 
 function syncWebGLBackground(app: GameApp): void {
   const flags = getEffectiveFeatureFlags();
@@ -561,7 +573,28 @@ function init(app: GameApp): void {
               streakTargetFiltersEntities(streakTarget),
             )
           : undefined,
+        occluders: isShadowsActive()
+          ? collectShadowOccluders(app.world, alpha, shadowOccluderScratch)
+          : undefined,
       };
+      if (app.particles.supportsLights()) {
+        for (const proj of app.world.projectiles) {
+          const pos = lerpPos(proj, alpha);
+          const color = proj.visuals?.color ?? '#00e5ff';
+          const [r, g, b] = parseColor(color);
+          const size = proj.radius;
+          const intensity = emissiveMultiplier(proj.visuals?.vfx?.glowIntensity);
+          app.particles.pushFrameLight(
+            pos.x,
+            pos.y,
+            Math.max(60, size * 6),
+            r,
+            g,
+            b,
+            intensity,
+          );
+        }
+      }
       const vfxStats = app.particles.render(
         window.innerWidth,
         window.innerHeight,
@@ -571,6 +604,8 @@ function init(app: GameApp): void {
         liveParticles: vfxStats.liveParticles,
         livePrimitives: vfxStats.livePrimitives,
         liveRibbons: vfxStats.liveRibbons,
+        liveLights: vfxStats.liveLights,
+        shadowedLights: vfxStats.shadowedLights,
         drawCalls: vfxStats.drawCalls,
         instanceCount: vfxStats.instanceCount,
         uploadBytes: vfxStats.uploadBytes,

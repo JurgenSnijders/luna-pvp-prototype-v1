@@ -203,7 +203,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
         `Perf ${perfLabel} · VFX ${s.vfxTier}. Performance preset updates post-effects and resolution; VFX preset updates combat budgets.`;
     }
     budgetHint.textContent =
-      `Perf ${getEffectiveTier()} · VFX ${getEffectiveVfxTier()} · particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ribbons ${limits.maxRibbons} · ` +
+      `Perf ${getEffectiveTier()} · VFX ${getEffectiveVfxTier()} · particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ribbons ${limits.maxRibbons} · lights ${limits.maxLights} · shadows ${limits.maxShadowedLights} · ` +
       `bg ${flags.webglBackground ? 'on' : 'off'} · crt ${flags.crtEnabled ? 'on' : 'off'}`;
   };
   refreshTierHelper();
@@ -331,6 +331,54 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     lookBody,
     'HDR lets spell cores go brighter than white so bloom picks up only the hot parts. Off on Low quality.',
   );
+
+  addToggle(lookBody, lookCheckboxes, 'lighting', 'Dynamic Lighting');
+  helperText(
+    lookBody,
+    'Spells and lava tint the arena. Full multiply needs CRT on; otherwise a darkening overlay approximates it.',
+  );
+
+  const ambientSlider = numeric('ambient');
+  const lightIntensitySlider = numeric('lightIntensity');
+  const lavaGlowSlider = numeric('lavaGlow');
+  const lightTintSlider = numeric('lightTint');
+  const shadowStrengthSlider = numeric('shadowStrength');
+  const shadowSoftnessSlider = numeric('shadowSoftness');
+
+  addToggle(lookBody, lookCheckboxes, 'shadows', 'Shadow Volumes');
+
+  const lightingSliders = [
+    sliderRow(lookBody, 'Ambient', 0.2, 1, 0.02, ambientSlider.get, ambientSlider.set),
+    sliderRow(
+      lookBody,
+      'Light Intensity',
+      0,
+      3,
+      0.05,
+      lightIntensitySlider.get,
+      lightIntensitySlider.set,
+    ),
+    sliderRow(lookBody, 'Lava Glow', 0, 3, 0.05, lavaGlowSlider.get, lavaGlowSlider.set),
+    sliderRow(lookBody, 'Light Tint', 0, 1, 0.05, lightTintSlider.get, lightTintSlider.set),
+    sliderRow(
+      lookBody,
+      'Shadow Strength',
+      0,
+      1,
+      0.05,
+      shadowStrengthSlider.get,
+      shadowStrengthSlider.set,
+    ),
+    sliderRow(
+      lookBody,
+      'Shadow Softness',
+      0,
+      1,
+      0.05,
+      shadowSoftnessSlider.get,
+      shadowSoftnessSlider.set,
+    ),
+  ];
 
   const bloomSlider = numeric('bloomIntensity');
   const thresholdSlider = numeric('bloomThreshold');
@@ -780,6 +828,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     presetSelect.refresh();
     crosshairSelect.refresh();
     for (const slider of bloomSliders) slider.refresh();
+    for (const slider of lightingSliders) slider.refresh();
     for (const slider of bgParallaxSliders) slider.refresh();
     for (const slider of fctSliders) slider.refresh();
     for (const slider of entityShadowSliders) slider.refresh();
