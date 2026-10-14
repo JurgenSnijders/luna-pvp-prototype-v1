@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { Painter2D } from '../painter/Painter2D';
 import { getHexVertices } from '../../math/HexMath';
 import { Vector2D } from '../../math/Vector2D';
 import { getEffectiveFeatureFlags, getGraphicsSettings } from '../../devtools/graphicsSettings';
@@ -12,7 +13,7 @@ const SHADOW_OFFSET_Y = 24;
 let lastGridFrameTime = performance.now();
 let lastDebrisFrameTime = performance.now();
 
-function traceHexPath(ctx: CanvasRenderingContext2D, vertices: { x: number; y: number }[]): void {
+function traceHexPath(ctx: Painter2D, vertices: { x: number; y: number }[]): void {
   ctx.beginPath();
   ctx.moveTo(vertices[0].x, vertices[0].y);
   for (let i = 1; i < vertices.length; i++) {
@@ -22,7 +23,7 @@ function traceHexPath(ctx: CanvasRenderingContext2D, vertices: { x: number; y: n
 }
 
 function drawSteppedShadow(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   vertices: { x: number; y: number }[],
   center: Vector2D,
 ): void {
@@ -46,7 +47,7 @@ function drawSteppedShadow(
 }
 
 function drawExtrudedLip(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   vertices: { x: number; y: number }[],
   centerY: number,
 ): void {
@@ -71,7 +72,7 @@ function drawExtrudedLip(
 }
 
 function drawShrinkHazardRim(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   vertices: { x: number; y: number }[],
   center: Vector2D,
   hexRadius: number,
@@ -105,7 +106,7 @@ function drawShrinkHazardRim(
 }
 
 export function drawHexPlatform(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   shrinkProgress: number,
@@ -166,7 +167,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 
-export function updateAndDrawDebris(ctx: CanvasRenderingContext2D): void {
+export function updateAndDrawDebris(ctx: Painter2D): void {
   if (!getGraphicsSettings().dynamicDebris) return;
 
   const now = performance.now();

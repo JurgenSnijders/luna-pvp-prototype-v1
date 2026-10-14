@@ -1,4 +1,5 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
+import type { Painter2D } from '../painter/Painter2D';
 import {
   parryShieldShowsStamina,
   parryShieldStaminaRatio,
@@ -39,7 +40,7 @@ function getInstabilityBarCap(): number {
 }
 
 function drawStatusDurationBars(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   statuses: ActiveStatusTimer[],
   startX: number,
   startY: number,
@@ -78,7 +79,7 @@ function drawStatusDurationBars(
 }
 
 export function drawOverheadHUD(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
   alpha: number,
 ): void {

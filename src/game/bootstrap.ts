@@ -54,9 +54,12 @@ import {
   subscribeGraphicsSettings,
   getEffectiveCrtSettings,
   getEffectiveFeatureFlags,
+  getGraphicsSettings,
   isCheapUi,
   isShadowsActive,
+  resolveGlWorldSlice,
 } from '../devtools/graphicsSettings';
+import type { GlWorldTarget } from '../render/CanvasRenderer';
 import { collectShadowOccluders } from '../render/lightOccluders';
 import type { ShadowOccluder } from '../render/shadowGeometry';
 import { adaptiveQuality } from '../render/AdaptiveQuality';
@@ -76,6 +79,14 @@ import { emissiveMultiplier } from '../render/emissive';
 import { installBrowserHelpKeyBlock } from './blockBrowserHelpKey';
 
 const shadowOccluderScratch: ShadowOccluder[] = [];
+let worldCanvasHasAlpha = false;
+let bgCanvasVisible: boolean | null = null;
+
+function setBackgroundCanvasVisible(bg: BackgroundRenderer, visible: boolean): void {
+  if (bgCanvasVisible === visible) return;
+  bgCanvasVisible = visible;
+  bg.setVisible(visible);
+}
 
 function syncWebGLBackground(app: GameApp): void {
   const flags = getEffectiveFeatureFlags();
@@ -83,6 +94,7 @@ function syncWebGLBackground(app: GameApp): void {
   const active =
     flags.webglBackground && renderer !== null && renderer.isAvailable();
   renderer?.setVisible(active);
+  bgCanvasVisible = null;
   app.renderer.setWebGLBackground(
     active,
     active && renderer ? renderer.getCanvas() : null,
@@ -526,7 +538,44 @@ function init(app: GameApp): void {
       const flags = getEffectiveFeatureFlags();
       const bg = app.backgroundRenderer;
       const webglBg = flags.webglBackground && bg !== null && bg.isAvailable();
-      if (webglBg) {
+      const worldRenderer = app.particles.getWorldRenderer();
+      const slice = resolveGlWorldSlice(
+        getGraphicsSettings().glWorldSlice,
+        worldRenderer !== null,
+        worldCanvasHasAlpha,
+      );
+      const glWorld = slice !== 'off' && worldRenderer ? worldRenderer : null;
+      if (bg && webglBg) setBackgroundCanvasVisible(bg, glWorld === null);
+
+      let glTarget: GlWorldTarget | null = null;
+      if (glWorld) {
+        app.ctx.save();
+        app.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        app.ctx.clearRect(0, 0, app.canvas.width, app.canvas.height);
+        app.ctx.restore();
+        const proceduralBackground = webglBg && glWorld.hasBackground();
+        const painter = glWorld.beginFrame({
+          slice,
+          cssWidth: window.innerWidth,
+          cssHeight: window.innerHeight,
+          background:
+            proceduralBackground
+              ? {
+                  camera: app.camera,
+                  hexCenter: app.world.hexCenter,
+                  hexRadius: app.world.hexRadius,
+                  initialRadius: app.arenaShrink?.initialRadius ?? app.world.hexRadius,
+                  shake,
+                  nowMs: performance.now(),
+                }
+              : null,
+          canvas: app.canvas,
+          canvasCtx: app.ctx,
+        });
+        painter.save();
+        app.camera.applyTransform(painter, shake.x, shake.y);
+        glTarget = { painter, slice, proceduralBackground };
+      } else if (webglBg) {
         bg.render(
           app.camera,
           app.world.hexCenter,
@@ -548,11 +597,13 @@ function init(app: GameApp): void {
         app.arenaShrink.getShrinkProgress(),
         app.arenaShrink.isShrinking,
         app.player,
+        glTarget,
       );
       if (!app.particles.isWebGL()) {
         app.particles.draw(app.ctx);
       }
       app.ctx.restore();
+      glTarget?.painter.restore();
 
       const isWebGL = app.particles.isWebGL();
       const showPerfOverlay = perfMonitor.isOverlayVisible();
@@ -611,6 +662,7 @@ function init(app: GameApp): void {
         uploadBytes: vfxStats.uploadBytes,
         hdrActive: vfxStats.hdrActive,
       });
+      perfMonitor.setWorldStats(glWorld ? glWorld.getStats() : null);
 
       if (!isWebGL && showPerfOverlay) {
         drawPerfOverlay(app);
@@ -637,8 +689,11 @@ function init(app: GameApp): void {
 
 export function startGame(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-  const useAlpha = getEffectiveFeatureFlags().webglBackground;
+  // The GL world needs a transparent Canvas2D layer; the alpha attribute is fixed at creation.
+  const useAlpha =
+    getEffectiveFeatureFlags().webglBackground || getGraphicsSettings().glWorldSlice !== 'off';
   const ctx = canvas.getContext('2d', { alpha: useAlpha })!;
+  worldCanvasHasAlpha = ctx.getContextAttributes?.().alpha ?? useAlpha;
   const app = new GameApp(canvas, ctx);
   init(app);
 }

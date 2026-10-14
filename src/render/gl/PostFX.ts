@@ -91,6 +91,10 @@ export interface CrtPresentParams {
   };
 }
 
+function isCanvasSource(src: HTMLCanvasElement | WebGLTexture): src is HTMLCanvasElement {
+  return typeof (src as HTMLCanvasElement).getContext === 'function';
+}
+
 export class PostFX {
   private thresholdProgram: WebGLProgram;
   private blurProgram: WebGLProgram;
@@ -115,6 +119,7 @@ export class PostFX {
   private persistValid = false;
   private retroFbo: FramebufferTarget | null = null;
   private reactiveFbo: FramebufferTarget | null = null;
+  private overlayFbo: FramebufferTarget | null = null;
   private lightFbo: FramebufferTarget | null = null;
   private lightFboB: FramebufferTarget | null = null;
   private lightScale = 0;
@@ -201,12 +206,14 @@ export class PostFX {
       this.persistFboB,
       this.retroFbo,
       this.reactiveFbo,
+      this.overlayFbo,
       this.lightFbo,
       this.lightFboB,
     ]) {
       if (!fbo) continue;
       this.releaseFramebufferTarget(fbo);
     }
+    this.overlayFbo = null;
     this.sceneFbo = null;
     this.hdrActive = false;
     this.bloomFboA = null;
@@ -421,6 +428,8 @@ export class PostFX {
     bufferHeight: number,
     crtIntermediate: boolean,
     lighting: PostFxLighting,
+    glWorld: WebGLTexture | null = null,
+    overlay: WebGLTexture | null = null,
   ): void {
     if (crtIntermediate) return;
 
@@ -432,6 +441,43 @@ export class PostFX {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    // With the GL world the backbuffer is opaque and carries the world itself;
+    // otherwise the DOM shows #game-canvas underneath this transparent canvas.
+    if (glWorld) this.blit(glWorld);
+
+    this.compositeSceneOverWorld(
+      bloomPasses,
+      bloomIntensity,
+      chroma,
+      bloomThreshold,
+      bloomKnee,
+      bufferWidth,
+      bufferHeight,
+      lighting,
+      lightTex,
+    );
+
+    if (overlay) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, bufferWidth, bufferHeight);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      this.blit(overlay);
+    }
+  }
+
+  private compositeSceneOverWorld(
+    bloomPasses: number,
+    bloomIntensity: number,
+    chroma: number,
+    bloomThreshold: number,
+    bloomKnee: number,
+    bufferWidth: number,
+    bufferHeight: number,
+    lighting: PostFxLighting,
+    lightTex: WebGLTexture | null,
+  ): void {
+    const gl = this.gl;
     if (lighting.enabled && lightTex) {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -480,7 +526,7 @@ export class PostFX {
    * blooms that combined image, then applies CRT to the backbuffer.
    */
   presentCrt(
-    worldCanvas: HTMLCanvasElement,
+    world: HTMLCanvasElement | WebGLTexture,
     params: CrtPresentParams,
     bufferWidth: number,
     bufferHeight: number,
@@ -488,13 +534,20 @@ export class PostFX {
     effectHeight: number,
     view: CameraView,
     lighting: PostFxLighting,
+    overlay: WebGLTexture | null = null,
   ): void {
     const gl = this.gl;
-    this.ensureWorldTexture(worldCanvas.width, worldCanvas.height);
-    gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, worldCanvas);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    let worldTex: WebGLTexture;
+    if (isCanvasSource(world)) {
+      this.ensureWorldTexture(world.width, world.height);
+      gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, world);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+      worldTex = this.worldTexture!;
+    } else {
+      worldTex = world;
+    }
 
     const target = this.vfxCompositeFbo!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
@@ -502,7 +555,7 @@ export class PostFX {
     gl.disable(gl.BLEND);
     gl.useProgram(this.opaqueCompositeProgram);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.worldTexture);
+    gl.bindTexture(gl.TEXTURE_2D, worldTex);
     gl.uniform1i(this.uniform(this.opaqueCompositeProgram, 'u_world')!, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.sceneFbo!.texture);
@@ -557,6 +610,14 @@ export class PostFX {
           view,
         );
       }
+    }
+
+    // Bloom and streak were extracted from the world above; the overlay joins
+    // only the CRT input so HUD and text stay crisp but follow barrel distortion.
+    if (overlay) {
+      sourceTex = this.applyOverlay(sourceTex, overlay, bufferWidth, bufferHeight);
+    } else {
+      this.releaseOverlayTarget();
     }
 
     const grade = params.grade;
@@ -938,6 +999,35 @@ export class PostFX {
       this.blurPass(bloomA.texture, bloomB, true);
       this.blurPass(bloomB.texture, bloomA, false);
     }
+  }
+
+  private applyOverlay(
+    base: WebGLTexture,
+    overlay: WebGLTexture,
+    width: number,
+    height: number,
+  ): WebGLTexture {
+    const gl = this.gl;
+    if (!this.overlayFbo) {
+      this.overlayFbo = createFramebuffer(gl, width, height, this.hdrActive);
+    } else if (this.overlayFbo.width !== width || this.overlayFbo.height !== height) {
+      resizeFramebuffer(gl, this.overlayFbo, width, height);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.overlayFbo.fbo);
+    gl.viewport(0, 0, width, height);
+    gl.disable(gl.BLEND);
+    this.blit(base);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    this.blit(overlay);
+    gl.disable(gl.BLEND);
+    return this.overlayFbo.texture;
+  }
+
+  private releaseOverlayTarget(): void {
+    if (!this.overlayFbo) return;
+    this.releaseFramebufferTarget(this.overlayFbo);
+    this.overlayFbo = null;
   }
 
   private ensureWorldTexture(width: number, height: number): void {

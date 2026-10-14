@@ -1,10 +1,11 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
+import type { Painter2D } from '../painter/Painter2D';
 import { Vector2D } from '../../math/Vector2D';
 import type { SpellArchetype } from '../../types/schema';
 
 export interface AuraCtx {
-  ctx: CanvasRenderingContext2D;
+  ctx: Painter2D;
   entity: Entity;
   pos: Vector2D;
   physicsPos: Vector2D;
@@ -469,7 +470,7 @@ const AURA_REGISTRY: Partial<Record<SpellArchetype, AuraRenderer>> = {
 };
 
 export function drawStatusAuras(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   entity: Entity,
   pos: Vector2D,
   nowMs: number,

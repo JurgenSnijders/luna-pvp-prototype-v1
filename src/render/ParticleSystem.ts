@@ -3,6 +3,7 @@ import { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../types/schema';
 import type { ParticleBackend } from './backends/ParticleBackend';
 import { createParticleBackend } from './backends/createParticleBackend';
+import type { GLWorldRenderer } from './gl/world/GLWorldRenderer';
 import { VfxDirector } from './VfxDirector';
 
 /** Public facade preserving the legacy ParticleSystem API. */
@@ -35,6 +36,10 @@ export class ParticleSystem {
 
   getGlContext() {
     return this.glContext;
+  }
+
+  getWorldRenderer(): GLWorldRenderer | null {
+    return this.director.getWorldRenderer();
   }
 
   beginFrame(dt: number): void {

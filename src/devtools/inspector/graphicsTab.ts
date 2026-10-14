@@ -9,6 +9,8 @@ import {
   getEffectiveDprCap,
   getGraphicsSettings,
   getTierLimits,
+  GL_WORLD_SLICES,
+  isGlWorldSlice,
   resetAllGraphicsDefaults,
   resetStylePresetDefaults,
   saveGraphicsSettings,
@@ -68,6 +70,14 @@ import {
 } from '../../camera/cameraArenaFit';
 import { getSafeViewInsets, isCompactViewport } from '../../ui/viewportLayout';
 import type { InspectorContext } from '../InspectorUI';
+
+const GL_WORLD_SLICE_LABELS: Record<(typeof GL_WORLD_SLICES)[number], string> = {
+  off: 'Off (all Canvas2D)',
+  floor: 'Floor (lava, hex, decals, debris)',
+  bodies: 'Bodies (+ terrain, zones, obstacles, combatants)',
+  projectiles: 'Projectiles (+ projectiles, aiming)',
+  all: 'All (HUD and text as overlay)',
+};
 
 export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): void {
   const settings = getGraphicsSettings();
@@ -219,6 +229,20 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   const arenaBody = arenaSection.body;
 
   addToggle(arenaBody, arenaCheckboxes, 'webglBackground', 'WebGL Arena Background');
+  const glWorldSelect = selectRow(
+    arenaBody,
+    'GL World Slice',
+    GL_WORLD_SLICES.map((slice) => ({ value: slice, label: GL_WORLD_SLICE_LABELS[slice] })),
+    () => getGraphicsSettings().glWorldSlice,
+    (v) => {
+      if (!isGlWorldSlice(v)) return;
+      saveGraphicsSettings({ ...getGraphicsSettings(), glWorldSlice: v });
+    },
+  );
+  helperText(
+    arenaBody,
+    'Draws the bottom world layers on WebGL with anti-aliasing; the rest stays on Canvas2D. Turning it on from "off" without the WebGL background needs a reload.',
+  );
   helperText(
     arenaBody,
     'Parallax: 0 = locked to screen, 1 = locked to world. Lower = slower camera drift.',
@@ -827,6 +851,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
     refreshTierHelper();
     presetSelect.refresh();
     crosshairSelect.refresh();
+    glWorldSelect.refresh();
     for (const slider of bloomSliders) slider.refresh();
     for (const slider of lightingSliders) slider.refresh();
     for (const slider of bgParallaxSliders) slider.refresh();

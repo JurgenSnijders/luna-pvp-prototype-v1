@@ -17,12 +17,23 @@ const TIER_LOD: Record<string, number> = {
   AUTO: 2,
 };
 
-export class BackgroundRenderer {
-  private gl: WebGL2RenderingContext | null = null;
+export interface BackgroundFrame {
+  camera: Pick<Camera2D, 'pos' | 'zoom'>;
+  hexCenter: Pick<Vector2D, 'x' | 'y'>;
+  hexRadius: number;
+  initialRadius: number;
+  shake: { x: number; y: number };
+  nowMs: number;
+}
+
+/**
+ * The procedural lava program on any WebGL2 context. Draws a fullscreen quad
+ * into whatever framebuffer and viewport are bound.
+ */
+export class BackgroundPass {
   private program: WebGLProgram | null = null;
   private vao: WebGLVertexArrayObject | null = null;
-  private cssWidth = 1;
-  private cssHeight = 1;
+  private vbo: WebGLBuffer | null = null;
   private locResolution: WebGLUniformLocation | null = null;
   private locCameraPos: WebGLUniformLocation | null = null;
   private locCameraZoom: WebGLUniformLocation | null = null;
@@ -36,6 +47,82 @@ export class BackgroundRenderer {
   private locWarpStrength: WebGLUniformLocation | null = null;
   private isLegacyGpu = false;
 
+  constructor(private gl: WebGL2RenderingContext) {
+    const vs = compileShader(gl, gl.VERTEX_SHADER, BACKGROUND_VERTEX_SHADER);
+    const fs = compileShader(gl, gl.FRAGMENT_SHADER, BACKGROUND_FRAGMENT_SHADER);
+    this.program = linkProgram(gl, vs, fs);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+
+    const quad = createFullscreenQuad(gl);
+    this.vao = quad.vao;
+    this.vbo = quad.vbo;
+
+    const p = this.program;
+    this.locResolution = gl.getUniformLocation(p, 'u_resolution');
+    this.locCameraPos = gl.getUniformLocation(p, 'u_cameraPos');
+    this.locCameraZoom = gl.getUniformLocation(p, 'u_cameraZoom');
+    this.locTime = gl.getUniformLocation(p, 'u_time');
+    this.locHexRadius = gl.getUniformLocation(p, 'u_hexRadius');
+    this.locInitialRadius = gl.getUniformLocation(p, 'u_initialRadius');
+    this.locHexCenter = gl.getUniformLocation(p, 'u_hexCenter');
+    this.locTier = gl.getUniformLocation(p, 'u_tier');
+    this.locParallaxVoid = gl.getUniformLocation(p, 'u_parallaxVoid');
+    this.locLavaScroll = gl.getUniformLocation(p, 'u_lavaScroll');
+    this.locWarpStrength = gl.getUniformLocation(p, 'u_warpStrength');
+
+    const caps = perfMonitor.probeCapabilities(gl);
+    this.isLegacyGpu = caps.isLegacyGpu;
+  }
+
+  /** `cssWidth`/`cssHeight` are the viewport in CSS px (the shader works in world units). */
+  draw(frame: BackgroundFrame, cssWidth: number, cssHeight: number): void {
+    const gl = this.gl;
+    const program = this.program;
+    if (!program || !this.vao) return;
+
+    const tierLod = TIER_LOD[getEffectiveTier()] ?? 2;
+    const settings = getGraphicsSettings();
+    const zoom = Math.max(0.001, frame.camera.zoom);
+    const camX = frame.camera.pos.x - frame.shake.x / zoom;
+    const camY = frame.camera.pos.y - frame.shake.y / zoom;
+
+    gl.useProgram(program);
+    gl.bindVertexArray(this.vao);
+    gl.uniform2f(this.locResolution!, cssWidth, cssHeight);
+    gl.uniform2f(this.locCameraPos!, camX, camY);
+    gl.uniform1f(this.locCameraZoom!, frame.camera.zoom);
+    gl.uniform1f(this.locTime!, (frame.nowMs * 0.001) % 628.31853);
+    gl.uniform1f(this.locHexRadius!, frame.hexRadius);
+    gl.uniform1f(this.locInitialRadius!, frame.initialRadius);
+    gl.uniform2f(this.locHexCenter!, frame.hexCenter.x, frame.hexCenter.y);
+    gl.uniform1i(this.locTier!, tierLod);
+    gl.uniform1f(this.locParallaxVoid!, settings.bgParallaxVoid);
+    gl.uniform1f(this.locLavaScroll!, settings.bgLavaScrollSpeed);
+    if (this.locWarpStrength) {
+      gl.uniform1f(this.locWarpStrength, this.isLegacyGpu || tierLod === 0 ? 0.0 : 1.0);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+  }
+
+  destroy(): void {
+    const gl = this.gl;
+    if (this.program) gl.deleteProgram(this.program);
+    if (this.vao) gl.deleteVertexArray(this.vao);
+    if (this.vbo) gl.deleteBuffer(this.vbo);
+    this.program = null;
+    this.vao = null;
+    this.vbo = null;
+  }
+}
+
+export class BackgroundRenderer {
+  private gl: WebGL2RenderingContext | null = null;
+  private pass: BackgroundPass | null = null;
+  private cssWidth = 1;
+  private cssHeight = 1;
+
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', {
       alpha: false,
@@ -47,29 +134,7 @@ export class BackgroundRenderer {
 
     this.gl = gl;
     try {
-      const vs = compileShader(gl, gl.VERTEX_SHADER, BACKGROUND_VERTEX_SHADER);
-      const fs = compileShader(gl, gl.FRAGMENT_SHADER, BACKGROUND_FRAGMENT_SHADER);
-      this.program = linkProgram(gl, vs, fs);
-      gl.deleteShader(vs);
-      gl.deleteShader(fs);
-
-      const quad = createFullscreenQuad(gl);
-      this.vao = quad.vao;
-
-      this.locResolution = gl.getUniformLocation(this.program, 'u_resolution');
-      this.locCameraPos = gl.getUniformLocation(this.program, 'u_cameraPos');
-      this.locCameraZoom = gl.getUniformLocation(this.program, 'u_cameraZoom');
-      this.locTime = gl.getUniformLocation(this.program, 'u_time');
-      this.locHexRadius = gl.getUniformLocation(this.program, 'u_hexRadius');
-      this.locInitialRadius = gl.getUniformLocation(this.program, 'u_initialRadius');
-      this.locHexCenter = gl.getUniformLocation(this.program, 'u_hexCenter');
-      this.locTier = gl.getUniformLocation(this.program, 'u_tier');
-      this.locParallaxVoid = gl.getUniformLocation(this.program, 'u_parallaxVoid');
-      this.locLavaScroll = gl.getUniformLocation(this.program, 'u_lavaScroll');
-      this.locWarpStrength = gl.getUniformLocation(this.program, 'u_warpStrength');
-
-      const caps = perfMonitor.probeCapabilities(gl);
-      this.isLegacyGpu = caps.isLegacyGpu;
+      this.pass = new BackgroundPass(gl);
     } catch (err) {
       console.warn('[BackgroundRenderer] init failed:', err);
       this.destroy();
@@ -77,7 +142,7 @@ export class BackgroundRenderer {
   }
 
   isAvailable(): boolean {
-    return this.gl !== null && this.program !== null;
+    return this.gl !== null && this.pass !== null;
   }
 
   getCanvas(): HTMLCanvasElement {
@@ -110,38 +175,11 @@ export class BackgroundRenderer {
     shake: { x: number; y: number },
     nowMs: number,
   ): void {
-    const gl = this.gl;
-    const program = this.program;
-    if (!gl || !program || !this.vao) return;
-
-    const tier = getEffectiveTier();
-    const tierLod = TIER_LOD[tier] ?? 2;
-
-    const settings = getGraphicsSettings();
-
-    const zoom = Math.max(0.001, camera.zoom);
-    const camX = camera.pos.x - shake.x / zoom;
-    const camY = camera.pos.y - shake.y / zoom;
-
-    gl.useProgram(program);
-    gl.bindVertexArray(this.vao);
-    gl.uniform2f(this.locResolution!, this.cssWidth, this.cssHeight);
-    gl.uniform2f(this.locCameraPos!, camX, camY);
-    gl.uniform1f(this.locCameraZoom!, camera.zoom);
-    const wrappedTime = (nowMs * 0.001) % 628.31853;
-    gl.uniform1f(this.locTime!, wrappedTime);
-    gl.uniform1f(this.locHexRadius!, hexRadius);
-    gl.uniform1f(this.locInitialRadius!, initialRadius);
-    gl.uniform2f(this.locHexCenter!, hexCenter.x, hexCenter.y);
-    gl.uniform1i(this.locTier!, tierLod);
-    gl.uniform1f(this.locParallaxVoid!, settings.bgParallaxVoid);
-    gl.uniform1f(this.locLavaScroll!, settings.bgLavaScrollSpeed);
-    const warpStrength = this.isLegacyGpu || tierLod === 0 ? 0.0 : 1.0;
-    if (this.locWarpStrength) {
-      gl.uniform1f(this.locWarpStrength, warpStrength);
-    }
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.bindVertexArray(null);
+    this.pass?.draw(
+      { camera, hexCenter, hexRadius, initialRadius, shake, nowMs },
+      this.cssWidth,
+      this.cssHeight,
+    );
   }
 
   setVisible(visible: boolean): void {
@@ -149,14 +187,9 @@ export class BackgroundRenderer {
   }
 
   destroy(): void {
-    const gl = this.gl;
-    if (gl) {
-      if (this.program) gl.deleteProgram(this.program);
-      if (this.vao) gl.deleteVertexArray(this.vao);
-    }
+    this.pass?.destroy();
+    this.pass = null;
     this.gl = null;
-    this.program = null;
-    this.vao = null;
   }
 }
 

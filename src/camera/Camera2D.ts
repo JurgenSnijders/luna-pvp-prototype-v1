@@ -122,7 +122,7 @@ export class Camera2D {
   }
 
   applyTransform(
-    ctx: CanvasRenderingContext2D,
+    ctx: Pick<CanvasRenderingContext2D, 'translate' | 'scale'>,
     shakeX = 0,
     shakeY = 0,
   ): void {

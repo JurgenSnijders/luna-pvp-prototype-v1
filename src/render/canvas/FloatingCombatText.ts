@@ -1,5 +1,6 @@
 import type { CombatVisualEvent } from '../../engine/PhysicsWorld';
 import type { StreakBody } from '../../camera/Camera2D';
+import type { Painter2D } from '../painter/Painter2D';
 import { fctClusterConfig } from '../../render/fctClusterConfig';
 import type { SpellArchetype } from '../../types/schema';
 import { canvasFont } from '../../ui/tokens';
@@ -510,7 +511,7 @@ export class FloatingCombatTextManager {
     this.particles = this.particles.filter((p) => p.lifeMs > 0);
   }
 
-  draw(ctx: CanvasRenderingContext2D): void {
+  draw(ctx: Painter2D): void {
     if (isHeadless || this.particles.length === 0) return;
 
     const prevAlign = ctx.textAlign;

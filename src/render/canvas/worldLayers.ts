@@ -1,5 +1,6 @@
 import type { PhysicsWorld, ParryShieldOverlay } from '../../engine/PhysicsWorld';
 import { parryShieldShowsStamina } from '../../engine/PhysicsWorld';
+import type { Painter2D } from '../painter/Painter2D';
 import type { Obstacle } from '../../entities/Obstacle';
 import type { SpatialZone } from '../../entities/SpatialZone';
 import type { Entity } from '../../entities/Entity';
@@ -33,7 +34,7 @@ import {
 } from './telegraphIntent';
 
 export interface TimerBarOptions {
-  ctx: CanvasRenderingContext2D;
+  ctx: Painter2D;
   centerX: number;
   topY: number;
   width: number;
@@ -103,7 +104,7 @@ function fieldAccentRgb(fieldType: FieldType): { r: number; g: number; b: number
 }
 
 function drawHologramFill(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -124,7 +125,7 @@ function drawHologramFill(
 }
 
 function drawInnerReticle(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -181,7 +182,7 @@ function drawInnerReticle(
 }
 
 function drawOuterPerimeter(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -207,7 +208,7 @@ function drawOuterPerimeter(
 }
 
 function drawSingularityCore(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   now: number,
@@ -232,7 +233,7 @@ function computeZoneExpiryFade(remainingMs: number, durationMs: number): number 
 }
 
 function drawZoneHologram(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   zone: SpatialZone,
   localEntity: Entity | null,
   now: number,
@@ -290,7 +291,7 @@ function drawZoneHologram(
 }
 
 export function drawZones(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
 ): void {
@@ -305,7 +306,7 @@ export function drawZones(
 }
 
 function drawParryShieldHologram(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   overlay: ParryShieldOverlay,
   localEntity: Entity | null,
   facingRad: number,
@@ -354,7 +355,7 @@ function drawParryShieldHologram(
 }
 
 export function drawParryShieldOverlays(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
   now: number,
   localEntity: Entity | null,
@@ -377,7 +378,7 @@ export function drawParryShieldOverlays(
   }
 }
 
-export function drawTerrainPatches(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+export function drawTerrainPatches(ctx: Painter2D, world: PhysicsWorld): void {
   const now = performance.now() * 0.001;
 
   for (const patch of world.terrainPatches) {
@@ -417,7 +418,7 @@ function getObstacleTopY(obstacle: Obstacle): number {
 }
 
 function drawObstacleOverheadBars(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   obstacle: Obstacle,
   nowMs: number,
 ): void {
@@ -481,7 +482,7 @@ const obstacleFrame: DeployableFrameOptions = {
 };
 
 function drawObstacleBody(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   obstacle: Obstacle,
   localEntity: Entity | null,
   nowMs: number,
@@ -519,7 +520,7 @@ function drawObstacleBody(
 }
 
 export function drawObstacles(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
 ): void {
@@ -531,7 +532,7 @@ export function drawObstacles(
   }
 }
 
-export function drawConstraints(ctx: CanvasRenderingContext2D, world: PhysicsWorld): void {
+export function drawConstraints(ctx: Painter2D, world: PhysicsWorld): void {
   for (const c of world.getConstraints()) {
     if (c.isDead) continue;
 

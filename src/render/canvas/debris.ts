@@ -1,5 +1,6 @@
 import { WORLD_GRAVITY, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
+import type { Painter2D } from '../painter/Painter2D';
 import { decalManager } from './decals';
 import { drawEntityContactShadow } from './entities';
 
@@ -137,7 +138,7 @@ export class DebrisManager {
     }
   }
 
-  public render(ctx: CanvasRenderingContext2D): void {
+  public render(ctx: Painter2D): void {
     for (const s of this.shards) {
       ctx.save();
       ctx.globalAlpha = s.alpha;

@@ -1,5 +1,6 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Camera2D } from '../../camera/Camera2D';
+import type { Painter2D } from '../painter/Painter2D';
 import type { Entity } from '../../entities/Entity';
 import { getClosestEdgeNormal, getHexVertices } from '../../math/HexMath';
 import type { DebugForceVector } from '../../types/debug';
@@ -17,7 +18,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function drawArrowhead(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   tipX: number,
   tipY: number,
   dirX: number,
@@ -36,7 +37,7 @@ function drawArrowhead(
   ctx.stroke();
 }
 
-function drawForceVector(ctx: CanvasRenderingContext2D, vec: DebugForceVector): void {
+function drawForceVector(ctx: Painter2D, vec: DebugForceVector): void {
   const visualScale = clamp(vec.magnitude * 0.08, 12, 100);
   const endX = vec.originX + vec.dirX * visualScale;
   const endY = vec.originY + vec.dirY * visualScale;
@@ -61,7 +62,7 @@ function drawForceVector(ctx: CanvasRenderingContext2D, vec: DebugForceVector): 
 }
 
 export function drawPhysicsDebugBadge(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
 ): void {
   const zoneCount = world.zones.filter((z) => !z.isDead).length;
@@ -85,7 +86,7 @@ export function drawPhysicsDebugBadge(
 }
 
 export function drawPhysicsDebugOverlay(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
   _alpha: number,
 ): void {
@@ -126,7 +127,7 @@ export function drawPhysicsDebugOverlay(
 }
 
 export function drawDebugOverlay(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
   alpha: number,
   debug: DebugOptions,

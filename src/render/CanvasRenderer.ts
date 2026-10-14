@@ -58,7 +58,9 @@ import { Vector2D } from '../math/Vector2D';
 
 import { hitFeedbackConfig } from './hitFeedbackConfig';
 
-import { getEffectiveDprCap } from '../devtools/graphicsSettings';
+import { getEffectiveDprCap, type GlWorldSlice } from '../devtools/graphicsSettings';
+import type { Painter2D } from './painter/Painter2D';
+import { routeModule, type ModuleRoute, type WorldModuleId } from './painter/slices';
 import { STREAK_BODY_CAP } from './gl/postEffects';
 import { flashArenaCrosshair } from '../ui/palette';
 
@@ -66,7 +68,18 @@ import { flashArenaCrosshair } from '../ui/palette';
 
 export type { DebugOptions } from './canvas/debug';
 
+/** GL painter plus the slice deciding which modules it draws this frame. */
+export interface GlWorldTarget {
+  painter: Painter2D;
+  slice: GlWorldSlice;
+  /** The GL world renderer draws the procedural lava; otherwise the painter draws the fallback. */
+  proceduralBackground?: boolean;
+}
+
 export class CanvasRenderer {
+
+  /** Test hook: told which painter each world module was routed to. */
+  moduleProbe: ((id: WorldModuleId, route: ModuleRoute) => void) | null = null;
 
   private ringRotation = 0;
 
@@ -220,6 +233,7 @@ export class CanvasRenderer {
 
     aimingPlayer: Player | null = null,
 
+    gl: GlWorldTarget | null = null,
   ): void {
 
     const ctx = this.ctx;
@@ -267,12 +281,19 @@ export class CanvasRenderer {
     this.ringRotation += 0.02;
 
     const state = this.getRenderCtx(aimingPlayer);
-
-
+    const on = (id: WorldModuleId): Painter2D => {
+      const route = gl ? routeModule(gl.slice, id) : 'canvas';
+      this.moduleProbe?.(id, route);
+      return route === 'gl' && gl ? gl.painter : ctx;
+    };
 
     const rect = camera.getVisibleWorldRect();
-
-    if (this.useWebGLBackground && this.webglBackgroundCanvas) {
+    const bgPainter = on('background');
+    if (bgPainter !== ctx) {
+      // GL owns the background: the procedural lava is drawn by the GL world
+      // renderer itself, so the painter only needs the gradient fallback.
+      if (!gl?.proceduralBackground) drawLavaSeaFallback(bgPainter, world, camera);
+    } else if (this.useWebGLBackground && this.webglBackgroundCanvas) {
       const dpr = getEffectiveDprCap(window.innerWidth, window.innerHeight);
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -289,60 +310,48 @@ export class CanvasRenderer {
       drawLavaSeaFallback(ctx, world, camera);
     }
 
+    drawHexPlatform(on('hexPlatform'), state, world, shrinkProgress, isShrinking);
 
+    decalManager.render(on('decals'), performance.now());
 
-    drawHexPlatform(ctx, state, world, shrinkProgress, isShrinking);
+    updateAndDrawDebris(on('debris'));
 
-    decalManager.render(ctx, performance.now());
+    drawTerrainPatches(on('terrainPatches'), world);
 
-    updateAndDrawDebris(ctx);
+    drawZones(on('zones'), state, world);
 
-    drawTerrainPatches(ctx, world);
+    drawObstacles(on('obstacles'), state, world);
 
-    drawZones(ctx, state, world);
+    drawCombatants(on('combatants'), state, world, alpha, particles);
 
-    drawObstacles(ctx, state, world);
+    drawSummons(on('summons'), state, world, alpha);
 
-    drawCombatants(ctx, state, world, alpha, particles);
+    drawConstraints(on('constraints'), world);
 
-    drawSummons(ctx, state, world, alpha);
-
-    drawConstraints(ctx, world);
-
-    drawProjectiles(ctx, state, world, alpha);
+    drawProjectiles(on('projectiles'), state, world, alpha);
 
     const aimingState = aimingPlayer?.activeAimingState ?? null;
-
+    const aimPainter = on('aiming');
     if (aimingState && aimingPlayer) {
       const planarOrigin = lerpPos(aimingPlayer, alpha);
       const casterZ = lerpZ(aimingPlayer, alpha);
-      this.aimingRenderer.render(ctx, aimingState, planarOrigin, casterZ);
+      this.aimingRenderer.render(aimPainter, aimingState, planarOrigin, casterZ);
     }
 
-    drawOverheadHUD(ctx, world, alpha);
-
-
+    drawOverheadHUD(on('overheadHud'), world, alpha);
 
     this.fctManager.update(renderDt);
 
-    this.fctManager.draw(ctx);
-
-
+    this.fctManager.draw(on('floatingText'));
 
     this.syncStateFromCtx(state);
 
-
-
+    const debugPainter = on('debugOverlay');
     if (debug.showVectors || debug.showRadii || debug.showIds) {
-
-      drawDebugOverlay(ctx, world, alpha, debug, camera);
-
+      drawDebugOverlay(debugPainter, world, alpha, debug, camera);
     }
 
-    drawVerticalTelemetry(ctx, world, alpha);
-
-
-
+    drawVerticalTelemetry(on('verticalTelemetry'), world, alpha);
   }
 
 }

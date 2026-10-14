@@ -2,6 +2,7 @@ import type { CameraView } from '../camera/Camera2D';
 import type { Vector2D } from '../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../types/schema';
 import type { ParticleBackend, SpawnPriority } from './backends/ParticleBackend';
+import type { GLWorldRenderer } from './gl/world/GLWorldRenderer';
 import { playVfxLayers as composeVfxLayers } from './backends/vfxLayerComposer';
 
 const DEV = typeof import.meta !== 'undefined' && (import.meta as { env?: { DEV?: boolean } }).env?.DEV;
@@ -44,6 +45,10 @@ export class VfxDirector {
 
   draw(ctx: CanvasRenderingContext2D): void {
     this.backend.draw?.(ctx);
+  }
+
+  getWorldRenderer(): GLWorldRenderer | null {
+    return this.backend.getWorldRenderer?.() ?? null;
   }
 
   resize(width: number, height: number): void {

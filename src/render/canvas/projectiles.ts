@@ -1,5 +1,6 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Projectile } from '../../entities/Projectile';
+import type { Painter2D } from '../painter/Painter2D';
 import { Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
 import type { ProjectileStyle } from '../../types/schema';
@@ -19,7 +20,7 @@ function isSkyDropProjectile(
 }
 
 function drawProjectileGroundShadow(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -53,7 +54,7 @@ function drawProjectileGroundShadow(
 }
 
 export function drawProjectiles(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
@@ -197,7 +198,7 @@ export function drawProjectiles(
  * wide translucent understroke plus a baked head sprite instead of shadowBlur.
  */
 function drawChaosLightningProjectile(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   proj: Projectile,
   pos: Vector2D,
@@ -252,7 +253,7 @@ function drawChaosLightningProjectile(
 }
 
 function drawPlasmaTendrilProjectile(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   proj: Projectile,
   pos: Vector2D,
   radius: number,
@@ -320,7 +321,7 @@ function drawPlasmaTendrilProjectile(
 }
 
 export function drawScopeProjectile(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -426,7 +427,7 @@ export function drawScopeProjectile(
 }
 
 function drawScopeChaosLightning(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -479,7 +480,7 @@ function drawScopeChaosLightning(
 }
 
 function drawScopePlasmaTendril(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,

@@ -35,12 +35,21 @@ export type FixedQualityTier = Exclude<QualityTier, 'AUTO'>;
 
 export type QualityPresetId = 'FAST' | 'COMPETITIVE' | 'BALANCED' | 'QUALITY' | 'ULTRA';
 
+export const GL_WORLD_SLICES = ['off', 'floor', 'bodies', 'projectiles', 'all'] as const;
+export type GlWorldSlice = (typeof GL_WORLD_SLICES)[number];
+
+export function isGlWorldSlice(value: unknown): value is GlWorldSlice {
+  return typeof value === 'string' && (GL_WORLD_SLICES as readonly string[]).includes(value);
+}
+
 export interface GraphicsSettings {
   /** Performance axis: resolution, CRT/bloom, background LOD. */
   tier: QualityTier;
   /** VFX axis: particles, primitives, debris, ground decals, trail density. */
   vfxTier: FixedQualityTier;
   webglBackground: boolean;
+  /** How much of the world draw order (bottom-up) is drawn by the GL world painter. */
+  glWorldSlice: GlWorldSlice;
   floorSubGrid: boolean;
   ambientEmbers: boolean;
   dynamicDebris: boolean;
@@ -83,6 +92,7 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   tier: 'AUTO',
   vfxTier: 'MEDIUM',
   webglBackground: true,
+  glWorldSlice: 'all',
   floorSubGrid: true,
   ambientEmbers: true,
   dynamicDebris: true,
@@ -454,6 +464,27 @@ export function isLightingActive(): boolean {
   if (!getGraphicsSettings().lighting) return false;
   if (getEffectiveTier() === 'LOW') return false;
   return getTierLimits().maxLights > 0;
+}
+
+/**
+ * Slice the GL world painter actually takes this frame. Needs the WebGL backend
+ * and a transparent world canvas, since the Canvas2D remainder is composited
+ * over the GL world.
+ */
+export function resolveGlWorldSlice(
+  slice: GlWorldSlice,
+  hasWebGlWorld: boolean,
+  worldCanvasHasAlpha: boolean,
+): GlWorldSlice {
+  if (!hasWebGlWorld || !worldCanvasHasAlpha) return 'off';
+  return slice;
+}
+
+export function isGlWorldActive(hasWebGlWorld: boolean, worldCanvasHasAlpha: boolean): boolean {
+  return (
+    resolveGlWorldSlice(getGraphicsSettings().glWorldSlice, hasWebGlWorld, worldCanvasHasAlpha) !==
+    'off'
+  );
 }
 
 export function isShadowsActive(): boolean {
@@ -848,6 +879,9 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     tier: storedTier,
     vfxTier: migratedVfxTier,
     webglBackground,
+    glWorldSlice: isGlWorldSlice(parsed.glWorldSlice)
+      ? parsed.glWorldSlice
+      : DEFAULT_GRAPHICS_SETTINGS.glWorldSlice,
     floorSubGrid: parsed.floorSubGrid ?? DEFAULT_GRAPHICS_SETTINGS.floorSubGrid,
     ambientEmbers: parsed.ambientEmbers ?? DEFAULT_GRAPHICS_SETTINGS.ambientEmbers,
     dynamicDebris: parsed.dynamicDebris ?? DEFAULT_GRAPHICS_SETTINGS.dynamicDebris,

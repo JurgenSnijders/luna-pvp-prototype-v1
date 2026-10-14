@@ -1,11 +1,12 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
+import type { Painter2D } from '../painter/Painter2D';
 import type { Entity } from '../../entities/Entity';
 import { getGraphicsSettings } from '../../devtools/graphicsSettings';
 import { lerpPos, lerpZ } from './helpers';
 
 export function drawVerticalTelemetry(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   world: PhysicsWorld,
   alpha: number,
 ): void {

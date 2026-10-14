@@ -1,5 +1,6 @@
 import { areGroundDecalsEnabled } from '../../devtools/graphicsSettings';
 import type { SpellArchetype } from '../../types/schema';
+import type { Painter2D } from '../painter/Painter2D';
 
 export type DecalType = 'SCORCH' | 'FROST_CRACK' | 'VOID_STAIN' | 'KINETIC_CRATER';
 
@@ -47,7 +48,7 @@ function hashSeed(x: number, y: number, i: number): number {
 }
 
 function drawScorch(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -82,7 +83,7 @@ function drawScorch(
 }
 
 function drawFrostCrack(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -117,7 +118,7 @@ function drawFrostCrack(
 }
 
 function drawVoidStain(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -156,7 +157,7 @@ function drawVoidStain(
 }
 
 function drawKineticCrater(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -230,7 +231,7 @@ class DecalManager {
     this.writeIndex = (this.writeIndex + 1) % MAX_DECALS;
   }
 
-  render(ctx: CanvasRenderingContext2D, now: number): void {
+  render(ctx: Painter2D, now: number): void {
     if (!areGroundDecalsEnabled()) return;
 
     for (const decal of this.decals) {

@@ -55,6 +55,20 @@ export interface PerfSnapshot {
   hdrActive: boolean;
 }
 
+export interface WorldPerfStats {
+  slice: string;
+  drawCalls: number;
+  vertices: number;
+  atlasSprites: number;
+  msaaSamples: number;
+}
+
+export function formatWorldLine(stats: WorldPerfStats | null): string {
+  if (!stats) return 'world canvas2d | slice off';
+  const msaa = stats.msaaSamples > 0 ? `msaa ${stats.msaaSamples}x` : 'msaa off';
+  return `world dc ${stats.drawCalls} verts ${stats.vertices} atlas ${stats.atlasSprites} ${msaa} | slice ${stats.slice}`;
+}
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * p));
@@ -77,6 +91,7 @@ export class PerfMonitor {
   private instanceCount = 0;
   private uploadBytes = 0;
   private hdrActive = false;
+  private worldStats: WorldPerfStats | null = null;
   private frameStart = 0;
   private simStart = 0;
   private renderStart = 0;
@@ -179,6 +194,15 @@ export class PerfMonitor {
     if (counters.hdrActive !== undefined) this.hdrActive = counters.hdrActive;
   }
 
+  /** GL world pass counters for the frame, or null when the world is on Canvas2D. */
+  setWorldStats(stats: WorldPerfStats | null): void {
+    this.worldStats = stats;
+  }
+
+  getWorldStats(): WorldPerfStats | null {
+    return this.worldStats;
+  }
+
   getSnapshot(): PerfSnapshot {
     const workSorted = [...this.frameHistory].sort((a, b) => a - b);
     const workP50 = percentile(workSorted, 0.5);
@@ -224,6 +248,7 @@ export class PerfMonitor {
       `particles ${s.liveParticles}  primitives ${s.livePrimitives}  ribbons ${s.liveRibbons}  lights ${s.liveLights} (shadowed ${s.shadowedLights})`,
       `HDR ${s.hdrActive ? 'on' : 'off'}`,
       `draws ${s.drawCalls}  instances ${s.instanceCount}  upload ${(s.uploadBytes / 1024).toFixed(1)}KB`,
+      formatWorldLine(this.worldStats),
     ];
     if (this.baselineP95Ms !== null) {
       lines.push(`baseline p95 ${this.baselineP95Ms.toFixed(1)}ms`);

@@ -1,6 +1,8 @@
 import {
   DEFAULT_GRAPHICS_SETTINGS,
+  GL_WORLD_SLICES,
   STORAGE_KEY_GRAPHICS,
+  resolveGlWorldSlice,
   applyQualityPreset,
   applyTierPreset,
   applyVfxPreset,
@@ -479,6 +481,36 @@ function run(): void {
   applyVfxPreset('LOW');
   if (getTierLimits().maxShadowedLights !== 0) {
     failures.push(`VFX LOW: maxShadowedLights should be 0, got ${getTierLimits().maxShadowedLights}`);
+  }
+
+  if (DEFAULT_GRAPHICS_SETTINGS.glWorldSlice !== 'all') {
+    failures.push(`glWorldSlice default should be 'all', got ${DEFAULT_GRAPHICS_SETTINGS.glWorldSlice}`);
+  }
+  for (const slice of GL_WORLD_SLICES) {
+    const parsedSlice = parseGraphicsSettings({ glWorldSlice: slice }).glWorldSlice;
+    if (parsedSlice !== slice) failures.push(`glWorldSlice '${slice}' should round-trip, got ${parsedSlice}`);
+  }
+  for (const bad of ['ALL', 'everything', 3, null]) {
+    const parsedSlice = parseGraphicsSettings({ glWorldSlice: bad }).glWorldSlice;
+    if (parsedSlice !== 'all') {
+      failures.push(`glWorldSlice ${JSON.stringify(bad)} should fall back to 'all', got ${parsedSlice}`);
+    }
+  }
+  if (parseGraphicsSettings({}).glWorldSlice !== 'all') {
+    failures.push('glWorldSlice missing from storage should use the default');
+  }
+  for (const slice of GL_WORLD_SLICES) {
+    for (const hasGl of [false, true]) {
+      for (const hasAlpha of [false, true]) {
+        const expected = hasGl && hasAlpha ? slice : 'off';
+        const got = resolveGlWorldSlice(slice, hasGl, hasAlpha);
+        if (got !== expected) {
+          failures.push(
+            `resolveGlWorldSlice(${slice}, gl=${hasGl}, alpha=${hasAlpha}) should be ${expected}, got ${got}`,
+          );
+        }
+      }
+    }
   }
 
   if (failures.length > 0) {

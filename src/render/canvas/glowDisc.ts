@@ -1,3 +1,5 @@
+import type { Painter2D } from '../painter/Painter2D';
+
 export interface Rgb {
   r: number;
   g: number;
@@ -81,7 +83,7 @@ export function computeZoneRingFade(ageMs: number): number {
 }
 
 function beginDiscPath(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   outerR: number,
@@ -101,7 +103,7 @@ function beginDiscPath(
 
 /** Radial disc: dim center, hot rim on gameplay radius, soft falloff past the edge. */
 export function drawGlowDisc(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -137,7 +139,7 @@ export function drawGlowDisc(
 
 /** Rotating bright arc on the rim — replaces marching dashes. */
 export function drawRimArc(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -179,7 +181,7 @@ export function drawRimArc(
 
 /** Expanding cast ring that fades over ~160ms. */
 export function drawCastRing(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -205,7 +207,7 @@ export function drawCastRing(
 
 /** Record first-seen time per zone/overlay and draw the cast flash. */
 export function drawTrackedCastRing(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   key: object,
   x: number,
   y: number,
@@ -218,7 +220,7 @@ export function drawTrackedCastRing(
 
 /** Thin solid strokes along wedge radial edges. */
 export function drawWedgeEdges(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -238,7 +240,7 @@ export function drawWedgeEdges(
 
 /** Short solid ticks on the gameplay-radius rim. */
 export function drawRimTicks(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,

@@ -1,6 +1,7 @@
 import type { CameraView } from '../../camera/Camera2D';
 import type { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../../types/schema';
+import type { GLWorldRenderer } from '../gl/world/GLWorldRenderer';
 
 export type SpawnPriority = 'CORE' | 'PRIMARY' | 'SECONDARY' | 'AMBIENT';
 
@@ -23,6 +24,8 @@ export interface ParticleBackend {
   render(width: number, height: number, view: CameraView): VfxCounters;
   /** Canvas2D fallback path. */
   draw?(ctx: CanvasRenderingContext2D): void;
+  /** GL world renderer on the shared VFX context (WebGL backend only). */
+  getWorldRenderer?(): GLWorldRenderer | null;
   resize(width: number, height: number): void;
   getLiveParticleCount(): number;
   getLivePrimitiveCount(): number;

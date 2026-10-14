@@ -1,5 +1,6 @@
 import type { PhysicsWorld } from '../../engine/PhysicsWorld';
 import type { Entity } from '../../entities/Entity';
+import type { Painter2D } from '../painter/Painter2D';
 import { LAVA_AIRBORNE_IMMUNITY_Z, Z_EPSILON, Z_TO_SCREEN } from '../../engine/verticalConstants';
 import { Vector2D } from '../../math/Vector2D';
 import { entityShadowConfig } from '../../render/entityShadowConfig';
@@ -30,7 +31,7 @@ const combatantSortScratch: Entity[] = [];
 let lavaSizzleFrame = 0;
 
 export function drawEntityContactShadow(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   x: number,
   y: number,
   radius: number,
@@ -86,7 +87,7 @@ function lerpColor(a: string, b: string, t: number): string {
 }
 
 export function drawCombatants(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
@@ -126,7 +127,7 @@ export function drawCombatants(
 }
 
 function drawCombatantBody(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   entity: Entity,
@@ -301,7 +302,7 @@ const summonFrame: DeployableFrameOptions = {
 
 /** Tactical Inspector hero-scope summon silhouette (canvas-space coordinates). */
 export function drawScopeSummon(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   summon: SummonFrameData,
 ): void {
   ctx.save();
@@ -328,7 +329,7 @@ export function drawScopeSummon(
 }
 
 export function drawSummons(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   world: PhysicsWorld,
   alpha: number,
@@ -389,7 +390,7 @@ export function drawSummons(
 }
 
 function drawCastPhaseTelegraph(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   entity: Entity,
   pos: Vector2D,
   ownerId: string,
@@ -410,7 +411,7 @@ function drawCastPhaseTelegraph(
 }
 
 function drawStasisOverlay(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: CanvasRenderCtx,
   entity: Entity,
   pos: Vector2D,

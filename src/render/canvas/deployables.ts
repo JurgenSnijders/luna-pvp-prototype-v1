@@ -1,4 +1,5 @@
 import { useCheapCanvasEffects } from '../cheapCanvasEffects';
+import type { Painter2D } from '../painter/Painter2D';
 import { hexToRgb, rgbToHex, type Rgb } from './glowDisc';
 import type { ObstacleFrameData } from '../../draft/InspectorPlaybackSim';
 
@@ -81,7 +82,7 @@ function rgbaMixWhite(rgb: Rgb, t: number, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function traceShape(ctx: CanvasRenderingContext2D, shape: DeployableShape, inset: number): void {
+function traceShape(ctx: Painter2D, shape: DeployableShape, inset: number): void {
   ctx.beginPath();
   if (shape.kind === 'CIRCLE') {
     ctx.arc(0, 0, Math.max(0, shape.radius - inset), 0, Math.PI * 2);
@@ -93,7 +94,7 @@ function traceShape(ctx: CanvasRenderingContext2D, shape: DeployableShape, inset
 }
 
 function drawHitTick(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   shape: DeployableShape,
   lx: number,
   ly: number,
@@ -125,7 +126,7 @@ function drawHitTick(
  * collision edge, spawn snap, hit flash and expiry fade. The drawn edge is the hitbox.
  */
 export function drawDeployableFrame(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   opts: DeployableFrameOptions,
 ): void {
   if (opts.fade <= 0) return;
@@ -180,7 +181,7 @@ export function drawDeployableFrame(
 
 /** Tactical Inspector hero-scope obstacle silhouette (canvas-space coordinates). */
 export function drawScopeObstacle(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   obs: ObstacleFrameData,
 ): void {
   const shape: DeployableShape =

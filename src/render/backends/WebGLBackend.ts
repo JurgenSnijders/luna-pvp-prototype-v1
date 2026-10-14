@@ -15,6 +15,7 @@ import { reactiveFx } from '../gl/reactiveFx';
 import { RibbonRenderer } from '../gl/RibbonRenderer';
 import { computeLightScissor, LightRenderer } from '../gl/LightRenderer';
 import { ShadowRenderer } from '../gl/ShadowRenderer';
+import { GLWorldRenderer } from '../gl/world/GLWorldRenderer';
 import { selectShadowCasters } from '../shadowGeometry';
 import { PrimitiveLayer } from '../PrimitiveLayer';
 import { LightLayer } from '../LightLayer';
@@ -76,6 +77,7 @@ export class WebGLBackend implements ParticleBackend {
   private lightRenderer: LightRenderer;
   private shadowRenderer: ShadowRenderer;
   private postFx: PostFX;
+  private worldRenderer: GLWorldRenderer | null;
   private lightPackOrder: number[] = [];
   private shadowCasterIndices: number[] = [];
   private primitives: PrimitiveLayer;
@@ -98,6 +100,12 @@ export class WebGLBackend implements ParticleBackend {
     this.lightRenderer = new LightRenderer(gl);
     this.shadowRenderer = new ShadowRenderer(gl);
     this.postFx = new PostFX(gl);
+    try {
+      this.worldRenderer = new GLWorldRenderer(gl);
+    } catch (err) {
+      console.warn('[WebGLBackend] GL world unavailable:', err);
+      this.worldRenderer = null;
+    }
     this.primitives = new PrimitiveLayer();
     this.ribbons = new RibbonLayer();
     this.lights = new LightLayer();
@@ -135,6 +143,20 @@ export class WebGLBackend implements ParticleBackend {
     this.lightRenderer.rebuild();
     this.shadowRenderer.rebuild();
     this.postFx.rebuild();
+    if (this.worldRenderer) {
+      try {
+        this.worldRenderer.rebuild();
+      } catch (err) {
+        console.warn('[WebGLBackend] GL world rebuild failed:', err);
+        this.worldRenderer = null;
+      }
+    }
+  }
+
+  /** The GL world renderer, or null when the context cannot draw the world this frame. */
+  getWorldRenderer(): GLWorldRenderer | null {
+    if (!this.glCtx.gl || this.glCtx.isLost()) return null;
+    return this.worldRenderer;
   }
 
   beginFrame(dt: number): void {
@@ -173,7 +195,10 @@ export class WebGLBackend implements ParticleBackend {
 
   render(width: number, height: number, view: CameraView): VfxCounters {
     const gl = this.glCtx.gl;
-    if (!gl || this.glCtx.isLost()) return EMPTY_COUNTERS;
+    if (!gl || this.glCtx.isLost()) {
+      this.worldRenderer?.endFrame();
+      return EMPTY_COUNTERS;
+    }
 
     const bufferW = gl.drawingBufferWidth;
     const bufferH = gl.drawingBufferHeight;
@@ -188,6 +213,10 @@ export class WebGLBackend implements ParticleBackend {
       lightingSettings.lightmapScale,
       lightingSettings.shadows,
     );
+    const world = this.worldRenderer?.isFrameActive()
+      ? this.worldRenderer.render(bufferW, bufferH)
+      : null;
+    this.worldRenderer?.endFrame();
     this.postFx.beginScene();
 
     gl.enable(gl.BLEND);
@@ -359,10 +388,13 @@ export class WebGLBackend implements ParticleBackend {
       bufferH,
       crt.webglCrt,
       postFxLighting,
+      world?.worldTexture ?? null,
+      world?.overlayTexture ?? null,
     );
 
-    const worldCanvas = crt.webglCrt
-      ? (document.getElementById('game-canvas') as HTMLCanvasElement | null)
+    const worldCanvas: HTMLCanvasElement | WebGLTexture | null = crt.webglCrt
+      ? (world?.worldTexture ??
+        (document.getElementById('game-canvas') as HTMLCanvasElement | null))
       : null;
 
     const now = performance.now();
@@ -441,6 +473,7 @@ export class WebGLBackend implements ParticleBackend {
         height,
         view,
         postFxLighting,
+        world?.overlayTexture ?? null,
       );
 
       this.prevCamX = view.camX;
@@ -458,6 +491,7 @@ export class WebGLBackend implements ParticleBackend {
       shadowedLights,
       drawCalls:
         stats.drawCalls +
+        (world ? this.worldRenderer!.getStats().drawCalls : 0) +
         ribbonStats.drawCalls +
         lightStats.drawCalls +
         shadowStats.drawCalls +

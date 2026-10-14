@@ -1,5 +1,6 @@
 import { getEffectiveFeatureFlags } from '../../devtools/graphicsSettings';
 import { Vector2D } from '../../math/Vector2D';
+import type { Painter2D } from '../painter/Painter2D';
 
 export interface FloorRipple {
   x: number;
@@ -72,7 +73,7 @@ class FloorGridManager {
   }
 
   render(
-    ctx: CanvasRenderingContext2D,
+    ctx: Painter2D,
     hexCenter: Vector2D,
     hexRadius: number,
     themeColor = '#00e5ff',

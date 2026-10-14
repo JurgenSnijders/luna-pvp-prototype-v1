@@ -1,4 +1,5 @@
 import { Z_TO_SCREEN } from '../../engine/verticalConstants';
+import type { Painter2D } from '../painter/Painter2D';
 import {
   resolveCursorGroundRange,
   shouldApplyCursorBallisticSolver,
@@ -300,7 +301,7 @@ function gradientEndpoints(path: PredictivePath): {
 }
 
 function createStrokeGradient(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   color: string,
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -314,7 +315,7 @@ function createStrokeGradient(
 }
 
 function drawLinearChevrons(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   path: PredictivePath,
   color: string,
 ): void {
@@ -358,7 +359,7 @@ function drawLinearChevrons(
 }
 
 function drawEndpointDiamond(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   point: { x: number; y: number },
   angle: number,
   color: string,
@@ -377,7 +378,7 @@ function drawEndpointDiamond(
 }
 
 function drawBallisticArcMarkers(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   path: PredictivePath,
   color: string,
 ): void {
@@ -424,7 +425,7 @@ function drawBallisticArcMarkers(
 }
 
 function drawPredictivePath(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   path: PredictivePath,
   color: string,
 ): void {
@@ -476,7 +477,7 @@ function drawPredictivePath(
 }
 
 export function drawPredictivePaths(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: AimingState,
   startZ = 0,
   planarOrigin?: { x: number; y: number },
@@ -529,7 +530,7 @@ export function drawPredictivePaths(
 }
 
 function drawRectCornerBrackets(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   width: number,
   height: number,
   arm: number,
@@ -584,7 +585,7 @@ function resolveGhostFacingRad(
 }
 
 function drawOmniCircleGhost(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   radius: number,
   color: string,
   isDestructible: boolean,
@@ -618,7 +619,7 @@ function drawOmniCircleGhost(
 }
 
 function drawDeployableGhost(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   info: DeployableTargetInfo,
   center: { x: number; y: number },
   origin: { x: number; y: number },
@@ -749,7 +750,7 @@ function resolveTerminalLandingPoint(
 }
 
 export function drawAoERadial(
-  ctx: CanvasRenderingContext2D,
+  ctx: Painter2D,
   state: AimingState,
   now = performance.now(),
 ): void {
@@ -791,7 +792,7 @@ export function drawAoERadial(
 
 export class AimingIndicatorRenderer {
   render(
-    ctx: CanvasRenderingContext2D,
+    ctx: Painter2D,
     state: AimingState,
     planarOrigin?: { x: number; y: number },
     casterZ = 0,
