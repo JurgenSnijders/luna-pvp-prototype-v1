@@ -12,6 +12,7 @@ import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
 import type { PhysicsWorld, PendingObstacleDestruction } from '../../engine/PhysicsWorld';
 import { isInsideHex, clampToHex } from '../../math/HexMath';
 import { getEffectiveCrtSettings, getGraphicsSettings, getTierLimits } from '../../devtools/graphicsSettings';
+import { emissiveMultiplier, RIBBON_INTENSITY } from '../../render/emissive';
 import { hitFeedbackConfig } from '../../render/hitFeedbackConfig';
 import { requestHitstop } from '../../game/simulation';
 import { reactiveFx } from '../../render/gl/reactiveFx';
@@ -403,6 +404,7 @@ function emitArchetypeImpact(
     sec,
     scale,
     impactLayers,
+    emissiveMultiplier(hit.projectile.visuals?.vfx?.glowIntensity),
   );
 
   const useDirectionalRing =
@@ -1063,12 +1065,29 @@ export function processLifecycleEvents(
     }
 
     const visuals = projectile.visuals;
+    const trailsOn = getGraphicsSettings().particleTrails;
+    if (
+      trailsOn &&
+      visuals?.trailType === 'NEON_RIBBON' &&
+      interp.particles?.supportsRibbons()
+    ) {
+      const mul = emissiveMultiplier(visuals.vfx?.glowIntensity);
+      const width = Math.max(2, visuals.size * 0.6);
+      interp.particles.ribbonPush(
+        projectile.id,
+        projectile.pos,
+        visuals.color,
+        width,
+        RIBBON_INTENSITY * mul,
+        visuals.vfx?.trailLengthMs,
+      );
+    }
     const TRAIL_MIN_DIST_SQ = 100; // ~10px; prevents stationary/orbit pool starvation
     const trailDensity =
       (visuals?.vfx?.trailDensity ?? 1) * getTierLimits().trailDensity;
     const trailThreshold = TRAIL_MIN_DIST_SQ / Math.max(0.3, trailDensity);
     if (
-      getGraphicsSettings().particleTrails &&
+      trailsOn &&
       projectile.pos.distSq(projectile.lastTrailPos) > trailThreshold
     ) {
       if (visuals?.trailLayers && visuals.trailLayers.length > 0) {
@@ -1083,9 +1102,12 @@ export function processLifecycleEvents(
           secondaryColor(visuals, '#ffffff'),
           1,
           headingRad,
+          emissiveMultiplier(visuals.vfx?.glowIntensity),
         );
       } else if (visuals?.trailType === 'NEON_RIBBON') {
-        interp.particles?.neonRibbon(projectile.pos, visuals.color);
+        if (!interp.particles?.supportsRibbons()) {
+          interp.particles?.neonRibbon(projectile.pos, visuals.color);
+        }
       } else {
         const color = trailColor(visuals);
         if (color && visuals) {

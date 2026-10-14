@@ -1,4 +1,5 @@
 import { FLOATS_PER_INSTANCE } from '../../gl/shaders';
+import { getEffectiveEmissiveScale } from '../../../devtools/graphicsSettings';
 import type { InstancedQuadRenderer } from '../../gl/InstancedQuadRenderer';
 import type { SimParticle } from './types';
 
@@ -17,6 +18,7 @@ export function packPrimitive(
     alpha: number;
     life: number;
     maxLife: number;
+    intensity: number;
     params: [number, number, number, number];
     additive: boolean;
   },
@@ -34,6 +36,7 @@ export function packPrimitive(
     g: prim.g,
     b: prim.b,
     alpha: prim.alpha * (prim.life / prim.maxLife),
+    intensity: prim.intensity,
     params: prim.params,
   });
 }
@@ -57,6 +60,7 @@ export function packParticle(
     g: p.g,
     b: p.b,
     alpha,
+    intensity: p.intensity,
     params: p.params,
   });
 }
@@ -75,18 +79,20 @@ function writeInstance(
     g: number;
     b: number;
     alpha: number;
+    intensity: number;
     params: [number, number, number, number];
   },
 ): void {
   const off = idx * FLOATS_PER_INSTANCE;
+  const hot = inst.intensity * getEffectiveEmissiveScale();
   data[off] = inst.posX;
   data[off + 1] = inst.posY;
   data[off + 2] = inst.sizeX;
   data[off + 3] = inst.sizeY;
   data[off + 4] = inst.rot;
-  data[off + 5] = inst.r;
-  data[off + 6] = inst.g;
-  data[off + 7] = inst.b;
+  data[off + 5] = inst.r * hot;
+  data[off + 6] = inst.g * hot;
+  data[off + 7] = inst.b * hot;
   data[off + 8] = inst.alpha;
   data[off + 9] = inst.shapeId;
   data[off + 10] = inst.params[0];

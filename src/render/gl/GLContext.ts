@@ -1,5 +1,6 @@
 import { perfMonitor } from '../../devtools/PerfMonitor';
 import { getEffectiveDprCap } from '../../devtools/graphicsSettings';
+import { enableHdrRenderTargets } from './framebuffers';
 
 export type BackendPreference = 'auto' | 'webgl' | 'canvas2d';
 
@@ -18,6 +19,8 @@ export function setBackendPreference(pref: BackendPreference): void {
 export class GLContext {
   readonly canvas: HTMLCanvasElement;
   gl: WebGL2RenderingContext | null = null;
+  /** True when this context can render into RGBA16F after the color-buffer extension. */
+  hdrRenderable = false;
   private lost = false;
   private restoreAttempts = 0;
   private onContextLostCallback: (() => void) | null = null;
@@ -79,7 +82,10 @@ export class GLContext {
       gl.disable(gl.DEPTH_TEST);
       gl.enable(gl.BLEND);
       gl.clearColor(0, 0, 0, 0);
+      this.hdrRenderable = enableHdrRenderTargets(gl);
       perfMonitor.probeCapabilities(gl);
+    } else {
+      this.hdrRenderable = false;
     }
     return !!gl;
   }

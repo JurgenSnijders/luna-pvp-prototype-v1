@@ -5,7 +5,7 @@ layout(location = 0) in vec2 a_corner;
 layout(location = 1) in vec2 a_pos;
 layout(location = 2) in vec2 a_size;
 layout(location = 3) in float a_rotation;
-layout(location = 4) in vec4 a_color;
+layout(location = 4) in vec4 a_color; // linear RGB, may exceed 1 when HDR is on
 layout(location = 5) in float a_shapeId;
 layout(location = 6) in vec4 a_params;
 

@@ -3,6 +3,7 @@ import {
   STORAGE_KEY_GRAPHICS,
   applyQualityPreset,
   applyTierPreset,
+  applyVfxPreset,
   getEffectiveDprCap,
   getEffectiveFeatureFlags,
   getGraphicsSettings,
@@ -89,6 +90,7 @@ function gpuCaps(overrides: Partial<GpuCapabilities> = {}): GpuCapabilities {
     fragmentHighpPrecision: 23,
     unmaskedRenderer: '',
     isLegacyGpu: false,
+    hdrRenderable: false,
     ...overrides,
   };
 }
@@ -291,8 +293,8 @@ function run(): void {
   if (!high.crtEnabled || !high.bloomEnabled) {
     failures.push('applyTierPreset(HIGH): CRT and bloom should be enabled');
   }
-  if (high.bloomThreshold !== 0.6) {
-    failures.push(`applyTierPreset(HIGH): bloomThreshold should be 0.6, got ${high.bloomThreshold}`);
+  if (high.bloomThreshold !== 0.95) {
+    failures.push(`applyTierPreset(HIGH): bloomThreshold should be 0.95, got ${high.bloomThreshold}`);
   }
   if (high.screenShakeIntensity !== 1) {
     failures.push(`applyTierPreset(HIGH): screenShakeIntensity should be 1, got ${high.screenShakeIntensity}`);
@@ -394,6 +396,37 @@ function run(): void {
     ) !== 'LOW'
   ) {
     failures.push('detectSeedTier: Intel HD 4000 unmasked renderer should seed LOW');
+  }
+
+  resetGraphicsState();
+  const parsedHdr = parseGraphicsSettings({ hdr: false, emissiveScale: 9, bloomKnee: 2 });
+  if (parsedHdr.hdr !== false) {
+    failures.push('parseGraphicsSettings: hdr false should stick');
+  }
+  if (parsedHdr.emissiveScale !== 3) {
+    failures.push(`parseGraphicsSettings: emissiveScale should clamp to 3, got ${parsedHdr.emissiveScale}`);
+  }
+  if (parsedHdr.bloomKnee !== 1) {
+    failures.push(`parseGraphicsSettings: bloomKnee should clamp to 1, got ${parsedHdr.bloomKnee}`);
+  }
+  const parsedDefaults = parseGraphicsSettings({});
+  if (!parsedDefaults.hdr || parsedDefaults.emissiveScale !== 1 || parsedDefaults.bloomKnee !== 0.3) {
+    failures.push('parseGraphicsSettings: HDR defaults missing');
+  }
+  if (parsedDefaults.bloomThreshold !== 0.95) {
+    failures.push(`parseGraphicsSettings: bloomThreshold default should be 0.95, got ${parsedDefaults.bloomThreshold}`);
+  }
+
+  resetGraphicsState();
+  applyVfxPreset('LOW');
+  if (getTierLimits().maxRibbons !== 0) {
+    failures.push(`VFX LOW: maxRibbons should be 0, got ${getTierLimits().maxRibbons}`);
+  }
+  applyVfxPreset('HIGH');
+  if (getTierLimits().maxRibbons !== 48 || getTierLimits().ribbonPointLifetimeMs !== 260) {
+    failures.push(
+      `VFX HIGH: expected 48 ribbons / 260ms, got ${getTierLimits().maxRibbons} / ${getTierLimits().ribbonPointLifetimeMs}`,
+    );
   }
 
   if (failures.length > 0) {

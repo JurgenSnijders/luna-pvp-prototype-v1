@@ -34,6 +34,7 @@ import {
 } from './helpers';
 import { entityFacingAngle, isPointInArcWedge, resolveArcFacingRad } from '../arcWedge';
 import { getArchetypeColor } from '../../render/canvas/SpellIconGenerator';
+import { emissiveMultiplier } from '../../render/emissive';
 import { resolveActionTarget, resolveRelationalDirection } from './targeting';
 
 function getArchetypeTuning(ctx: TriggerContext) {
@@ -601,6 +602,7 @@ export function dispatchAction(
       } else if (ctx.sourceEntity) {
         pos = ctx.sourceEntity.pos.clone();
       }
+      const glow = emissiveMultiplier(visuals?.vfx?.glowIntensity);
       if (action.layers && action.layers.length > 0) {
         interp.particles?.triggerImpactBurst(
           pos,
@@ -609,9 +611,10 @@ export function dispatchAction(
           sec,
           burstScale,
           action.layers,
+          glow,
         );
       } else if (action.vfx) {
-        interp.particles?.triggerImpactBurst(pos, primary, action.vfx, sec, burstScale);
+        interp.particles?.triggerImpactBurst(pos, primary, action.vfx, sec, burstScale, undefined, glow);
       }
       break;
     }

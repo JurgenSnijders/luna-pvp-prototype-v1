@@ -3,38 +3,91 @@ export interface FramebufferTarget {
   texture: WebGLTexture;
   width: number;
   height: number;
+  /** True when the color attachment is RGBA16F and renderable. */
+  hdr: boolean;
+}
+
+/**
+ * Half-float (and float) color attachments are filterable in WebGL2, but
+ * rendering into them needs an extension enabled on this context.
+ */
+export function enableHdrRenderTargets(gl: WebGL2RenderingContext): boolean {
+  return !!(
+    gl.getExtension('EXT_color_buffer_half_float') ||
+    gl.getExtension('EXT_color_buffer_float')
+  );
+}
+
+function allocateColorTexture(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+  hdr: boolean,
+): WebGLTexture {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  if (hdr) {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA16F,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.HALF_FLOAT,
+      null,
+    );
+  } else {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
+
+function attachFramebuffer(
+  gl: WebGL2RenderingContext,
+  texture: WebGLTexture,
+): WebGLFramebuffer {
+  const fbo = gl.createFramebuffer()!;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  return fbo;
 }
 
 export function createFramebuffer(
   gl: WebGL2RenderingContext,
   width: number,
   height: number,
+  hdr = false,
 ): FramebufferTarget {
-  const texture = gl.createTexture()!;
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    width,
-    height,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    null,
-  );
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  const fbo = gl.createFramebuffer()!;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  let useHdr = hdr;
+  let texture = allocateColorTexture(gl, width, height, useHdr);
+  let fbo = attachFramebuffer(gl, texture);
+  if (useHdr && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    gl.deleteTexture(texture);
+    useHdr = false;
+    texture = allocateColorTexture(gl, width, height, false);
+    fbo = attachFramebuffer(gl, texture);
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.bindTexture(gl.TEXTURE_2D, null);
-
-  return { fbo, texture, width, height };
+  return { fbo, texture, width, height, hdr: useHdr };
 }
 
 export function resizeFramebuffer(
@@ -47,17 +100,31 @@ export function resizeFramebuffer(
   target.width = width;
   target.height = height;
   gl.bindTexture(gl.TEXTURE_2D, target.texture);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    width,
-    height,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    null,
-  );
+  if (target.hdr) {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA16F,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.HALF_FLOAT,
+      null,
+    );
+  } else {
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+  }
   gl.bindTexture(gl.TEXTURE_2D, null);
 }
 

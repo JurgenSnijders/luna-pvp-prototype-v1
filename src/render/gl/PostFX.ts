@@ -39,6 +39,7 @@ export interface CrtPresentParams {
   bloomIntensity: number;
   bloomPasses: number;
   bloomThreshold: number;
+  bloomKnee: number;
   tintColor: [number, number, number];
   tintAmount: number;
   brightness: number;
@@ -114,6 +115,8 @@ export class PostFX {
   private worldTexH = 0;
   private width = 0;
   private height = 0;
+  private hdrRequested = false;
+  private hdrActive = false;
   private streakBodyData = new Float32Array(STREAK_BODY_CAP * 4);
   private uniformCache = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
 
@@ -181,6 +184,7 @@ export class PostFX {
       gl.deleteTexture(fbo.texture);
     }
     this.sceneFbo = null;
+    this.hdrActive = false;
     this.bloomFboA = null;
     this.bloomFboB = null;
     this.streakFbo = null;
@@ -203,7 +207,17 @@ export class PostFX {
     }
   }
 
-  resize(width: number, height: number, bloomRes = 0.5): void {
+  isHdr(): boolean {
+    return this.hdrActive;
+  }
+
+  resize(width: number, height: number, bloomRes = 0.5, hdr = false): void {
+    if (hdr !== this.hdrRequested) {
+      this.hdrRequested = hdr;
+      this.destroyFbos();
+      this.width = 0;
+      this.height = 0;
+    }
     if (width === this.width && height === this.height && this.sceneFbo) return;
     this.width = width;
     this.height = height;
@@ -211,11 +225,13 @@ export class PostFX {
     const bw = Math.max(1, Math.floor(width * bloomRes));
     const bh = Math.max(1, Math.floor(height * bloomRes));
     if (!this.sceneFbo) {
-      this.sceneFbo = createFramebuffer(this.gl, width, height);
-      this.bloomFboA = createFramebuffer(this.gl, bw, bh);
-      this.bloomFboB = createFramebuffer(this.gl, bw, bh);
-      this.streakFbo = createFramebuffer(this.gl, bw, bh);
-      this.vfxCompositeFbo = createFramebuffer(this.gl, width, height);
+      this.sceneFbo = createFramebuffer(this.gl, width, height, this.hdrRequested);
+      this.hdrActive = this.sceneFbo.hdr;
+      const useHdr = this.hdrActive;
+      this.bloomFboA = createFramebuffer(this.gl, bw, bh, useHdr);
+      this.bloomFboB = createFramebuffer(this.gl, bw, bh, useHdr);
+      this.streakFbo = createFramebuffer(this.gl, bw, bh, useHdr);
+      this.vfxCompositeFbo = createFramebuffer(this.gl, width, height, useHdr);
     } else {
       resizeFramebuffer(this.gl, this.sceneFbo, width, height);
       resizeFramebuffer(this.gl, this.bloomFboA!, bw, bh);
@@ -252,6 +268,7 @@ export class PostFX {
     bloomIntensity: number,
     chroma: number,
     bloomThreshold: number,
+    bloomKnee: number,
     bufferWidth: number,
     bufferHeight: number,
     crtIntermediate: boolean,
@@ -270,7 +287,7 @@ export class PostFX {
       return;
     }
 
-    this.extractBloom(this.sceneFbo!.texture, bloomPasses, bloomThreshold);
+    this.extractBloom(this.sceneFbo!.texture, bloomPasses, bloomThreshold, bloomKnee);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, bufferWidth, bufferHeight);
@@ -351,7 +368,7 @@ export class PostFX {
     const hasBloom = params.bloomPasses > 0 && params.bloomIntensity > 0;
     let hasStreak = false;
     if (hasBloom) {
-      this.extractBloom(sourceTex, params.bloomPasses, params.bloomThreshold);
+      this.extractBloom(sourceTex, params.bloomPasses, params.bloomThreshold, params.bloomKnee);
       if (params.grade.streakIntensity > 0) {
         hasStreak = true;
         this.applyStreak(
@@ -359,6 +376,7 @@ export class PostFX {
           params.grade.streakTarget,
           sourceTex,
           params.bloomThreshold,
+          params.bloomKnee,
           effectWidth,
           effectHeight,
           view,
@@ -441,8 +459,8 @@ export class PostFX {
 
   private ensurePersistTargets(width: number, height: number): void {
     if (!this.persistFboA) {
-      this.persistFboA = createFramebuffer(this.gl, width, height);
-      this.persistFboB = createFramebuffer(this.gl, width, height);
+      this.persistFboA = createFramebuffer(this.gl, width, height, this.hdrActive);
+      this.persistFboB = createFramebuffer(this.gl, width, height, this.hdrActive);
       this.persistIndex = 0;
       this.persistValid = false;
       return;
@@ -509,7 +527,7 @@ export class PostFX {
 
   private ensureRetroTarget(width: number, height: number): void {
     if (!this.retroFbo) {
-      this.retroFbo = createFramebuffer(this.gl, width, height);
+      this.retroFbo = createFramebuffer(this.gl, width, height, this.hdrActive);
       return;
     }
     if (this.retroFbo.width !== width || this.retroFbo.height !== height) {
@@ -568,7 +586,7 @@ export class PostFX {
 
   private ensureReactiveTarget(width: number, height: number): void {
     if (!this.reactiveFbo) {
-      this.reactiveFbo = createFramebuffer(this.gl, width, height);
+      this.reactiveFbo = createFramebuffer(this.gl, width, height, this.hdrActive);
       return;
     }
     if (this.reactiveFbo.width !== width || this.reactiveFbo.height !== height) {
@@ -621,6 +639,7 @@ export class PostFX {
     target: StreakTarget,
     sourceTex: WebGLTexture,
     threshold: number,
+    knee: number,
     effectWidth: number,
     effectHeight: number,
     view: CameraView,
@@ -641,6 +660,7 @@ export class PostFX {
       gl.bindTexture(gl.TEXTURE_2D, sourceTex);
       gl.uniform1i(this.uniform(this.streakExtractProgram, 'u_source')!, 0);
       gl.uniform1f(this.uniform(this.streakExtractProgram, 'u_threshold')!, threshold);
+      this.bindBloomKnee(this.streakExtractProgram, knee);
       gl.uniform2f(
         this.uniform(this.streakExtractProgram, 'u_resolution')!,
         effectWidth,
@@ -713,7 +733,18 @@ export class PostFX {
     this.lutId = id;
   }
 
-  private extractBloom(source: WebGLTexture, bloomPasses: number, bloomThreshold: number): void {
+  private bindBloomKnee(program: WebGLProgram, knee: number): void {
+    const gl = this.gl;
+    gl.uniform1f(this.uniform(program, 'u_knee')!, knee);
+    gl.uniform1f(this.uniform(program, 'u_maxBloom')!, 8);
+  }
+
+  private extractBloom(
+    source: WebGLTexture,
+    bloomPasses: number,
+    bloomThreshold: number,
+    bloomKnee: number,
+  ): void {
     const gl = this.gl;
     const bloomA = this.bloomFboA!;
     const bloomB = this.bloomFboB!;
@@ -725,6 +756,7 @@ export class PostFX {
     gl.bindTexture(gl.TEXTURE_2D, source);
     gl.uniform1i(this.uniform(this.thresholdProgram, 'u_source')!, 0);
     gl.uniform1f(this.uniform(this.thresholdProgram, 'u_threshold')!, bloomThreshold);
+    this.bindBloomKnee(this.thresholdProgram, bloomKnee);
     this.drawFullscreen();
 
     for (let pass = 0; pass < bloomPasses; pass++) {

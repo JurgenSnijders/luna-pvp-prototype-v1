@@ -1,16 +1,19 @@
 import type { CameraView } from '../../camera/Camera2D';
 import { Vector2D } from '../../math/Vector2D';
 import type { ImpactVfx, VfxLayer } from '../../types/schema';
-import { getEffectiveCrtSettings, getTierLimits } from '../../devtools/graphicsSettings';
+import { getEffectiveCrtSettings, getTierLimits, isHdrActive } from '../../devtools/graphicsSettings';
 import type { GLContext } from '../gl/GLContext';
 import { InstancedQuadRenderer } from '../gl/InstancedQuadRenderer';
 import { PostFX } from '../gl/PostFX';
 import { reactiveFx } from '../gl/reactiveFx';
+import { RibbonRenderer } from '../gl/RibbonRenderer';
 import { PrimitiveLayer } from '../PrimitiveLayer';
+import { RibbonLayer } from '../RibbonLayer';
 import {
   type ParticleBackend,
   type SpawnPriority,
   type VfxCounters,
+  parseColor,
 } from './ParticleBackend';
 import { packParticle, packPrimitive } from './webgl/instancePacking';
 import { integrateParticles } from './webgl/particleSim';
@@ -46,17 +49,21 @@ import {
 const EMPTY_COUNTERS: VfxCounters = {
   liveParticles: 0,
   livePrimitives: 0,
+  liveRibbons: 0,
   drawCalls: 0,
   instanceCount: 0,
   uploadBytes: 0,
+  hdrActive: false,
 };
 
 export class WebGLBackend implements ParticleBackend {
   readonly name = 'webgl';
   private particles: SimParticle[] = [];
   private renderer: InstancedQuadRenderer;
+  private ribbonRenderer: RibbonRenderer;
   private postFx: PostFX;
   private primitives: PrimitiveLayer;
+  private ribbons: RibbonLayer;
   private elapsed = 0;
   private lastRenderTime = 0;
   private prevCamX = 0;
@@ -70,8 +77,10 @@ export class WebGLBackend implements ParticleBackend {
     gl: WebGL2RenderingContext,
   ) {
     this.renderer = new InstancedQuadRenderer(gl);
+    this.ribbonRenderer = new RibbonRenderer(gl);
     this.postFx = new PostFX(gl);
     this.primitives = new PrimitiveLayer();
+    this.ribbons = new RibbonLayer();
   }
 
   private spawnCtx(): WebGLSpawnCtx {
@@ -87,6 +96,7 @@ export class WebGLBackend implements ParticleBackend {
     const gl = this.glCtx.gl;
     if (!gl) return;
     this.renderer.rebuild();
+    this.ribbonRenderer.rebuild();
     this.postFx.rebuild();
   }
 
@@ -99,6 +109,7 @@ export class WebGLBackend implements ParticleBackend {
   update(dt: number): void {
     this.particles = integrateParticles(this.particles, dt);
     this.primitives.update(dt);
+    this.ribbons.update(this.elapsed);
 
     const data = this.renderer.getInstanceData();
 
@@ -130,11 +141,18 @@ export class WebGLBackend implements ParticleBackend {
     const bufferH = gl.drawingBufferHeight;
     const limits = getTierLimits();
     const crt = getEffectiveCrtSettings();
-    this.postFx.resize(bufferW, bufferH, limits.bloomResolution);
+    this.postFx.resize(bufferW, bufferH, limits.bloomResolution, isHdrActive());
     this.postFx.beginScene();
 
     gl.enable(gl.BLEND);
     const stats = this.renderer.drawSorted(width, height, view);
+    const ribbonStats = this.ribbonRenderer.draw(
+      this.ribbons.getActive(),
+      width,
+      height,
+      view,
+      this.elapsed,
+    );
 
     const chroma = limits.bloomPasses >= 2 && limits.refraction ? 0.002 : 0;
     this.postFx.endSceneAndComposite(
@@ -142,6 +160,7 @@ export class WebGLBackend implements ParticleBackend {
       crt.bloomIntensity,
       chroma,
       crt.bloomThreshold,
+      crt.bloomKnee,
       bufferW,
       bufferH,
       crt.webglCrt,
@@ -192,6 +211,7 @@ export class WebGLBackend implements ParticleBackend {
           bloomIntensity: crt.bloomIntensity,
           bloomPasses: limits.bloomPasses,
           bloomThreshold: crt.bloomThreshold,
+          bloomKnee: crt.bloomKnee,
           tintColor: crt.tintColor,
           tintAmount: crt.tintAmount,
           brightness: crt.brightness,
@@ -237,8 +257,10 @@ export class WebGLBackend implements ParticleBackend {
     return {
       liveParticles: this.particles.length,
       livePrimitives: this.primitives.getActive().length,
+      liveRibbons: this.ribbons.getCount(),
       drawCalls:
         stats.drawCalls +
+        ribbonStats.drawCalls +
         (limits.bloomPasses > 0 ? 3 : 0) +
         (crt.persistence.enabled ? 1 : 0) +
         (crt.retro.enabled ? 1 : 0) +
@@ -251,7 +273,8 @@ export class WebGLBackend implements ParticleBackend {
             : 1
           : 0),
       instanceCount: stats.instanceCount,
-      uploadBytes: stats.uploadBytes,
+      uploadBytes: stats.uploadBytes + ribbonStats.uploadBytes,
+      hdrActive: this.postFx.isHdr(),
     };
   }
 
@@ -269,6 +292,41 @@ export class WebGLBackend implements ParticleBackend {
 
   destroy(): void {
     this.particles = [];
+    this.ribbons.clear();
+  }
+
+  supportsRibbons(): boolean {
+    return getTierLimits().maxRibbons > 0;
+  }
+
+  ribbonPush(
+    id: string,
+    pos: Vector2D,
+    color: string,
+    width: number,
+    intensity: number,
+    pointLifetimeMs?: number,
+  ): void {
+    if (!this.supportsRibbons()) {
+      neonRibbonImpl(this.spawnCtx(), pos, color);
+      return;
+    }
+    const [r, g, b] = parseColor(color);
+    const tierLife = getTierLimits().ribbonPointLifetimeMs / 1000;
+    const life = pointLifetimeMs !== undefined ? pointLifetimeMs / 1000 : tierLife;
+    const added = this.ribbons.push(
+      id,
+      pos.x,
+      pos.y,
+      r,
+      g,
+      b,
+      width,
+      intensity,
+      this.elapsed,
+      life,
+    );
+    if (!added) neonRibbonImpl(this.spawnCtx(), pos, color);
   }
 
   private canSpawn(priority: SpawnPriority): boolean {
@@ -311,8 +369,9 @@ export class WebGLBackend implements ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void {
-    spawnRingImpl(this.spawnCtx(), pos, radius, thickness, color, alpha, life, priority);
+    spawnRingImpl(this.spawnCtx(), pos, radius, thickness, color, alpha, life, priority, intensity);
   }
 
   spawnStreak(
@@ -323,8 +382,9 @@ export class WebGLBackend implements ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void {
-    spawnStreakImpl(this.spawnCtx(), pos, vel, length, color, alpha, life, priority);
+    spawnStreakImpl(this.spawnCtx(), pos, vel, length, color, alpha, life, priority, intensity);
   }
 
   spawnFlash(
@@ -334,8 +394,9 @@ export class WebGLBackend implements ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void {
-    spawnFlashImpl(this.spawnCtx(), pos, size, color, alpha, life, priority);
+    spawnFlashImpl(this.spawnCtx(), pos, size, color, alpha, life, priority, intensity);
   }
 
   burstSparks(
@@ -343,8 +404,9 @@ export class WebGLBackend implements ParticleBackend {
     count: number,
     color: string,
     priority: SpawnPriority = 'SECONDARY',
+    intensity?: number,
   ): void {
-    burstSparksImpl(this.spawnCtx(), pos, count, color, priority);
+    burstSparksImpl(this.spawnCtx(), pos, count, color, priority, intensity);
   }
 
   triggerMuzzleFlash(pos: Vector2D, dir: Vector2D, color: string): void {
@@ -358,8 +420,18 @@ export class WebGLBackend implements ParticleBackend {
     vfxType: ImpactVfx,
     scale = 1,
     layers?: VfxLayer[],
+    emissiveMul = 1,
   ): void {
-    triggerImpactBurstImpl(this.spawnCtx(), pos, color, secondaryColor, vfxType, scale, layers);
+    triggerImpactBurstImpl(
+      this.spawnCtx(),
+      pos,
+      color,
+      secondaryColor,
+      vfxType,
+      scale,
+      layers,
+      emissiveMul,
+    );
   }
 
   trail(pos: Vector2D, color: string, trailKind: string): void {

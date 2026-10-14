@@ -203,7 +203,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
         `Perf ${perfLabel} · VFX ${s.vfxTier}. Performance preset updates post-effects and resolution; VFX preset updates combat budgets.`;
     }
     budgetHint.textContent =
-      `Perf ${getEffectiveTier()} · VFX ${getEffectiveVfxTier()} · particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ` +
+      `Perf ${getEffectiveTier()} · VFX ${getEffectiveVfxTier()} · particles ${limits.particleBudget.toLocaleString()} · DPR ${getEffectiveDprCap().toFixed(2)} · primitives ${limits.maxPrimitives} · ribbons ${limits.maxRibbons} · ` +
       `bg ${flags.webglBackground ? 'on' : 'off'} · crt ${flags.crtEnabled ? 'on' : 'off'}`;
   };
   refreshTierHelper();
@@ -326,14 +326,23 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
   );
 
   addToggle(lookBody, lookCheckboxes, 'arcadeBezel', 'Arcade Bezel');
+  addToggle(lookBody, lookCheckboxes, 'hdr', 'HDR Bloom');
+  helperText(
+    lookBody,
+    'HDR lets spell cores go brighter than white so bloom picks up only the hot parts. Off on Low quality.',
+  );
 
   const bloomSlider = numeric('bloomIntensity');
   const thresholdSlider = numeric('bloomThreshold');
+  const kneeSlider = numeric('bloomKnee');
+  const emissiveSlider = numeric('emissiveScale');
   const brightnessSlider = numeric('crtBrightness');
 
   const bloomSliders = [
     sliderRow(lookBody, 'Bloom Intensity', 0, 2, 0.05, bloomSlider.get, bloomSlider.set),
-    sliderRow(lookBody, 'Bloom Threshold', 0.2, 0.9, 0.05, thresholdSlider.get, thresholdSlider.set),
+    sliderRow(lookBody, 'Bloom Threshold', 0.2, 1.5, 0.05, thresholdSlider.get, thresholdSlider.set),
+    sliderRow(lookBody, 'Bloom Knee', 0, 1, 0.05, kneeSlider.get, kneeSlider.set),
+    sliderRow(lookBody, 'Emissive Scale', 0.25, 3, 0.05, emissiveSlider.get, emissiveSlider.set),
     sliderRow(lookBody, 'CRT Brightness', 0.5, 2, 0.05, brightnessSlider.get, brightnessSlider.set),
   ];
 
@@ -686,7 +695,7 @@ export function buildGraphicsTab(parent: HTMLElement, ctx: InspectorContext): vo
       perfMonitor.formatOverlayText(),
       '',
       caps
-        ? `WebGL2: ${caps.webgl2Available ? 'yes' : 'no'}  DPR: ${caps.dpr}  maxTex: ${caps.maxTextureSize}`
+        ? `WebGL2: ${caps.webgl2Available ? 'yes' : 'no'}  HDR ext: ${caps.hdrRenderable ? 'yes' : 'no'}  DPR: ${caps.dpr}  maxTex: ${caps.maxTextureSize}`
         : 'Capabilities not probed',
       caps ? `GPU: ${caps.renderer}` : '',
       `Tier: ${getEffectiveTier()}  (F3 toggles overlay)`,

@@ -72,9 +72,11 @@ export class RecordingBackend implements ParticleBackend {
     return {
       liveParticles: this.getLiveParticleCount(),
       livePrimitives: 0,
+      liveRibbons: 0,
       drawCalls: 0,
       instanceCount: 0,
       uploadBytes: 0,
+      hdrActive: false,
     };
   }
 
@@ -89,6 +91,19 @@ export class RecordingBackend implements ParticleBackend {
   getLivePrimitiveCount(): number {
     return 0;
   }
+
+  supportsRibbons(): boolean {
+    return false;
+  }
+
+  ribbonPush(
+    _id: string,
+    _pos: Vector2D,
+    _color: string,
+    _width: number,
+    _intensity: number,
+    _pointLifetimeMs?: number,
+  ): void {}
 
   destroy(): void {}
 

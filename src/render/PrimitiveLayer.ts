@@ -11,6 +11,7 @@ export interface PrimitiveInstance {
   g: number;
   b: number;
   alpha: number;
+  intensity: number;
   params: [number, number, number, number];
   additive: boolean;
   life: number;
@@ -58,6 +59,7 @@ export class PrimitiveLayer {
     expanding: boolean,
     rot = 0,
     stretchAlongNormal = 1,
+    intensity = 2.2,
   ): void {
     if (this.isAtCapacity()) return;
     this.active.push({
@@ -70,6 +72,7 @@ export class PrimitiveLayer {
       g,
       b,
       alpha,
+      intensity,
       params: [
         Math.max(0.15, thickness / Math.max(radius, 1)),
         stretchAlongNormal,
@@ -107,6 +110,7 @@ export class PrimitiveLayer {
     b: number,
     alpha: number,
     life: number,
+    intensity = 3.5,
   ): void {
     if (this.isAtCapacity()) return;
     this.active.push({
@@ -119,6 +123,7 @@ export class PrimitiveLayer {
       g,
       b,
       alpha,
+      intensity,
       params: [0, 0, 0, 0],
       additive: true,
       life,
@@ -137,6 +142,7 @@ export class PrimitiveLayer {
     b: number,
     alpha: number,
     life: number,
+    intensity = 2,
   ): void {
     if (this.isAtCapacity()) return;
     this.active.push({
@@ -149,6 +155,7 @@ export class PrimitiveLayer {
       g,
       b,
       alpha,
+      intensity,
       params: [length * 0.004, 0, 0, 0],
       additive: true,
       life,

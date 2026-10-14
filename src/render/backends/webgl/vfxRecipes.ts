@@ -54,27 +54,32 @@ export function triggerImpactBurst(
   vfxType: ImpactVfx,
   scale = 1,
   layers?: VfxLayer[],
+  emissiveMul = 1,
 ): void {
   if (layers && layers.length > 0) {
     playVfxLayers(
       {
-        spawnRing: (p, radius, thickness, c, alpha, life, priority) =>
-          spawnRing(ctx, p, radius, thickness, c, alpha, life, priority),
-        spawnFlash: (p, size, c, alpha, life, priority) =>
-          spawnFlash(ctx, p, size, c, alpha, life, priority),
-        spawnStreak: (p, vel, length, c, alpha, life, priority) =>
-          spawnStreak(ctx, p, vel, length, c, alpha, life, priority),
-        burstSparks: (p, count, c, priority) => burstSparks(ctx, p, count, c, priority),
+        spawnRing: (p, radius, thickness, c, alpha, life, priority, intensity) =>
+          spawnRing(ctx, p, radius, thickness, c, alpha, life, priority, intensity),
+        spawnFlash: (p, size, c, alpha, life, priority, intensity) =>
+          spawnFlash(ctx, p, size, c, alpha, life, priority, intensity),
+        spawnStreak: (p, vel, length, c, alpha, life, priority, intensity) =>
+          spawnStreak(ctx, p, vel, length, c, alpha, life, priority, intensity),
+        burstSparks: (p, count, c, priority, intensity) =>
+          burstSparks(ctx, p, count, c, priority ?? 'SECONDARY', intensity),
       },
       pos,
       layers,
       color,
       secondaryColor,
       scale,
+      0,
+      emissiveMul,
     );
     return;
   }
 
+  if (emissiveMul !== 1) ctx = { ...ctx, emissiveMul };
   switch (vfxType) {
     case 'SHOCKWAVE':
       spawnRing(ctx, pos, 50 * scale, 3, color, 0.85, 0.45, 'CORE');
@@ -195,6 +200,7 @@ export function trail(ctx: WebGLSpawnCtx, pos: Vector2D, color: string, trailKin
         b,
         peakAlpha: 0.8,
         additive: true,
+        intensity: 1.8,
       }),
       'SECONDARY',
     );
@@ -275,6 +281,7 @@ export function neonRibbon(ctx: WebGLSpawnCtx, pos: Vector2D, color: string): vo
       b,
       peakAlpha: 0.95,
       additive: true,
+      intensity: 3.5,
     }),
     'SECONDARY',
   );

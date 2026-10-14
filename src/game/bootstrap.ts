@@ -570,9 +570,11 @@ function init(app: GameApp): void {
       perfMonitor.setCounters({
         liveParticles: vfxStats.liveParticles,
         livePrimitives: vfxStats.livePrimitives,
+        liveRibbons: vfxStats.liveRibbons,
         drawCalls: vfxStats.drawCalls,
         instanceCount: vfxStats.instanceCount,
         uploadBytes: vfxStats.uploadBytes,
+        hdrActive: vfxStats.hdrActive,
       });
 
       if (!isWebGL && showPerfOverlay) {

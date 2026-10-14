@@ -1,20 +1,28 @@
 export const BLOOM_THRESHOLD_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_source;
 uniform float u_threshold;
+uniform float u_knee;
+uniform float u_maxBloom;
 out vec4 fragColor;
 void main() {
-  vec4 c = texture(u_source, v_texCoord);
+  vec3 c = min(texture(u_source, v_texCoord).rgb, vec3(u_maxBloom));
   // Luminance, not max(rgb): lava is high-red but dim, neon cores are actually bright.
-  float lum = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-  float contrib = max(lum - u_threshold, 0.0) / max(lum, 0.0001);
-  fragColor = vec4(c.rgb * contrib, 0.0);
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float knee = max(u_knee, 0.0001);
+  float soft = clamp(lum - u_threshold + knee, 0.0, 2.0 * knee);
+  soft = (soft * soft) / (4.0 * knee);
+  float highlight = max(soft, lum - u_threshold);
+  float contrib = highlight / max(lum, 0.0001);
+  fragColor = vec4(c * contrib, 0.0);
 }
 `;
 
 export const BLUR_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_source;
 uniform vec2 u_direction;
@@ -36,6 +44,7 @@ void main() {
 
 export const COMPOSITE_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
@@ -58,6 +67,7 @@ void main() {
 /** Premultiplied VFX over the Canvas2D world, written opaque for bloom + CRT. */
 export const OPAQUE_COMPOSITE_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_world;
 uniform sampler2D u_vfx;
@@ -71,6 +81,7 @@ void main() {
 
 export const PERSISTENCE_SHADER = `#version 300 es
 precision highp float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_current;
 uniform sampler2D u_history;
@@ -79,9 +90,10 @@ uniform float u_persistThreshold;
 uniform vec2 u_reproject;
 out vec4 fragColor;
 void main() {
-  vec3 cur = texture(u_current, v_texCoord).rgb;
+  // Cap history so a hot core cannot feedback without bound.
+  vec3 cur = min(texture(u_current, v_texCoord).rgb, vec3(2.0));
   vec2 hUv = v_texCoord + u_reproject;
-  vec3 prev = texture(u_history, hUv).rgb * u_decay;
+  vec3 prev = min(texture(u_history, hUv).rgb, vec3(2.0)) * u_decay;
   float luma = dot(prev, vec3(0.2126, 0.7152, 0.0722));
   prev *= step(u_persistThreshold, luma);
   bool inside = all(greaterThanEqual(hUv, vec2(0.0))) && all(lessThanEqual(hUv, vec2(1.0)));
@@ -91,6 +103,7 @@ void main() {
 
 export const RETRO_SHADER = `#version 300 es
 precision highp float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_source;
 uniform vec2 u_effectResolution;
@@ -112,7 +125,7 @@ float bayer4(ivec2 p) {
 void main() {
   vec2 grid = u_effectResolution / max(u_pixelSize, 1.0);
   vec2 snapped = (floor(v_texCoord * grid) + 0.5) / grid;
-  vec3 col = texture(u_source, snapped).rgb;
+  vec3 col = min(texture(u_source, snapped).rgb, vec3(1.0));
   ivec2 px = ivec2(floor(v_texCoord * grid));
   col += (bayer4(px) - 0.5) * u_dither * 0.15;
   if (u_paletteMix > 0.0 && u_paletteSize > 0) {
@@ -131,6 +144,7 @@ void main() {
 
 export const REACTIVE_SHADER = `#version 300 es
 precision highp float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_source;
 uniform float u_time;
@@ -183,10 +197,13 @@ void main() {
 
 export const STREAK_EXTRACT_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 
 uniform sampler2D u_source;
 uniform float u_threshold;
+uniform float u_knee;
+uniform float u_maxBloom;
 uniform vec2 u_resolution;
 uniform vec2 u_cameraPos;
 uniform float u_cameraZoom;
@@ -215,14 +232,18 @@ float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
 }
 
 void main() {
-  vec4 col = texture(u_source, v_texCoord);
-  float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-  float contrib = max(lum - u_threshold, 0.0) / max(lum, 0.0001);
+  vec3 rgb = min(texture(u_source, v_texCoord).rgb, vec3(u_maxBloom));
+  float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float knee = max(u_knee, 0.0001);
+  float soft = clamp(lum - u_threshold + knee, 0.0, 2.0 * knee);
+  soft = (soft * soft) / (4.0 * knee);
+  float highlight = max(soft, lum - u_threshold);
+  float contrib = highlight / max(lum, 0.0001);
   if (contrib <= 0.0) {
     fragColor = vec4(0.0);
     return;
   }
-  col.rgb *= contrib;
+  vec4 col = vec4(rgb * contrib, 1.0);
 
   if (u_filterArena == 1 || u_bodyCount > 0) {
     vec2 screen = vec2(v_texCoord.x, 1.0 - v_texCoord.y) * u_resolution - u_shake;
@@ -262,6 +283,7 @@ void main() {
 
 export const STREAK_SHADER = `#version 300 es
 precision mediump float;
+precision mediump sampler2D;
 in vec2 v_texCoord;
 uniform sampler2D u_source;
 uniform vec2 u_texelSize;
@@ -286,6 +308,7 @@ void main() {
 
 export const CRT_SHADER = `#version 300 es
 precision highp float;
+precision mediump sampler2D;
 precision highp sampler3D;
 in vec2 v_texCoord;
 uniform sampler2D u_scene;

@@ -93,8 +93,17 @@ export class VfxDirector {
     vfxType: ImpactVfx,
     scale = 1,
     layers?: VfxLayer[],
+    emissiveMul = 1,
   ): void {
-    this.backend.triggerImpactBurst(pos, color, secondaryColor, vfxType, scale, layers);
+    this.backend.triggerImpactBurst(
+      pos,
+      color,
+      secondaryColor,
+      vfxType,
+      scale,
+      layers,
+      emissiveMul,
+    );
   }
 
   playVfxLayers(
@@ -104,18 +113,19 @@ export class VfxDirector {
     secondary: string,
     scale = 1,
     headingRad = 0,
+    emissiveMul = 1,
   ): void {
     if (!this.checkOverdraw(pos.x, pos.y, 6, SpawnMaterial.TRAIL)) return;
     composeVfxLayers(
       {
-        spawnRing: (p, radius, thickness, color, alpha, life, priority) =>
-          this.backend.spawnRing(p, radius, thickness, color, alpha, life, priority),
-        spawnFlash: (p, size, color, alpha, life, priority) =>
-          this.backend.spawnFlash(p, size, color, alpha, life, priority),
-        spawnStreak: (p, vel, length, color, alpha, life, priority) =>
-          this.backend.spawnStreak(p, vel, length, color, alpha, life, priority),
-        burstSparks: (p, count, color, priority) =>
-          this.backend.burstSparks(p, count, color, priority),
+        spawnRing: (p, radius, thickness, color, alpha, life, priority, intensity) =>
+          this.backend.spawnRing(p, radius, thickness, color, alpha, life, priority, intensity),
+        spawnFlash: (p, size, color, alpha, life, priority, intensity) =>
+          this.backend.spawnFlash(p, size, color, alpha, life, priority, intensity),
+        spawnStreak: (p, vel, length, color, alpha, life, priority, intensity) =>
+          this.backend.spawnStreak(p, vel, length, color, alpha, life, priority, intensity),
+        burstSparks: (p, count, color, priority, intensity) =>
+          this.backend.burstSparks(p, count, color, priority, intensity),
       },
       pos,
       layers,
@@ -123,6 +133,7 @@ export class VfxDirector {
       secondary,
       scale,
       headingRad,
+      emissiveMul,
     );
   }
 
@@ -134,6 +145,21 @@ export class VfxDirector {
   neonRibbon(pos: Vector2D, color: string): void {
     if (!this.checkOverdraw(pos.x, pos.y, 9, SpawnMaterial.NEON_RIBBON)) return;
     this.backend.neonRibbon(pos, color);
+  }
+
+  supportsRibbons(): boolean {
+    return this.backend.supportsRibbons();
+  }
+
+  ribbonPush(
+    id: string,
+    pos: Vector2D,
+    color: string,
+    width: number,
+    intensity: number,
+    pointLifetimeMs?: number,
+  ): void {
+    this.backend.ribbonPush(id, pos, color, width, intensity, pointLifetimeMs);
   }
   ember(pos: Vector2D): void {
     this.backend.ember(pos);

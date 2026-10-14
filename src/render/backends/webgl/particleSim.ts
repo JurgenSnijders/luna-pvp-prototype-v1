@@ -1,12 +1,18 @@
 import type { SimParticle } from './types';
 
 export function makeParticle(
-  partial: Omit<SimParticle, 'maxLife' | 'params'> & { params?: [number, number, number, number] },
+  partial: Omit<SimParticle, 'maxLife' | 'params' | 'intensity'> & {
+    params?: [number, number, number, number];
+    intensity?: number;
+  },
 ): SimParticle {
+  const intensity = partial.intensity ?? 1;
+  const params = partial.params ?? [0, 0, 0, 0];
   return {
-    params: partial.params ?? [0, 0, 0, 0],
-    maxLife: partial.life,
     ...partial,
+    params,
+    intensity,
+    maxLife: partial.life,
   };
 }
 

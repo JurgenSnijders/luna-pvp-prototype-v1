@@ -2,6 +2,12 @@ import { getTierLimits } from '../../devtools/graphicsSettings';
 import { Vector2D } from '../../math/Vector2D';
 import type { SpawnPriority } from './ParticleBackend';
 import type { VfxColorRef, VfxDrawLayer, VfxLayer } from '../../types/schema';
+import {
+  FLASH_INTENSITY,
+  RING_INTENSITY,
+  SPARK_INTENSITY,
+  STREAK_INTENSITY,
+} from '../emissive';
 
 const MAX_VFX_LAYERS = 6;
 const DEFAULT_STREAK_SPARK_COUNT = 8;
@@ -15,6 +21,7 @@ export interface VfxLayerSpawnSink {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
   spawnFlash(
     pos: Vector2D,
@@ -23,6 +30,7 @@ export interface VfxLayerSpawnSink {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
   spawnStreak(
     pos: Vector2D,
@@ -32,8 +40,9 @@ export interface VfxLayerSpawnSink {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
-  burstSparks(pos: Vector2D, count: number, color: string, priority?: SpawnPriority): void;
+  burstSparks(pos: Vector2D, count: number, color: string, priority?: SpawnPriority, intensity?: number): void;
 }
 
 export function estimateLayerSpawns(layer: VfxLayer): number {
@@ -90,6 +99,7 @@ export function playVfxLayers(
   secondary: string,
   scale = 1,
   headingRad = 0,
+  emissiveMul = 1,
 ): void {
   const maxSpawns = maxVfxLayerSpawns();
   const stack = truncateVfxLayers(layers, maxSpawns);
@@ -98,12 +108,13 @@ export function playVfxLayers(
     const priority = toDrawPriority(layer.layer);
     const size = layer.size * scale;
     const life = layer.lifetime;
+    const hot = (base: number) => base * emissiveMul;
     switch (layer.kind) {
       case 'RING':
-        sink.spawnRing(pos, size, layer.thickness ?? 3, color, 0.85, life, priority);
+        sink.spawnRing(pos, size, layer.thickness ?? 3, color, 0.85, life, priority, hot(RING_INTENSITY));
         break;
       case 'FLASH':
-        sink.spawnFlash(pos, size, color, 0.8, life, priority);
+        sink.spawnFlash(pos, size, color, 0.8, life, priority, hot(FLASH_INTENSITY));
         break;
       case 'STREAK': {
         const count = layer.count ?? DEFAULT_STREAK_SPARK_COUNT;
@@ -120,12 +131,19 @@ export function playVfxLayers(
             0.85,
             life,
             priority,
+            hot(STREAK_INTENSITY),
           );
         }
         break;
       }
       case 'SPARKS':
-        sink.burstSparks(pos, layer.count ?? DEFAULT_STREAK_SPARK_COUNT, color, priority);
+        sink.burstSparks(
+          pos,
+          layer.count ?? DEFAULT_STREAK_SPARK_COUNT,
+          color,
+          priority,
+          hot(SPARK_INTENSITY),
+        );
         break;
     }
   }

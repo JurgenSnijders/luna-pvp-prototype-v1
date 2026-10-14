@@ -26,7 +26,7 @@ export function validateVfxParams(value: unknown): VfxParams | null {
   const params: VfxParams = {};
   if (value.glowIntensity !== undefined) {
     if (!isNumber(value.glowIntensity)) return null;
-    params.glowIntensity = value.glowIntensity;
+    params.glowIntensity = clamp(value.glowIntensity, 0, 8);
   }
   if (value.trailDensity !== undefined) {
     if (!isNumber(value.trailDensity)) return null;

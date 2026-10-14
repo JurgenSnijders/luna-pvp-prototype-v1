@@ -7,9 +7,11 @@ export type SpawnPriority = 'CORE' | 'PRIMARY' | 'SECONDARY' | 'AMBIENT';
 export interface VfxCounters {
   liveParticles: number;
   livePrimitives: number;
+  liveRibbons: number;
   drawCalls: number;
   instanceCount: number;
   uploadBytes: number;
+  hdrActive: boolean;
 }
 
 export interface ParticleBackend {
@@ -22,6 +24,7 @@ export interface ParticleBackend {
   resize(width: number, height: number): void;
   getLiveParticleCount(): number;
   getLivePrimitiveCount(): number;
+  supportsRibbons(): boolean;
   destroy(): void;
 
   spawnDisc(
@@ -48,6 +51,7 @@ export interface ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
   spawnStreak(
     pos: Vector2D,
@@ -57,6 +61,7 @@ export interface ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
   spawnFlash(
     pos: Vector2D,
@@ -65,12 +70,14 @@ export interface ParticleBackend {
     alpha: number,
     life: number,
     priority: SpawnPriority,
+    intensity?: number,
   ): void;
   burstSparks(
     pos: Vector2D,
     count: number,
     color: string,
     priority?: SpawnPriority,
+    intensity?: number,
   ): void;
   triggerMuzzleFlash(pos: Vector2D, dir: Vector2D, color: string): void;
   triggerImpactBurst(
@@ -80,9 +87,18 @@ export interface ParticleBackend {
     vfxType: ImpactVfx,
     scale?: number,
     layers?: VfxLayer[],
+    emissiveMul?: number,
   ): void;
   trail(pos: Vector2D, color: string, trailKind: string): void;
   neonRibbon(pos: Vector2D, color: string): void;
+  ribbonPush(
+    id: string,
+    pos: Vector2D,
+    color: string,
+    width: number,
+    intensity: number,
+    pointLifetimeMs?: number,
+  ): void;
   ember(pos: Vector2D): void;
   spawnAmbientEmber(
     bounds: { minX: number; minY: number; width: number; height: number },

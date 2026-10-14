@@ -1,4 +1,5 @@
 import { isLegacyIntegratedGpu } from '../render/detectQualityTier';
+import { enableHdrRenderTargets } from '../render/gl/framebuffers';
 
 const HISTORY_SIZE = 120;
 
@@ -15,6 +16,8 @@ export interface GpuCapabilities {
   unmaskedRenderer: string;
   /** True when fragment highp is unreliable or a legacy iGPU is detected. */
   isLegacyGpu: boolean;
+  /** RGBA16F color attachments are renderable on this context. */
+  hdrRenderable: boolean;
 }
 
 function probeGpuTraits(gl: WebGL2RenderingContext): {
@@ -43,9 +46,11 @@ export interface PerfSnapshot {
   gpuMs: number;
   liveParticles: number;
   livePrimitives: number;
+  liveRibbons: number;
   drawCalls: number;
   instanceCount: number;
   uploadBytes: number;
+  hdrActive: boolean;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -63,9 +68,11 @@ export class PerfMonitor {
   private gpuMs = 0;
   private liveParticles = 0;
   private livePrimitives = 0;
+  private liveRibbons = 0;
   private drawCalls = 0;
   private instanceCount = 0;
   private uploadBytes = 0;
+  private hdrActive = false;
   private frameStart = 0;
   private simStart = 0;
   private renderStart = 0;
@@ -102,6 +109,7 @@ export class PerfMonitor {
       fragmentHighpPrecision: traits.fragmentHighpPrecision,
       unmaskedRenderer: traits.unmaskedRenderer || prev?.unmaskedRenderer || '',
       isLegacyGpu: traits.isLegacyGpu || prev?.isLegacyGpu === true,
+      hdrRenderable: gl ? enableHdrRenderTargets(gl) : false,
     };
     this.capabilities = caps;
     return caps;
@@ -148,15 +156,19 @@ export class PerfMonitor {
   setCounters(counters: {
     liveParticles?: number;
     livePrimitives?: number;
+    liveRibbons?: number;
     drawCalls?: number;
     instanceCount?: number;
     uploadBytes?: number;
+    hdrActive?: boolean;
   }): void {
     if (counters.liveParticles !== undefined) this.liveParticles = counters.liveParticles;
     if (counters.livePrimitives !== undefined) this.livePrimitives = counters.livePrimitives;
+    if (counters.liveRibbons !== undefined) this.liveRibbons = counters.liveRibbons;
     if (counters.drawCalls !== undefined) this.drawCalls = counters.drawCalls;
     if (counters.instanceCount !== undefined) this.instanceCount = counters.instanceCount;
     if (counters.uploadBytes !== undefined) this.uploadBytes = counters.uploadBytes;
+    if (counters.hdrActive !== undefined) this.hdrActive = counters.hdrActive;
   }
 
   getSnapshot(): PerfSnapshot {
@@ -174,9 +186,11 @@ export class PerfMonitor {
       gpuMs: this.gpuMs,
       liveParticles: this.liveParticles,
       livePrimitives: this.livePrimitives,
+      liveRibbons: this.liveRibbons,
       drawCalls: this.drawCalls,
       instanceCount: this.instanceCount,
       uploadBytes: this.uploadBytes,
+      hdrActive: this.hdrActive,
     };
   }
 
@@ -197,7 +211,8 @@ export class PerfMonitor {
     const lines = [
       `FPS ~${s.fps.toFixed(0)}`,
       `sim ${s.simMs.toFixed(2)}ms  render ${s.renderMs.toFixed(2)}ms  gpu ${s.gpuMs.toFixed(2)}ms`,
-      `particles ${s.liveParticles}  primitives ${s.livePrimitives}`,
+      `particles ${s.liveParticles}  primitives ${s.livePrimitives}  ribbons ${s.liveRibbons}`,
+      `HDR ${s.hdrActive ? 'on' : 'off'}`,
       `draws ${s.drawCalls}  instances ${s.instanceCount}  upload ${(s.uploadBytes / 1024).toFixed(1)}KB`,
     ];
     if (this.baselineP95Ms !== null) {

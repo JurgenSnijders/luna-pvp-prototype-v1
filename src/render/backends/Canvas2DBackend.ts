@@ -113,9 +113,11 @@ export class Canvas2DBackend implements ParticleBackend {
     return {
       liveParticles: this.getLiveParticleCount(),
       livePrimitives: 0,
+      liveRibbons: 0,
       drawCalls: 0,
       instanceCount: 0,
       uploadBytes: 0,
+      hdrActive: false,
     };
   }
 
@@ -151,6 +153,21 @@ export class Canvas2DBackend implements ParticleBackend {
 
   getLivePrimitiveCount(): number {
     return 0;
+  }
+
+  supportsRibbons(): boolean {
+    return false;
+  }
+
+  ribbonPush(
+    _id: string,
+    pos: Vector2D,
+    color: string,
+    _width: number,
+    _intensity: number,
+    _pointLifetimeMs?: number,
+  ): void {
+    this.neonRibbon(pos, color);
   }
 
   destroy(): void {}

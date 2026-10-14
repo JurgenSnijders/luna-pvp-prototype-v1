@@ -58,6 +58,9 @@ export interface GraphicsSettings {
   crtBrightness: number;
   bloomIntensity: number;
   bloomThreshold: number;
+  bloomKnee: number;
+  hdr: boolean;
+  emissiveScale: number;
   arcadeBezel: boolean;
   /** 0 = screen-locked, 1 = world-locked camera follow for the void/star layer. */
   bgParallaxVoid: number;
@@ -88,7 +91,10 @@ export const DEFAULT_GRAPHICS_SETTINGS: GraphicsSettings = {
   crtPhosphor: 0.25,
   crtBrightness: 1.0,
   bloomIntensity: 0.8,
-  bloomThreshold: 0.6,
+  bloomThreshold: 0.95,
+  bloomKnee: 0.3,
+  hdr: true,
+  emissiveScale: 1,
   arcadeBezel: true,
   bgParallaxVoid: 0.18,
   bgLavaScrollSpeed: 0.18,
@@ -106,6 +112,8 @@ export interface TierLimits {
   trailDensity: number;
   maxPrimitives: number;
   groundDecals: boolean;
+  maxRibbons: number;
+  ribbonPointLifetimeMs: number;
   /** Multiplier applied after DPR cap (internal resolution). */
   renderScale: number;
   /** Max CSS-pixel edge for canvas backing stores; 0 = unlimited. */
@@ -140,6 +148,7 @@ export interface EffectiveCrtSettings {
   maskType: number;
   bloomIntensity: number;
   bloomThreshold: number;
+  bloomKnee: number;
   arcadeBezel: boolean;
   tintColor: [number, number, number];
   tintAmount: number;
@@ -190,6 +199,8 @@ interface VfxTierLimits {
   trailDensity: number;
   maxPrimitives: number;
   groundDecals: boolean;
+  maxRibbons: number;
+  ribbonPointLifetimeMs: number;
 }
 
 const PERF_TIER_LIMITS: Record<FixedQualityTier, PerfTierLimits> = {
@@ -237,24 +248,32 @@ const VFX_TIER_LIMITS: Record<FixedQualityTier, VfxTierLimits> = {
     trailDensity: 0.5,
     maxPrimitives: 64,
     groundDecals: false,
+    maxRibbons: 0,
+    ribbonPointLifetimeMs: 0,
   },
   MEDIUM: {
     particleBudget: 4096,
     trailDensity: 0.8,
     maxPrimitives: 256,
     groundDecals: true,
+    maxRibbons: 16,
+    ribbonPointLifetimeMs: 180,
   },
   HIGH: {
     particleBudget: 16384,
     trailDensity: 1.0,
     maxPrimitives: 1024,
     groundDecals: true,
+    maxRibbons: 48,
+    ribbonPointLifetimeMs: 260,
   },
   ULTRA: {
     particleBudget: 65536,
     trailDensity: 1.4,
     maxPrimitives: 4096,
     groundDecals: true,
+    maxRibbons: 64,
+    ribbonPointLifetimeMs: 320,
   },
 };
 
@@ -367,6 +386,20 @@ export function getTierLimits(): TierLimits {
 
 export function getPresentIntervalMs(): number {
   return getTierLimits().presentIntervalMs;
+}
+
+/** HDR is on only when the user asked, the tier can afford the buffers, and the GPU can render them. */
+export function isHdrActive(): boolean {
+  if (!getGraphicsSettings().hdr) return false;
+  if (getEffectiveTier() === 'LOW') return false;
+  const caps = perfMonitor.getCapabilities();
+  return caps?.hdrRenderable === true;
+}
+
+/** Forced to 1 while HDR is off so LDR targets do not clip every spell to white. */
+export function getEffectiveEmissiveScale(): number {
+  if (!isHdrActive()) return 1;
+  return clampRange(getGraphicsSettings().emissiveScale, 0.25, 3);
 }
 
 export function areGroundDecalsEnabled(): boolean {
@@ -608,6 +641,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
   const flags = getEffectiveFeatureFlags();
   const bloomIntensity = flags.bloomEnabled ? s.bloomIntensity : 0;
   const bloomThreshold = s.bloomThreshold;
+  const bloomKnee = s.bloomKnee;
   const presetCrt = getActivePresetCrt();
   const tintColor = presetCrt.tintColor;
   const tintAmount = resolveTintAmount(presetCrt.tintAmount);
@@ -657,6 +691,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
       maskType: 0,
       bloomIntensity,
       bloomThreshold,
+      bloomKnee,
       arcadeBezel: flags.arcadeBezel,
       tintColor,
       tintAmount: 0,
@@ -680,6 +715,7 @@ export function getEffectiveCrtSettings(): EffectiveCrtSettings {
     maskType: resolveMaskType(),
     bloomIntensity,
     bloomThreshold,
+    bloomKnee,
     arcadeBezel: flags.arcadeBezel,
     tintColor,
     tintAmount,
@@ -748,6 +784,13 @@ export function parseGraphicsSettings(raw: unknown): GraphicsSettings {
     crtBrightness: parsed.crtBrightness ?? DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
     bloomIntensity: parsed.bloomIntensity ?? DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
     bloomThreshold: parsed.bloomThreshold ?? DEFAULT_GRAPHICS_SETTINGS.bloomThreshold,
+    bloomKnee: clampRange(parsed.bloomKnee ?? DEFAULT_GRAPHICS_SETTINGS.bloomKnee, 0, 1),
+    hdr: typeof parsed.hdr === 'boolean' ? parsed.hdr : DEFAULT_GRAPHICS_SETTINGS.hdr,
+    emissiveScale: clampRange(
+      parsed.emissiveScale ?? DEFAULT_GRAPHICS_SETTINGS.emissiveScale,
+      0.25,
+      3,
+    ),
     arcadeBezel: parsed.arcadeBezel ?? DEFAULT_GRAPHICS_SETTINGS.arcadeBezel,
     bgParallaxVoid: clampUnit(
       parsed.bgParallaxVoid ?? DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
@@ -857,7 +900,7 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
   },
   MEDIUM: {
     bloomIntensity: 0.45,
-    bloomThreshold: 0.7,
+    bloomThreshold: 0.95,
     crtBrightness: 1,
     screenShakeIntensity: 0.75,
     bgParallaxVoid: 0.12,
@@ -865,7 +908,7 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
   },
   HIGH: {
     bloomIntensity: DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
-    bloomThreshold: 0.6,
+    bloomThreshold: 0.95,
     crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
     screenShakeIntensity: 1,
     bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,
@@ -873,7 +916,7 @@ const TIER_NUMERIC_PRESETS: Record<Exclude<QualityTier, 'AUTO'>, TierNumericPres
   },
   ULTRA: {
     bloomIntensity: DEFAULT_GRAPHICS_SETTINGS.bloomIntensity,
-    bloomThreshold: 0.55,
+    bloomThreshold: 0.95,
     crtBrightness: DEFAULT_GRAPHICS_SETTINGS.crtBrightness,
     screenShakeIntensity: 1,
     bgParallaxVoid: DEFAULT_GRAPHICS_SETTINGS.bgParallaxVoid,

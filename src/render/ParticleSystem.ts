@@ -75,8 +75,9 @@ export class ParticleSystem {
     secondary: string,
     scale = 1,
     headingRad = 0,
+    emissiveMul = 1,
   ): void {
-    this.director.playVfxLayers(pos, layers, primary, secondary, scale, headingRad);
+    this.director.playVfxLayers(pos, layers, primary, secondary, scale, headingRad, emissiveMul);
   }
 
   trail(pos: Vector2D, color: string, trailKind = 'DEFAULT'): void {
@@ -85,6 +86,21 @@ export class ParticleSystem {
 
   neonRibbon(pos: Vector2D, color: string): void {
     this.director.neonRibbon(pos, color);
+  }
+
+  supportsRibbons(): boolean {
+    return this.director.supportsRibbons();
+  }
+
+  ribbonPush(
+    id: string,
+    pos: Vector2D,
+    color: string,
+    width: number,
+    intensity: number,
+    pointLifetimeMs?: number,
+  ): void {
+    this.director.ribbonPush(id, pos, color, width, intensity, pointLifetimeMs);
   }
 
   ember(pos: Vector2D): void {
@@ -114,6 +130,7 @@ export class ParticleSystem {
     secondaryColor?: string,
     scale?: number,
     layers?: VfxLayer[],
+    emissiveMul?: number,
   ): void {
     this.director.triggerImpactBurst(
       pos,
@@ -122,6 +139,7 @@ export class ParticleSystem {
       vfxType,
       scale,
       layers,
+      emissiveMul,
     );
   }
 
